@@ -59,6 +59,15 @@ lists every approximation and what would remove it.
 | `glossary.md` | Domain terms |
 | `adr/` | Decisions, numbered, newest last |
 
+## Commit convention
+
+Commits follow Conventional Commits 1.0.0. `CONTRIBUTING.md` holds the rules,
+and `check_commit_message.py` checks a message against them.
+
+```
+git log -1 --format=%B | python check_commit_message.py
+```
+
 ## Run it
 
 ```
