@@ -14,6 +14,7 @@ from __future__ import annotations
 import bisect
 import zipfile
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from parse_report import ParseReport, count, decode_lines, iter_lines, peek
@@ -21,6 +22,8 @@ from parse_report import ParseReport, count, decode_lines, iter_lines, peek
 DEFAULT_CONNECTION_MINUTES = 5
 MAX_ONWARD_DEPARTURES = 60
 MINUTES_PER_DAY = 1440
+
+_UNSET = object()
 
 # The fixed-width helpers are deliberately local. Sharing them across modules
 # would mean importing another module's private helpers, which costs the reader
@@ -190,6 +193,17 @@ def _minutes(value: str) -> int | None:
     return int(digits[0:2]) * 60 + int(digits[2:4])
 
 
+def _date(value: str) -> date | None:
+    """Read a CIF date. A two digit year is read as 2000 based."""
+    digits = value.strip()
+    if len(digits) != 6 or not digits.isdigit():
+        return None
+    try:
+        return date(int(digits[0:2]) + 2000, int(digits[2:4]), int(digits[4:6]))
+    except ValueError:
+        return None
+
+
 def format_minutes(minutes: int) -> str:
     hours, remainder = divmod(minutes, 60)
     if hours and remainder:
@@ -224,6 +238,18 @@ class Schedule:
     date_to: str = ""
     days: str = ""
     stp_indicator: str = ""
+
+    def runs_on(self, day: date) -> bool:
+        """Whether the schedule runs on a date, before overlays and cancellations."""
+        start = _date(self.date_from)
+        if start is not None and day < start:
+            return False
+        end = _date(self.date_to)
+        if end is not None and day > end:
+            return False
+        if len(self.days) < 7:
+            return True
+        return self.days[day.weekday()] == "1"
 
 
 @dataclass
@@ -293,6 +319,7 @@ class TimetableDb:
         self._departures: dict[str, list[tuple[int, int, int]]] | None = None
         self._arrivals: dict[str, list[tuple[int, int, int]]] | None = None
         self._departure_times: dict[str, list[int]] = {}
+        self._index_day: date | None | object = _UNSET
 
     # -- loading ---------------------------------------------------------
 
@@ -453,6 +480,7 @@ class TimetableDb:
     def _invalidate_indexes(self) -> None:
         self._departures = None
         self._arrivals = None
+        self._index_day = _UNSET
 
     # -- lookups ---------------------------------------------------------
 
@@ -472,12 +500,39 @@ class TimetableDb:
                 return station.change_time
         return DEFAULT_CONNECTION_MINUTES
 
-    def _ensure_indexes(self) -> None:
-        if self._departures is not None:
+    def active_schedules(self, day: date) -> list[int]:
+        """Schedule indexes running on a date, with overlays and cancellations applied.
+
+        An overlay replaces the permanent schedule of the same train identity. A
+        cancellation removes it, unless an overlay covers the same date.
+        """
+        buckets: dict[str, dict[str, list[int]]] = {}
+        cancelled: set[str] = set()
+        for index, schedule in enumerate(self.schedules):
+            if not schedule.runs_on(day):
+                continue
+            if schedule.stp_indicator == "C":
+                cancelled.add(schedule.train_uid)
+                continue
+            bucket = buckets.setdefault(schedule.train_uid, {"overlay": [], "permanent": []})
+            key = "overlay" if schedule.stp_indicator == "O" else "permanent"
+            bucket[key].append(index)
+        active: list[int] = []
+        for train_uid, bucket in buckets.items():
+            if bucket["overlay"]:
+                active.extend(bucket["overlay"])
+            elif train_uid not in cancelled:
+                active.extend(bucket["permanent"])
+        return sorted(active)
+
+    def _ensure_indexes(self, day: date | None = None) -> None:
+        if self._departures is not None and self._index_day == day:
             return
+        schedule_indexes = range(len(self.schedules)) if day is None else self.active_schedules(day)
         departures: dict[str, list[tuple[int, int, int]]] = {}
         arrivals: dict[str, list[tuple[int, int, int]]] = {}
-        for schedule_index, schedule in enumerate(self.schedules):
+        for schedule_index in schedule_indexes:
+            schedule = self.schedules[schedule_index]
             for stop_index, stop in enumerate(schedule.stops):
                 crs = self.crs_for_tiploc(stop.tiploc)
                 if crs is None:
@@ -497,6 +552,7 @@ class TimetableDb:
         self._departure_times = {
             crs: [entry[0] for entry in entries] for crs, entries in departures.items()
         }
+        self._index_day = day
 
     def stats(self) -> dict[str, int]:
         return {
@@ -514,8 +570,9 @@ class TimetableDb:
         *,
         max_changes: int = 1,
         connection_minutes: int | None = None,
+        day: date | None = None,
     ) -> Journey | None:
-        self._ensure_indexes()
+        self._ensure_indexes(day)
         best = self._direct_journey(origin_crs, destination_crs)
         if max_changes >= 1:
             best = self._one_change_journey(origin_crs, destination_crs, best, connection_minutes)

@@ -7,10 +7,14 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from atoc_timetable import TimetableDb, format_minutes
 from make_synthetic_feed import build_synthetic_timetable
+
+SUNDAY = date(2026, 9, 27)
+MONDAY = date(2026, 9, 28)
 
 
 class TimetableParserTest(unittest.TestCase):
@@ -65,6 +69,28 @@ class TimetableParserTest(unittest.TestCase):
 
     def test_unserved_station_returns_none(self) -> None:
         self.assertIsNone(self.timetable.best_journey("GRN", "XFD"))
+
+    def test_a_weekday_query_applies_the_overlay(self) -> None:
+        self.assertEqual(len(self.timetable.active_schedules(MONDAY)), 7)
+        journey = self.timetable.best_journey("GRN", "NOT", day=MONDAY)
+        self.assertEqual(journey.departure, 10 * 60 + 30)
+        self.assertEqual(journey.duration, 45)
+        self.assertEqual([leg.train_uid for leg in journey.legs], ["T10004"])
+
+    def test_a_weekday_query_excludes_the_sunday_train(self) -> None:
+        journey = self.timetable.best_journey("GRN", "NOT", day=MONDAY)
+        self.assertNotIn("T10009", [leg.train_uid for leg in journey.legs])
+
+    def test_a_cancellation_removes_a_destination_on_that_date(self) -> None:
+        self.assertIsNone(self.timetable.best_journey("GRN", "PBO", day=MONDAY))
+        self.assertEqual(self.timetable.best_journey("GRN", "PBO").duration, 30)
+
+    def test_a_sunday_query_uses_only_the_sunday_train(self) -> None:
+        self.assertEqual(len(self.timetable.active_schedules(SUNDAY)), 1)
+        journey = self.timetable.best_journey("GRN", "NOT", day=SUNDAY)
+        self.assertEqual(journey.duration, 55)
+        self.assertEqual([leg.train_uid for leg in journey.legs], ["T10009"])
+        self.assertIsNone(self.timetable.best_journey("GRN", "LCN", day=SUNDAY))
 
     def test_formats_a_duration(self) -> None:
         self.assertEqual(format_minutes(50), "50m")
