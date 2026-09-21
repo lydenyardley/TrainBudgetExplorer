@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+_demo_feed/
+RJFAF*/
+rjfaf*/
+*.zip

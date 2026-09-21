@@ -1,0 +1,95 @@
+"""Tests for the fares feed parser, run against a synthetic feed.
+
+Each test asserts a literal value, so a parser that returned nothing would fail.
+"""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from atoc_fares import FaresDb
+from make_synthetic_feed import build_synthetic_feed, write_delete_marker
+
+
+class FaresParserTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.feed = build_synthetic_feed(Path(cls._tmp.name) / "rjfaf-test")
+        cls.db = FaresDb().load_feed(cls.feed)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def test_reads_stations_and_ticket_descriptions(self) -> None:
+        self.assertEqual(self.db.locations_by_crs["GRN"].name, "GRANTHAM")
+        self.assertEqual(self.db.locations_by_nlc["2000"].crs, "NOT")
+        self.assertEqual(self.db.ticket_types["CDR"].name, "OFF-PEAK DAY R")
+        self.assertTrue(self.db.ticket_types["CDR"].restricted_by_train)
+
+    def test_codes_destinations_inside_the_budget_cheapest_first(self) -> None:
+        results = self.db.destinations_within("GRN", 2000)
+        self.assertEqual([reachable.crs for reachable in results], ["LCN", "NOT"])
+        self.assertEqual([reachable.best_pence for reachable in results], [870, 1160])
+
+    def test_picks_the_cheapest_return_ticket_per_destination(self) -> None:
+        results = {reachable.crs: reachable for reachable in self.db.destinations_within("GRN", 3000)}
+        self.assertEqual(results["NOT"].ticket_code, "CDR")
+        self.assertEqual(results["NOT"].standard_pence, 1160)
+
+    def test_excludes_first_class_over_budget_and_singles(self) -> None:
+        codes = {reachable.crs for reachable in self.db.destinations_within("GRN", 2000)}
+        self.assertNotIn("XFD", codes)
+        self.assertNotIn("PBO", codes)
+        self.assertNotIn("KGX", codes)
+        self.assertNotIn("GRN", codes)
+
+    def test_respects_flow_direction(self) -> None:
+        results = self.db.destinations_within("NOT", 2000)
+        self.assertEqual([reachable.crs for reachable in results], ["GRN"])
+
+    def test_two_together_prices_the_party(self) -> None:
+        results = {
+            reachable.crs: reachable
+            for reachable in self.db.destinations_within("GRN", 2000, adults=2, railcard="Two Together")
+        }
+        self.assertEqual(results["NOT"].railcard_pence, 775)
+        self.assertEqual(results["NOT"].party_pence, 1550)
+
+    def test_railcard_minimum_fare_never_beats_the_standard_fare(self) -> None:
+        results = {
+            reachable.crs: reachable
+            for reachable in self.db.destinations_within("GRN", 2000, adults=2, railcard="Two Together")
+        }
+        self.assertEqual(results["LCN"].railcard_pence, 1200)
+        self.assertEqual(results["LCN"].best_pence, 870)
+        self.assertEqual(results["LCN"].party_pence, 1740)
+
+    def test_party_budget_mode_tests_the_total(self) -> None:
+        results = self.db.destinations_within(
+            "GRN", 1550, adults=2, railcard="Two Together", party_budget=True
+        )
+        self.assertEqual([reachable.crs for reachable in results], ["NOT"])
+
+    def test_unknown_origin_and_railcard_raise(self) -> None:
+        with self.assertRaises(KeyError):
+            self.db.destinations_within("ZZZ", 2000)
+        with self.assertRaises(KeyError):
+            self.db.destinations_within("GRN", 2000, railcard="Imaginary Railcard")
+
+    def test_delete_marker_removes_a_fare(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        feed = build_synthetic_feed(Path(tmp.name) / "rjfaf-delete")
+        db = FaresDb().load_feed(feed)
+        self.assertEqual([reachable.crs for reachable in db.destinations_within("GRN", 2000)], ["LCN", "NOT"])
+        update = write_delete_marker(feed, "0000002", "SDR")
+        db.load_feed(update)
+        self.assertEqual([reachable.crs for reachable in db.destinations_within("GRN", 2000)], ["NOT"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
