@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+from parse_report import ParseReport, count, decode_lines, iter_lines
+
 ROUNDING_STEP_PENCE = 5
 
 # "1/3 off" is the published discount for the mainstream UK railcards, Two
@@ -218,7 +220,8 @@ class FaresDb:
         self.flows: dict[str, Flow] = {}
         self.fares_by_flow: dict[str, dict[str, Fare]] = {}
         self.minimum_fares: dict[tuple[str, str], int] = {}
-        self.files_read: list[str] = []
+        self.report = ParseReport()
+        self.files_read = self.report.files_read
 
     # -- loading ---------------------------------------------------------
 
@@ -227,19 +230,19 @@ class FaresDb:
         if path.is_dir():
             for child in sorted(path.iterdir()):
                 if child.is_file():
-                    self._load_file(child.name, child.read_text(encoding="utf-8", errors="replace"))
+                    self._load_lines(child.name, iter_lines(child, self.report))
         elif path.suffix.lower() == ".zip":
             with zipfile.ZipFile(path) as archive:
                 for name in sorted(archive.namelist()):
                     if name.endswith("/"):
                         continue
                     with archive.open(name) as handle:
-                        self._load_file(name, handle.read().decode("utf-8", errors="replace"))
+                        self._load_lines(name, decode_lines(handle, self.report))
         else:
-            self._load_file(path.name, path.read_text(encoding="utf-8", errors="replace"))
+            self._load_lines(path.name, iter_lines(path, self.report))
         return self
 
-    def _load_file(self, name: str, text: str) -> None:
+    def _load_lines(self, name: str, lines) -> None:
         extension = Path(name).suffix.lower().lstrip(".")
         loader = {
             "ffl": self._load_flows,
@@ -250,10 +253,8 @@ class FaresDb:
         }.get(extension)
         if loader is None:
             return
-        self.files_read.append(name)
-        for line in text.splitlines():
-            if line.strip():
-                loader(line)
+        self.report.files_read.append(name)
+        count(lines, loader, self.report, name)
 
     def _load_flows(self, line: str) -> None:
         record_type = _text(line, FLOW_F_OFFSETS, "record_type").upper()
@@ -280,6 +281,7 @@ class FaresDb:
                 return
             fare_text = _text(line, FLOW_T_OFFSETS, "fare_pence")
             if not fare_text.isdigit():
+                self.report.records_skipped += 1
                 return
             bucket[ticket_code] = Fare(
                 ticket_code=ticket_code,

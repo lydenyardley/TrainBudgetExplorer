@@ -85,16 +85,22 @@ TIMETABLE_STATIONS = (
     ("NWRK", "NWK", "NEWARK", "05"),
 )
 
-# (train_uid, origin, intermediates, terminus). Times are H H M M.
+# (train_uid, origin, intermediates, terminus, days, stp). Times are H H M M.
+# The days string runs Monday to Sunday, so "1111110" is Monday to Saturday.
+# The last two entries deliberately share a train identity with a permanent
+# schedule, which is how a real feed expresses a change and a cancellation.
 TIMETABLE_TRAINS = (
-    ("T10001", ("GRNT", "0900"), (), ("NOTT", "0950")),
-    ("T10002", ("GRNT", "0915"), (), ("LINC", "1005")),
-    ("T10003", ("GRNT", "0930"), (), ("PETE", "1000")),
-    ("T10004", ("GRNT", "1000"), (), ("NOTT", "1045")),
-    ("T10005", ("NOTT", "1105"), (), ("NWRK", "1130")),
-    ("T10006", ("NOTT", "1050"), (), ("NWRK", "1115")),
-    ("T10007", ("GRNT", "1200"), (), ("NWRK", "1400")),
-    ("T10008", ("GRNT", "0700"), (("LINC", "0752", "0755"),), ("NOTT", "0850")),
+    ("T10001", ("GRNT", "0900"), (), ("NOTT", "0950"), "1111110", "P"),
+    ("T10002", ("GRNT", "0915"), (), ("LINC", "1005"), "1111110", "P"),
+    ("T10003", ("GRNT", "0930"), (), ("PETE", "1000"), "1111110", "P"),
+    ("T10004", ("GRNT", "1000"), (), ("NOTT", "1045"), "1111110", "P"),
+    ("T10005", ("NOTT", "1105"), (), ("NWRK", "1130"), "1111110", "P"),
+    ("T10006", ("NOTT", "1050"), (), ("NWRK", "1115"), "1111110", "P"),
+    ("T10007", ("GRNT", "1200"), (), ("NWRK", "1400"), "1111110", "P"),
+    ("T10008", ("GRNT", "0700"), (("LINC", "0752", "0755"),), ("NOTT", "0850"), "1111110", "P"),
+    ("T10009", ("GRNT", "0800"), (), ("NOTT", "0855"), "0000001", "P"),
+    ("T10004", ("GRNT", "1030"), (), ("NOTT", "1115"), "1111110", "O"),
+    ("T10003", ("GRNT", "1130"), (), ("PETE", "1200"), "1111110", "C"),
 )
 
 TIPLOC_INSERTS = (("NOTT", "XXX"),)
@@ -187,7 +193,7 @@ def build_synthetic_timetable(path: str | Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
 
     cif_lines = [_line({"record_type": "HD", "file_identity": "SYNTHETIC"}, CIF_HEADER)]
-    for train_uid, origin, intermediates, terminus in TIMETABLE_TRAINS:
+    for train_uid, origin, intermediates, terminus, days, stp_indicator in TIMETABLE_TRAINS:
         cif_lines.append(
             _line(
                 {
@@ -196,8 +202,8 @@ def build_synthetic_timetable(path: str | Path) -> Path:
                     "train_uid": train_uid,
                     "date_runs_from": "260921",
                     "date_runs_to": "261211",
-                    "days": "1111111",
-                    "stp_indicator": "P",
+                    "days": days,
+                    "stp_indicator": stp_indicator,
                 },
                 CIF_SCHEDULE,
             )

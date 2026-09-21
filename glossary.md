@@ -15,3 +15,12 @@
 | **Return / single** | Round-trip vs one-way ticket. Most day trips price as a return; the tool's default unit is a return. |
 | **Party** | The travelling group (couple, family). Fares multiply per adult/child — a core correctness trap. |
 | **MTD** | Making Tax Digital — appears in this workspace's other project docs, unrelated here. |
+| **CIF** | Common Interface Format, the fixed-width timetable record format used by the timetable feed. |
+| **TIPLOC** | The seven character code that identifies a location in the timetable feed, such as GRNT. One station can hold several. |
+| **CRS code** | The three letter station code passengers see, such as GRN for Grantham. |
+| **Calling point** | One stop on a schedule, with its arrival and departure times. A schedule is an ordered list of them. |
+| **Station names file** | The MSN feed that maps each TIPLOC to a station code, a name, and a minimum interchange time. |
+| **STP indicator** | Whether a schedule is permanent (`P`), an overlay (`O`), new (`N`), or a cancellation (`C`) of a permanent schedule. |
+| **Service days** | The seven character Monday to Sunday pattern saying which days a schedule runs on. |
+| **Schedule** | One train's plan for one period: an identity, a date range, service days, and its calling points. |
+| **Overlay** | A schedule that replaces the permanent schedule of the same train identity for its date range. |

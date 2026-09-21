@@ -80,6 +80,19 @@ feed files to a ranked list. It proves nothing about real Grantham fares.
 3. **`rcm` does not mark deletions.** The file carries no update marker, so an
    incremental update cannot retract a minimum fare. Full feeds are unaffected.
 
+## Later the same day: hardening for the first real run
+
+Both parsers were rebuilt to stream their input, decode each line as UTF-8 with a
+latin-1 fallback, and count what they handled and rejected. `feed_audit.py`
+prints that report alongside the coverage gaps between the two feeds. The suite
+went from 21 tests to 41.
+
+Running the audit against a folder holding both feeds found a real defect. The
+timetable loader was reading the fares files as station records, because a fares
+record also begins with an update marker, and it reported sixteen stations when
+five existed. File classification now requires the four spaces that follow a
+station name record type, and a test covers the combined folder.
+
 ## The single blocking action
 
 The owner needs to create an account on `raildata.org.uk`, accept the licence for

@@ -26,7 +26,7 @@ class TimetableParserTest(unittest.TestCase):
 
     def test_reads_stations_schedules_and_change_times(self) -> None:
         self.assertEqual(self.timetable.station_for_tiploc("GRNT").name, "GRANTHAM")
-        self.assertEqual(self.timetable.stats()["schedules"], 8)
+        self.assertEqual(self.timetable.stats()["schedules"], 11)
         self.assertEqual(self.timetable.connection_minutes_at("NOT"), 10)
 
     def test_station_names_file_wins_over_a_tiploc_insert(self) -> None:

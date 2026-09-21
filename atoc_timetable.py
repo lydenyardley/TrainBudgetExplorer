@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import bisect
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from parse_report import ParseReport, count, decode_lines, iter_lines, peek
 
 DEFAULT_CONNECTION_MINUTES = 5
 MAX_ONWARD_DEPARTURES = 60
@@ -218,6 +220,26 @@ class CallingPoint:
 class Schedule:
     train_uid: str
     stops: tuple[CallingPoint, ...]
+    date_from: str = ""
+    date_to: str = ""
+    days: str = ""
+    stp_indicator: str = ""
+
+
+@dataclass
+class _CifState:
+    """One schedule under construction while a record stream is read."""
+
+    train_uid: str = ""
+    stops: list[CallingPoint] = field(default_factory=list)
+    date_from: str = ""
+    date_to: str = ""
+    days: str = ""
+    stp_indicator: str = ""
+
+    def reset(self) -> None:
+        self.train_uid = ""
+        self.stops = []
 
 
 @dataclass(frozen=True)
@@ -266,7 +288,8 @@ class TimetableDb:
         self.crs_by_tiploc: dict[str, str] = {}
         self.cif_crs_by_tiploc: dict[str, str] = {}
         self.schedules: list[Schedule] = []
-        self.files_read: list[str] = []
+        self.report = ParseReport()
+        self.files_read = self.report.files_read
         self._departures: dict[str, list[tuple[int, int, int]]] | None = None
         self._arrivals: dict[str, list[tuple[int, int, int]]] | None = None
         self._departure_times: dict[str, list[int]] = {}
@@ -278,119 +301,154 @@ class TimetableDb:
         if path.is_dir():
             for child in sorted(path.iterdir()):
                 if child.is_file():
-                    self._load_file(child.name, child.read_text(encoding="utf-8", errors="replace"))
+                    self._load_lines(child.name, iter_lines(child, self.report))
         elif path.suffix.lower() == ".zip":
             with zipfile.ZipFile(path) as archive:
                 for name in sorted(archive.namelist()):
                     if name.endswith("/"):
                         continue
                     with archive.open(name) as handle:
-                        self._load_file(name, handle.read().decode("utf-8", errors="replace"))
+                        self._load_lines(name, decode_lines(handle, self.report))
         else:
-            self._load_file(path.name, path.read_text(encoding="utf-8", errors="replace"))
+            self._load_lines(path.name, iter_lines(path, self.report))
         return self
 
-    def _load_file(self, name: str, text: str) -> None:
-        kind = self._detect(name, text)
+    def _load_lines(self, name: str, lines) -> None:
+        kind = self._kind_from_name(name)
         if kind is None:
-            return
-        self.files_read.append(name)
+            first, lines = peek(lines)
+            if first is None:
+                return
+            kind = self._kind_from_line(first)
+            if kind is None:
+                return
+        self.report.files_read.append(name)
         self._invalidate_indexes()
         if kind == "cif":
-            self._load_cif(text)
+            state = _CifState()
+            count(
+                lines,
+                lambda line: self._cif_line(line, state),
+                self.report,
+                name,
+                finish=lambda: self._commit(state),
+            )
         else:
-            self._load_station_names(text)
+            count(lines, self._load_station_line, self.report, name)
 
     @staticmethod
-    def _detect(name: str, text: str) -> str | None:
+    def _kind_from_name(name: str) -> str | None:
         extension = Path(name).suffix.lower().lstrip(".")
         if extension in CIF_EXTENSIONS:
             return "cif"
         if extension in MSN_EXTENSIONS:
             return "msn"
-        for line in text.splitlines():
-            if not line.strip():
-                continue
-            if line[:2] in CIF_RECORD_TYPES:
-                return "cif"
-            if line[:1] in {"A", "L", "V"} and len(line) > 20:
-                return "msn"
-            return None
         return None
 
-    def _load_station_names(self, text: str) -> None:
-        for line in text.splitlines():
-            if not line.strip() or line[:1] != "A":
-                continue
-            tiploc = _text(line, MSN_STATION_OFFSETS, "tiploc")
-            crs = _text(line, MSN_STATION_OFFSETS, "crs").upper()
-            if not tiploc:
-                continue
-            self.stations_by_tiploc[tiploc] = TimetableStation(
-                tiploc=tiploc,
-                crs=crs,
-                name=_text(line, MSN_STATION_OFFSETS, "name"),
-                change_time=int(_text(line, MSN_STATION_OFFSETS, "change_time") or 0),
+    @staticmethod
+    def _kind_from_line(line: str) -> str | None:
+        """Classify a file with no useful extension, and refuse anything ambiguous.
+
+        A fares record also starts with an update marker, so a loose test would
+        read fares files as station records. Station names records carry four
+        spaces after the record type, which separates the two.
+        """
+        if len(line) < 60:
+            return None
+        if line[:2] in CIF_RECORD_TYPES:
+            return "cif"
+        if line[:1] == "A" and not line[1:5].strip():
+            return "msn"
+        return None
+
+    def _load_station_line(self, line: str) -> None:
+        if line[:1] != "A":
+            return
+        tiploc = _text(line, MSN_STATION_OFFSETS, "tiploc")
+        crs = _text(line, MSN_STATION_OFFSETS, "crs").upper()
+        if not tiploc:
+            return
+        self.stations_by_tiploc[tiploc] = TimetableStation(
+            tiploc=tiploc,
+            crs=crs,
+            name=_text(line, MSN_STATION_OFFSETS, "name"),
+            change_time=int(_text(line, MSN_STATION_OFFSETS, "change_time") or 0),
+        )
+        if crs:
+            self.crs_by_tiploc[tiploc] = crs
+
+    def _cif_line(self, line: str, state: _CifState) -> None:
+        record_type = line[:2]
+        if record_type == "BS":
+            self._commit(state)
+            state.reset()
+            state.date_from = _text(line, CIF_SCHEDULE_OFFSETS, "date_runs_from")
+            state.date_to = _text(line, CIF_SCHEDULE_OFFSETS, "date_runs_to")
+            state.days = _text(line, CIF_SCHEDULE_OFFSETS, "days")
+            state.stp_indicator = _text(line, CIF_SCHEDULE_OFFSETS, "stp_indicator").upper()
+            if _text(line, CIF_SCHEDULE_OFFSETS, "transaction_type").upper() == "D":
+                return
+            state.train_uid = self._require(line, CIF_SCHEDULE_OFFSETS, "train_uid")
+        elif record_type == "LO":
+            state.stops.append(
+                CallingPoint(
+                    tiploc=self._require(line, CIF_ORIGIN_OFFSETS, "location")[:7],
+                    arrival=None,
+                    departure=_minutes(self._require(line, CIF_ORIGIN_OFFSETS, "scheduled_departure")),
+                    public_arrival=None,
+                    public_departure=_minutes(self._require(line, CIF_ORIGIN_OFFSETS, "public_departure")),
+                )
             )
-            if crs:
-                self.crs_by_tiploc[tiploc] = crs
+        elif record_type == "LI":
+            state.stops.append(
+                CallingPoint(
+                    tiploc=self._require(line, CIF_INTERMEDIATE_OFFSETS, "location")[:7],
+                    arrival=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_arrival")),
+                    departure=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_departure")),
+                    public_arrival=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "public_arrival")),
+                    public_departure=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "public_departure")),
+                )
+            )
+        elif record_type == "LT":
+            state.stops.append(
+                CallingPoint(
+                    tiploc=self._require(line, CIF_TERMINUS_OFFSETS, "location")[:7],
+                    arrival=_minutes(self._require(line, CIF_TERMINUS_OFFSETS, "scheduled_arrival")),
+                    departure=None,
+                    public_arrival=_minutes(self._require(line, CIF_TERMINUS_OFFSETS, "public_arrival")),
+                    public_departure=None,
+                )
+            )
+        elif record_type in {"TI", "TA"}:
+            tiploc = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "tiploc")
+            crs = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "crs").upper()
+            if tiploc and crs:
+                self.cif_crs_by_tiploc.setdefault(tiploc, crs)
+        elif record_type == "TD":
+            tiploc = _text(line, CIF_TIPLOC_DELETE_OFFSETS, "tiploc")
+            self.cif_crs_by_tiploc.pop(tiploc, None)
+            self.stations_by_tiploc.pop(tiploc, None)
 
-    def _load_cif(self, text: str) -> None:
-        train_uid = ""
-        stops: list[CallingPoint] = []
-        for line in text.splitlines():
-            record_type = line[:2]
-            if record_type == "BS":
-                self._commit_schedule(train_uid, stops)
-                train_uid = ""
-                stops = []
-                if _text(line, CIF_SCHEDULE_OFFSETS, "transaction_type").upper() == "D":
-                    continue
-                train_uid = _text(line, CIF_SCHEDULE_OFFSETS, "train_uid")
-            elif record_type == "LO":
-                stops.append(
-                    CallingPoint(
-                        tiploc=_text(line, CIF_ORIGIN_OFFSETS, "location")[:7],
-                        arrival=None,
-                        departure=_minutes(_text(line, CIF_ORIGIN_OFFSETS, "scheduled_departure")),
-                        public_arrival=None,
-                        public_departure=_minutes(_text(line, CIF_ORIGIN_OFFSETS, "public_departure")),
-                    )
-                )
-            elif record_type == "LI":
-                stops.append(
-                    CallingPoint(
-                        tiploc=_text(line, CIF_INTERMEDIATE_OFFSETS, "location")[:7],
-                        arrival=_minutes(_text(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_arrival")),
-                        departure=_minutes(_text(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_departure")),
-                        public_arrival=_minutes(_text(line, CIF_INTERMEDIATE_OFFSETS, "public_arrival")),
-                        public_departure=_minutes(_text(line, CIF_INTERMEDIATE_OFFSETS, "public_departure")),
-                    )
-                )
-            elif record_type == "LT":
-                stops.append(
-                    CallingPoint(
-                        tiploc=_text(line, CIF_TERMINUS_OFFSETS, "location")[:7],
-                        arrival=_minutes(_text(line, CIF_TERMINUS_OFFSETS, "scheduled_arrival")),
-                        departure=None,
-                        public_arrival=_minutes(_text(line, CIF_TERMINUS_OFFSETS, "public_arrival")),
-                        public_departure=None,
-                    )
-                )
-            elif record_type in {"TI", "TA"}:
-                tiploc = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "tiploc")
-                crs = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "crs").upper()
-                if tiploc and crs:
-                    self.cif_crs_by_tiploc.setdefault(tiploc, crs)
-            elif record_type == "TD":
-                tiploc = _text(line, CIF_TIPLOC_DELETE_OFFSETS, "tiploc")
-                self.cif_crs_by_tiploc.pop(tiploc, None)
-                self.stations_by_tiploc.pop(tiploc, None)
-        self._commit_schedule(train_uid, stops)
+    @staticmethod
+    def _require(line: str, offsets: dict[str, tuple[int, int]], name: str) -> str:
+        """Read a field that must be present, so a truncated record is reported rather than guessed."""
+        end = offsets[name][1]
+        if len(line) < end:
+            raise ValueError(f"record is {len(line)} characters, {name} needs {end}")
+        return _text(line, offsets, name)
 
-    def _commit_schedule(self, train_uid: str, stops: list[CallingPoint]) -> None:
-        if train_uid and len(stops) >= 2:
-            self.schedules.append(Schedule(train_uid=train_uid, stops=tuple(stops)))
+    def _commit(self, state: _CifState) -> None:
+        if state.train_uid and len(state.stops) >= 2:
+            self.schedules.append(
+                Schedule(
+                    train_uid=state.train_uid,
+                    stops=tuple(state.stops),
+                    date_from=state.date_from,
+                    date_to=state.date_to,
+                    days=state.days,
+                    stp_indicator=state.stp_indicator,
+                )
+            )
 
     def _invalidate_indexes(self) -> None:
         self._departures = None
