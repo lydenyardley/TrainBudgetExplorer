@@ -1,7 +1,7 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 130 tests. The journey
+damaged input, date-aware when asked, and covered by 154 tests. The journey
 search is measured rather than tuned by feel, the demo page runs on the
 synthetic feeds, and the count that decides go/no-go now comes with a report
 that questions it. The feed download clears when the Marketplace account is
@@ -78,6 +78,7 @@ value changes without the argument changing with it.
 | `feed_audit.py` | CLI: what each feed contained and where they disagree |
 | `sanity_report.py` | CLI: whether a budget count can be believed |
 | `damage_feed.py` | Writes deliberately damaged copies of a feed |
+| `fuzz_feed.py` | Mutates a feed at random and checks the parser's invariants |
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
@@ -94,6 +95,7 @@ value changes without the argument changing with it.
 | `test_damaged_feed.py` | Twenty tests for damaged input |
 | `test_sanity_report.py` | Fourteen tests for the count report |
 | `test_retailer.py` | Fifteen tests for the ticket links |
+| `test_fuzzed_feed.py` | Fifteen tests for the accounting and the fuzzer |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
@@ -108,11 +110,14 @@ value changes without the argument changing with it.
 2. Run `python feed_audit.py --feed feeds/fares --timetable feeds/timetable`
    and read the rejected count and the unopened files before any total. A feed
    that did not load looks exactly like a feed that is empty.
-3. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
+3. Run `python fuzz_feed.py --feed feeds/fares --rounds 500` and read anything it
+   reports. It is the only thing that will exercise the real feed's encodings and
+   record shapes against a parser written without them.
+4. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
    --origin GRN --budget 20` and read what the count left out.
-4. Check the licence text for commercial use, which decides whether ADR-0003
-   can proceed.
-5. Run the sweep for the Stage 1 count that decides go/no-go.
+5. Check the licence text for commercial use, which decides whether ADR-0003
+   can proceed, and whether the tracked links ADR-0014 builds may be published.
+6. Run the sweep for the Stage 1 count that decides go/no-go.
 
 The four readings in the sanity report are not four answers to one question.
 They are one question asked in four ways, and the gap between them is the part
@@ -187,6 +192,8 @@ python sanity_report.py --feed _demo_feed --timetable _demo_feed --origin GRN --
 python damage_feed.py --list
 python damage_feed.py _demo_feed _damaged crlf
 python damage_feed.py _demo_feed _damaged truncated_record --target ffl
+python fuzz_feed.py --feed _demo_feed --rounds 200 --seed 1
+python fuzz_feed.py --feed feeds/fares --rounds 500 --seed 1 --keep _fuzz_failure
 ```
 
 Swap `_demo_feed` for the downloaded feeds to get the real answer. The fares

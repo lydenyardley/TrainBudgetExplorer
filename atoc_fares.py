@@ -298,8 +298,10 @@ class FaresDb:
                 return
             fare_text = _text(line, FLOW_T_OFFSETS, "fare_pence")
             if not fare_text.isdigit():
-                self.report.records_skipped += 1
-                return
+                # Raise rather than count here: the line counter decides once
+                # whether a line was parsed or rejected, and counting it in both
+                # places makes a rejected record look handled, with no example.
+                raise ValueError(f"fare {fare_text!r} is not a number")
             bucket[ticket_code] = Fare(
                 ticket_code=ticket_code,
                 pence=int(fare_text),
