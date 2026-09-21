@@ -1,9 +1,10 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 64 tests. The journey
-search is measured rather than tuned by feel, and the demo page runs on the
-synthetic feeds. The feed download clears when the Marketplace account is
+damaged input, date-aware when asked, and covered by 115 tests. The journey
+search is measured rather than tuned by feel, the demo page runs on the
+synthetic feeds, and the count that decides go/no-go now comes with a report
+that questions it. The feed download clears when the Marketplace account is
 approved (21 September 2026).
 **Created:** 21 September 2026
 
@@ -34,8 +35,10 @@ changes, and a two-adult party price for Two Together railcard holders.
 - **Built:** `atoc_fares.py` answers budget queries from the fares feed.
   `atoc_timetable.py` answers journey time, change count, and reachability from
   the CIF timetable feed. `grantham_sweep.py` joins them, `feed_audit.py`
-  reports what a feed actually contained, `benchmark.py` measures the journey
-  search, and `build_demo_page.py` writes the browsable page. 64 tests pass.
+  reports what a feed actually contained, `sanity_report.py` questions the count
+  it produced, `benchmark.py` measures the journey search, `damage_feed.py`
+  makes feeds go wrong on purpose, and `build_demo_page.py` writes the browsable
+  page. 115 tests pass.
 - **Blocked:** the feeds need a Marketplace account and a licence accepted in the
   owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
@@ -73,6 +76,8 @@ value changes without the argument changing with it.
 | `atoc_timetable.py` | CIF timetable parser, journey and reachability queries |
 | `grantham_sweep.py` | CLI: every destination in a budget, with journeys |
 | `feed_audit.py` | CLI: what each feed contained and where they disagree |
+| `sanity_report.py` | CLI: whether a budget count can be believed |
+| `damage_feed.py` | Writes deliberately damaged copies of a feed |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
@@ -84,6 +89,9 @@ value changes without the argument changing with it.
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
 | `test_build_demo_page.py` | Nine tests for the page payload and template |
+| `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
+| `test_damaged_feed.py` | Twenty tests for damaged input |
+| `test_sanity_report.py` | Fourteen tests for the count report |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
@@ -93,12 +101,20 @@ value changes without the argument changing with it.
 ## When the account clears
 
 1. Put the fares feed in `feeds/fares` and the timetable feed in
-   `feeds/timetable`.
+   `feeds/timetable`. Both accept a folder or a zip, and a folder holding the
+   zip.
 2. Run `python feed_audit.py --feed feeds/fares --timetable feeds/timetable`
-   and read every rejected record before trusting a number.
-3. Check the licence text for commercial use, which decides whether ADR-0003
+   and read the rejected count and the unopened files before any total. A feed
+   that did not load looks exactly like a feed that is empty.
+3. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
+   --origin GRN --budget 20` and read what the count left out.
+4. Check the licence text for commercial use, which decides whether ADR-0003
    can proceed.
-4. Run the sweep for the Stage 1 count that decides go/no-go.
+5. Run the sweep for the Stage 1 count that decides go/no-go.
+
+The four readings in the sanity report are not four answers to one question.
+They are one question asked in four ways, and the gap between them is the part
+worth reading.
 
 ## Commit convention
 
@@ -143,6 +159,15 @@ replace it with the downloaded feeds once they land, and name a real origin:
 ```
 python benchmark.py --shape hub_spoke --stations 300 --schedules 8000 --caps 0,60,200 --transfer-only
 python benchmark.py --feed feeds/fares --origin GRN --queries 40 --caps 0,60,200 --transfer-only
+```
+
+To question a count, and to break a feed on purpose:
+
+```
+python sanity_report.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20
+python damage_feed.py --list
+python damage_feed.py _demo_feed _damaged crlf
+python damage_feed.py _demo_feed _damaged truncated_record --target ffl
 ```
 
 Swap `_demo_feed` for the downloaded feeds to get the real answer. The fares

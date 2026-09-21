@@ -48,6 +48,7 @@ def audit(fares: FaresDb, timetable: TimetableDb) -> dict[str, object]:
         "fares_files": sorted(fares.report.files_read),
         "timetable_files": sorted(timetable.report.files_read),
         "rejected_examples": fares.report.skipped_examples + timetable.report.skipped_examples,
+        "unopened_files": fares.report.skipped_files + timetable.report.skipped_files,
         "stations_with_a_fare_and_no_timetable_entry": len(fare_crs - timetable_crs),
         "stations_with_a_train_and_no_fare_entry": len(timetable_crs - fare_crs),
         "sample_fare_only_stations": sorted(fare_crs - timetable_crs)[:SAMPLE_LIMIT],
@@ -72,6 +73,11 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
     print(
         f"  stations {fares['stations']}, flows {fares['flows']}, fares {fares['fares']}, "
         f"ticket types {fares['ticket_types']}, railcards {fares['railcards']}"
+    )
+    print(
+        f"  location codes with no station code {fares['locations_without_a_station_code']}, "
+        f"extra codes for one station {fares['extra_location_codes_for_a_station']}, "
+        f"fares with no flow {fares['fares_with_no_flow_record']}"
     )
     print(
         f"  lines {fares_report['lines']}, handled {fares_report['parsed']}, "
@@ -111,6 +117,15 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
         print("Rejected records")
         for example in examples:
             print(f"  {example}")
+
+    unopened = report["unopened_files"]
+    if unopened:
+        print("Files not opened")
+        for entry in unopened:
+            print(f"  {entry}")
+
+    print("Read the rejected count and the unopened files before the totals: a record")
+    print("that never loaded is a destination that never appears.")
 
 
 def main(argv: list[str] | None = None) -> int:
