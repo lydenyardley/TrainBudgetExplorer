@@ -1,7 +1,8 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 45 tests. The feed download clears when the
+damaged input, date-aware when asked, and covered by 55 tests. The journey
+search is measured rather than tuned by feel. The feed download clears when the
 Marketplace account is approved (21 September 2026).
 **Created:** 21 September 2026
 
@@ -31,8 +32,9 @@ changes, and a two-adult party price for Two Together railcard holders.
 
 - **Built:** `atoc_fares.py` answers budget queries from the fares feed.
   `atoc_timetable.py` answers journey time, change count, and reachability from
-  the CIF timetable feed. `grantham_sweep.py` joins them, and `feed_audit.py`
-  reports what a feed actually contained. 41 tests pass.
+  the CIF timetable feed. `grantham_sweep.py` joins them, `feed_audit.py`
+  reports what a feed actually contained, and `benchmark.py` measures the journey
+  search. 55 tests pass.
 - **Blocked:** the feeds need a Marketplace account and a licence accepted in the
   owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
@@ -51,6 +53,17 @@ will appear on one. `adr/ADR-0006-timetable-layer.md` and
 `adr/ADR-0008-date-aware-services.md` list every approximation and what removes
 it.
 
+## Why the onward search stops at 200 departures
+
+A one-change journey is found by looking for an onward train at every place the
+origin can reach. The search considers the 200 earliest departures at each
+interchange. That number was measured, not guessed: on a hub-and-spoke network,
+where every journey past the hub needs a change, capping at 60 dropped ten of
+thirty journeys while saving under a millisecond, and capping at 200 dropped
+none. Measurements for both feed shapes are in
+`adr/ADR-0009-onward-departure-cap.md`, and `test_benchmark.py` fails if the
+value changes without the argument changing with it.
+
 ## Files
 
 | File | Purpose |
@@ -61,11 +74,13 @@ it.
 | `feed_audit.py` | CLI: what each feed contained and where they disagree |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
+| `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
+| `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
@@ -99,6 +114,14 @@ python -m unittest discover -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --date 2026-09-27
+```
+
+To measure the journey search, build an invented feed of the shape you want,
+replace it with the downloaded feeds once they land, and name a real origin:
+
+```
+python benchmark.py --shape hub_spoke --stations 300 --schedules 8000 --caps 0,60,200 --transfer-only
+python benchmark.py --feed feeds/fares --origin GRN --queries 40 --caps 0,60,200 --transfer-only
 ```
 
 Swap `_demo_feed` for the downloaded feeds to get the real answer. The fares

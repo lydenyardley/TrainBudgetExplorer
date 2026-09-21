@@ -19,8 +19,11 @@ from pathlib import Path
 
 from parse_report import ParseReport, count, decode_lines, iter_lines, peek
 
-DEFAULT_CONNECTION_MINUTES = 5
-MAX_ONWARD_DEPARTURES = 60
+# Onward departures the one-change search will consider at each interchange.
+# 200 is measured, not guessed: it is the smallest cap that lost no journey on
+# either synthetic network, and it held the median query under 400 ms on the
+# densest one. See adr/ADR-0009-onward-departure-cap.md.
+MAX_ONWARD_DEPARTURES = 200
 MINUTES_PER_DAY = 1440
 
 _UNSET = object()
@@ -571,11 +574,12 @@ class TimetableDb:
         max_changes: int = 1,
         connection_minutes: int | None = None,
         day: date | None = None,
+        max_onward: int | None = MAX_ONWARD_DEPARTURES,
     ) -> Journey | None:
         self._ensure_indexes(day)
         best = self._direct_journey(origin_crs, destination_crs)
         if max_changes >= 1:
-            best = self._one_change_journey(origin_crs, destination_crs, best, connection_minutes)
+            best = self._one_change_journey(origin_crs, destination_crs, best, connection_minutes, max_onward)
         return best
 
     def _direct_journey(self, origin_crs: str, destination_crs: str) -> Journey | None:
@@ -603,6 +607,7 @@ class TimetableDb:
         destination_crs: str,
         best: Journey | None,
         connection_minutes: int | None,
+        max_onward: int | None,
     ) -> Journey | None:
         for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
             if best is not None and departure >= best.arrival:
@@ -627,7 +632,8 @@ class TimetableDb:
                     continue
                 times = self._departure_times[interchange_crs]
                 start = bisect.bisect_left(times, earliest_onward)
-                for onward_departure, onward_index, onward_stop_index in entries[start : start + MAX_ONWARD_DEPARTURES]:
+                window = entries[start:] if max_onward is None else entries[start : start + max_onward]
+                for onward_departure, onward_index, onward_stop_index in window:
                     if onward_index == schedule_index:
                         continue
                     onward_schedule = self.schedules[onward_index]
