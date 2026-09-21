@@ -1,14 +1,14 @@
 # Train Budget Explorer
 
-**Status:** Stage 1 in progress. Parser built and verified; the fares download is
-blocked on a Marketplace account (21 September 2026).
+**Status:** Stage 1 in progress. Both parser layers are built and verified. The
+feed download is blocked on a Marketplace account (21 September 2026).
 **Created:** 21 September 2026
 
 ## What this is
 
 From any UK station, find every destination reachable for under a set budget
-(e.g. "≤£20 return from Grantham"), filterable by city/town, built on official
-UK rail open data.
+(e.g. "≤£20 return from Grantham"), with the journey time, the number of
+changes, and a two-adult party price for Two Together railcard holders.
 
 ## Decided summary
 
@@ -28,22 +28,33 @@ UK rail open data.
 
 ## Stage 1 status
 
-- **Built:** `atoc_fares.py` parses the real record layouts and answers budget
-  queries. `grantham_sweep.py` is the go/no-go instrument. Ten tests pass.
-- **Blocked:** the fares feed needs a Marketplace account and a licence accepted
-  in the owner's name. Nothing about it is anonymously readable.
+- **Built:** `atoc_fares.py` answers budget queries from the fares feed.
+  `atoc_timetable.py` answers journey time, change count, and reachability from
+  the CIF timetable feed. `grantham_sweep.py` joins them. 21 tests pass.
+- **Blocked:** the feeds need a Marketplace account and a licence accepted in the
+  owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
   the licence terms for commercial use.
 - **Details and evidence:** `stage-1-results.md`, `adr/ADR-0005-data-access-and-blocker.md`.
+
+## What the journey times mean
+
+A journey time is the fastest service in the feed, with one change allowed by
+default. Service days and schedule overlays are not honoured yet, so read the
+times as typical rather than date-specific. `adr/ADR-0006-timetable-layer.md`
+lists every approximation and what would remove it.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `atoc_fares.py` | Fares feed parser and the budget query |
-| `grantham_sweep.py` | CLI: every destination in a budget from one origin |
-| `make_synthetic_feed.py` | Builds an invented feed folder in the real layouts |
-| `test_atoc_fares.py` | Ten tests against the synthetic feed |
+| `atoc_timetable.py` | CIF timetable parser, journey and reachability queries |
+| `grantham_sweep.py` | CLI: every destination in a budget, with journeys |
+| `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
+| `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
+| `test_atoc_timetable.py` | Nine tests against the synthetic timetable |
+| `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
 | `adr/` | Decisions, numbered, newest last |
@@ -51,12 +62,13 @@ UK rail open data.
 ## Run it
 
 ```
-python make_synthetic_feed.py _demo_feed
-python -m unittest -v test_atoc_fares
-python grantham_sweep.py --feed _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
+python make_synthetic_feed.py _demo_feed --unserved-station
+python -m unittest discover -p "test_*.py"
+python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
 ```
 
-Swap `_demo_feed` for the downloaded feed folder to get the real answer.
+Swap `_demo_feed` for the downloaded feeds to get the real answer. The fares
+sweep alone works without `--timetable`, and then shows prices without journeys.
 
 ## Why docs exist here
 
