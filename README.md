@@ -1,7 +1,7 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, and covered by 41 tests. The feed download clears when the
+damaged input, date-aware when asked, and covered by 45 tests. The feed download clears when the
 Marketplace account is approved (21 September 2026).
 **Created:** 21 September 2026
 
@@ -42,9 +42,14 @@ changes, and a two-adult party price for Two Together railcard holders.
 ## What the journey times mean
 
 A journey time is the fastest service in the feed, with one change allowed by
-default. Service days and schedule overlays are not honoured yet, so read the
-times as typical rather than date-specific. `adr/ADR-0006-timetable-layer.md`
-lists every approximation and what would remove it.
+default. Pass `--date YYYY-MM-DD` and the search honours each schedule's service
+days, its date range, and its STP indicator, so an overlay replaces the train it
+covers and a cancellation removes it. Without a date the search reads every
+schedule, which suits the Stage 1 coverage count and is wrong for a specific
+Saturday. Bank holidays are not interpreted yet, so a schedule that skips them
+will appear on one. `adr/ADR-0006-timetable-layer.md` and
+`adr/ADR-0008-date-aware-services.md` list every approximation and what removes
+it.
 
 ## Files
 
@@ -58,7 +63,7 @@ lists every approximation and what would remove it.
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
-| `test_atoc_timetable.py` | Nine tests against the synthetic timetable |
+| `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_commit_message.py` | Eleven tests for the message checker |
@@ -93,6 +98,7 @@ python make_synthetic_feed.py _demo_feed --unserved-station
 python -m unittest discover -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
+python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --date 2026-09-27
 ```
 
 Swap `_demo_feed` for the downloaded feeds to get the real answer. The fares

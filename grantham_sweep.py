@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from datetime import date
 from pathlib import Path
 
 from atoc_fares import FaresDb, Reachable, format_pence
@@ -30,6 +31,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="treat the budget as the total for the party rather than per adult",
     )
     parser.add_argument("--max-changes", type=int, default=1, help="changes to allow when planning a journey")
+    parser.add_argument(
+        "--date",
+        default=None,
+        help="service date as YYYY-MM-DD, applying each schedule's days and overlays",
+    )
     parser.add_argument("--limit", type=int, default=15, help="rows to print")
     parser.add_argument("--csv", default=None, help="write the full result set to this path")
     return parser.parse_args(argv)
@@ -41,10 +47,11 @@ def enrich_with_journeys(
     origin_crs: str,
     *,
     max_changes: int = 1,
+    day: date | None = None,
 ) -> list[tuple[Reachable, Journey | None]]:
     """Attach the best journey to each destination. None means no service in the feed."""
     return [
-        (reachable, timetable.best_journey(origin_crs, reachable.crs, max_changes=max_changes))
+        (reachable, timetable.best_journey(origin_crs, reachable.crs, max_changes=max_changes, day=day))
         for reachable in results
     ]
 
@@ -77,9 +84,17 @@ def main(argv: list[str] | None = None) -> int:
         party_budget=args.party_budget,
     )
 
+    day: date | None = None
+    if args.date:
+        try:
+            day = date.fromisoformat(args.date)
+        except ValueError:
+            print(f"date {args.date!r} is not YYYY-MM-DD", file=sys.stderr)
+            return 2
+
     timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
     rows = (
-        enrich_with_journeys(results, timetable, origin.crs, max_changes=args.max_changes)
+        enrich_with_journeys(results, timetable, origin.crs, max_changes=args.max_changes, day=day)
         if timetable
         else [(reachable, None) for reachable in results]
     )
@@ -91,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"timetable: {timetable_stats['schedules']} schedules, {timetable_stats['calling_points']} calling points")
     print(f"origin: {origin.crs} {origin.name}")
     print(f"budget: {format_pence(budget_pence)} {mode}, {args.adults} adult(s), railcard: {args.railcard or 'none'}")
+    if timetable:
+        print(f"services: {day.isoformat() if day else 'every schedule in the feed, dates ignored'}")
     print(f"destinations under budget: {len(rows)}")
     if timetable:
         served = sum(1 for _, journey in rows if journey is not None)
