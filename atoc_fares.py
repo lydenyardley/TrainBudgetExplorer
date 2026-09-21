@@ -209,12 +209,22 @@ def _round_up_to(value: Fraction, step: int) -> int:
     return units * step
 
 
+def _tally(counts: dict[str, int] | None, reason: str) -> None:
+    """Count why a fare or flow did not become a destination, when asked."""
+    if counts is not None:
+        counts[reason] = counts.get(reason, 0) + 1
+
+
 class FaresDb:
     """Indexes the feed files that budget discovery reads."""
 
     def __init__(self) -> None:
         self.locations_by_nlc: dict[str, Location] = {}
         self.locations_by_crs: dict[str, Location] = {}
+        # One station code can hold several location codes, and a real feed does
+        # this for most towns. Flows are keyed by location code, so a query has
+        # to consider all of them or it misses fares that are right there.
+        self.nlcs_by_crs: dict[str, set[str]] = {}
         self.ticket_types: dict[str, TicketType] = {}
         self.railcards: dict[str, Railcard] = {}
         self.flows: dict[str, Flow] = {}
@@ -296,7 +306,9 @@ class FaresDb:
         nlc = _text(line, LOCATION_OFFSETS, "nlc")
         existing = self.locations_by_nlc.get(nlc)
         if existing is not None and existing.crs:
-            self.locations_by_crs.pop(existing.crs, None)
+            self.nlcs_by_crs.get(existing.crs, set()).discard(nlc)
+            if self.locations_by_crs.get(existing.crs) is existing:
+                self.locations_by_crs.pop(existing.crs, None)
         if marker == "D":
             self.locations_by_nlc.pop(nlc, None)
             return
@@ -307,7 +319,8 @@ class FaresDb:
         )
         self.locations_by_nlc[nlc] = location
         if location.crs:
-            self.locations_by_crs[location.crs] = location
+            self.nlcs_by_crs.setdefault(location.crs, set()).add(nlc)
+            self.locations_by_crs.setdefault(location.crs, location)
 
     def _load_ticket_types(self, line: str) -> None:
         marker = _text(line, TICKET_TYPE_OFFSETS, "update_marker").upper()
@@ -353,6 +366,21 @@ class FaresDb:
             "fares": sum(len(bucket) for bucket in self.fares_by_flow.values()),
             "ticket_types": len(self.ticket_types),
             "railcards": len(self.railcards),
+            # A feed carries locations with no station code, and fares whose flow
+            # is not in the file. Neither is an error, and both change any count
+            # that ignores them, so both are reported.
+            "locations_without_a_station_code": sum(
+                1 for location in self.locations_by_nlc.values() if not location.crs
+            ),
+            "extra_location_codes_for_a_station": sum(
+                max(0, len(nlcs) - 1) for nlcs in self.nlcs_by_crs.values()
+            ),
+            "fares_with_no_flow_record": sum(
+                1
+                for flow_id, bucket in self.fares_by_flow.items()
+                if flow_id not in self.flows
+                for _ in bucket
+            ),
         }
 
     def railcard_code(self, name: str) -> str | None:
@@ -382,6 +410,7 @@ class FaresDb:
         adults: int = 1,
         railcard: str | None = None,
         party_budget: bool = False,
+        tally: dict[str, int] | None = None,
     ) -> list[Reachable]:
         """Cheapest standard-class return to each destination inside the budget.
 
@@ -389,24 +418,44 @@ class FaresDb:
         the standard price is cheaper, since a cardholder can always decline the
         discount. party_budget tests the total for the party instead of the
         per-adult price.
+
+        Pass a dict as tally to record why each flow or fare did not become a
+        destination. A destination the feed prices but cannot name is dropped,
+        and a count that ignores those is wrong without saying so.
         """
         origin = self.locations_by_crs.get(origin_crs.strip().upper())
         if origin is None:
             raise KeyError(f"origin station {origin_crs!r} is not in the feed")
+        origin_nlcs = self.nlcs_by_crs.get(origin.crs, {origin.nlc})
         railcard_code = self.railcard_code(railcard) if railcard else None
         if railcard and railcard_code is None:
             raise KeyError(f"railcard {railcard!r} is not in the feed")
 
         best_by_crs: dict[str, Reachable] = {}
         for flow in self.flows.values():
-            if flow.origin_nlc != origin.nlc:
+            if flow.origin_nlc not in origin_nlcs:
                 continue
             destination = self.locations_by_nlc.get(flow.destination_nlc)
-            if destination is None or not destination.crs or destination.crs == origin.crs:
+            if destination is None:
+                _tally(tally, "destination_has_no_location_record")
                 continue
-            for fare in self.fares_by_flow.get(flow.flow_id, {}).values():
+            if not destination.crs:
+                _tally(tally, "destination_has_no_station_code")
+                continue
+            if destination.crs == origin.crs:
+                _tally(tally, "fare_to_the_origin_itself")
+                continue
+            bucket = self.fares_by_flow.get(flow.flow_id)
+            if not bucket:
+                _tally(tally, "flow_with_no_fare")
+                continue
+            for fare in bucket.values():
                 ticket = self.ticket_types.get(fare.ticket_code)
-                if ticket is None or not ticket.is_standard_return:
+                if ticket is None:
+                    _tally(tally, "fare_with_no_ticket_type")
+                    continue
+                if not ticket.is_standard_return:
+                    _tally(tally, "ticket_is_not_a_standard_return")
                     continue
                 railcard_pence = (
                     self.railcard_price(railcard_code, fare.ticket_code, fare.pence)
@@ -417,6 +466,7 @@ class FaresDb:
                 party_pence = best_pence * adults
                 tested = party_pence if party_budget else best_pence
                 if tested > budget_pence:
+                    _tally(tally, "fare_above_the_budget")
                     continue
                 candidate = Reachable(
                     crs=destination.crs,
@@ -430,8 +480,10 @@ class FaresDb:
                     off_peak=ticket.restricted_by_train,
                 )
                 current = best_by_crs.get(destination.crs)
-                if current is None or candidate.best_pence < current.best_pence:
-                    best_by_crs[destination.crs] = candidate
+                if current is not None and candidate.best_pence >= current.best_pence:
+                    _tally(tally, "cheaper_index_already_held")
+                    continue
+                best_by_crs[destination.crs] = candidate
         return sorted(best_by_crs.values(), key=lambda reachable: (reachable.best_pence, reachable.crs))
 
 
