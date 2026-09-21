@@ -1,7 +1,8 @@
 # Train Budget Explorer
 
-**Status:** Stage 1 in progress. Both parser layers are built and verified. The
-feed download is blocked on a Marketplace account (21 September 2026).
+**Status:** Stage 1 in progress. Both parser layers are built, hardened against
+damaged input, and covered by 41 tests. The feed download clears when the
+Marketplace account is approved (21 September 2026).
 **Created:** 21 September 2026
 
 ## What this is
@@ -30,7 +31,8 @@ changes, and a two-adult party price for Two Together railcard holders.
 
 - **Built:** `atoc_fares.py` answers budget queries from the fares feed.
   `atoc_timetable.py` answers journey time, change count, and reachability from
-  the CIF timetable feed. `grantham_sweep.py` joins them. 21 tests pass.
+  the CIF timetable feed. `grantham_sweep.py` joins them, and `feed_audit.py`
+  reports what a feed actually contained. 41 tests pass.
 - **Blocked:** the feeds need a Marketplace account and a licence accepted in the
   owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
@@ -51,13 +53,29 @@ lists every approximation and what would remove it.
 | `atoc_fares.py` | Fares feed parser and the budget query |
 | `atoc_timetable.py` | CIF timetable parser, journey and reachability queries |
 | `grantham_sweep.py` | CLI: every destination in a budget, with journeys |
+| `feed_audit.py` | CLI: what each feed contained and where they disagree |
+| `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
+| `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Nine tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
+| `test_feed_audit.py` | Nine tests for the audit and for damaged input |
+| `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
+| `CONTRIBUTING.md` | Commit convention and how to run the tests |
 | `adr/` | Decisions, numbered, newest last |
+
+## When the account clears
+
+1. Put the fares feed in `feeds/fares` and the timetable feed in
+   `feeds/timetable`.
+2. Run `python feed_audit.py --feed feeds/fares --timetable feeds/timetable`
+   and read every rejected record before trusting a number.
+3. Check the licence text for commercial use, which decides whether ADR-0003
+   can proceed.
+4. Run the sweep for the Stage 1 count that decides go/no-go.
 
 ## Commit convention
 
@@ -73,6 +91,7 @@ git log -1 --format=%B | python check_commit_message.py
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station
 python -m unittest discover -p "test_*.py"
+python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
 ```
 
