@@ -8,11 +8,13 @@ traced to a file, a line, or an encoding instead of guessed at.
 from __future__ import annotations
 
 import itertools
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO, Callable, Iterator
 
 MAX_SKIPPED_EXAMPLES = 5
+ARCHIVE_SUFFIXES = (".zip",)
 
 
 @dataclass
@@ -23,6 +25,17 @@ class ParseReport:
     records_skipped: int = 0
     encoding_fallback_lines: int = 0
     skipped_examples: list[str] = field(default_factory=list)
+    skipped_files: list[str] = field(default_factory=list)
+
+    def skip_file(self, message: str) -> None:
+        """Record a whole file the loader chose not to read.
+
+        An archive inside an archive is not a damaged record, so it does not
+        belong in the record counters. Saying nothing about it would be worse
+        than either: a compressed file decoded as text yields thousands of
+        nonsense records that look like data.
+        """
+        self.skipped_files.append(message)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -31,6 +44,7 @@ class ParseReport:
             "parsed": self.records_parsed,
             "skipped": self.records_skipped,
             "encoding_fallbacks": self.encoding_fallback_lines,
+            "skipped_files": len(self.skipped_files),
         }
 
 
@@ -46,12 +60,67 @@ def decode_lines(handle: BinaryIO, report: ParseReport) -> Iterator[str]:
         except UnicodeDecodeError:
             report.encoding_fallback_lines += 1
             line = raw.decode("latin-1")
+        # A byte order mark is not whitespace to str.strip, so it would ride
+        # along in the first field of the first record of the file.
+        if line.startswith("\ufeff"):
+            line = line[1:]
         yield line.rstrip("\r\n")
 
 
 def iter_lines(path: Path, report: ParseReport) -> Iterator[str]:
     with path.open("rb") as handle:
         yield from decode_lines(handle, report)
+
+
+def read_feed_files(
+    path: str | Path,
+    report: ParseReport,
+    consume: Callable[[str, Iterator[str]], None],
+) -> None:
+    """Hand every feed file to consume, whether it arrived as a folder or a zip.
+
+    A real download is often a folder holding the archive, and occasionally an
+    archive holding another one. Both are handled here so the two parsers cannot
+    disagree about what a feed folder is.
+
+    ``consume`` is called while the file is still open, because the lines are
+    streamed rather than collected: a feed file can be tens of megabytes, and
+    holding one in memory is what this design exists to avoid.
+    """
+    path = Path(path)
+    if not path.exists():
+        # A path that is not there must say so. An empty feed answers every
+        # question with "nowhere" and looks exactly like a real answer.
+        raise FileNotFoundError(f"no feed at {path}")
+    if path.is_dir():
+        for child in sorted(path.iterdir()):
+            if not child.is_file():
+                continue
+            if child.suffix.lower() in ARCHIVE_SUFFIXES:
+                _read_archive(child, report, consume)
+                continue
+            consume(child.name, iter_lines(child, report))
+        return
+    if path.suffix.lower() in ARCHIVE_SUFFIXES:
+        _read_archive(path, report, consume)
+        return
+    consume(path.name, iter_lines(path, report))
+
+
+def _read_archive(
+    path: Path,
+    report: ParseReport,
+    consume: Callable[[str, Iterator[str]], None],
+) -> None:
+    with zipfile.ZipFile(path) as archive:
+        for name in sorted(archive.namelist()):
+            if name.endswith("/"):
+                continue
+            if Path(name).suffix.lower() in ARCHIVE_SUFFIXES:
+                report.skip_file(f"{path.name}: {name} is an archive inside an archive, not opened")
+                continue
+            with archive.open(name) as handle:
+                consume(name, decode_lines(handle, report))
 
 
 def peek(lines: Iterator[str]) -> tuple[str | None, Iterator[str]]:

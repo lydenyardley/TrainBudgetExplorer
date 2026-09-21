@@ -10,12 +10,11 @@ says otherwise, so a party price is adults x per-adult.
 
 from __future__ import annotations
 
-import zipfile
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
-from parse_report import ParseReport, count, decode_lines, iter_lines
+from parse_report import ParseReport, count, read_feed_files
 
 ROUNDING_STEP_PENCE = 5
 
@@ -133,6 +132,19 @@ MINIMUM_FARE = (
     ("minimum_fare_pence", 8),
 )
 
+# A record shorter than its layout is truncated, and slicing it anyway hands
+# back empty fields that read as real values: a cut off fare becomes 0, and a cut
+# off flow id becomes a flow keyed on nothing. The width of the fields actually
+# read is the cheapest test that says so.
+def _read_width(spec: tuple[tuple[str, int], ...], last_field: str) -> int:
+    offsets = _offsets(spec)
+    end = offsets[last_field][1]
+    return end
+
+
+FLOW_F_WIDTH = _read_width(FLOW_F, "flow_id")
+FLOW_T_WIDTH = _read_width(FLOW_T, "restriction_code")
+
 FLOW_F_OFFSETS = _offsets(FLOW_F)
 FLOW_T_OFFSETS = _offsets(FLOW_T)
 LOCATION_OFFSETS = _offsets(LOCATION)
@@ -209,6 +221,12 @@ def _round_up_to(value: Fraction, step: int) -> int:
     return units * step
 
 
+def _require_width(line: str, width: int, what: str) -> None:
+    """Refuse a record that is shorter than the fields it needs."""
+    if len(line) < width:
+        raise ValueError(f"{what} record is {len(line)} characters, needs {width}")
+
+
 def _tally(counts: dict[str, int] | None, reason: str) -> None:
     """Count why a fare or flow did not become a destination, when asked."""
     if counts is not None:
@@ -236,20 +254,7 @@ class FaresDb:
     # -- loading ---------------------------------------------------------
 
     def load_feed(self, path: str | Path) -> "FaresDb":
-        path = Path(path)
-        if path.is_dir():
-            for child in sorted(path.iterdir()):
-                if child.is_file():
-                    self._load_lines(child.name, iter_lines(child, self.report))
-        elif path.suffix.lower() == ".zip":
-            with zipfile.ZipFile(path) as archive:
-                for name in sorted(archive.namelist()):
-                    if name.endswith("/"):
-                        continue
-                    with archive.open(name) as handle:
-                        self._load_lines(name, decode_lines(handle, self.report))
-        else:
-            self._load_lines(path.name, iter_lines(path, self.report))
+        read_feed_files(path, self.report, self._load_lines)
         return self
 
     def _load_lines(self, name: str, lines) -> None:
@@ -269,6 +274,7 @@ class FaresDb:
     def _load_flows(self, line: str) -> None:
         record_type = _text(line, FLOW_F_OFFSETS, "record_type").upper()
         if record_type == "F":
+            _require_width(line, FLOW_F_WIDTH, "flow")
             marker = _text(line, FLOW_F_OFFSETS, "update_marker").upper()
             flow_id = _text(line, FLOW_F_OFFSETS, "flow_id")
             if marker == "D":
@@ -282,6 +288,7 @@ class FaresDb:
                 route_code=_text(line, FLOW_F_OFFSETS, "route_code"),
             )
         elif record_type == "T":
+            _require_width(line, FLOW_T_WIDTH, "fare")
             marker = _text(line, FLOW_T_OFFSETS, "update_marker").upper()
             flow_id = _text(line, FLOW_T_OFFSETS, "flow_id")
             ticket_code = _text(line, FLOW_T_OFFSETS, "ticket_code")

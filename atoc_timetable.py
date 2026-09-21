@@ -12,12 +12,11 @@ open-source parsers named in README.md.
 from __future__ import annotations
 
 import bisect
-import zipfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from parse_report import ParseReport, count, decode_lines, iter_lines, peek
+from parse_report import ParseReport, count, peek, read_feed_files
 
 # Onward departures the one-change search will consider at each interchange.
 # 200 is measured, not guessed: it is the smallest cap that lost no journey on
@@ -327,20 +326,7 @@ class TimetableDb:
     # -- loading ---------------------------------------------------------
 
     def load_feed(self, path: str | Path) -> "TimetableDb":
-        path = Path(path)
-        if path.is_dir():
-            for child in sorted(path.iterdir()):
-                if child.is_file():
-                    self._load_lines(child.name, iter_lines(child, self.report))
-        elif path.suffix.lower() == ".zip":
-            with zipfile.ZipFile(path) as archive:
-                for name in sorted(archive.namelist()):
-                    if name.endswith("/"):
-                        continue
-                    with archive.open(name) as handle:
-                        self._load_lines(name, decode_lines(handle, self.report))
-        else:
-            self._load_lines(path.name, iter_lines(path, self.report))
+        read_feed_files(path, self.report, self._load_lines)
         return self
 
     def _load_lines(self, name: str, lines) -> None:
