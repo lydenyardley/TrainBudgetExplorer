@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 _demo_feed/
+_bench_feed/
 RJFAF*/
 rjfaf*/
 *.zip
+
+demo.html
+demo_*.html

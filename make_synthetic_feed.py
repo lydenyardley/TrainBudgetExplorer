@@ -444,7 +444,7 @@ def build_large_synthetic_feed(
                 "update_marker": "A",
                 "record_type": "L",
                 "nlc": nlcs[index],
-                "description": f"SYNTH STATION {index}",
+                "description": f"SYNTH {index:04d}",
                 "crs": crs_codes[index],
             },
             LOCATION,
@@ -483,7 +483,9 @@ def build_large_synthetic_feed(
         _line(
             {
                 "record_type": "A",
-                "name": f"SYNTH STATION {index}",
+                # Short enough to survive the fixed width name field. A longer
+                # name is truncated on read, which made two stations look alike.
+                "name": f"SYNTH {index:04d}",
                 "tiploc": tiplocs[index],
                 "crs": crs_codes[index],
                 "change_time": "05",

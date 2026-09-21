@@ -1,9 +1,10 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 55 tests. The journey
-search is measured rather than tuned by feel. The feed download clears when the
-Marketplace account is approved (21 September 2026).
+damaged input, date-aware when asked, and covered by 64 tests. The journey
+search is measured rather than tuned by feel, and the demo page runs on the
+synthetic feeds. The feed download clears when the Marketplace account is
+approved (21 September 2026).
 **Created:** 21 September 2026
 
 ## What this is
@@ -33,8 +34,8 @@ changes, and a two-adult party price for Two Together railcard holders.
 - **Built:** `atoc_fares.py` answers budget queries from the fares feed.
   `atoc_timetable.py` answers journey time, change count, and reachability from
   the CIF timetable feed. `grantham_sweep.py` joins them, `feed_audit.py`
-  reports what a feed actually contained, and `benchmark.py` measures the journey
-  search. 55 tests pass.
+  reports what a feed actually contained, `benchmark.py` measures the journey
+  search, and `build_demo_page.py` writes the browsable page. 64 tests pass.
 - **Blocked:** the feeds need a Marketplace account and a licence accepted in the
   owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
@@ -75,12 +76,14 @@ value changes without the argument changing with it.
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
+| `build_demo_page.py` | Writes the self-contained demo page from the feeds |
 | `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
+| `test_build_demo_page.py` | Nine tests for the page payload and template |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
@@ -105,6 +108,24 @@ and `check_commit_message.py` checks a message against them.
 ```
 git log -1 --format=%B | python check_commit_message.py
 ```
+
+## The demo page
+
+`build_demo_page.py` writes one self-contained HTML file: every priced
+destination from an origin, with a budget slider, a city or town filter, and a
+choice of whether the budget covers one adult or two on a Two Together Railcard.
+The page is generated from a feed rather than hand-written, so the real feeds
+replace the synthetic ones with no change to the page.
+
+```
+python make_synthetic_feed.py _demo_feed --unserved-station
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRN --out demo.html
+```
+
+It carries no affiliate links and is not deployed. `adr/ADR-0010-demo-page-before-the-gate.md`
+records why it exists before the go/no-go gate opens, and what stays behind the
+gate until the licence text is read.
 
 ## Run it
 
