@@ -38,7 +38,7 @@ STATIONS = (
 )
 
 UNSERVED_STATION = ("7000", "SLP", "SLEEPY")
-UNSERVED_FLOW = ("0000007", "1000", "7000")
+UNSERVED_FLOW = ("0000007", "1000", "7000", "00000")
 UNSERVED_FARE = ("0000007", "SDR", 1200, "00")
 
 TICKET_TYPES = (
@@ -48,13 +48,16 @@ TICKET_TYPES = (
     ("SDS", "ANYTIME DAY S", "2", "S", "0"),
 )
 
+# (flow_id, origin NLC, destination NLC, route code). A real feed prices the
+# same station pair through several route codes, which is why the route code is
+# part of the record rather than an assumption.
 FLOWS = (
-    ("0000001", "1000", "2000"),
-    ("0000002", "1000", "3000"),
-    ("0000003", "1000", "4000"),
-    ("0000004", "1000", "5000"),
-    ("0000005", "2000", "1000"),
-    ("0000006", "1000", "6000"),
+    ("0000001", "1000", "2000", "00000"),
+    ("0000002", "1000", "3000", "00000"),
+    ("0000003", "1000", "4000", "00000"),
+    ("0000004", "1000", "5000", "00000"),
+    ("0000005", "2000", "1000", "00000"),
+    ("0000006", "1000", "6000", "00000"),
 )
 
 FARES = (
@@ -67,6 +70,37 @@ FARES = (
     ("0000004", "SDR", 8400, "00"),
     ("0000005", "SDR", 1420, "00"),
     ("0000006", "FDR", 1500, "00"),
+)
+
+# The shapes a real feed has and a tidy invented one does not. Off by default,
+# so tests about budget arithmetic read a feed with nothing puzzling in it.
+#
+# 9999 is a location with no station code, which is how a real feed carries a
+# group or a non-station destination. 8000 has no location record at all. Both
+# carry a fare, so a query that dropped them silently would undercount.
+# 1500 is a second location code for Grantham, which is how a real feed carries
+# one town, and 0000016 departs from it.
+REAL_SHAPE_STATIONS = (
+    ("9999", "", "LONDON ZONES"),
+    ("1500", "GRN", "GRANTHAM STN"),
+)
+REAL_SHAPE_FLOWS = (
+    ("0000010", "1000", "2000", "00001"),
+    ("0000013", "1000", "2000", "00002"),
+    ("0000011", "1000", "9999", "00000"),
+    ("0000012", "1000", "8000", "00000"),
+    ("0000014", "1000", "3000", "00001"),
+    ("0000015", "1000", "1500", "00000"),
+    ("0000016", "1500", "3000", "00000"),
+)
+REAL_SHAPE_FARES = (
+    ("0000010", "CDR", 990, "00"),
+    ("0000013", "CDR", 5000, "00"),
+    ("0000011", "SDR", 500, "00"),
+    ("0000012", "SDR", 500, "00"),
+    ("0000099", "SDR", 1234, "00"),
+    ("0000015", "SDR", 800, "00"),
+    ("0000016", "SDR", 600, "00"),
 )
 
 RAILCARDS = (
@@ -111,17 +145,31 @@ def _line(values: dict[str, str], spec: tuple[tuple[str, int], ...]) -> str:
     return "".join(str(values.get(name, ""))[:width].ljust(width) for name, width in spec)
 
 
-def build_synthetic_feed(path: str | Path, *, include_unserved_station: bool = False) -> Path:
-    """Write the fares feed. The unserved station carries a fare and no train."""
+def build_synthetic_feed(
+    path: str | Path,
+    *,
+    include_unserved_station: bool = False,
+    include_real_shapes: bool = False,
+) -> Path:
+    """Write the fares feed.
+
+    The unserved station carries a fare and no train. The real shapes add the
+    awkward records: several route codes for one station pair, destinations with
+    a fare and no station code, a flow with no fare, and a fare with no flow.
+    """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
 
     stations = STATIONS + (UNSERVED_STATION,) if include_unserved_station else STATIONS
     flows = FLOWS + (UNSERVED_FLOW,) if include_unserved_station else FLOWS
     fares = FARES + (UNSERVED_FARE,) if include_unserved_station else FARES
+    if include_real_shapes:
+        stations += REAL_SHAPE_STATIONS
+        flows += REAL_SHAPE_FLOWS
+        fares += REAL_SHAPE_FARES
 
     flow_lines: list[str] = []
-    for flow_id, origin, destination in flows:
+    for flow_id, origin, destination, route_code in flows:
         flow_lines.append(
             _line(
                 {
@@ -129,7 +177,7 @@ def build_synthetic_feed(path: str | Path, *, include_unserved_station: bool = F
                     "record_type": "F",
                     "origin_nlc": origin,
                     "destination_nlc": destination,
-                    "route_code": "00000",
+                    "route_code": route_code,
                     "flow_id": flow_id,
                 },
                 FLOW_F,
@@ -534,9 +582,20 @@ if __name__ == "__main__":
         action="store_true",
         help="add a station that has a fare and no train service",
     )
+    parser.add_argument(
+        "--real-shapes",
+        action="store_true",
+        help="add several route codes, a stationless destination, and unmatched records",
+    )
     arguments = parser.parse_args()
 
     if arguments.kind in {"fares", "both"}:
-        print(build_synthetic_feed(arguments.path, include_unserved_station=arguments.unserved_station))
+        print(
+            build_synthetic_feed(
+                arguments.path,
+                include_unserved_station=arguments.unserved_station,
+                include_real_shapes=arguments.real_shapes,
+            )
+        )
     if arguments.kind in {"timetable", "both"}:
         print(build_synthetic_timetable(arguments.path))
