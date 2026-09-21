@@ -23,9 +23,11 @@ from pathlib import Path
 
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
+from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
 
 EVERYTHING_PENCE = 1_000_000
 TWO_TOGETHER = "Two Together"
+DEPARTURE_LIMIT = 5
 DEFAULT_NOTE = (
     "Synthetic demo data: the stations, fares, and times are invented to exercise "
     "the pipeline. Real fares and times replace them once the feed download clears."
@@ -41,6 +43,22 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument("--note", default=DEFAULT_NOTE, help="provenance note for the footer")
+    parser.add_argument("--provider", default=DEFAULT_PROVIDER, help="ticket seller to link to")
+    parser.add_argument("--adults", type=int, default=2, help="party size sent to the seller")
+    parser.add_argument(
+        "--departures",
+        type=int,
+        default=DEPARTURE_LIMIT,
+        help="journeys to list under each destination",
+    )
+    parser.add_argument(
+        "--affiliate-network",
+        default=None,
+        choices=sorted(AFFILIATE_NETWORKS),
+        help="wrap ticket links for tracking. Off by default: see ADR-0001 and ADR-0014",
+    )
+    parser.add_argument("--advertiser-id", default=None, help="the seller's id in the network")
+    parser.add_argument("--publisher-id", default="", help="your id in the network")
     return parser.parse_args(argv)
 
 
@@ -52,8 +70,20 @@ def build_payload(
     max_changes: int = 1,
     day: date | None = None,
     note: str = DEFAULT_NOTE,
+    provider: str = DEFAULT_PROVIDER,
+    adults: int = 2,
+    network: str | None = None,
+    advertiser_id: str | None = None,
+    publisher_id: str = "",
+    departure_limit: int = DEPARTURE_LIMIT,
 ) -> dict:
-    """Every priced destination from the origin, with both party prices."""
+    """Every priced destination from the origin, with both party prices.
+
+    Each destination carries the ticket links and the next few journeys. The
+    journeys are options in the feed, not a booking: the fare reported is a
+    walk-up fare valid on any of them, which is why no single one is chosen for
+    the reader.
+    """
     origin = fares.locations_by_crs[origin_crs.strip().upper()]
     single = {row.crs: row for row in fares.destinations_within(origin.crs, EVERYTHING_PENCE, adults=1)}
     pair = (
@@ -72,6 +102,8 @@ def build_payload(
     )
 
     destinations = []
+    tracked = False
+    disclosure: str | None = None
     for crs, one in sorted(single.items(), key=lambda item: item[1].best_pence):
         together = pair.get(crs)
         journey = (
@@ -79,6 +111,23 @@ def build_payload(
             if timetable
             else None
         )
+        options = (
+            timetable.departures(origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit)
+            if timetable
+            else []
+        )
+        link = ticket_link(
+            origin.crs,
+            crs,
+            provider=provider,
+            when=day,
+            adults=adults,
+            network=network,
+            advertiser_id=advertiser_id,
+            publisher_id=publisher_id,
+        )
+        tracked = tracked or link.tracked
+        disclosure = disclosure or link.disclosure
         destinations.append(
             {
                 "crs": crs,
@@ -91,6 +140,11 @@ def build_payload(
                 "minutes": journey.duration if journey else None,
                 "changes": journey.changes if journey else None,
                 "legs": [leg.train_uid for leg in journey.legs] if journey else [],
+                "link": {"url": link.url, "label": link.label, "rel": link.rel},
+                "departures": [
+                    {"depart": option.departure, "arrive": option.arrival, "changes": option.changes}
+                    for option in options
+                ],
             }
         )
 
@@ -104,6 +158,22 @@ def build_payload(
         "note": note,
         "feed": fares.stats(),
         "timetable": timetable.stats() if timetable else None,
+        "adults": adults,
+        "tracked": tracked,
+        "disclosure": disclosure,
+        "railcardNote": (
+            f"Sellers do not accept a railcard in a link, so the price shown for two with a "
+            f"{TWO_TOGETHER} Railcard is what it costs with the card: tick the railcard box on "
+            "their site."
+        ),
+        # Without a date every schedule in the feed is read, so a train that has
+        # a change of plan appears as its permanent and its covering version.
+        "dateNote": (
+            None
+            if day or timetable is None
+            else "No date was given, so every schedule in the feed is read: a train whose plan "
+            "has changed appears twice, and Sunday-only trains appear on every day."
+        ),
     }
 
 
@@ -112,7 +182,7 @@ TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Where can we go from __ORIGIN__ for __BUDGET__?</title>
+<title>Where can we go from __ORIGIN__ for &pound;__BUDGET__?</title>
 <style>
   :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
           --best: rgba(20, 80, 155, .07); --field: #fff; }
@@ -139,6 +209,15 @@ TEMPLATE = """<!doctype html>
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
+            border-radius: .3rem; font: inherit; font-size: .85rem; padding: .1rem .4rem;
+            margin-left: .5rem; cursor: pointer; }
+  .toggle[aria-expanded=true] { border-color: var(--accent); }
+  .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
+         white-space: nowrap; }
+  tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
+  tr.detail ul { margin: 0; padding-left: 1.1rem; }
+  tr.detail li { font-variant-numeric: tabular-nums; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr.best td { background: var(--best); }
   .tag { font-size: .75rem; color: var(--muted); }
@@ -173,7 +252,7 @@ TEMPLATE = """<!doctype html>
 
 <p id="summary"></p>
 <table>
-  <thead><tr><th>Station</th><th class="num">Price</th><th class="num">Time</th><th class="num">Changes</th><th>Ticket</th></tr></thead>
+  <thead><tr><th>Station</th><th class="num">Price</th><th class="num">Time</th><th class="num">Changes</th><th>Ticket</th><th>Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <p id="empty" hidden>Nothing inside this budget. Raise it or switch who it covers.</p>
@@ -181,8 +260,10 @@ TEMPLATE = """<!doctype html>
 
 <footer>
   <p>__NOTE__</p>
-  <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed.</p>
+  <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed. The times are options in the timetable, and the fare shown is valid on all of them, so none is picked for you.</p>
+  <p id="railcardNote"></p>
   <p class="tag" id="provenance"></p>
+  <p id="disclosure" hidden></p>
 </footer>
 
 <script>
@@ -201,6 +282,10 @@ const duration = (minutes) => {
   if (minutes === null || minutes === undefined) return "-";
   const hours = Math.floor(minutes / 60);
   return hours ? hours + "h " + String(minutes % 60).padStart(2, "0") + "m" : minutes + "m";
+};
+const clock = (minutes) => {
+  const hour = Math.floor(minutes / 60) % 24;
+  return String(hour).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0");
 };
 
 function unit() {
@@ -239,6 +324,7 @@ function render() {
       if (className) cell.className = className;
       row.append(cell);
     }
+    cellWithLinks(row, destination, wanted);
     rows.append(row);
   }
 
@@ -249,6 +335,54 @@ function render() {
   empty.hidden = wanted.length > 0;
   more.hidden = wanted.length <= PAGE;
   more.textContent = "Showing the " + PAGE + " cheapest of " + wanted.length + ".";
+}
+
+function cellWithLinks(row, destination, wanted) {
+  // The ticket link sits on the row rather than inside the expander: buying is
+  // the action, and hiding it behind a second click loses the click. The
+  // expander carries the journeys, which are what a reader checks first.
+  const cell = document.createElement("td");
+  const link = document.createElement("a");
+  link.className = "buy";
+  link.href = destination.link.url;
+  link.rel = destination.link.rel;
+  link.target = "_blank";
+  link.textContent = "Tickets";
+  link.title = destination.link.label + " search for " + destination.crs;
+  cell.append(link);
+  if (destination.departures.length) {
+    const toggle = document.createElement("button");
+    toggle.className = "toggle";
+    toggle.type = "button";
+    toggle.textContent = destination.departures.length + " times";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
+    cell.append(toggle);
+  }
+  row.append(cell);
+}
+
+function toggleDetail(row, destination, toggle) {
+  const open = toggle.getAttribute("aria-expanded") === "true";
+  toggle.setAttribute("aria-expanded", String(!open));
+  if (open) {
+    row.nextElementSibling?.remove();
+    return;
+  }
+  const detail = document.createElement("tr");
+  detail.className = "detail";
+  const cell = document.createElement("td");
+  cell.colSpan = 6;
+  const list = document.createElement("ul");
+  for (const option of destination.departures) {
+    const item = document.createElement("li");
+    item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive, " +
+      (option.changes ? option.changes + " change(s)" : "no change");
+    list.append(item);
+  }
+  cell.append(list);
+  detail.append(cell);
+  row.after(detail);
 }
 
 function provenance() {
@@ -263,6 +397,17 @@ function provenance() {
   }
   if (!DATA.hasTwoTogether) parts.push("no Two Together railcard found, so party prices are doubled");
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
+  document.getElementById("railcardNote").textContent = DATA.railcardNote;
+  if (DATA.dateNote) {
+    const note = document.createElement("p");
+    note.textContent = DATA.dateNote;
+    document.getElementById("railcardNote").after(note);
+  }
+  if (DATA.tracked) {
+    const disclosure = document.getElementById("disclosure");
+    disclosure.textContent = DATA.disclosure;
+    disclosure.hidden = false;
+  }
 }
 
 budget.addEventListener("input", render);
@@ -314,6 +459,12 @@ def main(argv: list[str] | None = None) -> int:
             max_changes=args.max_changes,
             day=day,
             note=args.note,
+            provider=args.provider,
+            adults=args.adults,
+            network=args.affiliate_network,
+            advertiser_id=args.advertiser_id,
+            publisher_id=args.publisher_id,
+            departure_limit=args.departures,
         )
     except KeyError:
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
@@ -322,6 +473,14 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     out.write_text(render_page(payload, budget_pounds=20), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
+    print(f"ticket links to {args.provider}, {args.adults} adult(s)")
+    if payload["tracked"]:
+        print("affiliate tracking is ON, and the page carries the disclosure")
+    else:
+        print("affiliate tracking is off, so the links are plain and untracked")
+    warning = pairing_warning(args.provider, args.affiliate_network)
+    if warning:
+        print(f"warning: {warning}", file=sys.stderr)
     if not payload["hasJourneys"]:
         print("no timetable given, so the page shows prices without times")
     if not payload["hasTwoTogether"]:

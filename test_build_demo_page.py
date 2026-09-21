@@ -6,12 +6,14 @@ import json
 import re
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, render_page
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from retailer import DISCLOSURE
 
 
 def embedded_payload(html: str) -> dict:
@@ -78,6 +80,71 @@ class DemoPageTest(unittest.TestCase):
         payload_region = html.split("const DATA = ")[1].split(";\nconst rows")[0]
         self.assertNotIn("</script>", payload_region)
         self.assertEqual(embedded_payload(html)["note"], "a note with </script> in it")
+
+    # -- ticket links and the expander ------------------------------------
+
+    def test_every_destination_carries_an_untracked_ticket_link(self) -> None:
+        for row in self.payload["destinations"]:
+            self.assertTrue(row["link"]["url"].startswith("https://www.nationalrail.co.uk/"))
+            self.assertEqual(row["link"]["rel"], "noopener")
+        self.assertFalse(self.payload["tracked"])
+        self.assertIsNone(self.payload["disclosure"])
+
+    def test_the_link_points_at_the_destination_it_sits_beside(self) -> None:
+        rows = {row["crs"]: row for row in self.payload["destinations"]}
+        self.assertIn("origin=GRN", rows["NOT"]["link"]["url"])
+        self.assertIn("destination=NOT", rows["NOT"]["link"]["url"])
+
+    def test_a_tracked_page_discloses_itself(self) -> None:
+        payload = build_payload(
+            self.fares,
+            self.timetable,
+            "GRN",
+            network="partnerize",
+            advertiser_id="123456",
+        )
+        self.assertTrue(payload["tracked"])
+        self.assertEqual(payload["disclosure"], DISCLOSURE)
+        self.assertIn("nofollow", payload["destinations"][0]["link"]["rel"])
+        self.assertIn(DISCLOSURE, render_page(payload, budget_pounds=20))
+        self.assertTrue(
+            all(x["link"]["rel"] == "noopener" for x in self.payload["destinations"]),
+            "an untracked page must not claim otherwise",
+        )
+
+    def test_the_page_carries_the_journeys_behind_a_toggle_link(self) -> None:
+        rows = {row["crs"]: row for row in self.payload["destinations"]}
+        self.assertEqual(
+            [option["depart"] for option in rows["NOT"]["departures"]],
+            sorted(option["depart"] for option in rows["NOT"]["departures"]),
+        )
+        self.assertTrue(rows["NOT"]["departures"])
+        self.assertEqual(rows["SLP"]["departures"], [])
+        self.assertIn("toggleDetail", self.html)
+        self.assertIn('link.className = "buy"', self.html)
+        self.assertIn('link.textContent = "Tickets"', self.html)
+        self.assertIn('link.target = "_blank"', self.html)
+
+    def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
+        self.assertIn("destination.departures.length + \" times\"", self.html)
+
+    def test_the_departure_list_is_capped_and_configurable(self) -> None:
+        payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)
+        rows = {row["crs"]: row for row in payload["destinations"]}
+        self.assertEqual(len(rows["NOT"]["departures"]), 2)
+
+    def test_a_page_without_a_date_warns_that_a_changed_train_appears_twice(self) -> None:
+        self.assertIn("has changed appears twice", self.payload["dateNote"])
+
+    def test_a_page_with_a_date_does_not_need_that_warning(self) -> None:
+        payload = build_payload(self.fares, self.timetable, "GRN", day=date(2026, 10, 5))
+        self.assertIsNone(payload["dateNote"])
+        self.assertEqual(payload["serviceDate"], "2026-10-05")
+        rows = {row["crs"]: row for row in payload["destinations"]}
+        self.assertEqual(len(rows["NOT"]["departures"]), 3)
+
+    def test_the_page_titles_itself_with_the_budget(self) -> None:
+        self.assertIn("&pound;20", self.html)
 
     def test_without_a_timetable_the_page_says_so(self) -> None:
         payload = build_payload(self.fares, None, "GRN")
