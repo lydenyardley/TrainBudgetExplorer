@@ -7,6 +7,7 @@ real fares or real services.
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 from atoc_fares import (
@@ -264,6 +265,239 @@ def build_synthetic_timetable(path: str | Path) -> Path:
 
     (path / "timetable.mca").write_text("\n".join(cif_lines) + "\n", encoding="utf-8")
     (path / "stations.msn").write_text("\n".join(station_lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _clock(minutes: int) -> str:
+    return f"{minutes // 60:02d}{minutes % 60:02d}"
+
+
+def _append_train(
+    cif_lines: list[str],
+    uid: str,
+    route: list[int],
+    start: int,
+    rng: random.Random,
+) -> None:
+    """Append one schedule: a header, an origin, any intermediates, a terminus.
+
+    Station indices map to TIPLOC codes the same way the enclosing builder
+    names them, so a route handed in as indices writes a coherent file.
+    """
+
+    def tiploc_of(index: int) -> str:
+        return f"T{index:04d}"
+    cif_lines.append(
+        _line(
+            {
+                "record_type": "BS",
+                "transaction_type": "N",
+                "train_uid": uid,
+                "date_runs_from": "260921",
+                "date_runs_to": "261211",
+                "days": "1111110",
+                "stp_indicator": "P",
+            },
+            CIF_SCHEDULE,
+        )
+    )
+    clock = start
+    cif_lines.append(
+        _line(
+            {
+                "record_type": "LO",
+                "location": tiploc_of(route[0]),
+                "scheduled_departure": _clock(clock),
+                "public_departure": _clock(clock),
+            },
+            CIF_ORIGIN,
+        )
+    )
+    for index in route[1:-1]:
+        clock += rng.randint(10, 30)
+        arrival = clock
+        clock += rng.randint(1, 4)
+        cif_lines.append(
+            _line(
+                {
+                    "record_type": "LI",
+                    "location": tiploc_of(index),
+                    "scheduled_arrival": _clock(arrival),
+                    "scheduled_departure": _clock(clock),
+                    "public_arrival": _clock(arrival),
+                    "public_departure": _clock(clock),
+                },
+                CIF_INTERMEDIATE,
+            )
+        )
+    clock += rng.randint(10, 30)
+    cif_lines.append(
+        _line(
+            {
+                "record_type": "LT",
+                "location": tiploc_of(route[-1]),
+                "scheduled_arrival": _clock(clock),
+                "public_arrival": _clock(clock),
+            },
+            CIF_TERMINUS,
+        )
+    )
+
+
+def _emit_hub_spoke(
+    cif_lines: list[str],
+    *,
+    stations: int,
+    schedules: int,
+    hub: int,
+    rng: random.Random,
+) -> None:
+    """Trains that only ever meet at one interchange.
+
+    Station 0 is served only by trains to the hub, and every other station is
+    served only by trains to the hub, so reaching anything past the hub needs a
+    change. This is the shape where a cap on the onward search can lose a
+    journey, which a uniformly connected feed can never show.
+    """
+    outer = [index for index in range(stations) if index not in (0, hub)]
+    per_pair = max(2, schedules // (2 * max(1, len(outer))))
+    span = max(6, 600 // per_pair)
+    uid = 0
+    hub_trains = max(4, schedules // 20)
+    hub_spacing = max(10, 600 // hub_trains)
+    for step in range(hub_trains):
+        uid += 1
+        _append_train(cif_lines, f"L{uid:05d}", [0, hub], 300 + step * hub_spacing, rng)
+        uid += 1
+        _append_train(cif_lines, f"L{uid:05d}", [hub, 0], 320 + step * hub_spacing, rng)
+    for index in outer:
+        for step in range(per_pair):
+            start = 300 + step * span + (index * 7) % 53
+            uid += 1
+            _append_train(cif_lines, f"L{uid:05d}", [hub, index], start, rng)
+            uid += 1
+            _append_train(cif_lines, f"L{uid:05d}", [index, hub], start + 5, rng)
+
+
+def build_large_synthetic_feed(
+    path: str | Path,
+    *,
+    stations: int = 120,
+    schedules: int = 1000,
+    seed: int = 7,
+    shape: str = "uniform",
+) -> Path:
+    """Write a large invented feed holding both fares and a timetable.
+
+    The uniform shape randomises stopping patterns and prices, which bounds the
+    work a search does. The hub_spoke shape makes every journey past the hub
+    need a change, which exposes what a departure cap costs. Neither predicts a
+    real network.
+    """
+
+    if shape not in {"uniform", "hub_spoke"}:
+        raise ValueError(f"unknown shape: {shape}")
+    rng = random.Random(seed)
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    crs_codes = [f"{chr(65 + index // 100)}{(index // 10) % 10}{index % 10}" for index in range(stations)]
+    tiplocs = [f"T{index:04d}" for index in range(stations)]
+    nlcs = [f"{1000 + index}" for index in range(stations)]
+
+    flow_lines: list[str] = []
+    fare_lines: list[str] = []
+    pairs = [(0, index) for index in range(1, stations)]
+    pairs += [(rng.randrange(1, stations), rng.randrange(1, stations)) for _ in range(stations * 5)]
+    for number, (origin, destination) in enumerate(pairs, start=1):
+        flow_id = f"{number:07d}"
+        flow_lines.append(
+            _line(
+                {
+                    "update_marker": "A",
+                    "record_type": "F",
+                    "origin_nlc": nlcs[origin],
+                    "destination_nlc": nlcs[destination],
+                    "route_code": "00000",
+                    "flow_id": flow_id,
+                },
+                FLOW_F,
+            )
+        )
+        fare_lines.append(
+            _line(
+                {
+                    "update_marker": "A",
+                    "record_type": "T",
+                    "flow_id": flow_id,
+                    "ticket_code": "SDR",
+                    "fare_pence": str(rng.randrange(200, 6000, 5)),
+                    "restriction_code": "00",
+                },
+                FLOW_T,
+            )
+        )
+
+    location_lines = [
+        _line(
+            {
+                "update_marker": "A",
+                "record_type": "L",
+                "nlc": nlcs[index],
+                "description": f"SYNTH STATION {index}",
+                "crs": crs_codes[index],
+            },
+            LOCATION,
+        )
+        for index in range(stations)
+    ]
+    ticket_lines = [
+        _line(
+            {
+                "update_marker": "A",
+                "ticket_code": "SDR",
+                "description": "ANYTIME DAY R",
+                "tkt_class": "2",
+                "tkt_type": "R",
+                "restricted_by_train": "0",
+            },
+            TICKET_TYPE,
+        )
+    ]
+
+    hub = 1
+    cif_lines = [_line({"record_type": "HD", "file_identity": "SYNTHETIC-LARGE"}, CIF_HEADER)]
+    if shape == "hub_spoke":
+        _emit_hub_spoke(cif_lines, stations=stations, schedules=schedules, hub=hub, rng=rng)
+    else:
+        for train in range(schedules):
+            stop_count = min(stations - 1, rng.randint(2, 6))
+            candidates = [index for index in range(1, stations) if index != hub]
+            route = [0] + rng.sample(candidates, stop_count - 1)
+            if rng.random() < 0.4:
+                route[rng.randrange(1, len(route))] = hub
+            _append_train(cif_lines, f"L{train:05d}", route, rng.randrange(300, 900), rng)
+    cif_lines.append(_line({"record_type": "ZZ"}, CIF_HEADER))
+
+    station_lines = [
+        _line(
+            {
+                "record_type": "A",
+                "name": f"SYNTH STATION {index}",
+                "tiploc": tiplocs[index],
+                "crs": crs_codes[index],
+                "change_time": "05",
+            },
+            MSN_STATION,
+        )
+        for index in range(stations)
+    ]
+
+    (path / "large.ffl").write_text("\n".join(flow_lines + fare_lines) + "\n", encoding="utf-8")
+    (path / "large.loc").write_text("\n".join(location_lines) + "\n", encoding="utf-8")
+    (path / "large.tty").write_text("\n".join(ticket_lines) + "\n", encoding="utf-8")
+    (path / "large.mca").write_text("\n".join(cif_lines) + "\n", encoding="utf-8")
+    (path / "large.msn").write_text("\n".join(station_lines) + "\n", encoding="utf-8")
     return path
 
 

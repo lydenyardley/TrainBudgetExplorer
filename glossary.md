@@ -24,3 +24,6 @@
 | **Service days** | The seven character Monday to Sunday pattern saying which days a schedule runs on. |
 | **Schedule** | One train's plan for one period: an identity, a date range, service days, and its calling points. |
 | **Overlay** | A schedule that replaces the permanent schedule of the same train identity for its date range. |
+| **Onward departure cap** | How many of the earliest departures at an interchange the one-change search will consider. Currently 200, chosen by measurement. |
+| **Transfer-only pair** | An origin and destination whose only route needs a change. The set where a departure cap can lose a journey. |
+| **Hub-and-spoke feed** | An invented feed where one hub is the only place two routes meet, so every journey past it needs a change. |
