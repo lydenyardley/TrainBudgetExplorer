@@ -587,6 +587,144 @@ class TimetableDb:
                     best = journey
         return best
 
+    def departures(
+        self,
+        origin_crs: str,
+        destination_crs: str,
+        *,
+        limit: int = 6,
+        max_changes: int = 1,
+        connection_minutes: int | None = None,
+        day: date | None = None,
+        max_onward: int | None = MAX_ONWARD_DEPARTURES,
+    ) -> list[Journey]:
+        """The next few ways to make the trip, earliest departure first.
+
+        One entry per departure time, so a destination served twice at 09:00
+        does not fill the list twice, and each entry is the best journey leaving
+        at that time. This is a list of options in the feed, not a booking
+        system: it does not know which of them is cheapest, because the fare
+        this tool reports is a walk-up fare valid on any of them.
+        """
+        self._ensure_indexes(day)
+        found: dict[int, Journey] = {}
+        for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
+            if len(found) >= limit and departure > max(found):
+                break
+            schedule = self.schedules[schedule_index]
+            chosen = self._direct_from(origin_crs, destination_crs, departure, schedule, stop_index)
+            if max_changes >= 1:
+                via = self._one_change_from(
+                    origin_crs,
+                    destination_crs,
+                    departure,
+                    schedule,
+                    schedule_index,
+                    stop_index,
+                    chosen,
+                    connection_minutes,
+                    max_onward,
+                )
+                if via is not None and (chosen is None or _rank(via) < _rank(chosen)):
+                    chosen = via
+            if chosen is None:
+                continue
+            current = found.get(departure)
+            if current is None or _rank(chosen) < _rank(current):
+                found[departure] = chosen
+        return [found[key] for key in sorted(found)][:limit]
+
+    def _direct_from(
+        self,
+        origin_crs: str,
+        destination_crs: str,
+        departure: int,
+        schedule: Schedule,
+        stop_index: int,
+    ) -> Journey | None:
+        """The best direct journey on one schedule leaving at one time."""
+        best: Journey | None = None
+        for later in range(stop_index + 1, len(schedule.stops)):
+            arrival = self._arrival_at(schedule, later, destination_crs, departure)
+            if arrival is None:
+                continue
+            leg = Leg(schedule.train_uid, origin_crs, destination_crs, departure, arrival)
+            journey = Journey(origin_crs, destination_crs, departure, arrival, (leg,))
+            if best is None or _rank(journey) < _rank(best):
+                best = journey
+        return best
+
+    def _one_change_from(
+        self,
+        origin_crs: str,
+        destination_crs: str,
+        departure: int,
+        schedule: Schedule,
+        schedule_index: int,
+        stop_index: int,
+        best: Journey | None,
+        connection_minutes: int | None,
+        max_onward: int | None,
+    ) -> Journey | None:
+        """The best one-change journey leaving on one schedule at one time."""
+        for interchange_index in range(stop_index + 1, len(schedule.stops)):
+            interchange_stop = schedule.stops[interchange_index]
+            interchange_crs = self.crs_for_tiploc(interchange_stop.tiploc)
+            if interchange_crs is None or interchange_crs in {origin_crs, destination_crs}:
+                continue
+            arrival_at_interchange = interchange_stop.alight
+            if arrival_at_interchange is None:
+                continue
+            if arrival_at_interchange < departure:
+                arrival_at_interchange += MINUTES_PER_DAY
+            wait = (
+                connection_minutes
+                if connection_minutes is not None
+                else self.connection_minutes_at(interchange_crs)
+            )
+            earliest_onward = arrival_at_interchange + max(wait, 1)
+            if best is not None and earliest_onward >= best.arrival:
+                continue
+            entries = self._departures.get(interchange_crs)
+            if not entries:
+                continue
+            times = self._departure_times[interchange_crs]
+            start = bisect.bisect_left(times, earliest_onward)
+            window = entries[start:] if max_onward is None else entries[start : start + max_onward]
+            for onward_departure, onward_index, onward_stop_index in window:
+                if onward_index == schedule_index:
+                    continue
+                onward_schedule = self.schedules[onward_index]
+                for later in range(onward_stop_index + 1, len(onward_schedule.stops)):
+                    arrival = self._arrival_at(onward_schedule, later, destination_crs, onward_departure)
+                    if arrival is None:
+                        continue
+                    legs = (
+                        Leg(schedule.train_uid, origin_crs, interchange_crs, departure, arrival_at_interchange),
+                        Leg(onward_schedule.train_uid, interchange_crs, destination_crs, onward_departure, arrival),
+                    )
+                    journey = Journey(origin_crs, destination_crs, departure, arrival, legs)
+                    if best is None or _rank(journey) < _rank(best):
+                        best = journey
+        return best
+
+    def _arrival_at(
+        self, schedule: Schedule, stop_index: int, destination_crs: str, departure: int
+    ) -> int | None:
+        """When this schedule reaches the destination at or after stop_index.
+
+        Returns None when it does not call there. Both searches read arrivals
+        through here, so a change in how a destination is matched cannot reach
+        one and miss the other.
+        """
+        stop = schedule.stops[stop_index]
+        if self.crs_for_tiploc(stop.tiploc) != destination_crs:
+            return None
+        arrival = stop.alight
+        if arrival is None:
+            return None
+        return arrival + MINUTES_PER_DAY if arrival < departure else arrival
+
     def _one_change_journey(
         self,
         origin_crs: str,

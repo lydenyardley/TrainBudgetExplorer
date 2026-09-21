@@ -1,7 +1,7 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 115 tests. The journey
+damaged input, date-aware when asked, and covered by 130 tests. The journey
 search is measured rather than tuned by feel, the demo page runs on the
 synthetic feeds, and the count that decides go/no-go now comes with a report
 that questions it. The feed download clears when the Marketplace account is
@@ -78,6 +78,7 @@ value changes without the argument changing with it.
 | `feed_audit.py` | CLI: what each feed contained and where they disagree |
 | `sanity_report.py` | CLI: whether a budget count can be believed |
 | `damage_feed.py` | Writes deliberately damaged copies of a feed |
+| `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
@@ -92,6 +93,7 @@ value changes without the argument changing with it.
 | `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
 | `test_damaged_feed.py` | Twenty tests for damaged input |
 | `test_sanity_report.py` | Fourteen tests for the count report |
+| `test_retailer.py` | Fifteen tests for the ticket links |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `glossary.md` | Domain terms |
@@ -139,9 +141,26 @@ python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRN --out demo.html
 ```
 
-It carries no affiliate links and is not deployed. `adr/ADR-0010-demo-page-before-the-gate.md`
-records why it exists before the go/no-go gate opens, and what stays behind the
-gate until the licence text is read.
+Each destination carries a link to a ticket seller and an expander listing the
+next few journeys. The link sends the origin, the destination, the date if the
+page was built with one, and the party size. It does not send a railcard, because
+no seller documents a parameter for one, and it does not send a chosen train,
+because the fare is a walk-up fare valid on any of them. The page says both
+these things rather than leaving the reader to find out.
+
+Affiliate tracking is **off by default**, and turning it on wraps the link in a
+network redirect rather than changing the search:
+
+```
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --provider trainline
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN \
+  --provider trainline --affiliate-network partnerize --advertiser-id <id> --publisher-id <id>
+```
+
+The page is not deployed. `adr/ADR-0010-demo-page-before-the-gate.md` records why
+it exists before the go/no-go gate opens, and `adr/ADR-0014-ticket-links.md`
+records which seller is the default, what a link may carry, and why the tracked
+version must not be published until the licence text is read.
 
 ## Run it
 

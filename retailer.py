@@ -1,0 +1,229 @@
+"""Build outbound ticket links without pretending to know a journey.
+
+Two questions decide what a link may carry: what the retailer's search URL
+accepts, and what this tool actually knows. The tool knows an origin, a
+destination, a date if it was given, and a party size. It does not know which
+train the reader wants, and it must not imply one.
+
+So a link sends the search, not the journey:
+
+- **sent**: origin code, destination code, date, number of adults, when the
+  retailer's URL declares it accepts them
+- **not sent**: railcard, because no retailer documents a parameter for it, and a
+  wrong railcard silently changes the price the reader sees; the page says so
+  instead
+- **not sent**: any journey or departure, because the price this tool found is a
+  walk-up fare that exists on every train that day, and picking one for the
+  reader would invent a decision
+
+Affiliate tracking is a wrapper around a finished URL, not a query parameter,
+because that is how the networks work: Awin's cread.php and Partnerize's
+prf.hn/click both redirect to a destination you hand them. That means turning
+monetisation on cannot change the search the reader lands on, and it cannot
+break a link that already worked.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date
+from urllib.parse import quote, urlencode
+
+PLAIN_REL = "noopener"
+AFFILIATE_REL = "noopener nofollow sponsored"
+
+# What a reader is told before they click, when a link earns anything.
+DISCLOSURE = "Links to ticket sellers may earn this site a commission. The price shown is not affected."
+
+
+@dataclass(frozen=True)
+class Provider:
+    """A ticket seller's public search URL, and the parameters it accepts.
+
+    ``params`` is a tuple of (url parameter name, value name this module
+    supplies). A value name that is missing at build time drops the parameter,
+    which is how a link is built without a date. Declaring the parameters rather
+    than formatting a template means an unsupported parameter cannot be sent by
+    accident.
+    """
+
+    key: str
+    label: str
+    base_url: str
+    params: tuple[tuple[str, str], ...]
+    note: str
+    # The network that is known to run this seller's programme, or None where it
+    # is not known. Used only to warn about a pairing that could never track.
+    usual_network: str | None = None
+
+    def url(self, values: dict[str, str]) -> str:
+        pairs = [(name, values[value]) for name, value in self.params if values.get(value)]
+        query = urlencode(pairs, quote_via=quote)
+        return f"{self.base_url}?{query}" if query else self.base_url
+
+
+# The URLs are public search pages. Each was checked for which parameters the
+# page itself declares; the date and party parameters are the ones that change
+# the result the reader lands on, so they are the ones worth verifying first if a
+# link ever comes back empty. adr/ADR-0014-ticket-links.md records what is
+# verified and what is not.
+PROVIDERS: dict[str, Provider] = {
+    "national_rail": Provider(
+        key="national_rail",
+        label="National Rail",
+        base_url="https://www.nationalrail.co.uk/journey-planner/",
+        params=(
+            ("type", "single"),
+            ("origin", "origin"),
+            ("destination", "destination"),
+            ("leavingType", "depart_after"),
+            ("leavingDate", "date_compact"),
+        ),
+        note="The industry's own journey planner, and the only one that takes station codes directly.",
+    ),
+    "trainline": Provider(
+        key="trainline",
+        label="Trainline",
+        base_url="https://www.thetrainline.com/book/results",
+        params=(
+            ("origin", "origin"),
+            ("destination", "destination"),
+            ("outwardDate", "date_iso"),
+            ("outwardDateType", "depart_after"),
+            ("journeySearchType", "single"),
+            ("passengers[]", "adults"),
+        ),
+        note="Largest UK retailer, and the one whose affiliate programme is best documented.",
+        usual_network="partnerize",
+    ),
+}
+
+
+def pairing_warning(provider: str, network: str | None) -> str | None:
+    """Say when a seller and a network cannot be right together.
+
+    Linking a seller through a network that does not run their programme produces
+    a working link that earns nothing, which is the kind of mistake nobody
+    notices for a year.
+    """
+    if not network:
+        return None
+    chosen = PROVIDERS.get(provider)
+    if chosen is None or chosen.usual_network is None:
+        return None
+    if chosen.usual_network != network:
+        return (
+            f"{chosen.label} is sold through {chosen.usual_network}, not {network}: "
+            "the links would work and earn nothing."
+        )
+    return None
+
+DEFAULT_PROVIDER = "national_rail"
+
+
+@dataclass(frozen=True)
+class AffiliateNetwork:
+    """A tracked redirect that wraps a finished destination URL."""
+
+    key: str
+    label: str
+    rewrite: str
+    note: str = ""
+
+    def wrap(self, destination: str, *, advertiser_id: str, publisher_id: str = "") -> str:
+        return self.rewrite.format(
+            advertiser=quote(advertiser_id, safe=""),
+            publisher=quote(publisher_id, safe=""),
+            # The destination is escaped whole: it is a URL, and the redirect
+            # takes it as one value.
+            destination=quote(destination, safe=""),
+        )
+
+
+AFFILIATE_NETWORKS: dict[str, AffiliateNetwork] = {
+    "awin": AffiliateNetwork(
+        key="awin",
+        label="Awin",
+        rewrite="https://www.awin1.com/cread.php?awinmid={advertiser}&awinaffid={publisher}&ued={destination}",
+        note="Runs the TransPennine Express and several other rail merchant programmes.",
+    ),
+    "partnerize": AffiliateNetwork(
+        key="partnerize",
+        label="Partnerize",
+        rewrite="https://prf.hn/click/camref:{advertiser}/destination:{destination}",
+        note="Runs the Trainline programme.",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class TicketLink:
+    """A built link, with everything a page needs to render it honestly."""
+
+    url: str
+    label: str
+    rel: str
+    tracked: bool
+    disclosure: str | None = field(default=None)
+
+
+def ticket_link(
+    origin_crs: str,
+    destination_crs: str,
+    *,
+    provider: str = DEFAULT_PROVIDER,
+    when: date | None = None,
+    adults: int = 2,
+    network: str | None = None,
+    advertiser_id: str | None = None,
+    publisher_id: str = "",
+) -> TicketLink:
+    """Build a search link for one origin and destination.
+
+    With no network or advertiser configured the link is plain and untracked,
+    which is the default: the licence terms for commercial use are not read yet
+    (adr/ADR-0001-data-sources.md), and monetisation is a switch rather than a
+    side effect of generating the page.
+    """
+    try:
+        chosen = PROVIDERS[provider]
+    except KeyError:
+        raise KeyError(f"{provider!r} is not one of: {', '.join(sorted(PROVIDERS))}") from None
+
+    values = {
+        "origin": origin_crs.strip().upper(),
+        "destination": destination_crs.strip().upper(),
+        "date_iso": when.isoformat() if when else "",
+        "date_compact": when.strftime("%Y%m%d") if when else "",
+        "adults": str(adults) if adults else "",
+        # These two are values, not switches: the page declared them so the
+        # reader lands on a single search rather than a form to fill in.
+        "single": "single",
+        "depart_after": "departAfter",
+    }
+    url = chosen.url(values)
+
+    if not (network and advertiser_id):
+        return TicketLink(url=url, label=chosen.label, rel=PLAIN_REL, tracked=False)
+
+    try:
+        wrapper = AFFILIATE_NETWORKS[network]
+    except KeyError:
+        raise KeyError(
+            f"{network!r} is not one of: {', '.join(sorted(AFFILIATE_NETWORKS))}"
+        ) from None
+    return TicketLink(
+        url=wrapper.wrap(url, advertiser_id=advertiser_id, publisher_id=publisher_id),
+        label=chosen.label,
+        rel=AFFILIATE_REL,
+        tracked=True,
+        disclosure=DISCLOSURE,
+    )
+
+
+def provider_table() -> list[tuple[str, str, list[str], str]]:
+    """What each provider can be sent, for the docs and the page's footer."""
+    return [
+        (provider.key, provider.label, [value for _, value in provider.params], provider.note)
+        for provider in PROVIDERS.values()
+    ]
