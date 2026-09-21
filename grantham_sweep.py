@@ -2,6 +2,7 @@
 
 Usage:
     python grantham_sweep.py --feed ~/Downloads/RJFAF464 --origin GRN --budget 20 --adults 2
+    python grantham_sweep.py --feed feeds/fares --timetable feeds/timetable --origin GRN --budget 20
 """
 
 from __future__ import annotations
@@ -11,12 +12,14 @@ import csv
 import sys
 from pathlib import Path
 
-from atoc_fares import FaresDb, format_pence
+from atoc_fares import FaresDb, Reachable, format_pence
+from atoc_timetable import Journey, TimetableDb, format_minutes
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cheapest return reachable from an origin inside a budget.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
+    parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
     parser.add_argument("--origin", default="GRN", help="origin CRS code, e.g. GRN for Grantham")
     parser.add_argument("--budget", type=float, default=20.0, help="budget in pounds")
     parser.add_argument("--adults", type=int, default=2)
@@ -26,9 +29,30 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="treat the budget as the total for the party rather than per adult",
     )
+    parser.add_argument("--max-changes", type=int, default=1, help="changes to allow when planning a journey")
     parser.add_argument("--limit", type=int, default=15, help="rows to print")
     parser.add_argument("--csv", default=None, help="write the full result set to this path")
     return parser.parse_args(argv)
+
+
+def enrich_with_journeys(
+    results: list[Reachable],
+    timetable: TimetableDb,
+    origin_crs: str,
+    *,
+    max_changes: int = 1,
+) -> list[tuple[Reachable, Journey | None]]:
+    """Attach the best journey to each destination. None means no service in the feed."""
+    return [
+        (reachable, timetable.best_journey(origin_crs, reachable.crs, max_changes=max_changes))
+        for reachable in results
+    ]
+
+
+def _journey_cells(journey: Journey | None) -> tuple[str, str]:
+    if journey is None:
+        return "-", "-"
+    return format_minutes(journey.duration), str(journey.changes)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,27 +77,60 @@ def main(argv: list[str] | None = None) -> int:
         party_budget=args.party_budget,
     )
 
+    timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
+    rows = (
+        enrich_with_journeys(results, timetable, origin.crs, max_changes=args.max_changes)
+        if timetable
+        else [(reachable, None) for reachable in results]
+    )
+
     mode = "party total" if args.party_budget else "per adult"
     print(f"feed: {stats['stations']} stations, {stats['flows']} flows, {stats['fares']} fares")
+    if timetable:
+        timetable_stats = timetable.stats()
+        print(f"timetable: {timetable_stats['schedules']} schedules, {timetable_stats['calling_points']} calling points")
     print(f"origin: {origin.crs} {origin.name}")
     print(f"budget: {format_pence(budget_pence)} {mode}, {args.adults} adult(s), railcard: {args.railcard or 'none'}")
-    print(f"destinations under budget: {len(results)}")
+    print(f"destinations under budget: {len(rows)}")
+    if timetable:
+        served = sum(1 for _, journey in rows if journey is not None)
+        print(f"with a service in the feed: {served}; with no service: {len(rows) - served}")
     print()
-    if results:
-        print(f"{'CRS':<4}{'station':<22}{'per adult':>10}{'party':>9}  ticket")
-        for reachable in results[: args.limit]:
-            flag = " off-peak" if reachable.off_peak else ""
-            print(
+
+    if rows:
+        header = f"{'CRS':<4}{'station':<22}{'per adult':>10}{'party':>9}"
+        if timetable:
+            header += f"{'time':>9}{'chg':>4}"
+        print(f"{header}  ticket")
+        for reachable, journey in rows[: args.limit]:
+            duration, changes = _journey_cells(journey)
+            line = (
                 f"{reachable.crs:<4}{reachable.station[:21]:<22}"
                 f"{format_pence(reachable.best_pence):>10}{format_pence(reachable.party_pence):>9}"
-                f"  {reachable.ticket_code}{flag}"
             )
+            if timetable:
+                line += f"{duration:>9}{changes:>4}"
+            flag = " off-peak" if reachable.off_peak else ""
+            note = "" if journey or not timetable else "  no service in the feed"
+            print(f"{line}  {reachable.ticket_code}{flag}{note}")
 
     if args.csv:
         with Path(args.csv).open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["crs", "station", "ticket_code", "per_adult_pence", "party_pence", "off_peak"])
-            for reachable in results:
+            writer.writerow(
+                [
+                    "crs",
+                    "station",
+                    "ticket_code",
+                    "per_adult_pence",
+                    "party_pence",
+                    "off_peak",
+                    "minutes",
+                    "changes",
+                    "legs",
+                ]
+            )
+            for reachable, journey in rows:
                 writer.writerow(
                     [
                         reachable.crs,
@@ -82,9 +139,12 @@ def main(argv: list[str] | None = None) -> int:
                         reachable.best_pence,
                         reachable.party_pence,
                         "yes" if reachable.off_peak else "no",
+                        journey.duration if journey else "",
+                        journey.changes if journey else "",
+                        ">".join(leg.train_uid for leg in journey.legs) if journey else "",
                     ]
                 )
-        print(f"\nwrote {len(results)} rows to {args.csv}")
+        print(f"\nwrote {len(rows)} rows to {args.csv}")
 
     return 0
 
