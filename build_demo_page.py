@@ -345,7 +345,10 @@ TEMPLATE = """<!doctype html>
      table for desktop and assistive technology; only the display changes, and
      flex wrapping means no cell can sit outside the viewport however long a
      station name or fare code is. */
-  @media (max-width: 40rem) {
+  /* 44rem, not 40: measured, the six-column table needs ~700px before its three
+     row actions stop wrapping onto a second line, so the stacked layout keeps
+     the band between 640 and 704px that the table cannot hold. */
+  @media (max-width: 44rem) {
     body { padding: 1rem .75rem; }
     .controls { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
     .budget { font-size: 2.5rem; }
@@ -780,14 +783,18 @@ def build_station_index(
     """The picker's option list, built from what was actually written.
 
     ``priced_by_origin`` maps CRS to the number of priced destinations that
-    origin's page carries; ``all_locations`` supplies names. A station with no
-    priced flows is absent rather than selectable-and-empty (ADR-0019). The
-    count also ranks the root chooser's cold start, which is derived from the
-    feed rather than an invented "popular stations" list.
+    origin's page carries; ``all_locations`` supplies names. A station that
+    priced nothing is **absent**, not offered and then refused (ADR-0019
+    decision 3): offering one would put "0 destinations" in the picker and send
+    the reader to a page that cannot answer them. The count also ranks the root
+    chooser's cold start, which is derived from the feed rather than an invented
+    "popular stations" list.
     """
     taken: set[str] = set()
     index = []
     for crs, count in sorted(priced_by_origin.items(), key=lambda item: (-item[1], item[0])):
+        if count <= 0:
+            continue
         location = all_locations[crs]
         index.append(
             {
@@ -1035,6 +1042,28 @@ def main(argv: list[str] | None = None) -> int:
         root = out_dir / "index.html"
         root.write_text(chooser, encoding="utf-8")
         print(f"wrote {root} (the chooser) with {len(index)} priced stations")
+        # Pages from an earlier build are not deleted -- that is destructive
+        # without asking -- but they are named, because a stale page in the
+        # output folder is exactly what makes a local preview look wrong.
+        written = {by_crs[crs]["slug"] for crs in by_crs}
+        stale = sorted(
+            child.name
+            for child in (out_dir / "from").iterdir()
+            if child.is_dir() and child.name not in written
+        ) if (out_dir / "from").is_dir() else []
+        if stale:
+            print(
+                f"note: {len(stale)} page folder(s) in {out_dir / 'from'} are from an earlier build and were not "
+                f"rewritten: {', '.join(stale)}. Delete them yourself if you want the folder to match this build."
+            )
+        # Say how to open it, because the pages are not in the repository (they
+        # are build output) and their station links are root-absolute, so
+        # double-clicking the file does not work while a local server does.
+        print(
+            f"open it through a local server, not by double-clicking: "
+            f"python -m http.server --directory {out_dir} 8000, then http://localhost:8000/ "
+            f"(station links start at /from/, so the file system cannot resolve them)"
+        )
         return 0
 
     payload["stations"] = [
