@@ -12,6 +12,8 @@ import io
 from pathlib import Path
 
 import build_demo_page
+from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
+import argparse
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import (
@@ -75,7 +77,7 @@ class DemoPageTest(unittest.TestCase):
         # Nothing claims a licence term that has not been read, and the slot the
         # wording goes in is present but empty rather than missing.
         self.assertIsNone(self.payload["attribution"])
-        self.assertIn('<p id="attribution" hidden></p>', self.html)
+        self.assertIn('<div id="attribution" hidden></div>', self.html)
         self.assertNotIn("__ANALYTICS__", self.html)
 
     def test_the_licence_wording_reaches_the_page_and_its_own_script(self) -> None:
@@ -87,6 +89,53 @@ class DemoPageTest(unittest.TestCase):
         # Present in the payload is not the same as shown, so the page has to
         # unhide it too.
         self.assertIn("DATA.attribution", html)
+
+    # -- where the numbers came from, and what they promise ------------------
+
+    def test_the_provenance_line_sits_with_the_prices_by_default(self) -> None:
+        # A synthetic build says its prices are synthetic, beside the prices,
+        # not in a footer the reader has already left.
+        self.assertEqual(self.payload["priceSource"], DEFAULT_PRICE_SOURCE)
+        self.assertIn('id="priceSource" hidden', self.html)
+        self.assertIn("DATA.priceSource", self.html)
+
+    def test_the_railcard_estimate_carries_its_checked_basis(self) -> None:
+        # The third-off assumption is stated with what the real database said
+        # about it, so "estimate" is not a bare warning but a bounded one.
+        self.assertIn("5-15p above the real discounted price", self.payload["railcardBasis"])
+        self.assertIn('id="railcardBasis" hidden', self.html)
+        self.assertIn("DATA.railcardBasis", self.html)
+
+    def test_a_real_data_build_names_its_source_and_drops_the_estimate_caveat(self) -> None:
+        payload = build_payload(
+            self.fares,
+            self.timetable,
+            "GRN",
+            price_source="the RSP fares feed, downloaded 22 September 2026",
+            railcard_basis=None,
+        )
+        self.assertIn("RSP fares feed", payload["priceSource"])
+        self.assertIsNone(payload["railcardBasis"])
+
+    def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
+        # Three distinct obligations, three paragraphs: one run-on would let a
+        # reader miss the one that disclaims the numbers.
+        args = argparse.Namespace(notices="rdg,ogl,accuracy", attribution=None)
+        notices = notices_or_attribution(args)
+        self.assertEqual(len(notices), 3)
+        self.assertIn("Rail Delivery Group", notices[0])
+        self.assertIn("Open Government Licence v3.0", notices[1])
+        self.assertIn("as is", notices[2])
+        self.assertIn("liability", notices[2])
+
+    def test_an_unknown_notice_name_is_refused_not_dropped(self) -> None:
+        args = argparse.Namespace(notices="rdg,madeup", attribution=None)
+        with self.assertRaises(SystemExit):
+            notices_or_attribution(args)
+
+    def test_notices_win_over_attribution_and_say_so(self) -> None:
+        args = argparse.Namespace(notices="rdg", attribution="custom wording")
+        self.assertEqual(notices_or_attribution(args), [NOTICES["rdg"]])
 
     def test_the_analytics_snippet_is_injected_only_when_given(self) -> None:
         snippet = "<script>window.seen=1;</script>"
