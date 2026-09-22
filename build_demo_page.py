@@ -69,6 +69,113 @@ NOTICES = {
         "accepts liability for any loss arising from reliance on this data."
     ),
 }
+# What the times on the page are, said near them rather than assumed, because
+# a journey time read as a promise is a complaint waiting to happen.
+PRICING_NOTE = (
+    "Times are options in the timetable, not a booking: the fare shown is valid "
+    "on every service listed, so none is picked for you."
+)
+
+# -- feed metadata ----------------------------------------------------------
+# Where the feed came from is recorded once, in metadata.json beside it, and
+# every build reads it, so provenance is never retyped by hand and never
+# drifts between builds. --price-source still overrides it.
+METADATA_NAME = "metadata.json"
+
+
+def read_feed_metadata(folders: list[Path]) -> dict:
+    """The first readable metadata.json found in the feed folders, or empty.
+
+    A zip feed has no folder of its own, but its download usually lands inside
+    one, so the caller passes the zip's parent. A file that exists but cannot
+    be used is named, because provenance that silently fell back to the
+    default is provenance the operator believes is real.
+    """
+    for folder in folders:
+        candidate = folder / METADATA_NAME
+        if not candidate.is_file():
+            continue
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(
+                f"warning: {candidate} is unreadable ({error}); the price line "
+                "falls back to its default",
+                file=sys.stderr,
+            )
+            return {}
+        if not isinstance(data, dict):
+            print(f"warning: {candidate} is not a JSON object; ignored", file=sys.stderr)
+            return {}
+        return data
+    return {}
+
+
+def price_source_from_metadata(metadata: dict) -> str | None:
+    """The provenance sentence from the metadata, or None if it names nothing."""
+    source = metadata.get("source")
+    downloaded = metadata.get("downloaded")
+    if source and downloaded:
+        return f"the {source}, downloaded {downloaded}"
+    if source:
+        return f"the {source}"
+    return None
+
+
+def with_base(base_path: str, path: str) -> str:
+    """Prefix an internal link with the site's base path, if it has one.
+
+    Hosts that do not serve the site at their domain root (GitHub Pages
+    project sites, most shared hosting) need every internal link prefixed;
+    a domain root deploy needs plain root-absolute paths. Default is plain.
+    """
+    return f"{base_path}{path}" if base_path else path
+
+
+# The privacy page. It is honest by construction: it can only describe what
+# the build actually ships, and the two conditional behaviours -- an analytics
+# snippet, tracked links -- are named as things that would be disclosed on the
+# page itself if they were ever switched on.
+PRIVACY = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy</title>
+<style>
+  :root { --bg:#fff; --fg:#11161d; --muted:#5b6472; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181d; --fg:#e7ebf0; --muted:#9aa4b2; }
+  }
+  body { margin:0; padding:1.5rem; max-width:40rem; background:var(--bg); color:var(--fg);
+         font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  h1 { font-size:1.5rem; margin:0 0 1rem; }
+  h2 { font-size:1.05rem; margin:1.5rem 0 .25rem; }
+  p, li { margin:.4rem 0; }
+  .muted { color:var(--muted); }
+  a { color:inherit; }
+</style>
+</head>
+<body>
+<nav><a href="__BASE__/">Back to the station chooser</a></nav>
+<h1>Privacy</h1>
+<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you type is stored anywhere: the budget you drag and the filter you type never leave your device.</p>
+<h2>What this site does not do</h2>
+<ul>
+  <li>No cookies are set by this site.</li>
+  <li>No analytics run. If the operator later adds analytics, this page will name them here first.</li>
+  <li>Nothing about your visit is recorded by this site itself.</li>
+</ul>
+<h2>Ticket links</h2>
+<p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
+<h2>Hosting</h2>
+<p>The site is static files served by the operator's chosen host. The host's own logs may record standard technical information such as IP address and pages requested; what happens to it is governed by the operator's hosting arrangement.</p>
+<h2>Contact</h2>
+<p class="muted">The operator's contact address goes here before the site is published.</p>
+<p class="muted">__NOTE__</p>
+</body>
+</html>
+"""
 # Said on the page whenever the link cannot carry the search, which is the
 # default (adr/ADR-0018-the-pages-default-link.md). It states what the reader has
 # to do, and what does not change, because a fallback the reader only discovers on
@@ -140,6 +247,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument("--note", default=DEFAULT_NOTE, help="provenance note for the footer")
+    parser.add_argument(
+        "--base-path",
+        default="",
+        help="prefix for the site's internal links, for hosts that do not serve it "
+        "at their domain root, e.g. /trainbudget. No leading/trailing slash needed",
+    )
+    parser.add_argument(
+        "--feed-metadata",
+        default=None,
+        help="metadata.json for the feeds if it is not beside them (a zip feed's "
+        "download folder, say). Found automatically otherwise",
+    )
     parser.add_argument("--provider", default=DEFAULT_PROVIDER, help="ticket seller to link to")
     parser.add_argument("--adults", type=int, default=2, help="party size sent to the seller")
     parser.add_argument(
@@ -169,6 +288,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="licence-required wording to carry in the footer, once the terms are read",
     )
     parser.add_argument(
+        "--price-source",
+        default=None,
+        help="override the provenance sentence the feed's metadata.json supplies, "
+        "e.g. --price-source \"the RSP fares feed, downloaded 3 October 2026\"",
+    )
+    parser.add_argument(
         "--notices",
         default=None,
         help="comma-separated preset notices: rdg (publisher credit), ogl (Open "
@@ -193,7 +318,8 @@ def build_payload(
     note: str = DEFAULT_NOTE,
     attribution: str | None = None,
     price_source: str = DEFAULT_PRICE_SOURCE,
-    railcard_basis: str = DEFAULT_RAILCARD_BASIS,
+    railcard_basis: str | None = DEFAULT_RAILCARD_BASIS,
+    base_path: str = "",
     provider: str = DEFAULT_PROVIDER,
     # Fallback by default: the parameterised link is not known to land on a
     # search at either seller, and a link that tells a reader there are no trains
@@ -285,7 +411,11 @@ def build_payload(
         # outputs for a real build; called directly, it carries every station
         # except this origin, from priced flows, so nothing offered can 404.
         "stations": [
-            {"name": loc.name, "crs": loc.crs, "href": f"/from/{re.sub(r'[^a-z0-9]+', '-', loc.name.lower()).strip('-')}/"}
+            {
+                "name": loc.name,
+                "crs": loc.crs,
+                "href": with_base(base_path, f"/from/{re.sub(r'[^a-z0-9]+', '-', loc.name.lower()).strip('-')}/"),
+            }
             for crs, loc in sorted(fares.locations_by_crs.items())
             if crs != origin.crs
         ],
@@ -304,7 +434,14 @@ def build_payload(
         # reader's question.
         "priceSource": price_source,
         "railcardBasis": railcard_basis,
+        # Internal links are prefixed when the host does not serve the site at
+        # its domain root (ADR-0024). The template carries it too, for the
+        # links that are written as HTML rather than built in JS.
+        "baseHref": with_base(base_path, "/"),
         "linkNote": LINK_NOTE_FALLBACK if mode == "fallback" else None,
+    # The pricing paragraph is a fixed part of the page, but the payload
+    # carries it so tests can assert the page says what the times are.
+    "pricingNote": PRICING_NOTE,
         "feed": fares.stats(),
         "timetable": timetable.stats() if timetable else None,
         "adults": adults,
@@ -409,6 +546,8 @@ TEMPLATE = """<!doctype html>
   .unpriced { margin: 0 0 1.25rem; }
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+  .footnav a { color: inherit; }
+  @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
      pushes the ticket action off-screen (ADR-0019). The markup stays a real
@@ -482,10 +621,12 @@ TEMPLATE = """<!doctype html>
 <footer>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
-  <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed. The times are options in the timetable, and the fare shown is valid on all of them, so none is picked for you.</p>
+  <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed.</p>
+  <p>The times on this page are options in the timetable, not a booking: the fare shown is valid on every service listed, so none is picked for you.</p>
   <p id="railcardNote"></p>
   <p id="linkNote" hidden></p>
   <p class="tag" id="railcardBasis" hidden></p>
+  <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
   <p class="tag" id="provenance"></p>
   <p id="disclosure" hidden></p>
   <p id="copyStatus" role="status" class="sr-only"></p>
@@ -638,7 +779,7 @@ function provenance() {
       " (" + DATA.origin.crs + ") in this feed.";
     if (DATA.stations && DATA.stations.length) {
       const link = document.createElement("a");
-      link.href = "/";
+      link.href = DATA.baseHref;
       link.textContent = "Start from a station we do price";
       unpriced.append(intro + " ", link, ".");
     } else {
@@ -920,8 +1061,13 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", payload["note"])
+        .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
         .replace("__ANALYTICS__", analytics)
     )
+
+
+def render_privacy(note: str, base_path: str = "") -> str:
+    return PRIVACY.replace("__BASE__", base_path).replace("__NOTE__", note)
 
 
 CHOOSER_TEMPLATE = """<!doctype html>
@@ -1035,11 +1181,16 @@ __ANALYTICS__
 """
 
 
-def render_chooser(index: list[dict], *, budget_pounds: int, analytics: str = "") -> str:
+def render_chooser(
+    index: list[dict], *, budget_pounds: int, analytics: str = "", base_path: str = ""
+) -> str:
     """The root page: the station chooser itself, with no fares on it."""
     note = DEFAULT_NOTE
     stations = json.dumps(
-        [{"name": e["name"], "crs": e["crs"], "href": f"/from/{e['slug']}/", "destinations": e["destinations"]} for e in index],
+        [
+            {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/"), "destinations": e["destinations"]}
+            for e in index
+        ],
         ensure_ascii=False,
         separators=(",", ":"),
     ).replace("</", "<\\/")
@@ -1047,6 +1198,7 @@ def render_chooser(index: list[dict], *, budget_pounds: int, analytics: str = ""
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", note)
+        .replace("__BASE__", "/" + base_path.strip("/"))
         .replace("__ANALYTICS__", analytics)
     )
 
@@ -1066,6 +1218,20 @@ def main(argv: list[str] | None = None) -> int:
 
     fares = FaresDb().load_feed(args.feed)
     timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
+
+    # Where the prices came from is read from the feed's metadata.json, not
+    # retyped per build; --price-source overrides it. A synthetic build with
+    # no metadata keeps the honest synthetic default.
+    metadata_folders = [Path(args.feed)]
+    if args.timetable:
+        metadata_folders.append(Path(args.timetable))
+    if args.feed_metadata:
+        metadata_folders.append(Path(args.feed_metadata))
+    metadata = read_feed_metadata(metadata_folders)
+    price_source = args.price_source or price_source_from_metadata(metadata)
+    base_path = "/" + args.base_path.strip("/") if args.base_path.strip("/") else ""
+    if not price_source:
+        price_source = DEFAULT_PRICE_SOURCE
     try:
         payload = build_payload(
             fares,
@@ -1075,6 +1241,8 @@ def main(argv: list[str] | None = None) -> int:
             day=day,
             note=args.note,
             attribution=notices_or_attribution(args),
+            price_source=price_source,
+            base_path=base_path,
             provider=args.provider,
             mode=args.link_mode,
             adults=args.adults,
@@ -1118,6 +1286,8 @@ def main(argv: list[str] | None = None) -> int:
                 day=day,
                 note=args.note,
                 attribution=notices_or_attribution(args),
+                price_source=price_source,
+                base_path=base_path,
                 provider=args.provider,
                 mode=args.link_mode,
                 adults=args.adults,
@@ -1128,13 +1298,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             others = [e for e in index if e["crs"] != crs]
             one["stations"] = [
-                {"name": e["name"], "crs": e["crs"], "href": f"/from/{e['slug']}/"} for e in others
+                {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/")} for e in others
             ]
             page = out_dir / "from" / by_crs[crs]["slug"] / "index.html"
             page.parent.mkdir(parents=True, exist_ok=True)
             page.write_text(render_page(one, budget_pounds=20, analytics=analytics), encoding="utf-8")
             print(f"wrote {page} with {len(one['destinations'])} destinations from {one['origin']['name']}")
-        chooser = render_chooser(index, budget_pounds=20, analytics=analytics)
+        chooser = render_chooser(index, budget_pounds=20, analytics=analytics, base_path=base_path)
         root = out_dir / "index.html"
         root.write_text(chooser, encoding="utf-8")
         print(f"wrote {root} (the chooser) with {len(index)} priced stations")
@@ -1152,6 +1322,12 @@ def main(argv: list[str] | None = None) -> int:
                 f"note: {len(stale)} page folder(s) in {out_dir / 'from'} are from an earlier build and were not "
                 f"rewritten: {', '.join(stale)}. Delete them yourself if you want the folder to match this build."
             )
+        # The privacy page is written once per site, at the base path the
+        # station links use, so it resolves wherever the site is served from.
+        privacy = out_dir / "privacy" / "index.html"
+        privacy.parent.mkdir(parents=True, exist_ok=True)
+        privacy.write_text(render_privacy(args.note, base_path), encoding="utf-8")
+        print(f"wrote {privacy}")
         # Say how to open it, because the pages are not in the repository (they
         # are build output) and their station links are root-absolute, so
         # double-clicking the file does not work while a local server does.
@@ -1166,7 +1342,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             "name": location.name,
             "crs": crs,
-            "href": f"/from/{station_slug(location.name, crs, set())}/",
+            "href": with_base(base_path, f"/from/{station_slug(location.name, crs, set())}/"),
         }
         for crs, location in sorted(fares.locations_by_crs.items())
         if crs != payload["origin"]["crs"]
@@ -1178,6 +1354,13 @@ def main(argv: list[str] | None = None) -> int:
         )
     out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
+    # The footer links to the privacy page, so a single-page build writes it
+    # beside the page rather than shipping a link to nowhere.
+    if out.parent.is_dir():
+        privacy = out.parent / "privacy" / "index.html"
+        privacy.parent.mkdir(parents=True, exist_ok=True)
+        privacy.write_text(render_privacy(args.note, base_path), encoding="utf-8")
+        print(f"wrote {privacy}")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
     if args.link_mode == "fallback":
         print("fallback links: readers get the seller's own search page, not their search")

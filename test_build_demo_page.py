@@ -137,6 +137,64 @@ class DemoPageTest(unittest.TestCase):
         args = argparse.Namespace(notices="rdg", attribution="custom wording")
         self.assertEqual(notices_or_attribution(args), [NOTICES["rdg"]])
 
+    # -- feed metadata: provenance recorded once, read by every build ---------
+
+    def test_metadata_beside_the_feed_supplies_the_price_source(self) -> None:
+        # The download records where it came from once; every build after that
+        # reads it instead of the operator retyping it.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "fares")
+            (Path(feed) / "metadata.json").write_text(
+                json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
+                encoding="utf-8",
+            )
+            metadata = build_demo_page.read_feed_metadata([Path(feed)])
+        self.assertEqual(
+            build_demo_page.price_source_from_metadata(metadata),
+            "the RSP fares feed, downloaded 3 October 2026",
+        )
+
+    def test_a_source_without_a_download_date_still_speaks(self) -> None:
+        self.assertEqual(
+            build_demo_page.price_source_from_metadata({"source": "RSP fares feed"}),
+            "the RSP fares feed",
+        )
+
+    def test_no_metadata_keeps_the_synthetic_default(self) -> None:
+        self.assertEqual(build_demo_page.price_source_from_metadata({}), None)
+        self.assertEqual(
+            build_demo_page.price_source_from_metadata({"downloaded": "3 October 2026"}),
+            None,
+        )
+
+    def test_unreadable_metadata_is_named_not_silent(self) -> None:
+        # Provenance that silently fell back to the default is provenance the
+        # operator believes is real, so a broken file says so.
+        with tempfile.TemporaryDirectory() as tmp:
+            broken = Path(tmp) / "metadata.json"
+            broken.write_text("{not json", encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                metadata = build_demo_page.read_feed_metadata([broken.parent])
+        self.assertEqual(metadata, {})
+        self.assertIn("unreadable", stderr.getvalue())
+
+    # -- base path: internal links on a host that is not the domain root ------
+
+    def test_base_path_prefixes_every_internal_link(self) -> None:
+        # GitHub Pages project sites and most shared hosting serve the site
+        # below the domain root; root-absolute links 404 there.
+        payload = build_payload(self.fares, self.timetable, "GRN", base_path="/tb")
+        hrefs = {station["href"] for station in payload["stations"]}
+        self.assertTrue(all(href.startswith("/tb/from/") for href in hrefs), hrefs)
+        self.assertEqual(payload["baseHref"], "/tb/")
+        html = render_page(payload, budget_pounds=20)
+        self.assertIn('/tb/privacy/', html)
+
+    def test_no_base_path_leaves_links_root_absolute(self) -> None:
+        payload = build_payload(self.fares, self.timetable, "GRN")
+        self.assertEqual(payload["baseHref"], "/")
+        self.assertIn('href="/privacy/"', render_page(payload, budget_pounds=20))
+
     def test_the_analytics_snippet_is_injected_only_when_given(self) -> None:
         snippet = "<script>window.seen=1;</script>"
         self.assertNotIn("window.seen", self.html)
@@ -257,8 +315,9 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="unpriced"', html)
         script = html.split("<script>")[1].split("</script>")[0]
         self.assertIn("We couldn't price any journeys from", script)
-        # The way forward is the chooser, as a real link.
-        self.assertIn('link.href = "/"', script)
+        # The way forward is the chooser, as a real link, and it honours the
+        # site's base path like every other internal link.
+        self.assertIn("link.href = DATA.baseHref", script)
         self.assertIn("Start from a station we do price", script)
         # The controls cannot help an origin with no prices, so they stand down.
         self.assertIn("if (controls) controls.hidden = true", script)
@@ -383,7 +442,10 @@ class DemoPageTest(unittest.TestCase):
         # stylesheet must wrap cells rather than fix their width, so no cell can
         # sit outside the viewport however long a station name is.
         self.assertIn("@media (max-width: 44rem)", self.html)
-        reflow = self.html.split("@media (max-width: 44rem)")[1].split("</style>")[0]
+        # From the first max-width block to the end of the stylesheet: the
+        # footer nav has its own small block, and the table's rules must be
+        # found wherever they sit.
+        reflow = self.html[self.html.index("@media (max-width: 44rem)"):].split("</style>")[0]
         self.assertIn("flex-wrap", reflow)
         self.assertNotIn("display: none", reflow.split("thead")[0])
         self.assertIn("thead { display: none; }", reflow)
