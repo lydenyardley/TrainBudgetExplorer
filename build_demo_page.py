@@ -910,7 +910,7 @@ function render() {
     code.textContent = station.crs;
     const count = document.createElement("span");
     count.className = "count";
-    count.textContent = station.destinations + " destinations";
+    count.textContent = station.destinations + (station.destinations === 1 ? " destination" : " destinations");
     link.append(name, code, count);
     item.append(link);
     picks.append(item);
