@@ -12,8 +12,9 @@ fills the template in is only reachable while signed in.
 
 The account exists now, and the first licence text has been obtained. It is the
 **Darwin Timetable Files** licence, saved as
-`Darwin-timetable-license-P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8.pdf` and read on
-22 September 2026. The filename encodes the product id, which is the id Schedule 1
+`licences/Darwin-timetable-license-P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8.pdf` and read
+on 22 September 2026 — it has since been joined there by three more, and by a register
+and a test that keep the shelf and the record in step (ADR-0021). The filename encodes the product id, which is the id Schedule 1
 §3 refers to as the `LICENCED DATA`.
 
 Two search directions failed first, and both failures are worth recording because
@@ -38,6 +39,7 @@ they are the obvious next move for anyone returning to this:
    | Schedule 1 §5, `PERMITTED PURPOSES` | "The raw data may be copied and used by Data Consumer for **internal business purposes only**" |
    | Schedule 1 §8, `ATTRIBUTION` | organisations "must be attributed if the data is subsequently published" — **and then lists none** |
    | Schedule 2, `LICENCE FEE TYPE` | **`Open (OGL3)`** — "The Data Consumer can access the Licensed Data without charge" |
+   | nothing else | Darwin's PDF has **no contractual terms and conditions** — it is the OGL head plus the two Schedules, unlike the three products read later (ADR-0021) |
    | §6 term | 1 year, renewing automatically on the anniversary, 1 month notice for convenience |
    | §9 retention | the data may be retained after the term |
    | Schedule 2, `UPDATE FREQUENCY` | Daily |

@@ -29,12 +29,25 @@ retail** — or browse that category. Each product's licence downloads as a PDF 
 - [ ] Recorded the four answers below, in writing, with the date read
 - [x] Re-read the same for the timetable product — **read 22 September 2026**, see below
 
-| the question | what to find | answer found | where recorded |
-|---|---|---|---|
-| **commercial use** | may these prices sit on a page that earns commission? | **fares: unread.** timetable: OGL3 permits it, but Schedule 1 §5 restricts the raw data to *internal business purposes only* — see ADR-0020 | ADR-0020 |
-| **attribution** | the exact wording, and where it must appear | **fares: unread.** timetable: §8 lists **no organisations** and gives no statement, so the OGL fallback wording applies (below) | ADR-0020 |
-| **redistribution** | may the prices be shown to people other than the licensee? | **fares: unread.** timetable: OGL3 permits, §5 restricts — the same conflict | ADR-0020 |
-| **licence fee** | is the `Licence Fees` term in Schedule 1 nil, or a number? | **fares: unread.** timetable: **nil** — Schedule 2, `Open (OGL3)`, "without charge" | ADR-0020 |
+One row per product. `§5 permits publication?` is the field that decides everything:
+Schedule 1 §5 is filled in per product, and the Data Sharing Agreement products say in
+clause 2.3 that publication is not permitted *save as the Agreement allows* — so if §5
+restricts the use, the product cannot go on a public page (ADR-0021).
+
+| product | agreement | §5 permits publication? | attribution required | licence fee | read |
+|---|---|---|---|---|---|
+| Darwin Timetable Files | OGL v3.0 | **no** — "internal business purposes only" | OGL fallback wording (§8 gives none) | nil | 22 Sep 2026 |
+| Knowledgebase Ticket Types data feed | Data Sharing Agreement | **yes** — "freely available or otherwise distributed to third parties" | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
+| Knowledgebase Ticket Restrictions data feed | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
+| Fare Locations Reference Data v1.3 | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
+| **the fares product** (flows and fares, railcard minimum fares) | — | **not held** | — | — | — |
+
+The licences themselves are in `licences/`, one PDF per product, with the register that
+these rows are drawn from and a test that keeps the two in step.
+
+Still to answer, and only for the fares product: **commercial use** (may these prices sit
+on a page that earns commission?) and **redistribution**. For the other four the answer
+is in the table above.
 
 ### What the timetable licence says
 
@@ -56,7 +69,15 @@ they disagree:
   may be retained after the term; the update frequency is daily.
 
 Nothing here is a formality: §5 may forbid the public page entirely, so it is a
-question for RDG in writing before launch, not a reading to be argued in-house.
+question for RDG in writing before launch, not a reading to be argued in-house. Three
+further products have since been read under the same template, and **their** §5 permits
+distribution in terms — so the restrictive wording is a choice, not boilerplate, and the
+strict reading of this one is the one to plan around (ADR-0021).
+
+The timetable is also the **degradable** product: `--timetable` is optional and the
+builder already renders a prices-only page that says no timetable was loaded. If §5 means
+what it says, the journey times go and the product stays. The fares licence is the one
+that could end it.
 
 ## 2. Attribution — the term most likely to be got wrong
 
@@ -69,11 +90,22 @@ question for RDG in writing before launch, not a reading to be argued in-house.
 - [ ] If the licence also imposes terms on *downstream* users of the page, that is
       flagged and decided, not accepted silently — this is the kind of clause that
       has been found in rail licences and needed a careful reading
+- [ ] The **accuracy and liability notices** required of onward distribution are on the
+      page: Data Sharing Agreement cl. 3.3.2 requires appropriate accuracy notices plus
+      the publisher's liability limitation and exclusion, and cl. 7.2 supplies them —
+      the data is "as is", with no representation as to accuracy or fitness for purpose
 
 ## 2b. The attribution statement
 
-- [ ] The exact statement is the product's own if Schedule 1 §8 gives one, and the OGL
-      fallback text otherwise — **the timetable gives none, so the fallback it is**
+**There are two, not one**, and both are required (ADR-0021):
+
+- [ ] **Rail Delivery Group credited as the source** for the three Data Sharing Agreement
+      feeds — a *condition* of the licence under cl. 3.3.1, in any reasonable manner, and
+      never in a way suggesting the publisher endorses the page
+- [ ] **The OGL fallback wording** for the Darwin timetable, since its §8 gives no
+      statement: `Contains public sector information licensed under the Open Government Licence v3.0.`
+- [ ] Neither is read off a blank §8 and treated as "nothing required" — the blank field
+      names additional third-party licensors, of which there are none
 - [ ] The wording is pinned in one place in the code, not retyped into a build
       command where the next regenerator can drop it
 
