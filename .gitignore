@@ -3,6 +3,13 @@ __pycache__/
 _demo_feed/
 _bench_feed/
 
+# Credentials. The marketplace issues a consumer key and secret per API product,
+# and a secret in a tracked file is a secret that has to be rotated. Keep them in
+# the environment, or in .env, which is ignored here on purpose.
+.env
+.env.*
+*.secret
+
 # Downloaded feeds. Licensed data: it is not ours to redistribute (ADR-0005,
 # the redistribution question in publish-checklist.md is still unread), and the
 # fares feed is large. `feeds/` is the folder the README's live commands use.
