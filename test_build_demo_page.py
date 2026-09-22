@@ -186,6 +186,13 @@ class DemoPageTest(unittest.TestCase):
 
     # -- the unpriced-origin page ------------------------------------------
 
+    def test_the_hidden_attribute_beats_every_display_rule(self) -> None:
+        # The controls grid, the picker, and the footer slots all set display;
+        # without this rule, hiding them does nothing and an unpriced page
+        # shows a slider that cannot help. Regression: the Sleepy page shipped
+        # with the controls still on screen under the unpriced message.
+        self.assertIn("[hidden] { display: none !important; }", self.html)
+
     def test_an_unpriced_origin_gets_its_own_first_sentence(self) -> None:
         payload = dict(self.payload, destinations=[])
         html = render_page(payload, budget_pounds=20)
@@ -197,6 +204,14 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("Start from a station we do price", script)
         # The controls cannot help an origin with no prices, so they stand down.
         self.assertIn("if (controls) controls.hidden = true", script)
+        # Nor can the table or the budget's empty message: nothing was priced,
+        # so "raise the budget" would be advice about a question nobody asked.
+        self.assertIn('for (const id of ["empty", "more"])', script)
+        self.assertIn('if (table) table.hidden = true;', script)
+        self.assertIn('if (summary) summary.hidden = true;', script)
+        # render() runs after provenance() and would un-hide the budget's empty
+        # message; on an unpriced page it must not run at all.
+        self.assertIn("if (!DATA.destinations.length) return;", script)
 
     def test_an_unpriced_origin_with_no_stations_at_all_says_that(self) -> None:
         payload = dict(self.payload, destinations=[], stations=[])
@@ -272,6 +287,15 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('"destinations":6', html.replace(" ", ""))
         # The ranked count is the cold start, derived from the feed.
         self.assertLess(html.index("/from/london-kings-x/"), html.index("/from/nottingham/"))
+
+    def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
+        html = render_chooser([], budget_pounds=20)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("if (!STATIONS.length) {", script)
+        self.assertIn("Nothing is priced from any station in this build", script)
+        # The no-match wording quotes typed input; it must never address an
+        # empty field the reader has not touched.
+        self.assertIn("} else if (needle) {", script)
 
     def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
         # The reflow is display-only CSS in a max-width media query. The markup
