@@ -229,6 +229,51 @@ def notices_or_attribution(args: argparse.Namespace) -> str | list[str] | None:
     return args.attribution
 
 
+# Worker-process state: the feed is loaded once per worker by the pool's
+# initialiser, never pickled per job. The parsed databases hold object()
+# sentinels that cannot cross a process boundary at all, so jobs carry only
+# small config and the worker resolves the feed itself.
+_WORKER: dict = {}
+
+
+def _init_worker(feed: str, timetable: str | None) -> None:
+    _WORKER["fares"] = FaresDb().load_feed(feed)
+    _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
+
+
+def _build_page_job(job: dict) -> tuple[str, str, str]:
+    """Build one station page in a worker process.
+
+    --all-origins is embarrassingly parallel: each origin's page depends only
+    on the feed and its own origin. The worker loads the feed once (a few
+    seconds) and returns the rendered HTML, which the parent writes.
+    """
+    payload = build_payload(
+        job.get("fares") or _WORKER["fares"],
+        job.get("timetable", _WORKER.get("timetable")),
+        job["crs"],
+        max_changes=job["max_changes"],
+        day=job["day"],
+        note=job["note"],
+        attribution=job["attribution"],
+        price_source=job["price_source"],
+        base_path=job["base_path"],
+        provider=job["provider"],
+        mode=job["link_mode"],
+        adults=job["adults"],
+        network=job["network"],
+        advertiser_id=job["advertiser_id"],
+        publisher_id=job["publisher_id"],
+        departure_limit=job["departures"],
+    )
+    payload["stations"] = [
+        {"name": e["name"], "crs": e["crs"], "href": with_base(job["base_path"], f"/from/{e['slug']}/")}
+        for e in job["others"]
+    ]
+    html = render_page(payload, budget_pounds=20, analytics=job["analytics"])
+    return job["slug"], job["origin_name"], html
+
+
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Write the budget explorer demo page.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
@@ -252,6 +297,14 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         default="",
         help="prefix for the site's internal links, for hosts that do not serve it "
         "at their domain root, e.g. /trainbudget. No leading/trailing slash needed",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="processes to build station pages with. Each origin's page is "
+        "independent, so N workers cut the wall time roughly N-fold on a "
+        "full-network build (the feed is re-loaded once per worker)",
     )
     parser.add_argument(
         "--feed-metadata",
@@ -1284,35 +1337,61 @@ def main(argv: list[str] | None = None) -> int:
             fares.locations_by_crs,
         )
         by_crs = {entry["crs"]: entry for entry in index}
+        # One shared job description per page: in-process builds run it inline
+        # with the live databases; --workers hands config-only jobs to a pool
+        # whose workers load the feed themselves.
+        shared = {
+            "max_changes": args.max_changes,
+            "day": day,
+            "note": args.note,
+            "attribution": notices_or_attribution(args),
+            "price_source": price_source,
+            "base_path": base_path,
+            "provider": args.provider,
+            "link_mode": args.link_mode,
+            "adults": args.adults,
+            "network": args.affiliate_network,
+            "advertiser_id": args.advertiser_id,
+            "publisher_id": args.publisher_id,
+            "departures": args.departures,
+            "analytics": analytics,
+        }
+        jobs = []
         for crs in origins:
             if crs not in by_crs:
                 continue
-            one = build_payload(
-                fares,
-                timetable,
-                crs,
-                max_changes=args.max_changes,
-                day=day,
-                note=args.note,
-                attribution=notices_or_attribution(args),
-                price_source=price_source,
-                base_path=base_path,
-                provider=args.provider,
-                mode=args.link_mode,
-                adults=args.adults,
-                network=args.affiliate_network,
-                advertiser_id=args.advertiser_id,
-                publisher_id=args.publisher_id,
-                departure_limit=args.departures,
+            jobs.append(
+                {
+                    **shared,
+                    "crs": crs,
+                    "slug": by_crs[crs]["slug"],
+                    "origin_name": by_crs[crs]["name"],
+                    "others": [e for e in index if e["crs"] != crs],
+                }
             )
-            others = [e for e in index if e["crs"] != crs]
-            one["stations"] = [
-                {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/")} for e in others
-            ]
-            page = out_dir / "from" / by_crs[crs]["slug"] / "index.html"
+        workers = max(1, args.workers)
+        if workers == 1:
+            for job in jobs:
+                job["fares"] = fares
+                job["timetable"] = timetable
+            results = map(_build_page_job, jobs)
+        else:
+            # ProcessPoolExecutor rather than multiprocessing.Pool: a worker
+            # that dies before answering turns into a BrokenProcessPool error
+            # here, instead of an imap that waits forever on a dead queue.
+            from concurrent.futures import ProcessPoolExecutor
+
+            with ProcessPoolExecutor(
+                workers,
+                initializer=_init_worker,
+                initargs=(args.feed, args.timetable),
+            ) as executor:
+                results = executor.map(_build_page_job, jobs, chunksize=1)
+        for slug, origin_name, html in results:
+            page = out_dir / "from" / slug / "index.html"
             page.parent.mkdir(parents=True, exist_ok=True)
-            page.write_text(render_page(one, budget_pounds=20, analytics=analytics), encoding="utf-8")
-            print(f"wrote {page} with {len(one['destinations'])} destinations from {one['origin']['name']}")
+            page.write_text(html, encoding="utf-8")
+            print(f"wrote {page} from {origin_name}")
         chooser = render_chooser(index, budget_pounds=20, analytics=analytics, base_path=base_path)
         root = out_dir / "index.html"
         root.write_text(chooser, encoding="utf-8")

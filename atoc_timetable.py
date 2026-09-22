@@ -24,8 +24,10 @@ from parse_report import ParseReport, count, peek, read_feed_files
 # densest one. See adr/ADR-0009-onward-departure-cap.md.
 MAX_ONWARD_DEPARTURES = 200
 MINUTES_PER_DAY = 1440
+DEFAULT_CONNECTION_MINUTES = 5
 
 _UNSET = object()
+_MISSING = object()
 
 # The fixed-width helpers are deliberately local. Sharing them across modules
 # would mean importing another module's private helpers, which costs the reader
@@ -322,6 +324,10 @@ class TimetableDb:
         self._arrivals: dict[str, list[tuple[int, int, int]]] | None = None
         self._departure_times: dict[str, list[int]] = {}
         self._index_day: date | None | object = _UNSET
+        self._crs_cache: dict[str, str | None] = {}
+        self._schedule_crs: dict[int, tuple[str | None, ...]] = {}
+        self._schedule_dest_stops: dict[int, dict[str, list[int]]] = {}
+        self._change_times: dict[str, int] = {}
 
     # -- loading ---------------------------------------------------------
 
@@ -478,15 +484,29 @@ class TimetableDb:
         self._departures = None
         self._arrivals = None
         self._index_day = _UNSET
+        self._crs_cache.clear()
+        self._schedule_crs.clear()
+        self._schedule_dest_stops.clear()
+        self._change_times.clear()
 
     # -- lookups ---------------------------------------------------------
 
     def crs_for_tiploc(self, tiploc: str) -> str | None:
-        """Resolve a TIPLOC to a station code. The station names file wins, whatever the load order."""
+        """Resolve a TIPLOC to a station code. The station names file wins, whatever the load order.
+
+        Memoized: the mapping is static once the feed is loaded, and the
+        journey search calls this once per stop of every candidate journey -
+        millions of times on a full-network build, where an uncached double
+        dict probe per call is the profile's single largest cost.
+        """
+        cached = self._crs_cache.get(tiploc, _MISSING)
+        if cached is not _MISSING:
+            return cached
         crs = self.crs_by_tiploc.get(tiploc)
-        if crs:
-            return crs
-        return self.cif_crs_by_tiploc.get(tiploc)
+        if not crs:
+            crs = self.cif_crs_by_tiploc.get(tiploc)
+        self._crs_cache[tiploc] = crs
+        return crs
 
     def station_for_tiploc(self, tiploc: str) -> TimetableStation | None:
         return self.stations_by_tiploc.get(tiploc)
@@ -528,10 +548,39 @@ class TimetableDb:
         schedule_indexes = range(len(self.schedules)) if day is None else self.active_schedules(day)
         departures: dict[str, list[tuple[int, int, int]]] = {}
         arrivals: dict[str, list[tuple[int, int, int]]] = {}
+        # Each schedule's stop CRS chain is resolved once here, and the search
+        # loops read the chain instead of re-resolving tiplocs per candidate
+        # journey. On a full-network build that lookup was the profile's
+        # largest single cost - millions of calls to re-answer a question the
+        # feed answers once.
+        self._schedule_crs = {
+            schedule_index: tuple(self.crs_for_tiploc(stop.tiploc) for stop in self.schedules[schedule_index].stops)
+            for schedule_index in schedule_indexes
+        }
+        # Where each schedule calls at each station, by position. The one-change
+        # search used to walk every remaining stop of every candidate onward
+        # service to find the destination; this index answers it with a bisect,
+        # which is what keeps a full-network build out of quadratic time.
+        self._schedule_dest_stops = {}
+        for schedule_index in schedule_indexes:
+            chain = self._schedule_crs[schedule_index]
+            stops_of: dict[str, list[int]] = {}
+            for position, stop_crs in enumerate(chain):
+                if stop_crs is not None:
+                    stops_of.setdefault(stop_crs, []).append(position)
+            self._schedule_dest_stops[schedule_index] = stops_of
+        # Connection time per station, first station record wins - the same
+        # answer connection_minutes_at gives, minus its linear scan per call,
+        # which sat inside the search's hottest loop.
+        self._change_times = {}
+        for station in self.stations_by_tiploc.values():
+            if station.crs and station.change_time and station.crs not in self._change_times:
+                self._change_times[station.crs] = station.change_time
         for schedule_index in schedule_indexes:
             schedule = self.schedules[schedule_index]
+            crs_chain = self._schedule_crs[schedule_index]
             for stop_index, stop in enumerate(schedule.stops):
-                crs = self.crs_for_tiploc(stop.tiploc)
+                crs = crs_chain[stop_index]
                 if crs is None:
                     continue
                 board = stop.board
@@ -745,9 +794,10 @@ class TimetableDb:
             if best is not None and departure >= best.arrival:
                 break
             schedule = self.schedules[schedule_index]
+            crs_chain = self._schedule_crs[schedule_index]
             for interchange_index in range(stop_index + 1, len(schedule.stops)):
                 interchange_stop = schedule.stops[interchange_index]
-                interchange_crs = self.crs_for_tiploc(interchange_stop.tiploc)
+                interchange_crs = crs_chain[interchange_index]
                 if interchange_crs is None or interchange_crs in {origin_crs, destination_crs}:
                     continue
                 arrival_at_interchange = interchange_stop.alight
@@ -755,7 +805,11 @@ class TimetableDb:
                     continue
                 if arrival_at_interchange < departure:
                     arrival_at_interchange += MINUTES_PER_DAY
-                wait = connection_minutes if connection_minutes is not None else self.connection_minutes_at(interchange_crs)
+                wait = (
+                    connection_minutes
+                    if connection_minutes is not None
+                    else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
+                )
                 earliest_onward = arrival_at_interchange + max(wait, 1)
                 if best is not None and earliest_onward >= best.arrival:
                     continue
@@ -769,10 +823,14 @@ class TimetableDb:
                     if onward_index == schedule_index:
                         continue
                     onward_schedule = self.schedules[onward_index]
-                    for later in range(onward_stop_index + 1, len(onward_schedule.stops)):
+                    # Positions of this destination on the onward service, after
+                    # the boarding stop: the same train may call there more than
+                    # once, and each call is a candidate arrival.
+                    positions = self._schedule_dest_stops[onward_index].get(destination_crs)
+                    if positions is None:
+                        continue
+                    for later in positions[bisect.bisect_right(positions, onward_stop_index):]:
                         stop = onward_schedule.stops[later]
-                        if self.crs_for_tiploc(stop.tiploc) != destination_crs:
-                            continue
                         arrival = stop.alight
                         if arrival is None:
                             continue
