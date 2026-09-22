@@ -1,7 +1,7 @@
 # Train Budget Explorer
 
 **Status:** Stage 1 in progress. Both parser layers are built, hardened against
-damaged input, date-aware when asked, and covered by 154 tests. The journey
+damaged input, date-aware when asked, and covered by 186 tests. The journey
 search is measured rather than tuned by feel, the demo page runs on the
 synthetic feeds, and the count that decides go/no-go now comes with a report
 that questions it. The feed download clears when the Marketplace account is
@@ -80,6 +80,7 @@ value changes without the argument changing with it.
 | `damage_feed.py` | Writes deliberately damaged copies of a feed |
 | `fuzz_feed.py` | Mutates a feed at random and checks the parser's invariants |
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
+| `check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
@@ -90,14 +91,18 @@ value changes without the argument changing with it.
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `test_build_demo_page.py` | Nine tests for the page payload and template |
+| `test_build_demo_page.py` | Thirty tests for the page payload, template, licence slot, and copy control |
+| `browser_test.cjs` | Playwright test: drives the generated page in a real browser |
 | `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
 | `test_damaged_feed.py` | Twenty tests for damaged input |
 | `test_sanity_report.py` | Fourteen tests for the count report |
-| `test_retailer.py` | Fifteen tests for the ticket links |
+| `test_retailer.py` | Twenty-one tests for the ticket links |
+| `test_check_links.py` | Fourteen tests for the link checker's verdicts |
 | `test_fuzzed_feed.py` | Fifteen tests for the accounting and the fuzzer |
 | `test_commit_message.py` | Eleven tests for the message checker |
 | `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
+| `publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
+| `launch-checklist.md` | Where the page goes, how the result is measured, and what the October review reads |
 | `glossary.md` | Domain terms |
 | `CONTRIBUTING.md` | Commit convention and how to run the tests |
 | `adr/` | Decisions, numbered, newest last |
@@ -106,7 +111,10 @@ value changes without the argument changing with it.
 
 1. Put the fares feed in `feeds/fares` and the timetable feed in
    `feeds/timetable`. Both accept a folder or a zip, and a folder holding the
-   zip.
+   zip. **Grantham's real station code is `GRA`, not the `GRN` the synthetic feed
+   invents**, so every command below that reads the real feeds uses `GRA`. The
+   synthetic commands keep `GRN` because the synthetic feed is the thing that
+   has it.
 2. Run `python feed_audit.py --feed feeds/fares --timetable feeds/timetable`
    and read the rejected count and the unopened files before any total. A feed
    that did not load looks exactly like a feed that is empty.
@@ -114,7 +122,7 @@ value changes without the argument changing with it.
    reports. It is the only thing that will exercise the real feed's encodings and
    record shapes against a parser written without them.
 4. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
-   --origin GRN --budget 20` and read what the count left out.
+   --origin GRA --budget 20` and read what the count left out.
 5. Check the licence text for commercial use, which decides whether ADR-0003
    can proceed, and whether the tracked links ADR-0014 builds may be published.
 6. Run the sweep for the Stage 1 count that decides go/no-go.
@@ -143,15 +151,29 @@ replace the synthetic ones with no change to the page.
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRN --out demo.html
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
 ```
 
 Each destination carries a link to a ticket seller and an expander listing the
-next few journeys. The link sends the origin, the destination, the date if the
-page was built with one, and the party size. It does not send a railcard, because
-no seller documents a parameter for one, and it does not send a chosen train,
-because the fare is a walk-up fare valid on any of them. The page says both
-these things rather than leaving the reader to find out.
+next few journeys. **By default that link is the seller's own search page**, with
+no journey on it, because no seller's parameterised link is known to land on a
+search (ADR-0017) and a reader sent to "No matching journeys found" does not
+conclude that the seller is broken. The page says what the reader has to fill in,
+and that the price is the same at any seller, so the cost is stated rather than
+discovered.
+
+`--link-mode deep` sends the origin, the destination, the date if the page was
+built with one, and the party size, and opting in asserts that somebody has opened
+that link and seen a search. What a link never carries, either way: a railcard,
+because no seller documents a parameter for one, and a chosen train, because the
+fare is a walk-up fare valid on all of them.
+
+Because the default link carries nothing, each row offers a **Copy** control that
+puts the four things a seller asks for — from, to, date, and party size — on the
+reader's clipboard, naming the Two Together Railcard as something to tick when the
+price on screen is the railcard price. If the browser refuses clipboard access,
+which it does for a page opened straight from disk, the text appears under the row
+and the button says so instead of the page claiming a copy that did not happen.
 
 Affiliate tracking is **off by default**, and turning it on wraps the link in a
 network redirect rather than changing the search:
@@ -166,6 +188,43 @@ The page is not deployed. `adr/ADR-0010-demo-page-before-the-gate.md` records wh
 it exists before the go/no-go gate opens, and `adr/ADR-0014-ticket-links.md`
 records which seller is the default, what a link may carry, and why the tracked
 version must not be published until the licence text is read.
+
+Three further switches exist for when the terms are read:
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
+  --attribution "Contains data licensed from Rail Delivery Group"   # the licence wording
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
+  --link-mode deep                                                  # opt in once a link is verified
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
+  --analytics-snippet counter.html                                  # counting referrers
+```
+
+Neither seller's link is currently known to land on a search. To see that stated
+rather than claimed:
+
+```
+python check_links.py --origin GRA --destination NOT
+python check_links.py --provider trainline --mode fallback
+```
+
+The checker can prove a link is broken and cannot prove one works, so a `blocked`
+or `inconclusive` verdict still needs a person to open it.
+`adr/ADR-0017-what-the-live-link-check-found.md` records what it found.
+
+The page is the whole product, and none of the Python tests opens a browser, so
+one test drives it in a real one:
+
+```
+npx --yes --package playwright node browser_test.cjs
+```
+
+It drags the budget slider to the floor, filters to a town, follows a ticket link
+(to a stub, so nothing depends on a seller being up), and reads back what the
+**Copy** control puts on the clipboard. It exits 2 and says SKIPPED when playwright
+is missing rather than passing quietly. It earned its place immediately: the copy
+control shipped with a newline inside a JavaScript string literal, which took the
+whole page down while every Python test still passed.
 
 ## Run it
 
@@ -182,7 +241,7 @@ replace it with the downloaded feeds once they land, and name a real origin:
 
 ```
 python benchmark.py --shape hub_spoke --stations 300 --schedules 8000 --caps 0,60,200 --transfer-only
-python benchmark.py --feed feeds/fares --origin GRN --queries 40 --caps 0,60,200 --transfer-only
+python benchmark.py --feed feeds/fares --origin GRA --queries 40 --caps 0,60,200 --transfer-only
 ```
 
 To question a count, and to break a feed on purpose:
