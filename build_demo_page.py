@@ -643,6 +643,13 @@ const more = document.getElementById("more");
 const query = document.getElementById("q");
 const PAGE = 40;
 
+// A prices-only build has no times to show, and two columns of dashes are
+// noise where a shorter table is honest: the columns stand down entirely.
+if (!DATA.hasJourneys) {
+  for (const th of document.querySelectorAll("thead th:nth-child(3), thead th:nth-child(4)")) th.remove();
+}
+const columnCount = () => document.querySelectorAll("thead th").length;
+
 const money = (pence) => "\u00a3" + (pence / 100).toFixed(2).replace(/\\.00$/, "");
 const duration = (minutes) => {
   if (minutes === null || minutes === undefined) return "-";
@@ -685,10 +692,12 @@ function render() {
     const cells = [
       [destination.name + " (" + destination.crs + ")", ""],
       [money(priceOf(destination)), "num"],
-      [duration(destination.minutes), "num"],
-      [destination.changes === null ? "-" : String(destination.changes), "num"],
-      [destination.ticket + (destination.offPeak ? " off-peak" : ""), ""],
     ];
+    if (DATA.hasJourneys) {
+      cells.push([duration(destination.minutes), "num"]);
+      cells.push([destination.changes === null ? "-" : String(destination.changes), "num"]);
+    }
+    cells.push([destination.ticket + (destination.offPeak ? " off-peak" : ""), ""]);
     for (const [text, className] of cells) {
       const cell = document.createElement("td");
       cell.textContent = text;
@@ -755,7 +764,7 @@ function toggleDetail(row, destination, toggle) {
   const detail = document.createElement("tr");
   detail.className = "detail";
   const cell = document.createElement("td");
-  cell.colSpan = 6;
+  cell.colSpan = columnCount();
   const list = document.createElement("ul");
   for (const option of destination.departures) {
     const item = document.createElement("li");
@@ -895,7 +904,7 @@ function showCopyBox(row, text) {
   const detail = document.createElement("tr");
   detail.className = "detail";
   const cell = document.createElement("td");
-  cell.colSpan = 6;
+  cell.colSpan = columnCount();
   const box = document.createElement("textarea");
   box.className = "copybox";
   box.readOnly = true;
