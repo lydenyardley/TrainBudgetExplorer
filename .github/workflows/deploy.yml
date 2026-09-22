@@ -55,12 +55,16 @@ jobs:
           path: feeds
 
       - name: Build the site
+        env:
+          SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
         run: |
           BASE_ARGS=()
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
           fi
           if [ -f feeds/metadata.json ] || [ -n "$(find feeds -maxdepth 2 -name '*.ffl' 2>/dev/null | head -1)" ]; then
+            # Real feeds, or at least the fares one: the page degrades to
+            # prices-only when no timetable is present, and says so.
             python build_demo_page.py \
               --feed feeds \
               --all-origins \
