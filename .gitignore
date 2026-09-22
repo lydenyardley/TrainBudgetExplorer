@@ -10,3 +10,10 @@ demo.html
 demo_*.html
 _damaged*/
 _damaged*.zip
+
+# The per-station page set and the multi-origin build output (ADR-0019).
+_site/
+
+# Editor/agent local state and borrowed browser tooling.
+.freebuff/
+node_modules/
