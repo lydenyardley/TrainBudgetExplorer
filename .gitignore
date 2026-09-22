@@ -2,6 +2,11 @@ __pycache__/
 *.pyc
 _demo_feed/
 _bench_feed/
+
+# Downloaded feeds. Licensed data: it is not ours to redistribute (ADR-0005,
+# the redistribution question in publish-checklist.md is still unread), and the
+# fares feed is large. `feeds/` is the folder the README's live commands use.
+feeds/
 RJFAF*/
 rjfaf*/
 *.zip
