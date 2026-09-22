@@ -22,6 +22,11 @@ PRODUCT_ID = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 # that does not state it has not been read (ADR-0021).
 VERDICTS = ("internal only", "distribute")
 
+# How a row may describe the money. "nil" for the Open products, "free" for the
+# Bespoke one that is free within a non-chargeable limit, "not held" for a product
+# still to be obtained (ADR-0022).
+FEE_OUTCOMES = ("nil", "free", "no charge", "not held")
+
 
 class LicenceRegisterTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -70,10 +75,13 @@ class LicenceRegisterTest(unittest.TestCase):
                     "the row does not say whether Schedule 1 §5 permits publication",
                 )
 
-    def test_every_row_records_whether_a_fee_is_due(self) -> None:
+    def test_every_row_states_the_fee_outcome(self) -> None:
         for row in self.rows:
             with self.subTest(row=row[:60]):
-                self.assertIn("nil", row)
+                self.assertTrue(
+                    any(outcome in row for outcome in FEE_OUTCOMES),
+                    "the row does not say what the licence costs",
+                )
 
 
 if __name__ == "__main__":

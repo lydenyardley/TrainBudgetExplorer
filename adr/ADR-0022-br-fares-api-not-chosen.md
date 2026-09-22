@@ -60,8 +60,21 @@ was whether "pricing model" means a fee. It does, and the numbers are published.
      charge"**.
 
    So the target is the **bulk fares feed under an RSP Data Licence**, and the licence is
-   named, is held by others for exactly this kind of public-facing fares service, and is
-   normally free. That is a request to put to Rail Delivery Group, not a fee to budget for.
+   named, and is held by others for exactly this kind of public-facing fares service.
+
+   **Correction, same day.** BR Fares' "generally free of charge" was a third party's
+   summary, and the primary document contradicts it. The **RSP Data Licence template**
+   (`RSP_Data_Licence_Template_v07-00`) provides in clause 8.1 for a **Licence Fee** and,
+   if applicable, a **Datafeeds Charge**, and its Schedule leaves the amount to be
+   completed per licensee — `£xxxx.00 [monthly data] or £xxxx.00 [daily data]` — reviewed
+   annually. **What an RSP Data Licence costs is unknown until RSP quotes it, and it is
+   not safe to plan on it being free.** The template does name the data exactly, which is
+   what makes it the right route: "**Fares Data** comprising of RSP fares files as
+   specified by RSP from time to time in document **RSPS5045**" — the specification this
+   project's parser was built against. Its **Permitted Use** is left blank and negotiated,
+   and clause 2.3 permits a licensee to provide services to clients and **charge its
+   clients** for them, so a commercial page fits the shape of the agreement; the fee, not
+   the purpose, is the open question.
 
 4. **Do not display restriction details.** They are the one part carrying the NRE branding
    obligation. The page shows a fare code and a price, not restriction text, which keeps
@@ -74,8 +87,10 @@ was whether "pricing model" means a fee. It does, and the numbers are published.
 
 ## Consequences
 
-- **The fares question is now a permission question, not a purchase question.** Nothing
-  here needs a budget line; it needs an answer from RDG and a product to download.
+- **The fares question is a permission question *and* possibly a money question.** An
+  answer from RDG is required either way; whether a fee follows is now unknown rather than
+  assumed away. If a licence fee is quoted, the decision changes shape: it becomes a cost
+  against the affiliate rate, which is itself only visible after joining the network.
 - **A free demo is available as a reality check.** 100 calls per 30 days would let the
   project compare this parser's answers against the National Rail fares database for a
   handful of routes — the first real-data check of the pricing model, and it costs

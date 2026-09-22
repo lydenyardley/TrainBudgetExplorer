@@ -18,9 +18,14 @@ whether a product can appear on a public page (ADR-0021).
 | Knowledgebase Ticket Types data feed | `P-51e17973-7327-4735-a7ca-d2a484a56065` | Data Sharing Agreement | **distribute** — "may be made freely available or otherwise distributed to third parties" | list empty; T&Cs cl. 3.3.1 still requires crediting the Data Publisher | nil, `Open` | other or unknown |
 | Knowledgebase Ticket Restrictions data feed | `P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e` | Data Sharing Agreement | **distribute** — same wording | list empty; same cl. 3.3.1 obligation | nil, `Open` | other or unknown |
 | Fare Locations Reference Data v1.3 | `P-4f4a90ff-d4e2-442e-93b3-07121430f303` | Data Sharing Agreement | **distribute** — same wording | list empty; same cl. 3.3.1 obligation | nil, `Open` | daily |
+| Easy Fares API (Demo Version) | `P-37faed36-518a-4870-b1bd-b675461fb72e` | Data Sharing Agreement, `Bespoke` | **distribute** — "may be **sold or otherwise distributed to third parties for commercial gain**" | RSP and NRE, per the licensing document (§8 defers to it) | free to **100 hits**, then access ceases | daily |
 
-Common to all four: Data Publisher is **Rail Delivery Group** (2nd Floor, 1 Puddledock,
-London EC4V 3DS); the term is **1 year, renewing automatically**; data received may be
+The first four share a Data Publisher: **Rail Delivery Group** (2nd Floor, 1 Puddledock,
+London EC4V 3DS). The Easy Fares demo's publisher is **BR Fares Ltd** (Quadrant House,
+20 Broad Street Mall, Reading RG1 7QE), and its §10 adds one special condition: the
+information **must not be changed or misrepresented**.
+
+Common to all five: the term is **1 year, renewing automatically**; data received may be
 **retained** after the term; the Data Consumer field is blank on every export.
 
 Differences worth knowing:
@@ -48,15 +53,24 @@ the railcard minimum fares (`rcm`), and a railcards feed (`rlc`). Everything abo
 reference and rules data: names, codes, ticket types, restrictions. None of it contains
 a price. Until that licence is read, the question that decides this project is open.
 
-Two leads on where it comes from, both recorded in ADR-0022:
+The route is the **RSP Data Licence**, from Rail Settlement Plan Limited, and the licence
+template names the data precisely: \"**Fares Data** comprising of RSP fares files as
+specified by RSP from time to time in document **RSPS5045**\". RSPS5045 is the interface
+specification this project's parser was built to read (ADR-0005).
 
-- **The RSP Data Licence**, held from Rail Settlement Plan Limited and obtained by
-  contacting Rail Delivery Group. BR Fares Ltd's own licensing page describes it as
-  governing the fares data, requiring that RSP be named as the ultimate source where the
-  data is shown publicly, and states that RSP Data Licences are **"generally free of
-  charge"**. This is the licence to ask RDG for.
-- **A free demo**, if a real-data sanity check is wanted before the bulk feed arrives:
-  the Easy Fares API demo allows 100 calls per 30 days at no charge.
+**It is not free.** The template's clause 8.1 provides for a **Licence Fee** and, if
+applicable, a **Datafeeds Charge**, and its Schedule fixes the amount in a blank that is
+completed per licensee (`£xxxx.00 [monthly data] or £xxxx.00 [daily data]`). What a
+licence costs is therefore **unknown until RSP quotes it**, and it must be quoted before
+this project can say whether the public page is viable. The fee is reviewed annually.
+
+Two other things the template settles: the **Permitted Use is left blank** and is
+negotiated per licensee, and clause 2.3 permits a licensee to use the data to provide
+services to its clients and to **charge its clients** for them, so a commercial page is
+within the shape of the agreement — the fee, not the purpose, is the open question.
+
+The **Easy Fares API demo** (100 calls, no charge) is held for a different reason: a
+real-data sanity check against the National Rail fares database, not as a data source.
 
 ## Considered and not taken
 
@@ -66,4 +80,6 @@ tiers — and the volume tier names are a price list, not a service level. Low v
 per 30 days respectively. It is a paid product, and it is the wrong **shape** as well as
 the wrong price: it is keyed by station pair, while this project answers "cheapest return
 to every destination from this origin" out of a locally held bulk feed. No client is
-written for it (ADR-0022).
+written for it (ADR-0022). Its **demo** tier is held, but for a sanity check rather than
+to sit under the page — legal though that would be, since its §5 permits sale for
+commercial gain.
