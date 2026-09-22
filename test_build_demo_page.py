@@ -284,6 +284,16 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("We don't have prices from '", script)
         self.assertNotIn('from \\"', script)
 
+    def test_the_chooser_counts_destinations_in_the_singular_when_there_is_one(self) -> None:
+        # The chooser is read as a fact about the feed, and "1 destinations" is
+        # the kind of slip that costs the page its credibility. The count is
+        # rendered in the browser, so this asserts the emitted script.
+        chooser = render_chooser(
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            budget_pounds=20,
+        )
+        self.assertIn('? " destination" : " destinations"', chooser)
+
     def test_an_unpriced_station_is_absent_from_the_index(self) -> None:
         # ADR-0019 decision 3: the picker must never offer a station that priced
         # nothing, because the reader is then sent to a page that cannot answer
