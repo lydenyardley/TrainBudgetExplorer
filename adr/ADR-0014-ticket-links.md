@@ -97,5 +97,7 @@ expander delivers the same information inside the page that already exists.
 - **Unchanged:** the page stays local, and the tracked variant must not be
   published before the licence text in ADR-0001 is read. The switch exists so that
   decision stays with the owner rather than being made by a default.
-- **Open:** the production seller, the network, and the real rate. All three need
-  the licence read and an application made, in that order.
+- **Open:** the real rate. The production seller and the network are recorded in
+  `adr/ADR-0016-publishing-seller-and-network.md` as a decision that does not
+  take effect until the licence is read; the rate still needs an application
+  made, and that stays open.

@@ -17,7 +17,7 @@
 | **MTD** | Making Tax Digital — appears in this workspace's other project docs, unrelated here. |
 | **CIF** | Common Interface Format, the fixed-width timetable record format used by the timetable feed. |
 | **TIPLOC** | The seven character code that identifies a location in the timetable feed, such as GRNT. One station can hold several. |
-| **CRS code** | The three letter station code passengers see, such as GRN for Grantham. |
+| **CRS code** | The three letter station code passengers see, such as GRA for Grantham. Note that the synthetic feed in this project invents `GRN` for Grantham, and no real feed contains it. |
 | **Calling point** | One stop on a schedule, with its arrival and departure times. A schedule is an ordered list of them. |
 | **Station names file** | The MSN feed that maps each TIPLOC to a station code, a name, and a minimum interchange time. |
 | **STP indicator** | Whether a schedule is permanent (`P`), an overlay (`O`), new (`N`), or a cancellation (`C`) of a permanent schedule. |
