@@ -77,9 +77,9 @@ real-data sanity check against the National Rail fares database, not as a data s
 The **Easy Fares API** from BR Fares Ltd is published on this marketplace in three volume
 tiers — and the volume tier names are a price list, not a service level. Low volume is
 £50 per block of 1,000 calls with no recurring fee; medium and high add £500 and £1,000
-per 30 days respectively. It is a paid product, and it is the wrong **shape** as well as
-the wrong price: it is keyed by station pair, while this project answers "cheapest return
-to every destination from this origin" out of a locally held bulk feed. No client is
-written for it (ADR-0022). Its **demo** tier is held, but for a sanity check rather than
-to sit under the page — legal though that would be, since its §5 permits sale for
-commercial gain.
+per 30 days respectively (BR Fares RDM Pricing.pdf, filed here, is the schedule). It is a
+paid product, and it is the wrong **shape** as well as the wrong price: it is keyed by
+station pair, while this project answers "cheapest return to every destination from this
+origin" out of a locally held bulk feed. No client is written for it (ADR-0022). Its
+**demo** tier is held, but for a sanity check rather than to sit under the page — legal
+though that would be, since its §5 permits sale for commercial gain.
