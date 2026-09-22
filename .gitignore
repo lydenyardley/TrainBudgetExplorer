@@ -30,3 +30,4 @@ _site/
 .freebuff/
 .impeccable/
 node_modules/
+_ef_cache/
