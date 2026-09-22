@@ -49,6 +49,20 @@ Still to answer, and only for the fares product: **commercial use** (may these p
 on a page that earns commission?) and **redistribution**. For the other four the answer
 is in the table above.
 
+**Where the fares licence comes from.** The route is the **RSP Data Licence** from Rail
+Settlement Plan Limited, obtained by contacting Rail Delivery Group, which BR Fares Ltd's
+licensing page describes as governing the fares data, as requiring RSP to be named as the
+ultimate source where it is shown publicly, and as **"generally free of charge"**
+(ADR-0022). The paid **Easy Fares API** is not the source: it is priced per station-pair
+query and this project queries a locally held bulk feed.
+
+- [ ] Asked RDG for an RSP Data Licence for the bulk fares feed, in the same message as
+      the timetable §5 question (ADR-0020, ADR-0021)
+- [ ] **RSP is credited as the ultimate source** — a third attribution, owed only once the
+      licence is actually held
+- [ ] Restriction details are **not** displayed, so the "Powered by National Rail
+      Enquiries" branding obligation that attaches to them stays out of scope
+
 ### What the timetable licence says
 
 The Darwin Timetable Files licence (`Darwin-timetable-license-P-9ca6bc7e-....pdf`,

@@ -47,3 +47,23 @@ The **fares product itself** — the one carrying the flows and fares records (`
 the railcard minimum fares (`rcm`), and a railcards feed (`rlc`). Everything above is
 reference and rules data: names, codes, ticket types, restrictions. None of it contains
 a price. Until that licence is read, the question that decides this project is open.
+
+Two leads on where it comes from, both recorded in ADR-0022:
+
+- **The RSP Data Licence**, held from Rail Settlement Plan Limited and obtained by
+  contacting Rail Delivery Group. BR Fares Ltd's own licensing page describes it as
+  governing the fares data, requiring that RSP be named as the ultimate source where the
+  data is shown publicly, and states that RSP Data Licences are **"generally free of
+  charge"**. This is the licence to ask RDG for.
+- **A free demo**, if a real-data sanity check is wanted before the bulk feed arrives:
+  the Easy Fares API demo allows 100 calls per 30 days at no charge.
+
+## Considered and not taken
+
+The **Easy Fares API** from BR Fares Ltd is published on this marketplace in three volume
+tiers — and the volume tier names are a price list, not a service level. Low volume is
+£50 per block of 1,000 calls with no recurring fee; medium and high add £500 and £1,000
+per 30 days respectively. It is a paid product, and it is the wrong **shape** as well as
+the wrong price: it is keyed by station pair, while this project answers "cheapest return
+to every destination from this origin" out of a locally held bulk feed. No client is
+written for it (ADR-0022).
