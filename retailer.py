@@ -55,6 +55,15 @@ class Provider:
     # The network that is known to run this seller's programme, or None where it
     # is not known. Used only to warn about a pairing that could never track.
     usual_network: str | None = None
+    # What a live check of this link found, and when. A provider without a
+    # recorded check is one nobody has opened, which is a different claim from
+    # one that was opened and worked.
+    verified: str = ""
+    # The seller's own search page, with no query on it. This is the link to
+    # send a reader to when the parameterised one is not known to work: a worse
+    # link that lands on a form is better than a good link that lands on
+    # "no journeys". See adr/ADR-0017-what-the-live-link-check-found.md.
+    fallback_url: str = ""
 
     def url(self, values: dict[str, str]) -> str:
         pairs = [(name, values[value]) for name, value in self.params if values.get(value)]
@@ -62,11 +71,19 @@ class Provider:
         return f"{self.base_url}?{query}" if query else self.base_url
 
 
-# The URLs are public search pages. Each was checked for which parameters the
-# page itself declares; the date and party parameters are the ones that change
-# the result the reader lands on, so they are the ones worth verifying first if a
-# link ever comes back empty. adr/ADR-0014-ticket-links.md records what is
-# verified and what is not.
+# The URLs are public search pages, and the parameters below are the ones each
+# page declares. Declaring a parameter is not the same as the link working, and
+# the live check on 22 September 2026 found that neither link can currently be
+# relied on to land on a search the reader can use:
+#
+# - **national_rail**: the results page renders, then reports "No matching
+#   journeys found" for every query tried, including King's Cross to Edinburgh,
+#   so the query parameters do not drive this planner's search at all.
+# - **trainline**: the site served a bot check and refused the search request,
+#   so nothing about this link is confirmed either way.
+#
+# adr/ADR-0017-what-the-live-link-check-found.md records both checks, every variant
+# tried, and what would make these links trustworthy.
 PROVIDERS: dict[str, Provider] = {
     "national_rail": Provider(
         key="national_rail",
@@ -79,7 +96,9 @@ PROVIDERS: dict[str, Provider] = {
             ("leavingType", "depart_after"),
             ("leavingDate", "date_compact"),
         ),
-        note="The industry's own journey planner, and the only one that takes station codes directly.",
+        note="The industry's own journey planner. It takes station codes in the URL, but its live search does not return journeys through them.",
+        verified="checked 2026-09-22: results page loads, every query reports no journeys",
+        fallback_url="https://www.nationalrail.co.uk/journey-planner/",
     ),
     "trainline": Provider(
         key="trainline",
@@ -95,6 +114,8 @@ PROVIDERS: dict[str, Provider] = {
         ),
         note="Largest UK retailer, and the one whose affiliate programme is best documented.",
         usual_network="partnerize",
+        verified="not checked: the live site refused an automated search",
+        fallback_url="https://www.thetrainline.com/",
     ),
 }
 
@@ -177,31 +198,51 @@ def ticket_link(
     network: str | None = None,
     advertiser_id: str | None = None,
     publisher_id: str = "",
+    mode: str = "deep",
 ) -> TicketLink:
     """Build a search link for one origin and destination.
+
+    ``mode`` chooses between the two links a seller can be given, and neither is
+    silent about the other:
+
+    - ``"deep"`` (the default) sends the origin, destination, date, and party
+      size, so the reader lands on the search they were already reading.
+    - ``"fallback"`` sends only the seller's own search page, for when the
+      parameterised link is not known to land on a search.
 
     With no network or advertiser configured the link is plain and untracked,
     which is the default: the licence terms for commercial use are not read yet
     (adr/ADR-0001-data-sources.md), and monetisation is a switch rather than a
     side effect of generating the page.
+
+    **The page does not use this function's default.** `build_demo_page` passes
+    ``mode="fallback"`` unless somebody opts in, because a deep link is only as
+    good as the URL behind it. See adr/ADR-0018-the-pages-default-link.md.
     """
     try:
         chosen = PROVIDERS[provider]
     except KeyError:
         raise KeyError(f"{provider!r} is not one of: {', '.join(sorted(PROVIDERS))}") from None
 
-    values = {
-        "origin": origin_crs.strip().upper(),
-        "destination": destination_crs.strip().upper(),
-        "date_iso": when.isoformat() if when else "",
-        "date_compact": when.strftime("%Y%m%d") if when else "",
-        "adults": str(adults) if adults else "",
-        # These two are values, not switches: the page declared them so the
-        # reader lands on a single search rather than a form to fill in.
-        "single": "single",
-        "depart_after": "departAfter",
-    }
-    url = chosen.url(values)
+    if mode == "fallback":
+        if not chosen.fallback_url:
+            raise KeyError(f"{provider!r} has no fallback search page recorded")
+        url = chosen.fallback_url
+    elif mode == "deep":
+        values = {
+            "origin": origin_crs.strip().upper(),
+            "destination": destination_crs.strip().upper(),
+            "date_iso": when.isoformat() if when else "",
+            "date_compact": when.strftime("%Y%m%d") if when else "",
+            "adults": str(adults) if adults else "",
+            # These two are values, not switches: the page declared them so the
+            # reader lands on a single search rather than a form to fill in.
+            "single": "single",
+            "depart_after": "departAfter",
+        }
+        url = chosen.url(values)
+    else:
+        raise ValueError(f"{mode!r} is not one of: deep, fallback")
 
     if not (network and advertiser_id):
         return TicketLink(url=url, label=chosen.label, rel=PLAIN_REL, tracked=False)
@@ -221,9 +262,19 @@ def ticket_link(
     )
 
 
-def provider_table() -> list[tuple[str, str, list[str], str]]:
-    """What each provider can be sent, for the docs and the page's footer."""
+def provider_table() -> list[tuple[str, str, list[str], str, str]]:
+    """What each provider can be sent and what a live check found.
+
+    The check is carried beside the parameters so that "this page declares these"
+    and "this link was opened and worked" cannot be confused for each other.
+    """
     return [
-        (provider.key, provider.label, [value for _, value in provider.params], provider.note)
+        (
+            provider.key,
+            provider.label,
+            [value for _, value in provider.params],
+            provider.note,
+            provider.verified,
+        )
         for provider in PROVIDERS.values()
     ]

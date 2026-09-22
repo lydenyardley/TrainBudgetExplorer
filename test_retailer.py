@@ -137,6 +137,51 @@ class TicketLinkTest(unittest.TestCase):
         self.assertIn("origin", table[0][2])
         self.assertEqual(set(AFFILIATE_NETWORKS), {"awin", "partnerize"})
 
+    # -- what a live check found ------------------------------------------
+
+    def test_every_provider_carries_a_recorded_link_check(self) -> None:
+        # A declared parameter is a claim about the page; a recorded check is a
+        # claim about the link. Carrying both keeps them from being confused.
+        for key, _label, _params, _note, verified in provider_table():
+            self.assertTrue(verified, f"{key} carries no recorded link check")
+
+    def test_neither_link_is_recorded_as_working(self) -> None:
+        # ADR-0017 records the live check of 22 September 2026: the National Rail
+        # link found no journeys, and Trainline refused an automated search. If
+        # either is ever made to work, this test fails so the record has to be
+        # corrected with it rather than quietly going stale.
+        checks = {row[0]: row[4] for row in provider_table()}
+        self.assertIn("no journeys", checks["national_rail"])
+        self.assertIn("refused", checks["trainline"])
+
+    # -- the fallback link ------------------------------------------------
+
+    def test_a_fallback_link_is_the_sellers_own_search_page(self) -> None:
+        # ADR-0017: the parameterised link is not known to land on a search, so
+        # the alternative has to be a link that lands somewhere a reader can use.
+        link = ticket_link("GRN", "NOT", provider="national_rail", when=WHEN, mode="fallback")
+        self.assertEqual(link.url, PROVIDERS["national_rail"].fallback_url)
+        self.assertNotIn("?", link.url)
+        self.assertFalse(link.tracked)
+
+    def test_a_fallback_link_carries_no_search_at_all(self) -> None:
+        link = ticket_link("GRN", "NOT", when=WHEN, adults=2, mode="fallback")
+        for token in ("origin", "destination", "date", "adults", "passengers"):
+            self.assertNotIn(token, link.url)
+
+    def test_a_fallback_link_is_still_trackable_and_lands_the_same(self) -> None:
+        plain = ticket_link("GRN", "NOT", mode="fallback")
+        tracked = ticket_link(
+            "GRN", "NOT", mode="fallback", network="partnerize", advertiser_id="123456"
+        )
+        landing = unquote(tracked.url.split("destination:", 1)[1])
+        self.assertEqual(landing, plain.url)
+        self.assertIn("nofollow", tracked.rel)
+
+    def test_an_unknown_link_mode_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            ticket_link("GRN", "NOT", mode="clever")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

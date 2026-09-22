@@ -284,7 +284,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Question a budget count before believing it.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
     parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
-    parser.add_argument("--origin", default="GRN", help="origin CRS code, e.g. GRN")
+    parser.add_argument(
+        "--origin",
+        default="GRN",
+        help="origin CRS code. Grantham's real code is GRA; the synthetic feed invents GRN",
+    )
     parser.add_argument("--budget", type=float, default=20.0, help="budget in pounds")
     parser.add_argument("--adults", type=int, default=2, help="party size for the party readings")
     arguments = parser.parse_args(argv)

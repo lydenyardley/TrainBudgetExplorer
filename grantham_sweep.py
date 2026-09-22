@@ -21,7 +21,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cheapest return reachable from an origin inside a budget.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
     parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
-    parser.add_argument("--origin", default="GRN", help="origin CRS code, e.g. GRN for Grantham")
+    parser.add_argument(
+        "--origin",
+        default="GRN",
+        help="origin CRS code. Grantham's real code is GRA; the synthetic feed invents GRN",
+    )
     parser.add_argument("--budget", type=float, default=20.0, help="budget in pounds")
     parser.add_argument("--adults", type=int, default=2)
     parser.add_argument("--railcard", default=None, help='railcard name, e.g. "Two Together"')
