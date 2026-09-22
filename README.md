@@ -197,6 +197,25 @@ exist, and slug collisions between same-named stations are resolved with the CRS
 code at build time. The picker cannot offer "nearest station": the fare feed
 records no county, region, or coordinates for a station, only its name and code.
 
+### Opening the pages yourself
+
+There is no `index.html` in the repository on purpose. The pages are build output:
+`.gitignore` excludes `_site/`, `demo*.html`, and the generated feeds, because a
+committed copy would drift from the builder the first time the feed changed and
+would read as a source of truth it is not. Build it, then serve it:
+
+```
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _site/index.html
+python -m http.server 8000 --directory _site
+# then open http://localhost:8000/
+```
+
+Serve it rather than double-clicking the file. Station links are root-absolute
+(`/from/grantham/`), which is what a real host needs and what the file system
+cannot resolve; the build prints that reminder when it finishes. The server also
+serves a build you already have — `_site/` may hold pages from an earlier run, and
+the build names any it did not rewrite instead of deleting them for you.
+
 ### What leads, and what an unpriced page says
 
 The controls panel states the page's order of decisions. The **budget leads** — the
@@ -271,6 +290,8 @@ whole page down while every Python test still passed.
 
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
+python -m http.server 8000   # then open http://localhost:8000/demo.html
 python -m unittest discover -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
