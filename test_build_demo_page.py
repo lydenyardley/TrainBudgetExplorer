@@ -137,6 +137,26 @@ class DemoPageTest(unittest.TestCase):
         args = argparse.Namespace(notices="rdg", attribution="custom wording")
         self.assertEqual(notices_or_attribution(args), [NOTICES["rdg"]])
 
+    # -- the prices-only page: what a reader sees without a timetable ---------
+
+    def test_a_prices_only_table_stands_its_empty_columns_down(self) -> None:
+        # Two columns of dashes on every row is noise; when no timetable is
+        # loaded the Time and Changes columns do not exist at all.
+        payload = build_payload(self.fares, None, "GRN")
+        html = render_page(payload, budget_pounds=20)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("if (!DATA.hasJourneys)", script)
+        self.assertIn("nth-child(3), thead th:nth-child(4)", script)
+        # The detail rows must span whatever the table actually has.
+        self.assertIn("cell.colSpan = columnCount()", script)
+        # And the footer still says what the page is missing.
+        self.assertIn("no timetable loaded", html)
+
+    def test_a_page_with_times_keeps_all_six_columns(self) -> None:
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("const columnCount", script)
+        self.assertIn("duration(destination.minutes)", script)
+
     # -- feed metadata: provenance recorded once, read by every build ---------
 
     def test_metadata_beside_the_feed_supplies_the_price_source(self) -> None:
