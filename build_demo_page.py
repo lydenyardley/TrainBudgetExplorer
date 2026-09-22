@@ -270,6 +270,24 @@ TEMPLATE = """<!doctype html>
              clip-path: inset(50%); white-space: nowrap; border: 0; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   code { font-size: .95em; }
+  /* On a phone the table reflows into stacked rows, because a six-column table
+     pushes the ticket action off-screen (ADR-0019). The markup stays a real
+     table for desktop and assistive technology; only the display changes, and
+     flex wrapping means no cell can sit outside the viewport however long a
+     station name or fare code is. */
+  @media (max-width: 40rem) {
+    body { padding: 1rem .75rem; }
+    table, tbody { display: block; }
+    thead { display: none; }
+    tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem;
+         padding: .5rem 0; border-bottom: 1px solid var(--line); }
+    td { display: block; border-bottom: 0; padding: .1rem .25rem; }
+    td:first-child { flex: 1 1 100%; padding-left: 0; font-weight: 600; }
+    td.num { text-align: left; }
+    td:last-child { margin-left: auto; }
+    tr.detail td { flex: 1 1 100%; padding: .5rem 0; }
+    tr.best { background: var(--best); }
+  }
 </style>
 </head>
 <body>

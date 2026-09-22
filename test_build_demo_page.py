@@ -154,6 +154,19 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="q"', self.html)
         self.assertIn('value="party"', self.html)
 
+    def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
+        # The reflow is display-only CSS in a max-width media query. The markup
+        # must stay a real table for desktop and assistive technology, and the
+        # stylesheet must wrap cells rather than fix their width, so no cell can
+        # sit outside the viewport however long a station name is.
+        self.assertIn("@media (max-width: 40rem)", self.html)
+        reflow = self.html.split("@media (max-width: 40rem)")[1].split("</style>")[0]
+        self.assertIn("flex-wrap", reflow)
+        self.assertNotIn("display: none", reflow.split("thead")[0])
+        self.assertIn("thead { display: none; }", reflow)
+        table_markup = self.html.split("<table>")[1].split("</table>")[0]
+        self.assertNotIn("<div", table_markup)
+
     def test_the_slider_ceiling_covers_the_dearest_destination(self) -> None:
         ceiling = int(re.search(r'id="budget"[^>]*max="(\d+)"', self.html).group(1))
         dearest = max(row["partyPence"] for row in self.payload["destinations"])

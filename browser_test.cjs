@@ -161,6 +161,18 @@ async function main() {
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check("and says to tick the railcard box", /^Two Together Railcard: tick the box/m.test(partyCopy), partyCopy);
+
+    // 7. At a phone width the ticket action is on-screen, without horizontal
+    // scroll (ADR-0019's blocker). Measured, not assumed.
+    await page.setViewportSize({ width: 390, height: 720 });
+    const mobile = await page.evaluate(() => {
+      const html = document.documentElement;
+      const overflow = Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
+      const cell = document.querySelector("#rows td:last-child").getBoundingClientRect();
+      return { overflow, onScreen: cell.right <= window.innerWidth && cell.left >= 0 };
+    });
+    check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
+    check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
   } finally {
     for (const { name, ok, detail } of checks) {
       console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
