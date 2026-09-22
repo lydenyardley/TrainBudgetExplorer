@@ -84,14 +84,14 @@ value changes without the argument changing with it.
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
-| `build_demo_page.py` | Writes the self-contained demo page from the feeds |
+| `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
 | `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `test_build_demo_page.py` | Thirty tests for the page payload, template, licence slot, and copy control |
+| `test_build_demo_page.py` | Thirty-nine tests for the page payload, template, licence slot, copy control, and the origin picker |
 | `browser_test.cjs` | Playwright test: drives the generated page in a real browser |
 | `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
 | `test_damaged_feed.py` | Twenty tests for damaged input |
@@ -174,6 +174,28 @@ reader's clipboard, naming the Two Together Railcard as something to tick when t
 price on screen is the railcard price. If the browser refuses clipboard access,
 which it does for a page opened straight from disk, the text appears under the row
 and the button says so instead of the page claiming a copy that did not happen.
+
+### One page per station
+
+The origin is the artifact's identity (ADR-0019): each page is *about* one station,
+and choosing a different one is navigation, not a filter. Every page carries a
+**Change** control beside the heading that opens a search over the other priced
+stations — by name or three-letter code — and each option links to that station's
+own page at a readable address (`/from/nottingham/`). The root address of a full
+build is the chooser itself, ranked by how many destinations each station's build
+actually priced. Nothing is stored: the URL is the only memory, which also makes it
+the shareable address a community post can carry.
+
+```
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out _site/index.html --all-origins
+```
+
+writes one self-contained page per priceable station under `_site/from/<slug>/`
+plus the chooser at `_site/index.html`. The picker's station list is built from the
+outputs the build actually wrote, so no option can point at a page that does not
+exist, and slug collisions between same-named stations are resolved with the CRS
+code at build time. The picker cannot offer "nearest station": the fare feed
+records no county, region, or coordinates for a station, only its name and code.
 
 Affiliate tracking is **off by default**, and turning it on wraps the link in a
 network redirect rather than changing the search:

@@ -134,3 +134,33 @@ Measured from the page's own payload: **~357 bytes per priced destination.**
   controls, destination filter inside them) but not the *width* one: the picker is a
   second place-shaped thing on a screen that is already 73 px too wide. The picker
   opens as a full-width list beneath the field, with no modal to trap focus.
+
+## Implementation (22 September 2026)
+
+The flow is built, in `build_demo_page.py`, and both gates above are closed:
+
+- **The width gate closed first.** Below 40 rem the fares table reflows into
+  flex-wrapped stacked rows — display-only CSS on real table markup — so no cell can
+  sit outside the viewport however long a station name is. Measured at 390 px:
+  overflow −16 px where it was +73 px, the ticket action on-screen.
+- **`--all-origins` writes the set.** One self-contained page per priceable station
+  under `out`'s folder at `from/<slug>/index.html`, plus the chooser at the root
+  `index.html`. The picker's station list is built from the outputs actually
+  written, so no option can 404; a station the build could not price is absent, not
+  selectable-and-empty.
+- **Slugs are readable and collision-resolved at build time**: `nottingham`, then
+  `nottingham-nmp` for a same-named station, then a numeric suffix if even name and
+  code collide.
+- **The picker is anchored, disclosed, and announced.** A `Change` button beside the
+  `<h1>` (`aria-expanded`, `aria-controls`) opens the search; options are real
+  `<a>` elements, so keyboard handling and naming are the browser's; a no-match
+  names what was typed and points at the name-or-code route; the count goes through
+  a polite live region. When a page's payload carries no other stations, the
+  control does not render at all.
+- **The chooser is the root page** — the index itself, ranked by priced-destination
+  count, with no fares payload on it.
+- **Verified end to end:** 195 Python tests and 30/30 real-browser checks,
+  including the picker open/close, narrowing, no-match, and that at 390 px the open
+  picker adds no horizontal overflow. On the synthetic feed only Grantham prices
+  anything, so five of seven generated pages correctly carry zero destinations —
+  the real page count waits on the real feed (ADR-0005).
