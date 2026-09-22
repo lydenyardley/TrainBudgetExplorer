@@ -5,7 +5,9 @@ slider is instant and no server is needed. Point it at the synthetic feeds now,
 then at the downloaded feeds, with no change to the page:
 
     python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN
-    python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRN --out demo.html
+    python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
+
+The synthetic feed invents `GRN` for Grantham; the real code is `GRA`.
 
 A destination is carried at two prices: the cheapest return for one adult, and
 the total for two adults travelling together on a Two Together Railcard. The
@@ -32,13 +34,27 @@ DEFAULT_NOTE = (
     "Synthetic demo data: the stations, fares, and times are invented to exercise "
     "the pipeline. Real fares and times replace them once the feed download clears."
 )
+# Said on the page whenever the link cannot carry the search, which is the
+# default (adr/ADR-0018-the-pages-default-link.md). It states what the reader has
+# to do, and what does not change, because a fallback the reader only discovers on
+# the seller's site is worse than one they were told about.
+LINK_NOTE_FALLBACK = (
+    "The ticket link opens the seller's own search page, so the journey is not filled in for "
+    "you: enter the origin, the destination, the date, and how many of you are travelling. "
+    "The price above is the railway's own walk-up fare, so it is the same whichever seller "
+    "you buy it from."
+)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Write the budget explorer demo page.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
     parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
-    parser.add_argument("--origin", default="GRN", help="origin CRS code, e.g. GRN")
+    parser.add_argument(
+        "--origin",
+        default="GRN",
+        help="origin CRS code. Grantham's real code is GRA; the synthetic feed invents GRN",
+    )
     parser.add_argument("--out", default="demo.html", help="page to write")
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
@@ -59,6 +75,23 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--advertiser-id", default=None, help="the seller's id in the network")
     parser.add_argument("--publisher-id", default="", help="your id in the network")
+    parser.add_argument(
+        "--link-mode",
+        default="fallback",
+        choices=("deep", "fallback"),
+        help="fallback (default) sends the seller's own search page; deep sends the "
+        "search and needs a link somebody has opened. See ADR-0018",
+    )
+    parser.add_argument(
+        "--attribution",
+        default=None,
+        help="licence-required wording to carry in the footer, once the terms are read",
+    )
+    parser.add_argument(
+        "--analytics-snippet",
+        default=None,
+        help="file whose contents are injected before </body>, for counting referrers",
+    )
     return parser.parse_args(argv)
 
 
@@ -70,7 +103,12 @@ def build_payload(
     max_changes: int = 1,
     day: date | None = None,
     note: str = DEFAULT_NOTE,
+    attribution: str | None = None,
     provider: str = DEFAULT_PROVIDER,
+    # Fallback by default: the parameterised link is not known to land on a
+    # search at either seller, and a link that tells a reader there are no trains
+    # is worse than one that asks them to type four things.
+    mode: str = "fallback",
     adults: int = 2,
     network: str | None = None,
     advertiser_id: str | None = None,
@@ -125,6 +163,7 @@ def build_payload(
             network=network,
             advertiser_id=advertiser_id,
             publisher_id=publisher_id,
+            mode=mode,
         )
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
@@ -156,6 +195,8 @@ def build_payload(
         "hasTwoTogether": bool(pair),
         "serviceDate": day.isoformat() if day else None,
         "note": note,
+        "attribution": attribution,
+        "linkNote": LINK_NOTE_FALLBACK if mode == "fallback" else None,
         "feed": fares.stats(),
         "timetable": timetable.stats() if timetable else None,
         "adults": adults,
@@ -223,6 +264,10 @@ TEMPLATE = """<!doctype html>
   .tag { font-size: .75rem; color: var(--muted); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .9rem; }
+  .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
+             border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+             clip-path: inset(50%); white-space: nowrap; border: 0; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   code { font-size: .95em; }
 </style>
@@ -259,11 +304,14 @@ TEMPLATE = """<!doctype html>
 <p id="more" hidden></p>
 
 <footer>
+  <p id="attribution" hidden></p>
   <p>__NOTE__</p>
   <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed. The times are options in the timetable, and the fare shown is valid on all of them, so none is picked for you.</p>
   <p id="railcardNote"></p>
+  <p id="linkNote" hidden></p>
   <p class="tag" id="provenance"></p>
   <p id="disclosure" hidden></p>
+  <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
 <script>
@@ -359,6 +407,16 @@ function cellWithLinks(row, destination, wanted) {
     toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
     cell.append(toggle);
   }
+  // The ticket link is the plain one by default and carries no journey, so the
+  // row hands the reader the four things the seller will ask for (ADR-0018).
+  const copy = document.createElement("button");
+  copy.className = "toggle";
+  copy.type = "button";
+  copy.textContent = "Copy";
+  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
+  copy.title = "Copy the from, to, date and party size for this row";
+  copy.addEventListener("click", () => copyJourney(row, destination, copy));
+  cell.append(copy);
   row.append(cell);
 }
 
@@ -398,15 +456,101 @@ function provenance() {
   if (!DATA.hasTwoTogether) parts.push("no Two Together railcard found, so party prices are doubled");
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
+  // What the reader has to do for themselves when the link is the plain one.
+  if (DATA.linkNote) {
+    const linkNote = document.getElementById("linkNote");
+    linkNote.textContent = DATA.linkNote;
+    linkNote.hidden = false;
+  }
   if (DATA.dateNote) {
     const note = document.createElement("p");
     note.textContent = DATA.dateNote;
     document.getElementById("railcardNote").after(note);
   }
+  // The licence wording, when there is some. It sits above the note rather than
+  // in a comment, because a term that has to be visible is not satisfied by
+  // being present in the file.
+  if (DATA.attribution) {
+    const attribution = document.getElementById("attribution");
+    attribution.textContent = DATA.attribution;
+    attribution.hidden = false;
+  }
   if (DATA.tracked) {
     const disclosure = document.getElementById("disclosure");
     disclosure.textContent = DATA.disclosure;
     disclosure.hidden = false;
+  }
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+// Formatted from the ISO string by hand rather than through Date: new
+// Date("2026-10-05") is parsed as UTC midnight, which prints as the 4th for any
+// reader behind UTC. A copied date that is off by a day is worse than none.
+function humanDate(iso) {
+  const parts = iso.split("-").map(Number);
+  return parts[2] + " " + MONTHS[parts[1] - 1] + " " + parts[0];
+}
+
+// What the reader has to type on the seller's own site, because the ticket link
+// carries nothing (ADR-0018). The railcard is named only when the party price is
+// what is on screen, and it is named as something to tick rather than sent
+// anywhere, because no seller accepts it in a link (ADR-0014).
+function journeyText(destination) {
+  const together = unit() === "party";
+  const lines = [
+    "From: " + DATA.origin.name + " (" + DATA.origin.crs + ")",
+    "To: " + destination.name + " (" + destination.crs + ")",
+  ];
+  if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
+  lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
+  if (together) lines.push("Two Together Railcard: tick the box on the seller's site");
+  return lines.join("\\n");
+}
+
+function showCopyBox(row, text) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains("detail")) next.remove();
+  const detail = document.createElement("tr");
+  detail.className = "detail";
+  const cell = document.createElement("td");
+  cell.colSpan = 6;
+  const box = document.createElement("textarea");
+  box.className = "copybox";
+  box.readOnly = true;
+  box.rows = 5;
+  box.value = text;
+  box.setAttribute("aria-label", "Journey details to copy");
+  cell.append(box);
+  detail.append(cell);
+  row.after(detail);
+  box.focus();
+  box.select();
+}
+
+async function copyJourney(row, destination, button) {
+  const text = journeyText(destination);
+  const status = document.getElementById("copyStatus");
+  const done = () => {
+    button.textContent = "Copied";
+    status.textContent = "Journey details copied: " + text.split("\\n").join(". ");
+    window.setTimeout(() => { button.textContent = "Copy"; }, 2000);
+  };
+  // Never claim a copy that did not happen. Clipboard access is refused when a
+  // page is opened from a file or served without a secure context, so the
+  // reader is shown the text instead of being told it is on their clipboard.
+  const manual = () => {
+    button.textContent = "Select below";
+    status.textContent = "Could not copy automatically. The details are shown under the row.";
+    showCopyBox(row, text);
+  };
+  if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+  } catch (error) {
+    manual();
   }
 }
 
@@ -416,13 +560,19 @@ for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEv
 provenance();
 render();
 </script>
+__ANALYTICS__
 </body>
 </html>
 """
 
 
-def render_page(payload: dict, *, budget_pounds: int) -> str:
-    """Fill the template from the payload."""
+def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> str:
+    """Fill the template from the payload.
+
+    ``analytics`` is whatever snippet the owner chose for counting referrers. It
+    is injected as given, and empty by default, so the page is self-contained
+    unless someone deliberately decides otherwise.
+    """
     prices = [row["adultPence"] for row in payload["destinations"]]
     prices += [row["partyPence"] for row in payload["destinations"]]
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
@@ -433,6 +583,7 @@ def render_page(payload: dict, *, budget_pounds: int) -> str:
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", payload["note"])
+        .replace("__ANALYTICS__", analytics)
     )
 
 
@@ -459,7 +610,9 @@ def main(argv: list[str] | None = None) -> int:
             max_changes=args.max_changes,
             day=day,
             note=args.note,
+            attribution=args.attribution,
             provider=args.provider,
+            mode=args.link_mode,
             adults=args.adults,
             network=args.affiliate_network,
             advertiser_id=args.advertiser_id,
@@ -470,10 +623,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
         return 2
 
+    analytics = ""
+    if args.analytics_snippet:
+        try:
+            analytics = Path(args.analytics_snippet).read_text(encoding="utf-8")
+        except OSError as error:
+            print(f"could not read {args.analytics_snippet!r}: {error}", file=sys.stderr)
+            return 2
+
     out = Path(args.out)
-    out.write_text(render_page(payload, budget_pounds=20), encoding="utf-8")
+    out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
-    print(f"ticket links to {args.provider}, {args.adults} adult(s)")
+    print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
+    if args.link_mode == "fallback":
+        print("fallback links: readers get the seller's own search page, not their search")
+    if args.attribution:
+        print("the page carries the licence attribution wording")
+    if analytics:
+        print("an analytics snippet was injected, so the page is no longer entirely self-contained")
     if payload["tracked"]:
         print("affiliate tracking is ON, and the page carries the disclosure")
     else:

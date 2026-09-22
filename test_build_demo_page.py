@@ -60,6 +60,91 @@ class DemoPageTest(unittest.TestCase):
         self.assertIsNone(rows["SLP"]["minutes"])
         self.assertEqual(rows["SLP"]["legs"], [])
 
+    # -- the licence wording and the measurement hook ----------------------
+
+    def test_no_attribution_by_default_and_no_stray_placeholder(self) -> None:
+        # Nothing claims a licence term that has not been read, and the slot the
+        # wording goes in is present but empty rather than missing.
+        self.assertIsNone(self.payload["attribution"])
+        self.assertIn('<p id="attribution" hidden></p>', self.html)
+        self.assertNotIn("__ANALYTICS__", self.html)
+
+    def test_the_licence_wording_reaches_the_page_and_its_own_script(self) -> None:
+        wording = "Contains data licensed from Rail Delivery Group."
+        payload = build_payload(self.fares, self.timetable, "GRN", attribution=wording)
+        self.assertEqual(payload["attribution"], wording)
+        html = render_page(payload, budget_pounds=20)
+        self.assertIn(wording, html)
+        # Present in the payload is not the same as shown, so the page has to
+        # unhide it too.
+        self.assertIn("DATA.attribution", html)
+
+    def test_the_analytics_snippet_is_injected_only_when_given(self) -> None:
+        snippet = "<script>window.seen=1;</script>"
+        self.assertNotIn("window.seen", self.html)
+        html = render_page(self.payload, budget_pounds=20, analytics=snippet)
+        self.assertIn(snippet, html)
+        self.assertNotIn("__ANALYTICS__", html)
+
+    def test_the_default_link_is_the_sellers_own_search_page(self) -> None:
+        # ADR-0018: no seller's parameterised link is known to land on a search,
+        # so the page does not walk readers into a "no journeys" page.
+        urls = {row["link"]["url"] for row in self.payload["destinations"]}
+        self.assertEqual(urls, {"https://www.nationalrail.co.uk/journey-planner/"})
+
+    def test_a_fallback_page_states_what_the_reader_has_to_fill_in(self) -> None:
+        # The cost of the fallback is on the page, not left for the reader to
+        # discover on somebody else's site.
+        self.assertIn("enter the origin", self.payload["linkNote"])
+        self.assertIn("same whichever seller", self.payload["linkNote"])
+        self.assertIn('<p id="linkNote" hidden></p>', self.html)
+        self.assertIn("DATA.linkNote", self.html)
+
+    # -- the copy affordance that gives a row back its memory ---------------
+
+    def test_every_row_offers_to_copy_its_journey_details(self) -> None:
+        self.assertIn('copy.textContent = "Copy"', self.html)
+        self.assertIn('copy.setAttribute("aria-label", "Copy the journey details for "', self.html)
+        self.assertIn("copyJourney(row, destination, copy)", self.html)
+
+    def test_the_copied_text_names_the_things_a_seller_asks_for(self) -> None:
+        for label in ('"From: "', '"To: "', '"Date: "', '"Passengers: "'):
+            self.assertIn(label, self.html)
+
+    def test_the_copied_text_names_the_railcard_only_for_the_party_price(self) -> None:
+        # The card is never sent anywhere; it is named as something to tick, and
+        # only when the price on screen is the one that needs it.
+        self.assertIn('const together = unit() === "party";', self.html)
+        self.assertIn('if (together) lines.push("Two Together Railcard: tick the box', self.html)
+
+    def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
+        # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
+        # reader behind UTC. A copied date off by one is worse than no date.
+        self.assertIn("function humanDate(iso)", self.html)
+        self.assertNotIn("new Date(", self.html)
+
+    def test_a_failed_copy_is_never_reported_as_a_copy(self) -> None:
+        # Clipboard access is refused when the file is opened from disk, so the
+        # failure path has to exist and must not claim the text was copied.
+        self.assertIn("if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();", self.html)
+        self.assertIn("Could not copy automatically", self.html)
+        self.assertIn('button.textContent = "Select below"', self.html)
+        self.assertEqual(self.html.count('"Copied"'), 1)
+
+    def test_the_copy_confirmation_is_announced_and_not_only_shown(self) -> None:
+        self.assertIn('id="copyStatus" role="status"', self.html)
+        self.assertIn("class=\"sr-only\"", self.html)
+
+    def test_the_newlines_in_the_copy_are_escaped_for_the_browser(self) -> None:
+        # A real newline inside a JavaScript string literal is a SyntaxError that
+        # takes the whole page down, and a Python template will happily produce
+        # one from "\n". These assert the backslash-n the browser must receive.
+        # This bug shipped past every test in this file and was caught by
+        # browser_test.cjs, which is the reason that file exists.
+        self.assertIn('lines.join("\\n")', self.html)
+        self.assertIn('text.split("\\n").join(". ")', self.html)
+        self.assertNotIn('join("\n', self.html)
+
     def test_the_page_can_be_read_back_as_data(self) -> None:
         self.assertEqual(embedded_payload(self.html), self.payload)
 
@@ -90,10 +175,13 @@ class DemoPageTest(unittest.TestCase):
         self.assertFalse(self.payload["tracked"])
         self.assertIsNone(self.payload["disclosure"])
 
-    def test_the_link_points_at_the_destination_it_sits_beside(self) -> None:
-        rows = {row["crs"]: row for row in self.payload["destinations"]}
+    def test_the_deep_link_points_at_the_destination_it_sits_beside(self) -> None:
+        # Opt-in, because it depends on a URL that somebody has opened: ADR-0018.
+        payload = build_payload(self.fares, self.timetable, "GRN", mode="deep")
+        rows = {row["crs"]: row for row in payload["destinations"]}
         self.assertIn("origin=GRN", rows["NOT"]["link"]["url"])
         self.assertIn("destination=NOT", rows["NOT"]["link"]["url"])
+        self.assertIsNone(payload["linkNote"])
 
     def test_a_tracked_page_discloses_itself(self) -> None:
         payload = build_payload(
