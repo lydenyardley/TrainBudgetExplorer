@@ -16,4 +16,5 @@ _site/
 
 # Editor/agent local state and borrowed browser tooling.
 .freebuff/
+.impeccable/
 node_modules/
