@@ -278,6 +278,9 @@ TEMPLATE = """<!doctype html>
   /* The budget leads: the biggest type on the page and the wider column. The
      party switch and the town filter refine it, so they share one narrower
      secondary column rather than competing as three equal cards. */
+  /* Layouts that set their own display defeat the hidden attribute, so every
+     one of them re-declares display:none here. */
+  [hidden] { display: none !important; }
   .controls { display: grid; gap: 1.25rem 2rem; grid-template-columns: minmax(16rem, 1.5fr) minmax(12rem, 1fr);
               padding: 1.25rem; border: 1px solid var(--line); border-radius: .5rem; align-items: start; }
   .controls .secondary { display: grid; gap: 1rem; align-content: start; }
@@ -447,6 +450,11 @@ function matches(destination, needle) {
 }
 
 function render() {
+  // An unpriced page has no budget conversation: provenance() has already
+  // stood the controls and the table down, and anything this function wrote
+  // ("Nothing inside this budget") would contradict the page's own first
+  // sentence. So it does nothing at all.
+  if (!DATA.destinations.length) return;
   const cap = Number(budget.value) * 100;
   const needle = query.value.trim().toLowerCase();
   const wanted = DATA.destinations.filter(
@@ -564,6 +572,16 @@ function provenance() {
     unpriced.hidden = false;
     const controls = document.querySelector(".controls");
     if (controls) controls.hidden = true;
+    // The table scaffold and the budget's empty message answer a question
+    // this page is not asking: nothing was priced, so no budget could help.
+    for (const id of ["empty", "more"]) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = true;
+    }
+    const table = document.querySelector("table");
+    if (table) table.hidden = true;
+    const summary = document.getElementById("summary");
+    if (summary) summary.hidden = true;
   }
 
   const parts = [
@@ -856,6 +874,19 @@ const status = document.getElementById("pickStatus");
 const pick = document.getElementById("pick");
 
 function render() {
+  // A build that priced no stations has nothing to search over, so the field
+  // stands down and the page says so, rather than addressing a typed input
+  // the reader never made.
+  if (!STATIONS.length) {
+    pick.hidden = true;
+    document.querySelector("label[for='pick']").hidden = true;
+    picks.replaceChildren();
+    nomatch.textContent = "Nothing is priced from any station in this build, so there is nothing to explore yet. " +
+      "When the build prices journeys, this page lists every station it can start from.";
+    nomatch.hidden = false;
+    status.textContent = "0 stations listed";
+    return;
+  }
   const needle = pick.value.trim().toLowerCase();
   const wanted = STATIONS.filter(
     (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
@@ -877,12 +908,16 @@ function render() {
     item.append(link);
     picks.append(item);
   }
+  // The no-match wording answers typed input; with an empty field it would
+  // quote nothing back at the reader, so it stays hidden instead.
   if (wanted.length) {
     nomatch.hidden = true;
-  } else {
+  } else if (needle) {
     nomatch.textContent = "We don't have prices from '" + pick.value.trim() +
       "'. Try the station's name or its three-letter code.";
     nomatch.hidden = false;
+  } else {
+    nomatch.hidden = true;
   }
   status.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
 }
