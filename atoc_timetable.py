@@ -334,9 +334,17 @@ class TimetableDb:
         if kind is None:
             first, lines = peek(lines)
             if first is None:
+                # An empty file is skipped, but it is named: silence here reads
+                # as "the download was empty" when the file list says otherwise.
+                self.report.skip_file(f"{name}: empty, nothing to read")
                 return
             kind = self._kind_from_line(first)
             if kind is None:
+                # Content sniffing means a non-timetable file is declined here.
+                # Naming it keeps "files 0" from reading as an empty download.
+                self.report.skip_file(
+                    f"{name}: first line {first[:20]!r} is not a timetable record, not opened"
+                )
                 return
         self.report.files_read.append(name)
         self._invalidate_indexes()
