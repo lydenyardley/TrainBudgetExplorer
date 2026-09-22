@@ -7,11 +7,20 @@ import re
 import tempfile
 import unittest
 from datetime import date
+import contextlib
+import io
 from pathlib import Path
 
+import build_demo_page
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
-from build_demo_page import build_payload, render_page, render_chooser, station_slug
+from build_demo_page import (
+    build_payload,
+    build_station_index,
+    render_chooser,
+    render_page,
+    station_slug,
+)
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 from retailer import DISCLOSURE
 
@@ -275,6 +284,18 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("We don't have prices from '", script)
         self.assertNotIn('from \\"', script)
 
+    def test_an_unpriced_station_is_absent_from_the_index(self) -> None:
+        # ADR-0019 decision 3: the picker must never offer a station that priced
+        # nothing, because the reader is then sent to a page that cannot answer
+        # them. Measured on the synthetic feed, five of seven stations price
+        # nothing from themselves.
+        locations = self.fares.locations_by_crs
+        index = build_station_index(
+            {"GRN": 5, "NOT": 1, "KGX": 0, "LCN": 0, "SLP": 0, "PBO": 0, "XFD": 0}, locations
+        )
+        self.assertEqual([entry["crs"] for entry in index], ["GRN", "NOT"])
+        self.assertTrue(all(entry["destinations"] > 0 for entry in index))
+
     def test_the_chooser_is_the_index_and_carries_no_fares(self) -> None:
         index = [
             {"crs": "KGX", "name": "LONDON KINGS X", "slug": "london-kings-x", "destinations": 6},
@@ -302,8 +323,8 @@ class DemoPageTest(unittest.TestCase):
         # must stay a real table for desktop and assistive technology, and the
         # stylesheet must wrap cells rather than fix their width, so no cell can
         # sit outside the viewport however long a station name is.
-        self.assertIn("@media (max-width: 40rem)", self.html)
-        reflow = self.html.split("@media (max-width: 40rem)")[1].split("</style>")[0]
+        self.assertIn("@media (max-width: 44rem)", self.html)
+        reflow = self.html.split("@media (max-width: 44rem)")[1].split("</style>")[0]
         self.assertIn("flex-wrap", reflow)
         self.assertNotIn("display: none", reflow.split("thead")[0])
         self.assertIn("thead { display: none; }", reflow)
@@ -395,6 +416,73 @@ class DemoPageTest(unittest.TestCase):
         self.assertFalse(payload["hasJourneys"])
         self.assertTrue(all(row["minutes"] is None for row in payload["destinations"]))
         self.assertIn("no timetable loaded", render_page(payload, budget_pounds=20))
+
+
+class AllOriginsCliTest(unittest.TestCase):
+    """The whole `--all-origins` run, because the output folder is the product.
+
+    Every assertion here is something a reader or the operator can see: which
+    pages exist, what the chooser lists, what the build says about a folder that
+    still holds an earlier build, and how to open the result. The order of the
+    writes matters, so this exercises the command rather than its pieces.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(root / "fares", include_unserved_station=True)
+        self.timetable = build_synthetic_timetable(root / "timetable")
+        self.out = root / "site" / "index.html"
+
+    def build(self) -> str:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--feed",
+                    str(self.feed),
+                    "--timetable",
+                    str(self.timetable),
+                    "--all-origins",
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        return buffer.getvalue()
+
+    def test_only_priceable_stations_get_a_page(self) -> None:
+        self.build()
+        written = sorted(child.name for child in (self.out.parent / "from").iterdir())
+        self.assertEqual(written, ["grantham", "nottingham"])
+
+    def test_the_chooser_offers_every_page_and_no_others(self) -> None:
+        self.build()
+        chooser = (self.out.parent / "index.html").read_text(encoding="utf-8")
+        pages = [child.name for child in (self.out.parent / "from").iterdir()]
+        for slug in pages:
+            self.assertIn(f"/from/{slug}/", chooser)
+        self.assertNotIn("0 destination", chooser)
+
+    def test_an_earlier_build_in_the_folder_is_named_not_deleted(self) -> None:
+        (self.out.parent / "from" / "sleepy").mkdir(parents=True)
+        stale_file = self.out.parent / "from" / "sleepy" / "index.html"
+        stale_file.write_text("from an earlier build", encoding="utf-8")
+        said = self.build()
+        self.assertIn("earlier build", said)
+        self.assertIn("sleepy", said)
+        self.assertTrue(stale_file.exists(), "the build must not delete a page it did not write")
+
+    def test_a_fresh_folder_gets_no_stale_note(self) -> None:
+        self.assertNotIn("earlier build", self.build())
+
+    def test_the_build_says_how_to_open_what_it_wrote(self) -> None:
+        # The pages are build output and their links are root-absolute, so
+        # double-clicking the file does not work and a local server does.
+        said = self.build()
+        self.assertIn("http.server", said)
+        self.assertIn("http://localhost", said)
 
 
 if __name__ == "__main__":

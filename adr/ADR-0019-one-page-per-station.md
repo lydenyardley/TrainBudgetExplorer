@@ -186,3 +186,29 @@ Two refinements landed after the picker itself:
   with no priced flows is a real station a real reader may start from.
 - **Verified:** 203 Python tests and 38/38 real-browser checks, layout scan clean,
   no horizontal overflow at 390 px or 1280 px in either colour scheme.
+
+## What looking at the built set caught (22 September 2026, later still)
+
+Opening the whole `_site` folder in a browser — rather than one page at a time —
+found three things the tests had passed over, all of them in the *set*, which is
+what a reader actually receives:
+
+1. **The chooser offered stations with "0 destinations".** Decision 3 below said the
+   index holds only stations the build could price, and the ranking was derived from
+   the feed, but the entries were emitted regardless of their count. On synthetic
+   data that was five of seven rows: the reader's first click led to a page that
+   could not answer them. `build_station_index` now drops a zero count. Verified
+   against the real browser: two pages written, chooser lists two.
+2. **The stacked layout started too late.** The 40 rem breakpoint left the band
+   between 640 px and ~700 px on the table, where six columns cannot hold three row
+   actions without wrapping. Measured across 320–1280 px in 40 px steps, the table
+   now yields at 44 rem, and no width overflows or wraps its row actions.
+3. **An earlier build's pages stayed in the folder and were served.** They are not
+   deleted — that is destructive without asking — but `--all-origins` now names the
+   folders it did not rewrite, and prints how to serve the result, because the pages
+   are build output and their links are root-absolute, so a double-clicked file does
+   not work and a local server does.
+
+**Verified:** 211 Python tests (5 new, exercising `--all-origins` end to end rather
+than its pieces) and 38/38 real-browser checks; no overflow at any width from
+320 px to 1280 px.
