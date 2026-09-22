@@ -1,0 +1,95 @@
+# Build the station pages and publish the site.
+#
+# The host is a choice, and the workflow leaves it to the repository's
+# settings rather than hardcoding one. GitHub Pages is the default path
+# below because it is free and this is a static site; the site is plain
+# files either way, so any host that serves a folder works -- point another
+# provider's deploy action, or an rsync/FTP step, at the _site/ artifact
+# this workflow already uploads.
+#
+# Required once, in the repository settings:
+#   Settings -> Pages -> Source: GitHub Actions.
+#
+# Building from the real feeds here is deliberately not the default. The
+# feeds are licensed data and git-ignored; if you keep a copy in a private
+# repository artifact (repository variable FEEDS_ARTIFACT names it), the
+# workflow downloads it and builds from feeds/ instead. Otherwise the demo
+# feed ships, and the pages say so -- provenance comes from the feed's
+# metadata.json either way.
+#
+# When the deploy targets a subpath (a project site like
+# owner.github.io/repo/), set the repository variable SITE_BASE_PATH to the
+# path (e.g. trainbudget) so every internal link is prefixed to match.
+
+name: build and publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch the licensed feeds, if they are kept as an artifact
+        if: vars.FEEDS_ARTIFACT != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ vars.FEEDS_ARTIFACT }}
+          path: feeds
+
+      - name: Build the site
+        run: |
+          BASE_ARGS=()
+          if [ -n "$SITE_BASE_PATH" ]; then
+            BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
+          fi
+          if [ -f feeds/metadata.json ] || [ -n "$(find feeds -maxdepth 2 -name '*.ffl' 2>/dev/null | head -1)" ]; then
+            python build_demo_page.py \
+              --feed feeds \
+              --all-origins \
+              --out _site/index.html \
+              --notices rdg,ogl,accuracy \
+              "${BASE_ARGS[@]}"
+          else
+            python make_synthetic_feed.py _demo_feed --kind both
+            python build_demo_page.py \
+              --feed _demo_feed \
+              --timetable _demo_feed \
+              --all-origins \
+              --out _site/index.html \
+              "${BASE_ARGS[@]}"
+          fi
+
+      - name: Test the build
+        run: python -m unittest discover -p "test_*.py"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
