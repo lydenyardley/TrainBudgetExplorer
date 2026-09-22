@@ -197,8 +197,20 @@ async function main() {
       );
       const emptyOptions = await page.locator("#originPicks a").count();
       check("and the list itself is empty rather than stale", emptyOptions === 0, `${emptyOptions} left`);
+      // Keyboard exit: Escape closes and focus returns to the control that opened it.
+      await page.fill("#originSearch", "lin");
+      await page.keyboard.press("Escape");
+      check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
+      check("and focus returns to the Change control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
+      await pickerButton.click();
+      check("Change reopens the picker", await page.locator("#originPicker").isVisible());
       await pickerButton.click();
       check("Change closes the picker again", !(await page.locator("#originPicker").isVisible()));
+      // Keyboard-only reachability of the picker's first option.
+      await pickerButton.click();
+      const firstOption = page.locator("#originPicks a").first();
+      check("picker options are keyboard-focusable links", await firstOption.evaluate((el) => el.tagName === "A" && el.href.endsWith("/")));
+      await page.keyboard.press("Escape");
     } else {
       check("the page offers a Change control", false, "#changeOrigin missing");
     }

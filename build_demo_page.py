@@ -285,8 +285,9 @@ TEMPLATE = """<!doctype html>
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
-            border-radius: .3rem; font: inherit; font-size: .85rem; padding: .1rem .4rem;
+            border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
             margin-left: .5rem; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
   .toggle[aria-expanded=true] { border-color: var(--accent); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
          white-space: nowrap; }
@@ -367,7 +368,7 @@ TEMPLATE = """<!doctype html>
 
 <p id="summary"></p>
 <table>
-  <thead><tr><th>Station</th><th class="num">Price</th><th class="num">Time</th><th class="num">Changes</th><th>Ticket</th><th>Tickets</th></tr></thead>
+  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <p id="empty" hidden>Nothing inside this budget. Raise it or switch who it covers.</p>
@@ -665,14 +666,24 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     originStatus.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
   }
 
-  changeOrigin.addEventListener("click", () => {
-    const open = changeOrigin.getAttribute("aria-expanded") === "true";
-    changeOrigin.setAttribute("aria-expanded", String(!open));
-    originPicker.hidden = open;
-    if (!open) {
+  function setPicker(open) {
+    changeOrigin.setAttribute("aria-expanded", String(open));
+    originPicker.hidden = !open;
+    if (open) {
       renderPicks();
       originSearch.focus();
+    } else {
+      // Escape is a keyboard exit, and focus returns to the control that
+      // opened the picker rather than dropping to the top of the page.
+      changeOrigin.focus();
     }
+  }
+
+  changeOrigin.addEventListener("click", () => {
+    setPicker(changeOrigin.getAttribute("aria-expanded") !== "true");
+  });
+  originPicker.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setPicker(false);
   });
   originSearch.addEventListener("input", renderPicks);
 }

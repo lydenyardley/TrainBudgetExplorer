@@ -186,6 +186,20 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('link.href = station.href', self.html)
         self.assertNotIn("<select", self.html.split("<script")[0])
 
+    def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
+        self.assertIn('event.key === "Escape"', self.html)
+        self.assertIn("changeOrigin.focus()", self.html)
+
+    def test_table_headers_name_their_columns_and_scope(self) -> None:
+        # "Ticket" and "Tickets" as adjacent headers read as one column twice;
+        # the first holds the fare code, so it says so.
+        self.assertIn('<th scope="col">Fare code</th>', self.html)
+        self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
+        self.assertEqual(self.html.count('<th scope="col"'), 6)
+
+    def test_keyboard_focus_is_visible_everywhere(self) -> None:
+        self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.html)
+
     def test_the_picker_hides_itself_when_there_is_nowhere_else_to_go(self) -> None:
         payload = dict(self.payload, stations=[])
         html = render_page(payload, budget_pounds=20)
