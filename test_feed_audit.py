@@ -96,6 +96,26 @@ class ParseRobustnessTest(unittest.TestCase):
             self.assertEqual(len(db.stations_by_tiploc), 5)
             self.assertEqual(len(db.schedules), 11)
 
+    def test_an_unrecognised_format_is_named_not_counted_as_none(self) -> None:
+        """An XML download must read as 'no reader', not as an empty feed.
+
+        feeds/ held a 2 MB XML file and the audit answered "files 0: none",
+        which is the answer an empty download gives. The two are different
+        problems with different fixes. See adr/ADR-0023.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = build_synthetic_feed(Path(tmp) / "fares")
+            (Path(fares) / "FareLocationsRefData_v1.3.xml").write_text(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<NlcGrid></NlcGrid>\n",
+                encoding="utf-8",
+            )
+            timetable = build_synthetic_timetable(Path(tmp) / "timetable")
+
+            db = FaresDb().load_feed(fares)
+            self.assertIn("FareLocationsRefData_v1.3.xml", " ".join(db.report.skipped_files))
+            self.assertIn(".xml", db.report.skipped_files[0])
+            self.assertNotEqual(db.report.summary()["files"], 0)
+
     def test_a_zip_feed_loads_the_same_as_a_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             folder = build_synthetic_feed(Path(tmp) / "fares")

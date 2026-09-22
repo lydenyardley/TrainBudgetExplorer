@@ -267,6 +267,13 @@ class FaresDb:
             "rcm": self._load_minimum_fares,
         }.get(extension)
         if loader is None:
+            # A download this project has no reader for must be named, or the
+            # audit reports "files 0" and reads as an empty download when the
+            # real story is an unrecognised format. See adr/ADR-0023.
+            suffix = Path(name).suffix.lower().lstrip(".")
+            self.report.skip_file(
+                f"{name}: no reader for the .{suffix or 'unknown'} format, not opened"
+            )
             return
         self.report.files_read.append(name)
         count(lines, loader, self.report, name)
