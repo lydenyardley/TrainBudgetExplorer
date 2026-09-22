@@ -35,6 +35,40 @@ DEFAULT_NOTE = (
     "Synthetic demo data: the stations, fares, and times are invented to exercise "
     "the pipeline. Real fares and times replace them once the feed download clears."
 )
+# The provenance line sits with the prices, not the footer, because where a
+# number came from is part of the number. The railcard basis states what the
+# Easy Fares reality-check found: the model's third-off estimate sits 5-15p
+# ABOVE the database's own discounted price, so it never sends a reader over
+# budget on a rounding (checked 2026-09-22, easy_fares_check.py).
+DEFAULT_PRICE_SOURCE = "the synthetic demo feed"
+DEFAULT_RAILCARD_BASIS = (
+    "Railcard prices are estimates - a third off, rounded up to 5p. A check "
+    "against the National Rail fares database (Easy Fares demo, 22 September "
+    "2026) found the estimate sits 5-15p above the real discounted price, so "
+    "any budget that fits the estimate also fits the real fare."
+)
+# Licence notice wordings (ADR-0020, ADR-0021). The OGL sentence is the
+# standard wording; the accuracy notice carries the substance of the Data
+# Sharing Agreement's cl. 3.3.2 and its liability clause 7.2. Composed by
+# --notices for a real-data build, never applied to a synthetic one by
+# default: crediting RDG for invented prices would be false attribution.
+NOTICES = {
+    "rdg": (
+        "Fares and station data: \u00a9 Rail Delivery Group, published through "
+        "the Rail Data Marketplace."
+    ),
+    "ogl": (
+        "Contains public sector information licensed under the Open Government "
+        "Licence v3.0."
+    ),
+    "accuracy": (
+        "The fares and journey times on this page are provided \u2018as is\u2019, with no "
+        "representation as to their accuracy or fitness for a purpose, and they "
+        "change without notice: always confirm the price with the seller before "
+        "buying. Neither Rail Delivery Group nor Rail Settlement Plan Limited "
+        "accepts liability for any loss arising from reliance on this data."
+    ),
+}
 # Said on the page whenever the link cannot carry the search, which is the
 # default (adr/ADR-0018-the-pages-default-link.md). It states what the reader has
 # to do, and what does not change, because a fallback the reader only discovers on
@@ -65,6 +99,27 @@ def station_slug(name: str, crs: str, taken: set[str]) -> str:
         slug = f"{slug}-{counter}"
     taken.add(slug)
     return slug
+
+
+def notices_or_attribution(args: argparse.Namespace) -> str | list[str] | None:
+    """The footer notices: --notices presets composed, or --attribution verbatim.
+
+    --notices wins when both are given, and says so, because silently dropping
+    custom wording the operator typed would hide a legal obligation they meant
+    to carry.
+    """
+    if args.notices:
+        unknown = [n for n in args.notices.split(",") if n.strip() and n.strip() not in NOTICES]
+        if unknown:
+            print(
+                f"unknown notice(s) {', '.join(unknown)}: choose from {', '.join(sorted(NOTICES))}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        if args.attribution:
+            print("--notices given, so --attribution is ignored", file=sys.stderr)
+        return [NOTICES[n.strip()] for n in args.notices.split(",") if n.strip()]
+    return args.attribution
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -114,6 +169,13 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="licence-required wording to carry in the footer, once the terms are read",
     )
     parser.add_argument(
+        "--notices",
+        default=None,
+        help="comma-separated preset notices: rdg (publisher credit), ogl (Open "
+        "Government Licence wording), accuracy (as-is accuracy and liability "
+        "notice). Compose them, e.g. --notices rdg,ogl,accuracy",
+    )
+    parser.add_argument(
         "--analytics-snippet",
         default=None,
         help="file whose contents are injected before </body>, for counting referrers",
@@ -130,6 +192,8 @@ def build_payload(
     day: date | None = None,
     note: str = DEFAULT_NOTE,
     attribution: str | None = None,
+    price_source: str = DEFAULT_PRICE_SOURCE,
+    railcard_basis: str = DEFAULT_RAILCARD_BASIS,
     provider: str = DEFAULT_PROVIDER,
     # Fallback by default: the parameterised link is not known to land on a
     # search at either seller, and a link that tells a reader there are no trains
@@ -234,6 +298,12 @@ def build_payload(
         "serviceDate": day.isoformat() if day else None,
         "note": note,
         "attribution": attribution,
+        # Where the numbers on this page came from. It sits with the prices,
+        # not in the footer, because where a number came from is part of the
+        # number; the footer keeps the licence wording, which is a different
+        # reader's question.
+        "priceSource": price_source,
+        "railcardBasis": railcard_basis,
         "linkNote": LINK_NOTE_FALLBACK if mode == "fallback" else None,
         "feed": fares.stats(),
         "timetable": timetable.stats() if timetable else None,
@@ -401,6 +471,7 @@ TEMPLATE = """<!doctype html>
 </div>
 
 <p id="summary"></p>
+<p class="tag" id="priceSource" hidden></p>
 <table>
   <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
@@ -409,11 +480,12 @@ TEMPLATE = """<!doctype html>
 <p id="more" hidden></p>
 
 <footer>
-  <p id="attribution" hidden></p>
+  <div id="attribution" hidden></div>
   <p>__NOTE__</p>
   <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed. The times are options in the timetable, and the fare shown is valid on all of them, so none is picked for you.</p>
   <p id="railcardNote"></p>
   <p id="linkNote" hidden></p>
+  <p class="tag" id="railcardBasis" hidden></p>
   <p class="tag" id="provenance"></p>
   <p id="disclosure" hidden></p>
   <p id="copyStatus" role="status" class="sr-only"></p>
@@ -614,9 +686,33 @@ function provenance() {
   // in a comment, because a term that has to be visible is not satisfied by
   // being present in the file.
   if (DATA.attribution) {
+    // One notice per paragraph: the RDG credit, the OGL sentence, and the
+    // accuracy/liability notice are distinct statements with distinct
+    // obligations (ADR-0020, ADR-0021), and one run-on paragraph would let
+    // a reader miss the one that disclaims the numbers.
     const attribution = document.getElementById("attribution");
-    attribution.textContent = DATA.attribution;
+    for (const notice of [].concat(DATA.attribution)) {
+      const p = document.createElement("p");
+      p.textContent = notice;
+      attribution.append(p);
+    }
     attribution.hidden = false;
+  }
+  // Where the numbers came from, stated beside the prices rather than in the
+  // footer, because where a number came from is part of the number.
+  if (DATA.priceSource) {
+    const line = document.getElementById("priceSource");
+    const parts = ["Prices from " + DATA.priceSource];
+    if (DATA.serviceDate) parts.push("feed dated " + humanDate(DATA.serviceDate));
+    line.textContent = parts.join(", ") + ".";
+    line.hidden = false;
+  }
+  if (DATA.railcardBasis) {
+    // Visible small print, not a tooltip: a caveat a reader can only find by
+    // hovering is not stated, and touch has no hover at all.
+    const basis = document.getElementById("railcardBasis");
+    basis.textContent = DATA.railcardBasis;
+    basis.hidden = false;
   }
   if (DATA.tracked) {
     const disclosure = document.getElementById("disclosure");
@@ -978,7 +1074,7 @@ def main(argv: list[str] | None = None) -> int:
             max_changes=args.max_changes,
             day=day,
             note=args.note,
-            attribution=args.attribution,
+            attribution=notices_or_attribution(args),
             provider=args.provider,
             mode=args.link_mode,
             adults=args.adults,
@@ -1021,7 +1117,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_changes=args.max_changes,
                 day=day,
                 note=args.note,
-                attribution=args.attribution,
+                attribution=notices_or_attribution(args),
                 provider=args.provider,
                 mode=args.link_mode,
                 adults=args.adults,
