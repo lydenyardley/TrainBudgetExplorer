@@ -173,6 +173,35 @@ async function main() {
     });
     check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
     check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
+
+    // 8. The origin picker: search, navigate, and the no-match wording
+    // (ADR-0019). Choosing a station is navigation, so the link must go to
+    // another page, and there must never be an empty picker.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url);
+    const pickerButton = page.locator("#changeOrigin");
+    if (await pickerButton.count()) {
+      await pickerButton.click();
+      check("Change opens the picker", await page.locator("#originPicker").isVisible());
+      const pickCount = await page.locator("#originPicks a").count();
+      check("the picker lists stations without typing", pickCount > 0, `${pickCount} options`);
+      const href = await page.locator("#originPicks a").first().getAttribute("href");
+      check("options are links to station pages", /^\/from\/.+\/$/.test(href), href);
+      await page.fill("#originSearch", "notting");
+      const narrowed = await page.locator("#originPicks a").count();
+      check("typing narrows the picker", narrowed === 1 && /NOTTINGHAM/.test(await page.locator("#originPicks a").first().textContent()), `${narrowed} options`);
+      await page.fill("#originSearch", "zzzz");
+      check(
+        "a no-match says so and names the code route",
+        (await page.locator("#originNomatch").isVisible()) && /three-letter code/.test(await page.textContent("#originNomatch"))
+      );
+      const emptyOptions = await page.locator("#originPicks a").count();
+      check("and the list itself is empty rather than stale", emptyOptions === 0, `${emptyOptions} left`);
+      await pickerButton.click();
+      check("Change closes the picker again", !(await page.locator("#originPicker").isVisible()));
+    } else {
+      check("the page offers a Change control", false, "#changeOrigin missing");
+    }
   } finally {
     for (const { name, ok, detail } of checks) {
       console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
