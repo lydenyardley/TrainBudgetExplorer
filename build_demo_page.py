@@ -282,13 +282,19 @@ TEMPLATE = """<!doctype html>
               padding: 1.25rem; border: 1px solid var(--line); border-radius: .5rem; align-items: start; }
   .controls .secondary { display: grid; gap: 1rem; align-content: start; }
   .budget { font-size: 2.75rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; line-height: 1.1; }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; }
   fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: .35rem; }
   legend, label.caption { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  .choices label { display: block; font-size: .95rem; color: var(--fg); }
+  /* The whole label is the touch target: the party switch changes every price
+     on the page, so a thumb must land it first time. */
+  .choices label { display: flex; align-items: center; gap: .5rem; font-size: .95rem; color: var(--fg);
+                   padding: .55rem 0; cursor: pointer; }
+  .choices input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
   input[type=search] { width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .35rem;
                       font: inherit; color: var(--fg); background: var(--field); }
-  #summary { margin: 1.25rem 0 .5rem; font-weight: 600; }
+  /* Generous after the controls, tight onto its table: the summary belongs to
+     the list below it, not to the panel above. */
+  #summary { margin: 1.75rem 0 .5rem; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -299,6 +305,7 @@ TEMPLATE = """<!doctype html>
      touch target reaches 44px past it. */
   .toggle::after { content: ""; position: absolute; inset: -6px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
+  ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
   .toggle[aria-expanded=true] { border-color: var(--accent); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
          white-space: nowrap; position: relative; }
