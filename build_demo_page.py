@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -46,6 +47,26 @@ LINK_NOTE_FALLBACK = (
 )
 
 
+def station_slug(name: str, crs: str, taken: set[str]) -> str:
+    """A readable address for a station, unique within ``taken``.
+
+    Two stations can share a name, and the CRS code is the disambiguator
+    (adr/ADR-0019-one-page-per-station.md): a collision that reached the page as
+    two identical links would be a defect, so it is resolved here, at build
+    time, where it can be tested.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "station"
+    if slug in taken:
+        slug = re.sub(r"[^a-z0-9]+", "-", f"{name} {crs}".lower()).strip("-")
+    if slug in taken:  # pathological: same name AND code seen twice
+        counter = 2
+        while f"{slug}-{counter}" in taken:
+            counter += 1
+        slug = f"{slug}-{counter}"
+    taken.add(slug)
+    return slug
+
+
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Write the budget explorer demo page.")
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
@@ -56,6 +77,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="origin CRS code. Grantham's real code is GRA; the synthetic feed invents GRN",
     )
     parser.add_argument("--out", default="demo.html", help="page to write")
+    parser.add_argument(
+        "--all-origins",
+        action="store_true",
+        help="write one page per priceable station under out's folder, plus the chooser",
+    )
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument("--note", default=DEFAULT_NOTE, help="provenance note for the footer")
@@ -191,6 +217,14 @@ def build_payload(
     return {
         "origin": {"crs": origin_row.crs, "name": origin_row.name},
         "destinations": destinations,
+        # The picker's options (ADR-0019). main() replaces this with the written
+        # outputs for a real build; called directly, it carries every station
+        # except this origin, from priced flows, so nothing offered can 404.
+        "stations": [
+            {"name": loc.name, "crs": loc.crs, "href": f"/from/{re.sub(r'[^a-z0-9]+', '-', loc.name.lower()).strip('-')}/"}
+            for crs, loc in sorted(fares.locations_by_crs.items())
+            if crs != origin.crs
+        ],
         "hasJourneys": timetable is not None,
         "hasTwoTogether": bool(pair),
         "serviceDate": day.isoformat() if day else None,
@@ -268,6 +302,15 @@ TEMPLATE = """<!doctype html>
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
+  #originPicker { margin: .75rem 0 1rem; }
+  #originPicker input[type=search] { width: 100%; max-width: 24rem; padding: .5rem; border: 1px solid var(--line);
+                                     border-radius: .35rem; font: inherit; color: var(--fg); background: var(--field); }
+  #originPicks { list-style: none; margin: .5rem 0 0; padding: 0; max-width: 24rem; }
+  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; padding: .45rem .4rem;
+                   color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
+  #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #originPicks .code { color: var(--muted); }
+  #originNomatch { color: var(--muted); margin-top: .5rem; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
@@ -291,8 +334,17 @@ TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-<h1>Where can we go from __ORIGIN__?</h1>
+<h1>Where can we go from __ORIGIN__? <button id="changeOrigin" type="button" class="toggle" aria-expanded="false" aria-controls="originPicker">Change</button></h1>
 <p class="sub">Every destination reachable by train for the budget below, with the fastest journey time and the number of changes.</p>
+
+<div id="originPicker" hidden>
+  <label class="caption" for="originSearch">Start from a different station</label>
+  <input id="originSearch" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
+         aria-describedby="originStatus">
+  <span id="originStatus" class="sr-only" role="status"></span>
+  <ul id="originPicks"></ul>
+  <p id="originNomatch" hidden></p>
+</div>
 
 <div class="controls">
   <div>
@@ -572,6 +624,59 @@ async function copyJourney(row, destination, button) {
   }
 }
 
+// The picker (ADR-0019): choosing a station is navigation to that station's
+// page, not a filter on this one. The options are real anchors, so keyboard
+// handling and accessible naming are the browser's own. The list is built from
+// the written outputs, so nothing here can lead to a missing page.
+const changeOrigin = document.getElementById("changeOrigin");
+const originPicker = document.getElementById("originPicker");
+if (changeOrigin && DATA.stations && DATA.stations.length) {
+  const originSearch = document.getElementById("originSearch");
+  const originPicks = document.getElementById("originPicks");
+  const originNomatch = document.getElementById("originNomatch");
+  const originStatus = document.getElementById("originStatus");
+
+  function renderPicks() {
+    const needle = originSearch.value.trim().toLowerCase();
+    const wanted = DATA.stations.filter(
+      (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
+    );
+    originPicks.replaceChildren();
+    for (const station of wanted.slice(0, 40)) {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = station.href;
+      const name = document.createElement("span");
+      name.textContent = station.name;
+      const code = document.createElement("span");
+      code.className = "code";
+      code.textContent = station.crs;
+      link.append(name, code);
+      item.append(link);
+      originPicks.append(item);
+    }
+    if (wanted.length) {
+      originNomatch.hidden = true;
+    } else {
+      originNomatch.textContent = "We don't have prices from '" + originSearch.value.trim() +
+        "'. Try the station's name or its three-letter code.";
+      originNomatch.hidden = false;
+    }
+    originStatus.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
+  }
+
+  changeOrigin.addEventListener("click", () => {
+    const open = changeOrigin.getAttribute("aria-expanded") === "true";
+    changeOrigin.setAttribute("aria-expanded", String(!open));
+    originPicker.hidden = open;
+    if (!open) {
+      renderPicks();
+      originSearch.focus();
+    }
+  });
+  originSearch.addEventListener("input", renderPicks);
+}
+
 budget.addEventListener("input", render);
 query.addEventListener("input", render);
 for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", render);
@@ -582,6 +687,37 @@ __ANALYTICS__
 </body>
 </html>
 """
+
+
+def _priced_destinations(fares: FaresDb, timetable, origin_crs: str) -> int:
+    """How many destinations an origin's page would carry, for the index."""
+    return len(fares.destinations_within(origin_crs, EVERYTHING_PENCE, adults=1))
+
+
+def build_station_index(
+    priced_by_origin: dict[str, int], all_locations: dict[str, object]
+) -> list[dict[str, str]]:
+    """The picker's option list, built from what was actually written.
+
+    ``priced_by_origin`` maps CRS to the number of priced destinations that
+    origin's page carries; ``all_locations`` supplies names. A station with no
+    priced flows is absent rather than selectable-and-empty (ADR-0019). The
+    count also ranks the root chooser's cold start, which is derived from the
+    feed rather than an invented "popular stations" list.
+    """
+    taken: set[str] = set()
+    index = []
+    for crs, count in sorted(priced_by_origin.items(), key=lambda item: (-item[1], item[0])):
+        location = all_locations[crs]
+        index.append(
+            {
+                "crs": crs,
+                "name": location.name,
+                "slug": station_slug(location.name, crs, taken),
+                "destinations": count,
+            }
+        )
+    return index
 
 
 def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> str:
@@ -601,6 +737,116 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", payload["note"])
+        .replace("__ANALYTICS__", analytics)
+    )
+
+
+CHOOSER_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where can we go for &pound;__BUDGET__? Pick your station</title>
+<style>
+  :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
+          --field: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5;
+            --field: #1c2127; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 1.5rem; max-width: 40rem;
+         background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .sub { color: var(--muted); margin: 0 0 1.25rem; }
+  label.caption { display: block; font-size: .8rem; text-transform: uppercase;
+                  letter-spacing: .04em; color: var(--muted); margin-bottom: .35rem; }
+  input[type=search] { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
+                       font: inherit; color: var(--fg); background: var(--field); }
+  #picks { list-style: none; margin: .5rem 0 0; padding: 0; }
+  #picks a { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem .4rem;
+             color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
+  #picks a:hover, #picks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #picks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  #nomatch { color: var(--muted); margin-top: .5rem; }
+  p.tag { color: var(--muted); font-size: .85rem; margin-top: 2rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+             clip-path: inset(50%); white-space: nowrap; border: 0; }
+</style>
+</head>
+<body>
+<h1>Where can we go for &pound;__BUDGET__?</h1>
+<p class="sub">Pick the station you are starting from, and see every destination reachable by train inside the budget.</p>
+<label class="caption" for="pick">Your station</label>
+<input id="pick" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
+       aria-describedby="pickStatus">
+<span id="pickStatus" class="sr-only" role="status"></span>
+<ul id="picks"></ul>
+<p id="nomatch" hidden></p>
+<p class="tag">__NOTE__</p>
+<script>
+const STATIONS = __STATIONS__;
+const picks = document.getElementById("picks");
+const nomatch = document.getElementById("nomatch");
+const status = document.getElementById("pickStatus");
+const pick = document.getElementById("pick");
+
+function render() {
+  const needle = pick.value.trim().toLowerCase();
+  const wanted = STATIONS.filter(
+    (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
+  );
+  picks.replaceChildren();
+  for (const station of wanted.slice(0, 40)) {
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = station.href;
+    const name = document.createElement("span");
+    name.textContent = station.name;
+    const code = document.createElement("span");
+    code.className = "code";
+    code.textContent = station.crs;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = station.destinations + " destinations";
+    link.append(name, code, count);
+    item.append(link);
+    picks.append(item);
+  }
+  if (wanted.length) {
+    nomatch.hidden = true;
+  } else {
+    nomatch.textContent = "We don't have prices from '" + pick.value.trim() +
+      "'. Try the station's name or its three-letter code.";
+    nomatch.hidden = false;
+  }
+  status.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
+}
+
+pick.addEventListener("input", render);
+render();
+pick.focus();
+</script>
+__ANALYTICS__
+</body>
+</html>
+"""
+
+
+def render_chooser(index: list[dict], *, budget_pounds: int, analytics: str = "") -> str:
+    """The root page: the station chooser itself, with no fares on it."""
+    note = DEFAULT_NOTE
+    stations = json.dumps(
+        [{"name": e["name"], "crs": e["crs"], "href": f"/from/{e['slug']}/", "destinations": e["destinations"]} for e in index],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).replace("</", "<\\/")
+    return (
+        CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
+        .replace("__BUDGET__", str(budget_pounds))
+        .replace("__NOTE__", note)
         .replace("__ANALYTICS__", analytics)
     )
 
@@ -650,6 +896,59 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     out = Path(args.out)
+    # The picker's station list is the written outputs, so it is attached after
+    # the payload is built and before the page is rendered. A single-origin
+    # build writes only itself; --all-origins writes the whole set (ADR-0019).
+    if args.all_origins:
+        out_dir = out.parent
+        origins = sorted(fares.locations_by_crs)
+        index = build_station_index(
+            {crs: _priced_destinations(fares, timetable, crs) for crs in origins},
+            fares.locations_by_crs,
+        )
+        by_crs = {entry["crs"]: entry for entry in index}
+        for crs in origins:
+            if crs not in by_crs:
+                continue
+            one = build_payload(
+                fares,
+                timetable,
+                crs,
+                max_changes=args.max_changes,
+                day=day,
+                note=args.note,
+                attribution=args.attribution,
+                provider=args.provider,
+                mode=args.link_mode,
+                adults=args.adults,
+                network=args.affiliate_network,
+                advertiser_id=args.advertiser_id,
+                publisher_id=args.publisher_id,
+                departure_limit=args.departures,
+            )
+            others = [e for e in index if e["crs"] != crs]
+            one["stations"] = [
+                {"name": e["name"], "crs": e["crs"], "href": f"/from/{e['slug']}/"} for e in others
+            ]
+            page = out_dir / "from" / by_crs[crs]["slug"] / "index.html"
+            page.parent.mkdir(parents=True, exist_ok=True)
+            page.write_text(render_page(one, budget_pounds=20, analytics=analytics), encoding="utf-8")
+            print(f"wrote {page} with {len(one['destinations'])} destinations from {one['origin']['name']}")
+        chooser = render_chooser(index, budget_pounds=20, analytics=analytics)
+        root = out_dir / "index.html"
+        root.write_text(chooser, encoding="utf-8")
+        print(f"wrote {root} (the chooser) with {len(index)} priced stations")
+        return 0
+
+    payload["stations"] = [
+        {
+            "name": location.name,
+            "crs": crs,
+            "href": f"/from/{station_slug(location.name, crs, set())}/",
+        }
+        for crs, location in sorted(fares.locations_by_crs.items())
+        if crs != payload["origin"]["crs"]
+    ]
     out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")

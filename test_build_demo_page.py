@@ -11,7 +11,7 @@ from pathlib import Path
 
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
-from build_demo_page import build_payload, render_page
+from build_demo_page import build_payload, render_page, render_chooser, station_slug
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 from retailer import DISCLOSURE
 
@@ -153,6 +153,69 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="budget"', self.html)
         self.assertIn('id="q"', self.html)
         self.assertIn('value="party"', self.html)
+
+    # -- the origin picker (ADR-0019) -------------------------------------
+
+    def test_the_payload_carries_a_station_list_for_the_picker(self) -> None:
+        codes = [s["crs"] for s in self.payload["stations"]]
+        self.assertNotIn("GRN", codes)  # the page's own origin is not offered
+        self.assertIn("KGX", codes)
+        for station in self.payload["stations"]:
+            self.assertEqual(sorted(station), ["crs", "href", "name"])
+            self.assertTrue(station["href"].startswith("/from/"))
+
+    def test_slugs_are_readable_and_collision_free(self) -> None:
+        taken: set[str] = set()
+        first = station_slug("NOTTINGHAM", "NOT", taken)
+        self.assertEqual(first, "nottingham")
+        # A second station with the same name is disambiguated with its code.
+        second = station_slug("NOTTINGHAM", "NMP", taken)
+        self.assertEqual(second, "nottingham-nmp")
+        self.assertNotEqual(first, second)
+
+    def test_a_slug_never_collides_even_with_the_same_name_and_code(self) -> None:
+        taken: set[str] = set()
+        a = station_slug("X", "AAA", taken)
+        b = station_slug("X", "AAA", taken)
+        self.assertNotEqual(a, b)
+
+    def test_the_page_offers_to_change_origin_and_navigates_by_link(self) -> None:
+        self.assertIn('id="changeOrigin"', self.html)
+        self.assertIn('id="originPicks"', self.html)
+        # The options are real anchors, not a custom listbox.
+        self.assertIn('link.href = station.href', self.html)
+        self.assertNotIn("<select", self.html.split("<script")[0])
+
+    def test_the_picker_hides_itself_when_there_is_nowhere_else_to_go(self) -> None:
+        payload = dict(self.payload, stations=[])
+        html = render_page(payload, budget_pounds=20)
+        self.assertIn('DATA.stations && DATA.stations.length', html)
+
+    def test_the_no_match_wording_names_what_was_tried(self) -> None:
+        self.assertIn("We don't have prices from", self.html)
+        self.assertIn("three-letter code", self.html)
+
+    def test_the_embedded_script_parses_when_the_template_speaks_in_quotes(self) -> None:
+        # The Python template is one big string, so a quote meant for the page
+        # can terminate a JavaScript literal and take the whole page down. The
+        # no-match wording quotes the reader's own input, so it is written with
+        # single quotes inside double-quoted literals and must arrive intact.
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("We don't have prices from '", script)
+        self.assertNotIn('from \\"', script)
+
+    def test_the_chooser_is_the_index_and_carries_no_fares(self) -> None:
+        index = [
+            {"crs": "KGX", "name": "LONDON KINGS X", "slug": "london-kings-x", "destinations": 6},
+            {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5},
+        ]
+        html = render_chooser(index, budget_pounds=20)
+        self.assertIn("Pick the station you are starting from", html)
+        self.assertNotIn("const DATA", html)  # no fares payload on the chooser
+        self.assertIn("/from/nottingham/", html)
+        self.assertIn('"destinations":6', html.replace(" ", ""))
+        # The ranked count is the cold start, derived from the feed.
+        self.assertLess(html.index("/from/london-kings-x/"), html.index("/from/nottingham/"))
 
     def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
         # The reflow is display-only CSS in a max-width media query. The markup
