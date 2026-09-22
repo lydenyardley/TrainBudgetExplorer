@@ -164,6 +164,48 @@ class DemoPageTest(unittest.TestCase):
             self.assertEqual(sorted(station), ["crs", "href", "name"])
             self.assertTrue(station["href"].startswith("/from/"))
 
+    # -- the layout: budget leads, the rest refines ------------------------
+
+    def test_the_controls_grid_gives_the_budget_the_wider_column(self) -> None:
+        self.assertIn("grid-template-columns: minmax(16rem, 1.5fr) minmax(12rem, 1fr)", self.html)
+        # The party switch and the town filter share one secondary column.
+        self.assertIn('<div class="secondary">', self.html)
+        secondary = self.html.split('<div class="secondary">')[1].split("</div>\n</div>")[0]
+        self.assertIn('name="unit"', secondary)
+        self.assertIn('id="q"', secondary)
+
+    def test_the_budget_is_the_biggest_type_on_the_page(self) -> None:
+        budget_size = re.search(r"\.budget \{ font-size: ([\d.]+)rem", self.html).group(1)
+        h1_size = re.search(r"h1 \{ font-size: ([\d.]+)rem", self.html).group(1)
+        self.assertGreater(float(budget_size), float(h1_size))
+
+    def test_row_actions_carry_a_44px_touch_target(self) -> None:
+        # The visible mark stays small; the hit area reaches 44px via ::after.
+        self.assertIn('.toggle::after { content: ""; position: absolute; inset: -6px; }', self.html)
+        self.assertIn('.buy::after { content: ""; position: absolute; inset: -11px -4px; }', self.html)
+
+    # -- the unpriced-origin page ------------------------------------------
+
+    def test_an_unpriced_origin_gets_its_own_first_sentence(self) -> None:
+        payload = dict(self.payload, destinations=[])
+        html = render_page(payload, budget_pounds=20)
+        self.assertIn('id="unpriced"', html)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("We couldn't price any journeys from", script)
+        # The way forward is the chooser, as a real link.
+        self.assertIn('link.href = "/"', script)
+        self.assertIn("Start from a station we do price", script)
+        # The controls cannot help an origin with no prices, so they stand down.
+        self.assertIn("if (controls) controls.hidden = true", script)
+
+    def test_an_unpriced_origin_with_no_stations_at_all_says_that(self) -> None:
+        payload = dict(self.payload, destinations=[], stations=[])
+        html = render_page(payload, budget_pounds=20)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("Nothing was priced from any station", script)
+        # No chooser exists, so no way-forward link is offered either.
+        self.assertIn('if (DATA.stations && DATA.stations.length)', script)
+
     def test_slugs_are_readable_and_collision_free(self) -> None:
         taken: set[str] = set()
         first = station_slug("NOTTINGHAM", "NOT", taken)

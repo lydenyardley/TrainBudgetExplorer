@@ -225,6 +225,10 @@ def build_payload(
             for crs, loc in sorted(fares.locations_by_crs.items())
             if crs != origin.crs
         ],
+        # Said by the page when this origin priced nothing, so the difference
+        # between "nothing inside your budget" and "nothing priced from here at
+        # all" is on the page rather than inferred from an empty table.
+        "stationCount": len(fares.locations_by_crs),
         "hasJourneys": timetable is not None,
         "hasTwoTogether": bool(pair),
         "serviceDate": day.isoformat() if day else None,
@@ -271,9 +275,13 @@ TEMPLATE = """<!doctype html>
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
   .sub { color: var(--muted); margin: 0 0 1.25rem; }
-  .controls { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-              padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; }
-  .budget { font-size: 2rem; font-weight: 600; color: var(--accent); letter-spacing: -.01em; }
+  /* The budget leads: the biggest type on the page and the wider column. The
+     party switch and the town filter refine it, so they share one narrower
+     secondary column rather than competing as three equal cards. */
+  .controls { display: grid; gap: 1.25rem 2rem; grid-template-columns: minmax(16rem, 1.5fr) minmax(12rem, 1fr);
+              padding: 1.25rem; border: 1px solid var(--line); border-radius: .5rem; align-items: start; }
+  .controls .secondary { display: grid; gap: 1rem; align-content: start; }
+  .budget { font-size: 2.75rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; line-height: 1.1; }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: .35rem; }
   legend, label.caption { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -286,11 +294,15 @@ TEMPLATE = """<!doctype html>
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
             border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
-            margin-left: .5rem; cursor: pointer; }
+            margin-left: .75rem; cursor: pointer; position: relative; }
+  /* Hit-slop: the visible mark stays small beside its neighbours, but the
+     touch target reaches 44px past it. */
+  .toggle::after { content: ""; position: absolute; inset: -6px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
   .toggle[aria-expanded=true] { border-color: var(--accent); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
-         white-space: nowrap; }
+         white-space: nowrap; position: relative; }
+  .buy::after { content: ""; position: absolute; inset: -11px -4px; }
   tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
   tr.detail ul { margin: 0; padding-left: 1.1rem; }
   tr.detail li { font-variant-numeric: tabular-nums; }
@@ -312,6 +324,10 @@ TEMPLATE = """<!doctype html>
   #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #originPicks .code { color: var(--muted); }
   #originNomatch { color: var(--muted); margin-top: .5rem; }
+  /* The unpriced-origin message replaces the intro, so it is page-size text in
+     the normal foreground colour: a finding, not a footnote. */
+  .unpriced { margin: 0 0 1.25rem; }
+  #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
@@ -321,6 +337,8 @@ TEMPLATE = """<!doctype html>
      station name or fare code is. */
   @media (max-width: 40rem) {
     body { padding: 1rem .75rem; }
+    .controls { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
+    .budget { font-size: 2.5rem; }
     table, tbody { display: block; }
     thead { display: none; }
     tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem;
@@ -335,8 +353,9 @@ TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-<h1>Where can we go from __ORIGIN__? <button id="changeOrigin" type="button" class="toggle" aria-expanded="false" aria-controls="originPicker">Change</button></h1>
-<p class="sub">Every destination reachable by train for the budget below, with the fastest journey time and the number of changes.</p>
+<h1 id="pageHeading">Where can we go from __ORIGIN__? <button id="changeOrigin" type="button" class="toggle" aria-expanded="false" aria-controls="originPicker">Change</button></h1>
+<p class="sub" id="pageIntro">Every destination reachable by train for the budget below, with the fastest journey time and the number of changes.</p>
+<p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
   <label class="caption" for="originSearch">Start from a different station</label>
@@ -355,14 +374,16 @@ TEMPLATE = """<!doctype html>
            aria-describedby="budgetHint">
     <div class="tag" id="budgetHint">Drag to change what we can afford.</div>
   </div>
-  <fieldset class="choices">
-    <legend>The budget covers</legend>
-    <label><input type="radio" name="unit" value="adult" checked> One adult, standard fare</label>
-    <label><input type="radio" name="unit" value="party"> The two of us, Two Together Railcard</label>
-  </fieldset>
-  <div>
-    <label class="caption" for="q">Prefer a city or town?</label>
-    <input id="q" type="search" placeholder="Type part of a name or code, e.g. Lincoln" autocomplete="off">
+  <div class="secondary">
+    <fieldset class="choices">
+      <legend>The budget covers</legend>
+      <label><input type="radio" name="unit" value="adult" checked> One adult, standard fare</label>
+      <label><input type="radio" name="unit" value="party"> The two of us, Two Together Railcard</label>
+    </fieldset>
+    <div>
+      <label class="caption" for="q">Prefer a city or town?</label>
+      <input id="q" type="search" placeholder="Type part of a name or code, e.g. Lincoln" autocomplete="off">
+    </div>
   </div>
 </div>
 
@@ -448,9 +469,11 @@ function render() {
   }
 
   const what = unit() === "party" ? "for the two of us" : "each";
-  summary.textContent = wanted.length
+  // An unpriced origin has no budget conversation to have, so the summary
+  // stays empty rather than implying the budget filtered something out.
+  summary.textContent = DATA.destinations.length && wanted.length
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " within " + money(cap) + " " + what
-    : "No destinations within " + money(cap) + " " + what;
+    : DATA.destinations.length ? "No destinations within " + money(cap) + " " + what : "";
   empty.hidden = wanted.length > 0;
   more.hidden = wanted.length <= PAGE;
   more.textContent = "Showing the " + PAGE + " cheapest of " + wanted.length + ".";
@@ -515,6 +538,27 @@ function toggleDetail(row, destination, toggle) {
 }
 
 function provenance() {
+  // An origin the build could not price is a different page from one whose
+  // prices sit outside this budget, so it gets its own first sentence and its
+  // own way forward — not an empty table under a slider that can't help.
+  if (!DATA.destinations.length) {
+    document.getElementById("pageIntro").hidden = true;
+    const unpriced = document.getElementById("unpriced");
+    const intro = "We couldn't price any journeys from " + DATA.origin.name +
+      " (" + DATA.origin.crs + ") in this feed.";
+    if (DATA.stations && DATA.stations.length) {
+      const link = document.createElement("a");
+      link.href = "/";
+      link.textContent = "Start from a station we do price";
+      unpriced.append(intro + " ", link, ".");
+    } else {
+      unpriced.textContent = intro + " Nothing was priced from any station, so there is nothing to explore yet.";
+    }
+    unpriced.hidden = false;
+    const controls = document.querySelector(".controls");
+    if (controls) controls.hidden = true;
+  }
+
   const parts = [
     "Origin " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     DATA.destinations.length + " priced destinations in the feed",
@@ -960,6 +1004,11 @@ def main(argv: list[str] | None = None) -> int:
         for crs, location in sorted(fares.locations_by_crs.items())
         if crs != payload["origin"]["crs"]
     ]
+    if not payload["destinations"]:
+        print(
+            f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
+            "the page says so and points at the chooser"
+        )
     out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")

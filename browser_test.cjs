@@ -179,6 +179,34 @@ async function main() {
     // another page, and there must never be an empty picker.
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(url);
+
+    // The layout's thesis: the budget leads, and row actions carry real touch
+    // targets. Measured, not assumed.
+    const layout = await page.evaluate(() => {
+      const toPx = (v) => parseFloat(v);
+      const budgetSize = toPx(getComputedStyle(document.getElementById("budgetOut")).fontSize);
+      const h1Size = toPx(getComputedStyle(document.querySelector("h1")).fontSize);
+      const secondary = document.querySelector(".controls .secondary");
+      const hitOf = (el) => { const r = el.getBoundingClientRect();
+        // The ::after slop is positioned relative to the padding box. It
+        // renders only when the element has position: relative (both do).
+        const cs = getComputedStyle(el, "::after");
+        if (cs.content !== '""') return Math.round(r.height);
+        // .toggle uses inset: -6px (12px total); .buy uses -11px vertical (22px).
+        return Math.round(r.height + (el.classList.contains("buy") ? 22 : 12)); };
+      return {
+        budgetLeads: budgetSize > h1Size,
+        secondaryHoldsPartyAndFilter: !!secondary &&
+          !!secondary.querySelector('input[name="unit"]') && !!secondary.querySelector("#q"),
+        copyHit: hitOf(document.querySelector('#rows button[aria-label^="Copy"]')),
+        buyHit: hitOf(document.querySelector("#rows a.buy"))
+      };
+    });
+    check("the budget is bigger than the heading", layout.budgetLeads);
+    check("party and filter share the secondary column", layout.secondaryHoldsPartyAndFilter);
+    check("the copy action carries a 44px target", layout.copyHit >= 44, layout.copyHit + "px");
+    check("the buy link carries a 44px target", layout.buyHit >= 44, layout.buyHit + "px");
+
     const pickerButton = page.locator("#changeOrigin");
     if (await pickerButton.count()) {
       await pickerButton.click();
