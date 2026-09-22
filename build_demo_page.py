@@ -1471,4 +1471,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Windows starts pool workers by re-importing this module, so the entry
+    # point must sit under the guard (it does) and the guard must come before
+    # main() runs, or each worker re-runs the build recursively.
     raise SystemExit(main())
