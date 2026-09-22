@@ -286,6 +286,88 @@ is missing rather than passing quietly. It earned its place immediately: the cop
 control shipped with a newline inside a JavaScript string literal, which took the
 whole page down while every Python test still passed.
 
+## The real-data build, end to end
+
+When the licensed feeds land, this is the whole path from download to site. Each
+step exists because skipping it has a specific failure mode.
+
+**1. Put the feeds in place, and record where they came from.** The fares feed,
+the timetable feed, and licence PDFs go in `feeds/` (git-ignored: it is licensed
+data with unread redistribution terms). Beside them, one `metadata.json` records
+provenance once, so every build reads it and no operator retypes it:
+
+```json
+{"source": "RSP fares feed", "downloaded": "3 October 2026"}
+```
+
+That file supplies the price line the page shows beside its prices ("Prices from
+the RSP feeds, downloaded 3 October 2026."). `--price-source` overrides it;
+`--feed-metadata <dir>` points at it when the file is not beside the feed.
+
+**2. Audit before trusting any number.**
+
+```
+python feed_audit.py --feed feeds/fares --timetable feeds/timetable
+```
+
+Read the rejected count and the `Files not opened` list first: a record that
+never loaded is a destination that never appears, and an unrecognised format is
+named there rather than silently counted as an empty download. Also check the
+codes: the real CRS for Grantham is `GRA`, not the synthetic feed's `GRN`, and
+the Easy Fares demo confirmed `GRN` resolves to Grindleford in the real database.
+
+**3. Build one origin, and read the page as a reader would.**
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
+  --notices rdg,ogl,accuracy --out demo.html
+```
+
+`--notices rdg,ogl,accuracy` composes the three licence obligations into the
+footer: the Rail Delivery Group publisher credit (Data Sharing Agreement cl.
+3.3.1), the Open Government Licence sentence (the timetable's licence), and the
+accuracy-and-liability notice (cl. 3.3.2 with the licence's liability clause).
+They are opt-in because crediting RDG above synthetic prices would be false
+attribution — which is why the demo build carries none.
+
+**4. Build the site.**
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+  --all-origins --notices rdg,ogl,accuracy --workers 8 --out _site/index.html
+```
+
+`--all-origins` writes one page per priceable station plus the chooser; it also
+writes the privacy page the footers link to. `--workers 8` builds station pages
+in parallel processes (each origin is independent; the feed is loaded once per
+worker). On a host that does not serve the site at its domain root — a GitHub
+Pages project site, most shared hosting — add `--base-path <name>` so every
+internal link resolves.
+
+**What the page must never claim without the things behind it:** a publisher
+credit without `--notices` (or a custom `--attribution`) naming the licence
+actually held; a price line without the feed's metadata or `--price-source`
+saying where it came from; `--link-mode deep` without a verified link
+(ADR-0017); or affiliate tracking without the disclosure the page carries when
+`payload.tracked` is set. Each claim has a switch, and the page states what it
+can back up and stays silent about the rest.
+
+**Scale, measured on an invented feed shaped like the network (2,500 stations,
+9,000 schedules):** one origin's page costs minutes, not seconds, and the cost
+per origin grows superquadratically with network size — the full-network build
+is a batch job measured in hours even across 8 workers, not a refresh. Prices
+alone (no `--timetable`) are effectively free at any scale. The station chooser
+is not the bottleneck: with all 2,500 stations embedded it renders in 0.01s
+(207 KB) and filters in about 2ms in a real browser. Treat the first real build
+as a benchmark run: time one origin with `--origin GRA` before committing to the
+full set, and run the full build overnight.
+
+The site deploys through `.github/workflows/deploy.yml`: it builds the site,
+runs the tests, and publishes to GitHub Pages, with the deploy step isolated so
+any other host can consume the same artifact. It builds from the licensed feeds
+only if they are supplied as a repository artifact (`FEEDS_ARTIFACT`); otherwise
+it ships the demo feed, and the pages say so.
+
 ## Run it
 
 ```
