@@ -197,6 +197,25 @@ exist, and slug collisions between same-named stations are resolved with the CRS
 code at build time. The picker cannot offer "nearest station": the fare feed
 records no county, region, or coordinates for a station, only its name and code.
 
+### What leads, and what an unpriced page says
+
+The controls panel states the page's order of decisions. The **budget leads** — the
+widest column and the largest type on the page — because the price is the question
+the reader arrived with. The party switch and the town filter share one quieter
+secondary column: they refine the budget rather than compete with it. On phones the
+panel stacks with the budget first.
+
+Row actions (the departures expander, Copy, and the Tickets link) keep small visible
+marks so they fit beside each other, and reach the 44px touch guideline through
+invisible hit-area padding around each control.
+
+A station the build could not price gets a different page from one whose prices sit
+outside the budget: instead of a slider over an empty table, the page says *"We
+couldn't price any journeys from X (CODE) in this feed."*, links the chooser when
+other priced stations exist, and hides the controls, because a budget is not a
+question that can be answered there. The build prints a note in that case, so the
+operator sees it too.
+
 Affiliate tracking is **off by default**, and turning it on wraps the link in a
 network redirect rather than changing the search:
 

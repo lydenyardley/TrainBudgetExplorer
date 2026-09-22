@@ -164,3 +164,25 @@ The flow is built, in `build_demo_page.py`, and both gates above are closed:
   picker adds no horizontal overflow. On the synthetic feed only Grantham prices
   anything, so five of seven generated pages correctly carry zero destinations —
   the real page count waits on the real feed (ADR-0005).
+
+## Layout and the unpriced page (22 September 2026, later)
+
+Two refinements landed after the picker itself:
+
+- **The controls panel now states the page's hierarchy instead of flattening it.**
+  The critique had scored the panel down for three equal cards. The budget leads —
+  wider column, 44 px type, the largest on the page — and the party switch and
+  town filter share one secondary column, collapsing to a single column on phones.
+  Row actions keep small visible marks and reach the 44 px touch guideline through
+  hit-slop pseudoelements, measured in the browser at exactly 44 px for both the
+  copy action and the buy link.
+- **A station the build could not price is a different page, not an empty table.**
+  It says so in its own first sentence — "We couldn't price any journeys from X
+  (CODE) in this feed" — links the chooser when other priced stations exist, says
+  "nothing was priced from any station" when none did, hides the controls, and
+  leaves the budget summary empty rather than writing "No destinations within £20",
+  which would imply the budget had filtered something. The difference matters on
+  exactly the pages the synthetic feed cannot exercise: with real data, an origin
+  with no priced flows is a real station a real reader may start from.
+- **Verified:** 203 Python tests and 38/38 real-browser checks, layout scan clean,
+  no horizontal overflow at 390 px or 1280 px in either colour scheme.
