@@ -27,11 +27,16 @@ VERDICTS = ("internal only", "distribute")
 # still to be obtained (ADR-0022).
 FEE_OUTCOMES = ("nil", "free", "no charge", "not held")
 
+# Supporting documents kept as evidence but issued by nobody and licensing nothing:
+# price schedules, specifications. They carry no product id, and the register lists
+# them outside the product table (ADR-0022).
+SUPPORTING = ("BR Fares RDM Pricing.pdf",)
+
 
 class LicenceRegisterTest(unittest.TestCase):
     def setUp(self) -> None:
         self.register = REGISTER.read_text(encoding="utf-8")
-        self.pdfs = sorted(LICENCES.glob("*.pdf"))
+        self.pdfs = sorted(p for p in LICENCES.glob("*.pdf") if p.name not in SUPPORTING)
         # Rows of the register's product table, which are the ones carrying a product id.
         self.rows = [
             line
