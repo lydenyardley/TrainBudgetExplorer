@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from check_commit_message import check
+from tools.check_commit_message import check
 
 
 class CommitMessageTest(unittest.TestCase):
