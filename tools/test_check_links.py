@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from check_links import (
+from tools.check_links import (
     BLOCKED,
     EXPLANATION,
     FAILURES,
