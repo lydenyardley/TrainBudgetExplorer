@@ -89,12 +89,17 @@ jobs:
       - name: Test the page in a real browser
         # The page's claims -- notices, provenance, the picker -- execute in
         # browser JS that the Python suite cannot see (audit C2). Playwright
-        # needs a browser; chromium is the lightest. This is the same suite
-        # browser_test.cjs runs locally, here against the built site.
+        # needs a browser; chromium is the lightest. The suite drives a fare
+        # page -- a station page from the built set, whichever origin exists;
+        # the chooser is a different page and would fail the fare assertions.
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
-          npx --yes --package playwright node browser_test.cjs _site/index.html
-          npx --yes --package playwright node browser_test.cjs _site/from/grantham/index.html
+          PAGE=$(find _site/from -name index.html | head -1)
+          if [ -z "$PAGE" ]; then
+            echo "no station pages in the build; nothing to drive in a browser"
+            exit 1
+          fi
+          npx --yes --package playwright node browser_test.cjs "$PAGE"
 
       - uses: actions/upload-pages-artifact@v3
         with:
