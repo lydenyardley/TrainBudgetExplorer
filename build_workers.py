@@ -1,13 +1,13 @@
 """The worker plumbing for the --all-origins parallel build.
 
-Split out of build_demo_page.py (audit finding C1): the job dict, the
-per-process feed cache, and the pool initialiser live here, so the build's CLI
+Split out of build_demo_page.py (audit finding C1): the job function, the
+per-process state, and the pool initialiser live here, so the build's CLI
 and payload assembly stay one readable file.
 
-Worker-process state: the feed is loaded once per worker by the pool's
-initialiser, never pickled per job. The parsed databases hold object()
-sentinels that cannot cross a process boundary at all, so jobs carry only
-small config and the worker resolves the feed itself.
+Everything the workers share -- the feed config and the station index -- is
+delivered once per process by the initialiser, never pickled per job (audit
+B3). Jobs carry only the origin they build. The parsed databases hold
+object() sentinels that cannot cross a process boundary at all.
 """
 
 from __future__ import annotations
@@ -17,42 +17,49 @@ from atoc_timetable import TimetableDb
 
 from build_demo_page import build_payload, render_page, with_base
 
+# Per-process state: the feed databases and the shared build config. In pool
+# mode the initialiser fills it once per worker; the in-process build fills
+# it once per run. Same shape either way -- one way to read it.
 _WORKER: dict = {}
 
 
-def init_worker(feed: str, timetable: str | None) -> None:
+def init_worker(feed: str, timetable: str | None, shared: dict) -> None:
+    _WORKER.clear()
+    _WORKER.update(shared)
     _WORKER["fares"] = FaresDb().load_feed(feed)
     _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
 
 
 def build_page_job(job: dict) -> tuple[str, str, str]:
-    """Build one station page in a worker process.
+    """Build one station page from a config-only job.
 
     --all-origins is embarrassingly parallel: each origin's page depends only
-    on the feed and its own origin. The worker loads the feed once (a few
-    seconds) and returns the rendered HTML, which the parent writes.
+    on the feed, the shared config, and its own origin. The worker returns the
+    rendered HTML; the parent writes it.
     """
+    origin_crs = job["crs"]
     payload = build_payload(
-        job.get("fares") or _WORKER["fares"],
-        job.get("timetable", _WORKER.get("timetable")),
-        job["crs"],
-        max_changes=job["max_changes"],
-        day=job["day"],
-        note=job["note"],
-        attribution=job["attribution"],
-        price_source=job["price_source"],
-        base_path=job["base_path"],
-        provider=job["provider"],
-        mode=job["link_mode"],
-        adults=job["adults"],
-        network=job["network"],
-        advertiser_id=job["advertiser_id"],
-        publisher_id=job["publisher_id"],
-        departure_limit=job["departures"],
+        _WORKER["fares"],
+        _WORKER.get("timetable"),
+        origin_crs,
+        max_changes=_WORKER["max_changes"],
+        day=_WORKER["day"],
+        note=_WORKER["note"],
+        attribution=_WORKER["attribution"],
+        price_source=_WORKER["price_source"],
+        base_path=_WORKER["base_path"],
+        provider=_WORKER["provider"],
+        mode=_WORKER["link_mode"],
+        adults=_WORKER["adults"],
+        network=_WORKER["network"],
+        advertiser_id=_WORKER["advertiser_id"],
+        publisher_id=_WORKER["publisher_id"],
+        departure_limit=_WORKER["departures"],
     )
+    base_path = _WORKER["base_path"]
     payload["stations"] = [
-        {"name": e["name"], "crs": e["crs"], "href": with_base(job["base_path"], f"/from/{e['slug']}/")}
-        for e in job["others"]
+        {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/")}
+        for e in _WORKER["index"] if e["crs"] != origin_crs
     ]
-    html = render_page(payload, budget_pounds=20, analytics=job["analytics"])
+    html = render_page(payload, budget_pounds=20, analytics=_WORKER["analytics"])
     return job["slug"], job["origin_name"], html

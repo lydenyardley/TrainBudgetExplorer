@@ -66,6 +66,9 @@ def main() -> int:
                         help="timetable feed folder; --timetable with no value skips it")
     parser.add_argument("--all-origins", action="store_true",
                         help="one page per priced station (slow at network scale)")
+    parser.add_argument("--i-know-this-is-slow", action="store_true",
+                        help="required with --all-origins: at network scale the "
+                        "build is a batch job measured in days (ADR-0024)")
     parser.add_argument("--base-path", default=None,
                         help="path prefix if the site will not sit at the domain root")
     parser.add_argument("--no-build", action="store_true",
@@ -76,6 +79,15 @@ def main() -> int:
     # a missing demo timetable folder means a prices-only build, which is honest.
     if args.timetable is not None and not args.timetable.exists():
         args.timetable = None
+
+    if args.all_origins and not args.i_know_this_is_slow:
+        # Guard the default path: `python run.py` must never silently start a
+        # hours-or-days build. The escape is one flag away (audit D1).
+        print("--all-origins builds one page per priced station, which at network "
+              "scale is a batch job measured in days (ADR-0024). Pass "
+              "--i-know-this-is-slow to run it anyway, or drop --all-origins for "
+              "the fast single-origin demo.", file=sys.stderr)
+        return 2
 
     if not args.no_build:
         rc = build(args)
@@ -91,8 +103,10 @@ def main() -> int:
         def log_message(self, fmt, *log_args):  # keep the terminal for the build, not request spam
             pass
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("127.0.0.1", args.port), Quiet) as httpd:
+    # Threaded: one reader, but browsers open parallel connections for
+    # sub-resources and a second tab must not stall the first (audit B4).
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", args.port), Quiet) as httpd:
         url = f"http://localhost:{args.port}/"
         print(f"Serving {SITE.name} at {url}  (Ctrl+C to stop)")
         threading.Timer(0.8, webbrowser.open, args=(url,)).start()

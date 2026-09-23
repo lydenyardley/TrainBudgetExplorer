@@ -70,6 +70,11 @@ value changes without the argument changing with it.
 
 ## Files
 
+The root holds the pipeline and the tests. Reader-facing prose lives in
+`docs/` (checklists, the glossary, the stage report, the licence enquiry),
+one-off diagnostics and their tests in `tools/`, and decisions in `adr/`
+-- the root stays the build, not the filing cabinet.
+
 | File | Purpose |
 |---|---|
 | `atoc_fares.py` | Fares feed parser and the budget query |
@@ -93,7 +98,8 @@ value changes without the argument changing with it.
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
 | `test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `test_build_demo_page.py` | Thirty-nine tests for the page payload, template, licence slot, copy control, and the origin picker |
+| `test_build_demo_page.py` | Seventy-five tests for the page payload, template, licence slot, copy control, and the origin picker |
+| `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
 | `browser_test.cjs` | Playwright test: drives the generated page in a real browser |
 | `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
 | `test_damaged_feed.py` | Twenty tests for damaged input |

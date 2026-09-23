@@ -82,7 +82,19 @@ jobs:
           fi
 
       - name: Test the build
-        run: python -m unittest discover -p "test_*.py"
+        run: |
+          python -m unittest discover -p "test_*.py"
+          python -m unittest discover -s tools -p "test_*.py"
+
+      - name: Test the page in a real browser
+        # The page's claims -- notices, provenance, the picker -- execute in
+        # browser JS that the Python suite cannot see (audit C2). Playwright
+        # needs a browser; chromium is the lightest. This is the same suite
+        # browser_test.cjs runs locally, here against the built site.
+        run: |
+          npx --yes --package playwright playwright install --with-deps chromium
+          npx --yes --package playwright node browser_test.cjs _site/index.html
+          npx --yes --package playwright node browser_test.cjs _site/from/grantham/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:

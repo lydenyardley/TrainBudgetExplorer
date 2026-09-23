@@ -4,10 +4,12 @@ Usage:
     EASY_FARES_KEY=... python easy_fares_check.py
 
 The free demo allows 100 calls per 30 days, so this script is deliberately
-frugal: one call per origin-destination-railcard combination, responses
-cached under _ef_cache/ so a re-run costs nothing. The key is read from the
-environment and never written to disk. See adr/ADR-0022 for why the demo
-exists and what it is for: a check of the model, not a data source.
+frugal: one call per origin-destination-railcard combination per day, responses
+cached under _ef_cache/ with the fetch date in the filename (a re-run the same
+day costs nothing; a later run fetches fresh prices rather than reporting old
+ones as current). The key is read from the environment and never written to
+disk. See adr/ADR-0022 for why the demo exists and what it is for: a check of
+the model, not a data source.
 
 Endpoint: the Rail Data Marketplace gateway publishes this product at
 https://api1.raildata.org.uk/1080-easy-fares-api-v1/easy_fares and takes
@@ -29,6 +31,7 @@ import json
 import os
 import sys
 import urllib.request
+from datetime import date
 from fractions import Fraction
 from pathlib import Path
 
@@ -50,7 +53,14 @@ ROUTES = [
 
 
 def _fetch(origin: str, destination: str, railcard: str | None, key: str) -> dict:
-    cache_path = CACHE_DIR / f"{origin}_{destination}_{railcard or 'none'}.json"
+    """One API call, cached on disk with the date in the filename.
+
+    The date is part of the cache identity, not a note inside it: a check run
+    next week would otherwise silently report last week's prices as current,
+    and the finding this script feeds is quoted on the page itself (audit C4).
+    """
+    stamp = date.today().isoformat()
+    cache_path = CACHE_DIR / f"{origin}_{destination}_{railcard or 'none'}_{stamp}.json"
     if cache_path.exists():
         return json.loads(cache_path.read_text(encoding="utf-8"))
     url = f"{BASE_URL}?orig={origin}&dest={destination}"

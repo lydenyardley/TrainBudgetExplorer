@@ -618,6 +618,41 @@ class AllOriginsCliTest(unittest.TestCase):
     def test_a_fresh_folder_gets_no_stale_note(self) -> None:
         self.assertNotIn("earlier build", self.build())
 
+    def test_an_overrun_origin_trips_the_wire_and_writes_nothing(self) -> None:
+        # ADR-0024's tripwire (audit B1): a superquadratic search must be
+        # visible on the FIRST origin, not after hours of a doomed full build.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--timetable", str(self.timetable),
+                    "--all-origins", "--out", str(self.out),
+                    "--max-origin-seconds", "0.000001",
+                ]
+            )
+        self.assertEqual(code, 3)
+        self.assertIn("tripwire", stderr.getvalue())
+        self.assertFalse(self.out.parent.joinpath("from").exists(), "a stopped build must not leave half a site")
+
+    def test_the_worker_path_and_the_inprocess_path_build_the_same_pages(self) -> None:
+        # Audit A2: the two modes went through different job shapes once; the
+        # proof they agree is a byte-diff of the pages each mode writes.
+        self.build()
+        single = (self.out.parent / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--timetable", str(self.timetable),
+                    "--all-origins", "--out", str(self.out),
+                    "--workers", "2",
+                ]
+            )
+        self.assertEqual(code, 0)
+        pooled = (self.out.parent / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(single, pooled)
+
     def test_the_build_says_how_to_open_what_it_wrote(self) -> None:
         # The pages are build output and their links are root-absolute, so
         # double-clicking the file does not work and a local server does.

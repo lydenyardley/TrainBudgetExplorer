@@ -16,6 +16,7 @@ from pathlib import Path
 
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
+from feeds_cli import add_feed_args
 
 SAMPLE_LIMIT = 10
 
@@ -132,8 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Report what the feed parsers read.")
-    parser.add_argument("--feed", required=True, help="fares feed folder or zip")
-    parser.add_argument("--timetable", required=True, help="CIF timetable feed folder or zip")
+    add_feed_args(parser, timetable_required=True)
     arguments = parser.parse_args(argv)
 
     for label, path in (("fares", arguments.feed), ("timetable", arguments.timetable)):
