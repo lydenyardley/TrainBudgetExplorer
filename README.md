@@ -370,6 +370,22 @@ it ships the demo feed, and the pages say so.
 
 ## Run it
 
+**To open the app on this machine:** double-click `run.bat` (Windows), or run
+
+```
+python run.py
+```
+
+That builds the site from the current feed, serves it at
+http://localhost:8741, and opens your browser. Close the window (or Ctrl+C) to
+stop. Useful variants: `--port 9000`, `--no-build` (serve what's there),
+`--timetable` with no value for a prices-only build, `--feed feeds/fares
+--timetable feeds/timetable` for the real licensed feeds, and `--all-origins`
+for every priced station (slow at network scale — ADR-0024). The demo feed is
+rebuilt first if `_demo_feed/` is missing: `python make_synthetic_feed.py
+_demo_feed --unserved-station`.
+
+The individual commands behind it, if you want them separately:
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
