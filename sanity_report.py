@@ -31,6 +31,7 @@ from pathlib import Path
 from atoc_fares import FaresDb, Reachable, format_pence
 from atoc_timetable import TimetableDb
 from feed_audit import audit
+from feeds_cli import add_feed_args, find_origin
 
 TWO_TOGETHER = "Two Together"
 DEFAULT_MARGIN = 0.10
@@ -282,8 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Question a budget count before believing it.")
-    parser.add_argument("--feed", required=True, help="fares feed folder or zip")
-    parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
+    add_feed_args(parser)
     parser.add_argument(
         "--origin",
         default="GRN",
@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
 
     fares = FaresDb().load_feed(arguments.feed)
     timetable = TimetableDb().load_feed(arguments.timetable) if arguments.timetable else None
-    if arguments.origin.strip().upper() not in fares.locations_by_crs:
+    if find_origin(fares, arguments.origin) is None:
         print(
             f"origin {arguments.origin!r} not found. Files read: {fares.report.files_read}",
             file=sys.stderr,

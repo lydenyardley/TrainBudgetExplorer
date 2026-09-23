@@ -32,6 +32,13 @@ from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, tick
 EVERYTHING_PENCE = 1_000_000
 TWO_TOGETHER = "Two Together"
 DEPARTURE_LIMIT = 5
+# The per-origin tripwire (ADR-0024): one origin should take tens of seconds
+# on a real network, not minutes. Exceeding this means the journey search's
+# cost is out of hand, and a full-network build would take days -- the build
+# stops on the FIRST origin instead of hours later. The measured full-network
+# number is ~9 minutes today, which is why this sits far above it: the default
+# is a never-fire alarm on today's code, not a target.
+MAX_ORIGIN_SECONDS = 1800.0
 DEFAULT_NOTE = (
     "Synthetic demo data: the stations, fares, and times are invented to exercise "
     "the pipeline. Real fares and times replace them once the feed download clears."
@@ -256,6 +263,15 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="processes to build station pages with. Each origin's page is "
         "independent, so N workers cut the wall time roughly N-fold on a "
         "full-network build (the feed is re-loaded once per worker)",
+    )
+    parser.add_argument(
+        "--max-origin-seconds",
+        type=float,
+        default=MAX_ORIGIN_SECONDS,
+        help="tripwire (ADR-0024): if building ONE origin's page takes longer "
+        "than this, the build names it and stops. A superquadratic search makes "
+        "a full-network run silently unfinishable; this makes that visible on "
+        "the first origin instead of after hours. 0 disables the check",
     )
     parser.add_argument(
         "--feed-metadata",
@@ -598,6 +614,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         price_source = DEFAULT_PRICE_SOURCE
+    import time
+
+    started = time.perf_counter()
     try:
         payload = build_payload(
             fares,
@@ -620,6 +639,18 @@ def main(argv: list[str] | None = None) -> int:
     except KeyError:
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
         return 2
+    origin_seconds = time.perf_counter() - started
+    if args.max_origin_seconds and origin_seconds > args.max_origin_seconds:
+        # The tripwire fires on the FIRST origin, where it is cheap to learn
+        # that the full build would take days (ADR-0024).
+        print(
+            f"stopping: building one origin ({payload['origin']['name']}) took "
+            f"{origin_seconds:.0f}s, over the {args.max_origin_seconds:.0f}s tripwire "
+            "(--max-origin-seconds). At this per-origin cost the full-network build "
+            "would run for days; see ADR-0024 before raising the limit.",
+            file=sys.stderr,
+        )
+        return 3
 
     analytics = ""
     if args.analytics_snippet:
@@ -641,9 +672,10 @@ def main(argv: list[str] | None = None) -> int:
             fares.locations_by_crs,
         )
         by_crs = {entry["crs"]: entry for entry in index}
-        # One shared job description per page: in-process builds run it inline
-        # with the live databases; --workers hands config-only jobs to a pool
-        # whose workers load the feed themselves.
+        # One shared config for every page, handed to workers once through the
+        # pool initialiser; each job then carries only its own origin (audit
+        # B3: pickling a per-job copy of the whole station index across the
+        # process boundary 2,500 times is minutes of waste at network scale).
         shared = {
             "max_changes": args.max_changes,
             "day": day,
@@ -659,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
             "publisher_id": args.publisher_id,
             "departures": args.departures,
             "analytics": analytics,
+            "index": index,
         }
         jobs = []
         for crs in origins:
@@ -666,11 +699,9 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             jobs.append(
                 {
-                    **shared,
                     "crs": crs,
                     "slug": by_crs[crs]["slug"],
                     "origin_name": by_crs[crs]["name"],
-                    "others": [e for e in index if e["crs"] != crs],
                 }
             )
         workers = max(1, args.workers)
@@ -678,11 +709,12 @@ def main(argv: list[str] | None = None) -> int:
             # The in-process path builds through the same job function the
             # pool uses, with the live databases placed in the job dict, so
             # both modes share one page-building code path.
-            from build_workers import build_page_job
+            from build_workers import _WORKER, build_page_job
 
-            for job in jobs:
-                job["fares"] = fares
-                job["timetable"] = timetable
+            _WORKER.clear()
+            _WORKER.update(shared)
+            _WORKER["fares"] = fares
+            _WORKER["timetable"] = timetable
             results = map(build_page_job, jobs)
         else:
             # ProcessPoolExecutor rather than multiprocessing.Pool: a worker
@@ -698,9 +730,9 @@ def main(argv: list[str] | None = None) -> int:
             with ProcessPoolExecutor(
                 workers,
                 initializer=init_worker,
-                initargs=(args.feed, args.timetable),
+                initargs=(args.feed, args.timetable, shared),
             ) as executor:
-                results = executor.map(build_page_job, jobs, chunksize=1)
+                results = executor.map(build_page_job, jobs, chunksize=8)
         for slug, origin_name, html in results:
             page = out_dir / "from" / slug / "index.html"
             page.parent.mkdir(parents=True, exist_ok=True)

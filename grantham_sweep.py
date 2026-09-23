@@ -15,12 +15,12 @@ from pathlib import Path
 
 from atoc_fares import FaresDb, Reachable, format_pence
 from atoc_timetable import Journey, TimetableDb, format_minutes
+from feeds_cli import add_feed_args, find_origin
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cheapest return reachable from an origin inside a budget.")
-    parser.add_argument("--feed", required=True, help="fares feed folder or zip")
-    parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
+    add_feed_args(parser)
     parser.add_argument(
         "--origin",
         default="GRN",
@@ -74,9 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     db = FaresDb().load_feed(args.feed)
     stats = db.stats()
 
-    try:
-        origin = db.locations_by_crs[args.origin.strip().upper()]
-    except KeyError:
+    origin = find_origin(db, args.origin)
+    if origin is None:
         print(f"origin {args.origin!r} not found in feed. Files read: {db.files_read}", file=sys.stderr)
         return 2
 
