@@ -85,6 +85,8 @@ value changes without the argument changing with it.
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
+| `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy) |
+| `build_workers.py` | The per-process feed cache and job function behind `--workers` |
 | `check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
