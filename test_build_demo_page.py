@@ -14,7 +14,7 @@ from pathlib import Path
 import build_demo_page
 from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 import argparse
-from atoc_fares import FaresDb
+from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import (
     build_payload,
@@ -23,7 +23,7 @@ from build_demo_page import (
     render_page,
     station_slug,
 )
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from retailer import DISCLOSURE
 
 
@@ -624,6 +624,196 @@ class AllOriginsCliTest(unittest.TestCase):
         said = self.build()
         self.assertIn("http.server", said)
         self.assertIn("http://localhost", said)
+
+
+
+class SlugAgreementTest(unittest.TestCase):
+    """Audit finding A1: both build modes must agree on station addresses.
+
+    Slugs are disambiguated by a shared ``taken`` set, so a build that computed
+    them per-station (an empty set each time) can link to a folder the
+    --all-origins build wrote under a different name. Two stations named
+    NOTTINGHAM exercise it; the synthetic feed alone never would.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        root = Path(cls._tmp.name)
+        cls.timetable_path = build_synthetic_timetable(root / "timetable")
+        cls.timetable = TimetableDb().load_feed(cls.timetable_path)
+        # The base feed plus a second station also called NOTTINGHAM (NMP),
+        # priced from and to GRANTHAM, written in the real record layouts. NMP
+        # needs an outgoing flow of its own so it is a priceable origin -- a
+        # slug collision only bites when both same-named stations get pages.
+        cls.feed = build_synthetic_feed(root / "fares", include_unserved_station=True)
+        with open(cls.feed / "rjfaf.loc", "a", encoding="utf-8") as locations:
+            locations.write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "L",
+                        "nlc": "8000",
+                        "description": "NOTTINGHAM",
+                        "crs": "NMP",
+                    },
+                    LOCATION,
+                )
+                + "\n"
+            )
+        with open(cls.feed / "rjfaf.ffl", "a", encoding="utf-8") as flows:
+            flows.write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "F",
+                        "origin_nlc": "1000",
+                        "destination_nlc": "8000",
+                        "route_code": "00000",
+                        "flow_id": "0000020",
+                    },
+                    FLOW_F,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "flow_id": "0000020",
+                        "ticket_code": "SDR",
+                        "fare_pence": "1050",
+                        "restriction_code": "00",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "F",
+                        "origin_nlc": "8000",
+                        "destination_nlc": "1000",
+                        "route_code": "00000",
+                        "flow_id": "0000021",
+                    },
+                    FLOW_F,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "flow_id": "0000021",
+                        "ticket_code": "SDR",
+                        "fare_pence": "1050",
+                        "restriction_code": "00",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+            )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def test_single_origin_picker_links_match_all_origins_folders(self) -> None:
+        fares = FaresDb().load_feed(self.feed)
+        # The single-origin build's picker: built the way main() builds it.
+        payload = build_payload(fares, self.timetable, "GRN")
+        hrefs = {station["crs"]: station["href"] for station in payload["stations"]}
+        # The all-origins build's folder names: the index's slugs.
+        index = build_station_index(
+            {
+                crs: len(fares.destinations_within(crs, 1_000_000, adults=1))
+                for crs in fares.locations_by_crs
+            },
+            fares.locations_by_crs,
+        )
+        folders = {entry["crs"]: entry["slug"] for entry in index}
+        # A real collision happened: the two NOTTINGHAMs cannot both be
+        # "nottingham", exactly the case the empty-set slug call got wrong.
+        # Both carry their CRS, whatever order the build sees them in.
+        self.assertEqual(folders["NOT"], "nottingham-not")
+        self.assertEqual(folders["NMP"], "nottingham-nmp")
+        for crs, slug in folders.items():
+            if crs == "GRN":  # the page's own origin is not in its picker
+                continue
+            self.assertEqual(hrefs[crs], f"/from/{slug}/", crs)
+
+    def test_the_all_origins_chooser_links_resolve_to_written_pages(self) -> None:
+        out = Path(self._tmp.name) / "site" / "index.html"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--timetable", str(self.timetable_path),
+                    "--all-origins", "--out", str(out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        chooser = out.read_text(encoding="utf-8")
+        for page in (out.parent / "from").iterdir():
+            self.assertIn(f"/from/{page.name}/", chooser)
+
+
+class PartialMetadataTest(unittest.TestCase):
+    """Audit finding A3: a real feed's unfinished provenance note must not
+    ship a page labelled "the synthetic demo feed". The build refuses instead.
+    """
+
+    def test_metadata_without_a_source_refuses_the_build(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        feed = build_synthetic_feed(root / "fares")
+        (feed / "metadata.json").write_text(
+            json.dumps({"downloaded": "3 October 2026"}), encoding="utf-8"
+        )
+        out = root / "site" / "index.html"
+        out.parent.mkdir(parents=True)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()) as stderr:
+            code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+        self.assertEqual(code, 2)
+        self.assertFalse(out.exists(), "no page may be written when provenance is unresolved")
+        self.assertIn("names no 'source'", stderr.getvalue())
+
+    def test_metadata_with_a_source_builds_normally(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        feed = build_synthetic_feed(root / "fares")
+        (feed / "metadata.json").write_text(
+            json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
+            encoding="utf-8",
+        )
+        out = root / "site" / "index.html"
+        out.parent.mkdir(parents=True)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+        self.assertEqual(code, 0)
+        self.assertIn("RSP fares feed", out.read_text(encoding="utf-8"))
+
+    def test_price_source_override_settles_an_unfinished_note(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        feed = build_synthetic_feed(root / "fares")
+        (feed / "metadata.json").write_text(
+            json.dumps({"downloaded": "3 October 2026"}), encoding="utf-8"
+        )
+        out = root / "site" / "index.html"
+        out.parent.mkdir(parents=True)
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                ["--feed", str(feed), "--out", str(out), "--price-source", "the 2026 RSP download"]
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("the 2026 RSP download", out.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

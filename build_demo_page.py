@@ -83,13 +83,17 @@ PRICING_NOTE = (
 METADATA_NAME = "metadata.json"
 
 
-def read_feed_metadata(folders: list[Path]) -> dict:
-    """The first readable metadata.json found in the feed folders, or empty.
+def read_feed_metadata(folders: list[Path]) -> dict | None:
+    """The first readable metadata.json found in the feed folders.
 
     A zip feed has no folder of its own, but its download usually lands inside
-    one, so the caller passes the zip's parent. A file that exists but cannot
-    be used is named, because provenance that silently fell back to the
-    default is provenance the operator believes is real.
+    one, so the caller passes the zip's parent. None means no metadata file
+    was found (a synthetic feed's case); {} means a file was found but could
+    not be used, which the caller must not read as ``no metadata`` -- a real
+    download whose provenance note is broken still deserves the loud refusal
+    in main(), not a quiet fallback to the synthetic default. A file that
+    exists but cannot be used is named, because provenance that silently fell
+    back to the default is provenance the operator believes is real.
     """
     for folder in folders:
         candidate = folder / METADATA_NAME
@@ -108,7 +112,7 @@ def read_feed_metadata(folders: list[Path]) -> dict:
             print(f"warning: {candidate} is not a JSON object; ignored", file=sys.stderr)
             return {}
         return data
-    return {}
+    return None
 
 
 def price_source_from_metadata(metadata: dict) -> str | None:
@@ -188,17 +192,19 @@ LINK_NOTE_FALLBACK = (
 )
 
 
-def station_slug(name: str, crs: str, taken: set[str]) -> str:
-    """A readable address for a station, unique within ``taken``.
+def _slug_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "station"
 
-    Two stations can share a name, and the CRS code is the disambiguator
-    (adr/ADR-0019-one-page-per-station.md): a collision that reached the page as
-    two identical links would be a defect, so it is resolved here, at build
-    time, where it can be tested.
+
+def station_slug(name: str, crs: str, taken: set[str]) -> str:
+    """A readable address for one station, unique within ``taken``.
+
+    Single-station primitive. The build uses station_slugs_for instead, which
+    is the rule the written folders and every picker obey.
     """
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "station"
+    slug = _slug_text(name)
     if slug in taken:
-        slug = re.sub(r"[^a-z0-9]+", "-", f"{name} {crs}".lower()).strip("-")
+        slug = _slug_text(f"{name} {crs}")
     if slug in taken:  # pathological: same name AND code seen twice
         counter = 2
         while f"{slug}-{counter}" in taken:
@@ -206,6 +212,35 @@ def station_slug(name: str, crs: str, taken: set[str]) -> str:
         slug = f"{slug}-{counter}"
     taken.add(slug)
     return slug
+
+
+def station_slugs_for(locations: dict[str, object]) -> dict[str, str]:
+    """The one map of station addresses every build mode shares.
+
+    Any station whose name another station also holds carries its CRS in the
+    address, so the map is computable from the locations alone and does not
+    depend on which station was seen first or which priced more destinations
+    (audit finding A1: a first-seen-wins rule gave the single-origin and
+    --all-origins builds different answers for the same two stations, and one
+    of them 404'd). Deterministic beats pretty: both NOTTINGHAMs are named
+    plainly in the picker next to their codes anyway.
+    """
+    names_by_base: dict[str, int] = {}
+    base: dict[str, str] = {}
+    for crs, location in sorted(locations.items()):
+        key = _slug_text(location.name)
+        base[crs] = key
+        names_by_base[key] = names_by_base.get(key, 0) + 1
+    taken: set[str] = set()
+    slugs: dict[str, str] = {}
+    for crs, location in sorted(locations.items()):
+        key = base[crs]
+        slug = key if names_by_base[key] == 1 else (_slug_text(f"{location.name} {location.crs}") or key)
+        while slug in taken:  # same name AND code twice: numbered fallback
+            slug = f"{slug}-2"
+        taken.add(slug)
+        slugs[crs] = slug
+    return slugs
 
 
 def notices_or_attribution(args: argparse.Namespace) -> str | list[str] | None:
@@ -457,17 +492,17 @@ def build_payload(
         )
 
     origin_row = fares.locations_by_crs[origin.crs]
+    # The picker's options (ADR-0019), from the one shared slug map, so a page
+    # built on its own links to the same folders the --all-origins build writes.
+    slugs = station_slugs_for(fares.locations_by_crs)
     return {
         "origin": {"crs": origin_row.crs, "name": origin_row.name},
         "destinations": destinations,
-        # The picker's options (ADR-0019). main() replaces this with the written
-        # outputs for a real build; called directly, it carries every station
-        # except this origin, from priced flows, so nothing offered can 404.
         "stations": [
             {
                 "name": loc.name,
                 "crs": loc.crs,
-                "href": with_base(base_path, f"/from/{re.sub(r'[^a-z0-9]+', '-', loc.name.lower()).strip('-')}/"),
+                "href": with_base(base_path, f"/from/{slugs[crs]}/"),
             }
             for crs, loc in sorted(fares.locations_by_crs.items())
             if crs != origin.crs
@@ -1091,6 +1126,7 @@ def build_station_index(
     """
     taken: set[str] = set()
     index = []
+    slugs = station_slugs_for(all_locations)
     for crs, count in sorted(priced_by_origin.items(), key=lambda item: (-item[1], item[0])):
         if count <= 0:
             continue
@@ -1099,7 +1135,7 @@ def build_station_index(
             {
                 "crs": crs,
                 "name": location.name,
-                "slug": station_slug(location.name, crs, taken),
+                "slug": slugs[crs],
                 "destinations": count,
             }
         )
@@ -1290,9 +1326,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.feed_metadata:
         metadata_folders.append(Path(args.feed_metadata))
     metadata = read_feed_metadata(metadata_folders)
-    price_source = args.price_source or price_source_from_metadata(metadata)
+    price_source = args.price_source or price_source_from_metadata(metadata or {})
     base_path = "/" + args.base_path.strip("/") if args.base_path.strip("/") else ""
     if not price_source:
+        if metadata is not None:
+            # A metadata file that exists but names no source is a real feed
+            # whose provenance note is unfinished. Falling back here would
+            # ship real prices labelled "the synthetic demo feed" -- the one
+            # lie this machinery exists to prevent -- so the build refuses and
+            # the operator fixes the note or overrides it explicitly.
+            print(
+                f"error: a feed metadata.json was found beside "
+                f"{metadata_folders[0]} but names no 'source' (and no --price-source "
+                "was given); the page would claim synthetic demo data for a real "
+                "feed. Fill in 'source' in the metadata, or pass --price-source.",
+                file=sys.stderr,
+            )
+            return 2
         price_source = DEFAULT_PRICE_SOURCE
     try:
         payload = build_payload(
@@ -1426,15 +1476,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    payload["stations"] = [
-        {
-            "name": location.name,
-            "crs": crs,
-            "href": with_base(base_path, f"/from/{station_slug(location.name, crs, set())}/"),
-        }
-        for crs, location in sorted(fares.locations_by_crs.items())
-        if crs != payload["origin"]["crs"]
-    ]
     if not payload["destinations"]:
         print(
             f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
