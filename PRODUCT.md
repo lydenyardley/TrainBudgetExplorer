@@ -64,14 +64,14 @@ conversion would not make those moves.
   three times a year through the Rail Data Marketplace (`raildata.org.uk`), which
   needs an account and an accepted licence held in the owner's name. Nothing about
   the feeds is anonymously readable, and the download is currently blocked on that
-  account (ADR-0005, `stage-1-results.md`).
+  account (ADR-0005, `docs/stage-1-results.md`).
 - **How the page is used:** arrive on your own town's page, drag the budget,
   optionally filter to a city or town, switch whether the budget covers one adult
   or the two of them, expand a row for the next few departures, follow the ticket
   link to buy. If you arrived on the wrong town, you change station from the header
   and are taken to that station's page — choosing is navigation, not a filter
   (ADR-0019).
-- **Terminology is load-bearing** and collected in `glossary.md`: budget (per adult
+- **Terminology is load-bearing** and collected in `docs/glossary.md`: budget (per adult
   or per party), return (the tool's default unit), flow, CRS code, TIPLOC, overlay,
   fare-ochrone. Note that Grantham's real CRS code is `GRA`; the synthetic feed
   invents `GRN`.

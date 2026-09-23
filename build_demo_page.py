@@ -40,7 +40,7 @@ DEFAULT_NOTE = (
 # number came from is part of the number. The railcard basis states what the
 # Easy Fares reality-check found: the model's third-off estimate sits 5-15p
 # ABOVE the database's own discounted price, so it never sends a reader over
-# budget on a rounding (checked 2026-09-22, easy_fares_check.py).
+# budget on a rounding (checked 2026-09-22, tools/easy_fares_check.py).
 DEFAULT_PRICE_SOURCE = "the synthetic demo feed"
 DEFAULT_RAILCARD_BASIS = (
     "Railcard prices are estimates - a third off, rounded up to 5p. A check "

@@ -58,11 +58,30 @@ is a rewrite of the module's core, not a patch.
    overnight batch becomes unacceptable, the fix is an indexed search rewrite
    — a new ADR, not a tweak here.
 
-## Consequences
+## Re-measured after the flows index (23 September 2026)
 
-- **Deployment cannot wait on the full build:** the first publish can ship a
-  prices-only network (fast, honest) and add journey times when the overnight
-  batch is proven on the real feed. This de-risks the Stage 2 hard stop.
+The audit's finding B2 (every flow scanned per origin) was fixed with an
+origin-NLC flow index. Re-measured on the same 2,500-station shape:
+
+| measurement | before | after |
+|---|---|---|
+| all 2,500 origins, fares only | 2.07 s | **0.06 s** |
+| one origin, prices only | ~free | 0.03 s |
+| one origin, with journeys | >9.5 min | **543 s (~9.1 min)** |
+
+The fares side of the build is now free, as predicted — and the journey search
+is confirmed as the entire remaining cost, untouched by the index. The honest
+arithmetic for the full network is therefore **2,500 × 9.1 min ÷ 8 workers ≈
+2 days**, not "hours": the uniform synthetic shape gives every origin ~2,500
+priced destinations and no fast paths, which is close to the worst case a real
+network could present. Decisions 1–4 stand; what changes is the emphasis:
+
+5. **Prices-only is the launch tier, not merely the fresh tier.** At 0.03 s
+   per origin the whole network republishes in under two minutes, so the
+   first publication should ship prices-only and add the overnight timetable
+   batch when it has run once on the real feed. The three optimisations
+   already in (index, bisect, connection map) are the cheap ones; the
+   remaining 9 minutes are the algorithmic rewrite decision 4 defers.
 - **One origin ≈ minutes** becomes the planning unit: 2,500 origins ÷ 8
   workers × minutes each ≈ hours; budget accordingly and never promise a
   same-day timetable refresh.
