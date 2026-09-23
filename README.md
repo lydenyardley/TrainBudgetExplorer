@@ -43,7 +43,7 @@ changes, and a two-adult party price for Two Together railcard holders.
   owner's name. Nothing about them is anonymously readable.
 - **Not yet answered:** the real count of Grantham destinations under £20, and
   the licence terms for commercial use.
-- **Details and evidence:** `stage-1-results.md`, `adr/ADR-0005-data-access-and-blocker.md`.
+- **Details and evidence:** `docs/stage-1-results.md`, `adr/ADR-0005-data-access-and-blocker.md`.
 
 ## What the journey times mean
 
@@ -80,14 +80,14 @@ value changes without the argument changing with it.
 | `damage_feed.py` | Writes deliberately damaged copies of a feed |
 | `fuzz_feed.py` | Mutates a feed at random and checks the parser's invariants |
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
-| `check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
+| `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
 | `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy) |
 | `build_workers.py` | The per-process feed cache and job function behind `--workers` |
-| `check_commit_message.py` | Checks a commit message against the convention |
+| `tools/check_commit_message.py` | Checks a commit message against the convention |
 | `test_atoc_fares.py` | Ten tests against the synthetic fares feed |
 | `test_atoc_timetable.py` | Thirteen tests against the synthetic timetable |
 | `test_grantham_sweep.py` | Two tests for the fare and service merge |
@@ -99,13 +99,13 @@ value changes without the argument changing with it.
 | `test_damaged_feed.py` | Twenty tests for damaged input |
 | `test_sanity_report.py` | Fourteen tests for the count report |
 | `test_retailer.py` | Twenty-one tests for the ticket links |
-| `test_check_links.py` | Fourteen tests for the link checker's verdicts |
+| `tools/test_check_links.py` | Fourteen tests for the link checker's verdicts |
 | `test_fuzzed_feed.py` | Fifteen tests for the accounting and the fuzzer |
 | `test_commit_message.py` | Eleven tests for the message checker |
-| `stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
-| `publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
-| `launch-checklist.md` | Where the page goes, how the result is measured, and what the October review reads |
-| `glossary.md` | Domain terms |
+| `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
+| `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
+| `docs/launch-checklist.md` | Where the page goes, how the result is measured, and what the October review reads |
+| `docs/glossary.md` | Domain terms |
 | `CONTRIBUTING.md` | Commit convention and how to run the tests |
 | `adr/` | Decisions, numbered, newest last |
 
@@ -136,10 +136,10 @@ worth reading.
 ## Commit convention
 
 Commits follow Conventional Commits 1.0.0. `CONTRIBUTING.md` holds the rules,
-and `check_commit_message.py` checks a message against them.
+and `tools/check_commit_message.py` checks a message against them.
 
 ```
-git log -1 --format=%B | python check_commit_message.py
+git log -1 --format=%B | python tools/check_commit_message.py
 ```
 
 ## The demo page
@@ -266,8 +266,8 @@ Neither seller's link is currently known to land on a search. To see that stated
 rather than claimed:
 
 ```
-python check_links.py --origin GRA --destination NOT
-python check_links.py --provider trainline --mode fallback
+python tools/check_links.py --origin GRA --destination NOT
+python tools/check_links.py --provider trainline --mode fallback
 ```
 
 The checker can prove a link is broken and cannot prove one works, so a `blocked`
@@ -354,15 +354,17 @@ saying where it came from; `--link-mode deep` without a verified link
 `payload.tracked` is set. Each claim has a switch, and the page states what it
 can back up and stays silent about the rest.
 
-**Scale, measured on an invented feed shaped like the network (2,500 stations,
-9,000 schedules):** one origin's page costs minutes, not seconds, and the cost
-per origin grows superquadratically with network size — the full-network build
-is a batch job measured in hours even across 8 workers, not a refresh. Prices
-alone (no `--timetable`) are effectively free at any scale. The station chooser
-is not the bottleneck: with all 2,500 stations embedded it renders in 0.01s
-(207 KB) and filters in about 2ms in a real browser. Treat the first real build
-as a benchmark run: time one origin with `--origin GRA` before committing to the
-full set, and run the full build overnight.
+**Scale, re-measured on an invented feed shaped like the network (2,500
+stations, 9,000 schedules) after the fares index landed (ADR-0024):** the
+fares side is free — all 2,500 origins' prices resolve in 0.06s, and a
+prices-only origin payload costs 0.03s, so a prices-only network republishes
+in under two minutes. The journey search is the entire remaining cost: one
+origin with journeys is ~9 minutes, making the full with-times build roughly
+a two-day batch across 8 workers on this shape. The station chooser is not
+the bottleneck: with all 2,500 stations embedded it renders in 0.01s (207 KB)
+and filters in about 2ms in a real browser. Time one origin with `--origin
+GRA` before committing to the full set, and treat the first real with-times
+build as an overnight-plus batch job.
 
 The site deploys through `.github/workflows/deploy.yml`: it builds the site,
 runs the tests, and publishes to GitHub Pages, with the deploy step isolated so

@@ -64,7 +64,7 @@ command whose output a reviewer can reproduce.
 ## Check a message
 
 ```
-git log -1 --format=%B | python check_commit_message.py
+git log -1 --format=%B | python tools/check_commit_message.py
 python -m unittest test_commit_message
 ```
 
