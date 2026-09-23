@@ -247,6 +247,12 @@ class FaresDb:
         self.railcards: dict[str, Railcard] = {}
         self.flows: dict[str, Flow] = {}
         self.fares_by_flow: dict[str, dict[str, Fare]] = {}
+        # Flows grouped by origin location code. destinations_within asks the
+        # same question per origin -- which flows leave here? -- and answering
+        # it by scanning every flow in the database turns a full-network build
+        # into 2,500 full scans. Built at load time, keyed like the flows
+        # themselves; kept in step by the same loader lines that write them.
+        self.flows_by_origin_nlc: dict[str, list[Flow]] = {}
         self.minimum_fares: dict[tuple[str, str], int] = {}
         self.report = ParseReport()
         self.files_read = self.report.files_read
@@ -285,7 +291,11 @@ class FaresDb:
             marker = _text(line, FLOW_F_OFFSETS, "update_marker").upper()
             flow_id = _text(line, FLOW_F_OFFSETS, "flow_id")
             if marker == "D":
-                self.flows.pop(flow_id, None)
+                removed = self.flows.pop(flow_id, None)
+                if removed is not None:
+                    origin_flows = self.flows_by_origin_nlc.get(removed.origin_nlc)
+                    if origin_flows is not None:
+                        origin_flows.remove(removed)
                 self.fares_by_flow.pop(flow_id, None)
                 return
             self.flows[flow_id] = Flow(
@@ -294,6 +304,9 @@ class FaresDb:
                 destination_nlc=_text(line, FLOW_F_OFFSETS, "destination_nlc"),
                 route_code=_text(line, FLOW_F_OFFSETS, "route_code"),
             )
+            self.flows_by_origin_nlc.setdefault(
+                self.flows[flow_id].origin_nlc, []
+            ).append(self.flows[flow_id])
         elif record_type == "T":
             _require_width(line, FLOW_T_WIDTH, "fare")
             marker = _text(line, FLOW_T_OFFSETS, "update_marker").upper()
@@ -448,58 +461,59 @@ class FaresDb:
             raise KeyError(f"railcard {railcard!r} is not in the feed")
 
         best_by_crs: dict[str, Reachable] = {}
-        for flow in self.flows.values():
-            if flow.origin_nlc not in origin_nlcs:
-                continue
-            destination = self.locations_by_nlc.get(flow.destination_nlc)
-            if destination is None:
-                _tally(tally, "destination_has_no_location_record")
-                continue
-            if not destination.crs:
-                _tally(tally, "destination_has_no_station_code")
-                continue
-            if destination.crs == origin.crs:
-                _tally(tally, "fare_to_the_origin_itself")
-                continue
-            bucket = self.fares_by_flow.get(flow.flow_id)
-            if not bucket:
-                _tally(tally, "flow_with_no_fare")
-                continue
-            for fare in bucket.values():
-                ticket = self.ticket_types.get(fare.ticket_code)
-                if ticket is None:
-                    _tally(tally, "fare_with_no_ticket_type")
+        # The origin's flows only: one grouped list per origin NLC replaces a
+        # scan of every flow in the database per call.
+        for origin_nlc in origin_nlcs:
+            for flow in self.flows_by_origin_nlc.get(origin_nlc, ()):
+                destination = self.locations_by_nlc.get(flow.destination_nlc)
+                if destination is None:
+                    _tally(tally, "destination_has_no_location_record")
                     continue
-                if not ticket.is_standard_return:
-                    _tally(tally, "ticket_is_not_a_standard_return")
+                if not destination.crs:
+                    _tally(tally, "destination_has_no_station_code")
                     continue
-                railcard_pence = (
-                    self.railcard_price(railcard_code, fare.ticket_code, fare.pence)
-                    if railcard_code
-                    else None
-                )
-                best_pence = min(fare.pence, railcard_pence) if railcard_pence else fare.pence
-                party_pence = best_pence * adults
-                tested = party_pence if party_budget else best_pence
-                if tested > budget_pence:
-                    _tally(tally, "fare_above_the_budget")
+                if destination.crs == origin.crs:
+                    _tally(tally, "fare_to_the_origin_itself")
                     continue
-                candidate = Reachable(
-                    crs=destination.crs,
-                    station=destination.name,
-                    ticket_code=ticket.code,
-                    ticket_name=ticket.name,
-                    standard_pence=fare.pence,
-                    best_pence=best_pence,
-                    railcard_pence=railcard_pence,
-                    party_pence=party_pence,
-                    off_peak=ticket.restricted_by_train,
-                )
-                current = best_by_crs.get(destination.crs)
-                if current is not None and candidate.best_pence >= current.best_pence:
-                    _tally(tally, "cheaper_index_already_held")
+                bucket = self.fares_by_flow.get(flow.flow_id)
+                if not bucket:
+                    _tally(tally, "flow_with_no_fare")
                     continue
-                best_by_crs[destination.crs] = candidate
+                for fare in bucket.values():
+                    ticket = self.ticket_types.get(fare.ticket_code)
+                    if ticket is None:
+                        _tally(tally, "fare_with_no_ticket_type")
+                        continue
+                    if not ticket.is_standard_return:
+                        _tally(tally, "ticket_is_not_a_standard_return")
+                        continue
+                    railcard_pence = (
+                        self.railcard_price(railcard_code, fare.ticket_code, fare.pence)
+                        if railcard_code
+                        else None
+                    )
+                    best_pence = min(fare.pence, railcard_pence) if railcard_pence else fare.pence
+                    party_pence = best_pence * adults
+                    tested = party_pence if party_budget else best_pence
+                    if tested > budget_pence:
+                        _tally(tally, "fare_above_the_budget")
+                        continue
+                    candidate = Reachable(
+                        crs=destination.crs,
+                        station=destination.name,
+                        ticket_code=ticket.code,
+                        ticket_name=ticket.name,
+                        standard_pence=fare.pence,
+                        best_pence=best_pence,
+                        railcard_pence=railcard_pence,
+                        party_pence=party_pence,
+                        off_peak=ticket.restricted_by_train,
+                    )
+                    current = best_by_crs.get(destination.crs)
+                    if current is not None and candidate.best_pence >= current.best_pence:
+                        _tally(tally, "cheaper_index_already_held")
+                        continue
+                    best_by_crs[destination.crs] = candidate
         return sorted(best_by_crs.values(), key=lambda reachable: (reachable.best_pence, reachable.crs))
 
 
