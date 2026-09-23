@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from make_synthetic_feed import build_synthetic_feed, write_delete_marker
+from atoc_fares import FLOW_F, FLOW_T, FaresDb
+from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
 
 
 class FaresParserTest(unittest.TestCase):
@@ -89,6 +89,61 @@ class FaresParserTest(unittest.TestCase):
         update = write_delete_marker(feed, "0000002", "SDR")
         db.load_feed(update)
         self.assertEqual([reachable.crs for reachable in db.destinations_within("GRN", 2000)], ["NOT"])
+
+    def test_the_delete_marker_keeps_the_origin_flow_index_in_step(self) -> None:
+        # destinations_within reads a per-origin flow index, not a scan of
+        # every flow; an incremental delete that removed the flow from the
+        # id map but left it indexed by origin would keep selling the fare.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        feed = build_synthetic_feed(Path(tmp.name) / "rjfaf-index-delete")
+        db = FaresDb().load_feed(feed)
+        delete_flow = feed / "rjfaf-delete-flow.ffl"
+        delete_flow.write_text(
+            _line(
+                {"update_marker": "D", "record_type": "F", "flow_id": "0000001"},
+                FLOW_F,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        db.load_feed(delete_flow)
+        results = db.destinations_within("GRN", 1_000_000)
+        self.assertEqual([reachable.crs for reachable in results], ["LCN", "PBO", "KGX"])
+        # ... and a re-issued flow (a real update file re-issues the flow and
+        # its fares together) is indexed exactly once, so the fare comes back
+        # without doubling.
+        reissue = feed / "rjfaf-reissue.ffl"
+        reissue.write_text(
+            _line(
+                {
+                    "update_marker": "A",
+                    "record_type": "F",
+                    "origin_nlc": "1000",
+                    "destination_nlc": "2000",
+                    "route_code": "00000",
+                    "flow_id": "0000001",
+                },
+                FLOW_F,
+            )
+            + "\n"
+            + _line(
+                {
+                    "update_marker": "A",
+                    "record_type": "T",
+                    "flow_id": "0000001",
+                    "ticket_code": "SDR",
+                    "fare_pence": "1420",
+                    "restriction_code": "00",
+                },
+                FLOW_T,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        db.load_feed(reissue)
+        results = db.destinations_within("GRN", 1_000_000)
+        self.assertEqual([reachable.crs for reachable in results], ["LCN", "NOT", "PBO", "KGX"])
 
 
 if __name__ == "__main__":
