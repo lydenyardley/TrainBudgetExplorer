@@ -95,6 +95,14 @@ class RestrictionParsingTest(unittest.TestCase):
         self.assertEqual(index.parsed_records, 0)
         self.assertEqual(index.rejected_records, 0)
 
+    def test_a_deleted_railcard_row_is_not_left_active(self) -> None:
+        index = RestrictionIndex()
+        index.load_line(REAL_RR)
+        deleted = "D" + REAL_RR[1:]
+        index.load_line(deleted)
+        self.assertEqual(index.active_railcard_rows("00D"), [])
+        self.assertNotIn("00D", index.railcard_record_counts)
+
     def test_an_unknown_record_type_is_rejected_and_blocks_publication(self) -> None:
         index = RestrictionIndex()
         index.files_read.append("rjfaf.rst")
