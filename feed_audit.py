@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 
 from atoc_fares import FaresDb
@@ -27,8 +28,15 @@ def audit(fares: FaresDb, timetable: TimetableDb) -> dict[str, object]:
     timetable_crs = {station.crs for station in timetable.stations_by_tiploc.values() if station.crs}
     timetable_crs |= set(timetable.cif_crs_by_tiploc.values())
 
-    used_tiplocs = {stop.tiploc for schedule in timetable.schedules for stop in schedule.stops}
-    unresolved = sorted(tiploc for tiploc in used_tiplocs if timetable.crs_for_tiploc(tiploc) is None)
+    used_tiplocs = timetable.used_tiplocs()
+    unresolved = sorted(
+        tiploc for tiploc in used_tiplocs if timetable.crs_for_tiploc(tiploc) is None
+    )
+    unresolved_categories = Counter(timetable.tiploc_resolution(tiploc) for tiploc in unresolved)
+    normalized_samples = [
+        f"{canonical} <- {sorted(raws)[0]!r}"
+        for canonical, raws in sorted(timetable.tiploc_variants.items())[:SAMPLE_LIMIT]
+    ]
 
     stp_indicators: dict[str, int] = {}
     service_days: dict[str, int] = {}
@@ -54,8 +62,13 @@ def audit(fares: FaresDb, timetable: TimetableDb) -> dict[str, object]:
         "stations_with_a_train_and_no_fare_entry": len(timetable_crs - fare_crs),
         "sample_fare_only_stations": sorted(fare_crs - timetable_crs)[:SAMPLE_LIMIT],
         "sample_timetable_only_stations": sorted(timetable_crs - fare_crs)[:SAMPLE_LIMIT],
+        "used_tiplocs": len(used_tiplocs),
         "unresolved_tiplocs": len(unresolved),
+        "unresolved_tiploc_categories": dict(sorted(unresolved_categories.items())),
         "sample_unresolved_tiplocs": unresolved[:SAMPLE_LIMIT],
+        "normalized_tiplocs": timetable.normalized_tiploc_count(),
+        "sample_tiploc_normalizations": normalized_samples,
+        "restrictions": fares.restrictions.summary(),
         "schedule_dates_from": date_starts[0] if date_starts else "",
         "schedule_dates_to": date_ends[-1] if date_ends else "",
         "stp_indicators": stp_indicators,
@@ -84,6 +97,14 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
         f"  lines {fares_report['lines']}, handled {fares_report['parsed']}, "
         f"rejected {fares_report['skipped']}, encoding fallbacks {fares_report['encoding_fallbacks']}"
     )
+    restrictions = report["restrictions"]
+    print(
+        f"  restrictions: files {restrictions['files']}, records {restrictions['records']}, "
+        f"codes {restrictions['restriction_codes']}, railcard codes {restrictions['railcard_codes']}, "
+        f"rejected {restrictions['rejected']}"
+    )
+    if restrictions["unknown_types"]:
+        print(f"  unknown restriction record types: {restrictions['unknown_types']}")
 
     print("Timetable feed")
     print(f"  files {timetable_report['files']}: {', '.join(report['timetable_files']) or 'none'}")
@@ -103,7 +124,15 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
     print("Coverage between the two feeds")
     print(f"  a fare and no timetable entry: {report['stations_with_a_fare_and_no_timetable_entry']}")
     print(f"  a train and no fare entry: {report['stations_with_a_train_and_no_fare_entry']}")
+    print(f"  used TIPLOC codes: {report['used_tiplocs']}")
     print(f"  unresolved TIPLOC codes: {report['unresolved_tiplocs']}")
+    categories = report["unresolved_tiploc_categories"]
+    if categories:
+        detail = ", ".join(f"{name} {count}" for name, count in categories.items())
+        print(f"  unresolved TIPLOC categories: {detail}")
+    print(f"  TIPLOCs normalised from a padded raw value: {report['normalized_tiplocs']}")
+    for sample in report["sample_tiploc_normalizations"]:
+        print(f"  normalised TIPLOC: {sample}")
     for label in (
         "sample_fare_only_stations",
         "sample_timetable_only_stations",
