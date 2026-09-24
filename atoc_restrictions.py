@@ -10,12 +10,10 @@ against the open-source `pashri/atoc` parser (``atoc/File/Fare/Restrictions.py``
 and against the real DTD ``.RST`` file, whose record widths match to the
 character.
 
-This module parses the records and keeps the counts and samples the audit needs.
-It deliberately does **not** claim to evaluate every restriction: the fare
-selector in ``atoc_fares.py`` refuses any fare whose restriction code is not
-blank, and refuses railcard discounts while the railcard restriction records
-remain unevaluated. That keeps a publication decision on the safe side of not
-guessing.
+This module parses the records and keeps the current and future restriction data
+needed by the fare selector. The railcard rows are evaluated against the fare's
+ticket, route, and endpoint locations; a matching total ban or restriction code
+removes the discount for that fare.
 """
 
 from __future__ import annotations
@@ -272,8 +270,8 @@ class RailcardRestrictionRow:
     """One ``RR`` record: a railcard restriction for a ticket/route/location.
 
     ``total_ban`` is ``Y`` when the row bans the combination outright. A row is
-    kept as parsed evidence even though the selector does not yet evaluate the
-    railcard rules; that is what the audit reports.
+    kept so the fare selector can evaluate the current rule against the exact
+    ticket, route, and location context.
     """
 
     railcard_code: str
@@ -284,6 +282,7 @@ class RailcardRestrictionRow:
     restriction_code: str
     total_ban: bool
     current_or_future: str
+    update_marker: str = "R"
 
 
 def parse_header(line: str) -> RestrictionHeader:
@@ -311,6 +310,7 @@ def parse_railcard_record(line: str) -> RailcardRestrictionRow:
         restriction_code=_field(line, offsets, "restriction_code"),
         total_ban=_field(line, offsets, "total_ban").upper() == "Y",
         current_or_future=_field(line, offsets, "cf_marker"),
+        update_marker=_field(line, offsets, "update_marker").upper(),
     )
 
 
@@ -318,9 +318,10 @@ def parse_railcard_record(line: str) -> RailcardRestrictionRow:
 class RestrictionIndex:
     """What the fares parser keeps from the ``.RST`` file.
 
-    Only counts and a handful of samples are retained, not all 327,000-odd
-    railcard rows: the selector's gate needs to know *that* a railcard has
-    restriction records, and the audit needs a few examples, not the whole file.
+    Counts and samples are retained for audits, along with all RR rows needed
+    by the fare selector. The active rows for each railcard are cached after the
+    first query so a national build does not rescan the complete RR file for
+    every fare.
     """
 
     files_read: list[str] = field(default_factory=list)
@@ -331,6 +332,13 @@ class RestrictionIndex:
     headers: dict[str, RestrictionHeader] = field(default_factory=dict)
     samples: dict[str, str] = field(default_factory=dict)
     railcard_samples: list[RailcardRestrictionRow] = field(default_factory=list)
+    # RR rows are small enough to retain (the real feed has about 328,000),
+    # and retaining them is what lets the fares query evaluate a railcard
+    # against a ticket, route, and station rather than merely report that rules
+    # exist. Only current rows are returned by ``active_railcard_rows``.
+    railcard_rows: list[RailcardRestrictionRow] = field(default_factory=list)
+    _railcard_row_keys: dict[tuple[str, str, str], RailcardRestrictionRow] = field(default_factory=dict)
+    _active_railcard_cache: dict[str, list[RailcardRestrictionRow]] = field(default_factory=dict)
     parsed_records: int = 0
     rejected_records: int = 0
 
@@ -375,9 +383,44 @@ class RestrictionIndex:
         elif record_type == "RR":
             row = parse_railcard_record(line)
             if row.railcard_code:
+                key = (row.railcard_code, row.sequence_no, row.current_or_future)
+                previous = self._railcard_row_keys.pop(key, None)
+                if previous is not None:
+                    self.railcard_rows.remove(previous)
+                    remaining = self.railcard_record_counts.get(row.railcard_code, 0) - 1
+                    if remaining > 0:
+                        self.railcard_record_counts[row.railcard_code] = remaining
+                    else:
+                        self.railcard_record_counts.pop(row.railcard_code, None)
+                if row.update_marker == "D":
+                    self._active_railcard_cache.clear()
+                    return
+                # A re-issued current/future row supersedes the same sequence;
+                # otherwise an update feed can leave both versions active.
                 self.railcard_record_counts[row.railcard_code] += 1
+                self.railcard_rows.append(row)
+                self._railcard_row_keys[key] = row
+                self._active_railcard_cache.clear()
                 if len(self.railcard_samples) < 5:
                     self.railcard_samples.append(row)
+
+    def active_railcard_rows(self, railcard_code: str) -> list[RailcardRestrictionRow]:
+        """Return current ``RR`` rows for *railcard_code*.
+
+        ``C`` means current and ``F`` means future in the DTD file. A future
+        row must not affect today's fare query. Empty fields in an RR row are
+        wildcards; the caller applies the ticket, route, and location match.
+        """
+        code = railcard_code.strip().upper()
+        cached = self._active_railcard_cache.get(code)
+        if cached is None:
+            cached = [
+                row
+                for row in self.railcard_rows
+                if row.railcard_code == code and row.current_or_future.upper() == "C"
+            ]
+            self._active_railcard_cache[code] = cached
+        return cached
 
     def gate_problem(self) -> str | None:
         """Why a fare must not be published, or ``None`` when the file is usable.

@@ -8,6 +8,7 @@ real fares or real services.
 from __future__ import annotations
 
 import random
+import json
 from pathlib import Path
 
 from atoc_fares import (
@@ -113,6 +114,19 @@ RAILCARDS = (
 )
 
 MINIMUM_FARES = (("TWO", "SDR", 1200),)
+
+# The production fares feed carries CRS, name, and NLC only. The station
+# classification is a separate reference feed, so the synthetic fixture keeps
+# its small reviewed equivalent in the same shape.
+LOCATION_TYPES = {
+    "GRN": "town",
+    "NOT": "city",
+    "LCN": "city",
+    "PBO": "city",
+    "KGX": "city",
+    "XFD": "other",
+    "SLP": "other",
+}
 
 # Stations with a minimum interchange time. The 10 minutes at NOTT is what makes
 # the T10006 connection in the timetable illegal, and the tests rely on that.
@@ -240,6 +254,10 @@ def build_synthetic_feed(
     (path / "rjfaf.tty").write_text("\n".join(ticket_lines) + "\n", encoding="utf-8")
     (path / "rjfaf.rlc").write_text("\n".join(railcard_lines) + "\n", encoding="utf-8")
     (path / "rjfaf.rcm").write_text("\n".join(minimum_lines) + "\n", encoding="utf-8")
+    (path.parent / f"{path.name}.location-types.json").write_text(
+        json.dumps([{"crs": crs, "type": kind} for crs, kind in LOCATION_TYPES.items()]) + "\n",
+        encoding="utf-8",
+    )
     if include_restrictions:
         (path / "rjfaf.rst").write_text(
             "\n".join(_restriction_lines()) + "\n", encoding="utf-8"
