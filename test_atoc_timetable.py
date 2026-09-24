@@ -10,8 +10,17 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from atoc_timetable import TimetableDb, format_minutes
-from make_synthetic_feed import build_synthetic_timetable
+from atoc_timetable import (
+    CIF_ORIGIN,
+    CIF_SCHEDULE,
+    CIF_TERMINUS,
+    CIF_TIPLOC_DELETE,
+    CIF_TIPLOC_INSERT,
+    MSN_STATION,
+    TimetableDb,
+    format_minutes,
+)
+from make_synthetic_feed import _line, build_synthetic_timetable
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 28)
@@ -96,6 +105,103 @@ class TimetableParserTest(unittest.TestCase):
         self.assertEqual(format_minutes(50), "50m")
         self.assertEqual(format_minutes(60), "1h")
         self.assertEqual(format_minutes(95), "1h35")
+
+
+class TiplocNormalizationTest(unittest.TestCase):
+    """Unresolved TIPLOCs are normalised and classified, not just counted."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def _schedule(self, uid: str, location: str) -> list[str]:
+        return [
+            _line(
+                {
+                    "record_type": "BS",
+                    "transaction_type": "N",
+                    "train_uid": uid,
+                    "date_runs_from": "260921",
+                    "date_runs_to": "261211",
+                    "days": "1111110",
+                    "stp_indicator": "P",
+                },
+                CIF_SCHEDULE,
+            ),
+            _line(
+                {"record_type": "LO", "location": location, "scheduled_departure": "0900", "public_departure": "0900"},
+                CIF_ORIGIN,
+            ),
+            _line(
+                {"record_type": "LT", "location": "GRNT", "scheduled_arrival": "1000", "public_arrival": "1000"},
+                CIF_TERMINUS,
+            ),
+        ]
+
+    def test_a_padded_location_field_normalises_to_one_key(self) -> None:
+        feed = build_synthetic_timetable(self.root / "timetable")
+        # Eight-character location field whose eighth character is a path flag,
+        # so only the first seven characters are the TIPLOC. The old parser took
+        # the stripped whole field and sliced it, leaving a trailing space.
+        (feed / "padded.mca").write_text(
+            "\n".join(self._schedule("T10999", "NOTT   2")) + "\n", encoding="utf-8"
+        )
+        timetable = TimetableDb().load_feed(feed)
+        self.assertIn("NOTT", timetable.used_tiplocs())
+        self.assertNotIn("NOTT   ", timetable.used_tiplocs())
+        self.assertEqual(timetable.crs_for_tiploc("NOTT"), "NOT")
+        self.assertEqual(timetable.crs_for_tiploc(" nott   "), "NOT")
+        self.assertIn("NOTT   ", timetable.tiploc_variants["NOTT"])
+        self.assertGreaterEqual(timetable.normalized_tiploc_count(), 1)
+
+    def test_a_station_names_header_is_not_read_as_a_station(self) -> None:
+        feed = build_synthetic_timetable(self.root / "timetable")
+        header = _line(
+            {
+                "record_type": "A",
+                "name": "FILE-SPEC=05 1.00 22/09/26 18.00",
+                "category": "S",
+                "tiploc": "PEC=05",
+                "crs": "2/0",
+            },
+            MSN_STATION,
+        )
+        stations = (feed / "stations.msn").read_text(encoding="utf-8")
+        (feed / "stations.msn").write_text(header + "\n" + stations, encoding="utf-8")
+        timetable = TimetableDb().load_feed(feed)
+        self.assertIsNone(timetable.station_for_tiploc("PEC=05"))
+        self.assertNotIn("2/0", timetable.crs_by_tiploc.values())
+        self.assertEqual(timetable.stats()["stations"], 5)
+
+    def test_a_location_with_no_crs_is_known_not_missing(self) -> None:
+        feed = build_synthetic_timetable(self.root / "timetable")
+        lines = [
+            _line(
+                {"record_type": "TI", "tiploc": "OPERTN", "crs": "", "description": "OPERATIONAL LOCATION"},
+                CIF_TIPLOC_INSERT,
+            )
+        ]
+        lines.extend(self._schedule("T10998", "OPERTN"))
+        (feed / "operational.mca").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        timetable = TimetableDb().load_feed(feed)
+        self.assertIsNone(timetable.crs_for_tiploc("OPERTN"))
+        self.assertEqual(timetable.tiploc_resolution("OPERTN"), "location_record_without_crs")
+        self.assertEqual(timetable.tiploc_resolution("NOPE"), "no_record")
+
+    def test_a_tiploc_delete_keeps_the_station_names_entry(self) -> None:
+        feed = build_synthetic_timetable(self.root / "timetable")
+        # NOTT has an MSN station record (NOT) and a CIF insert (XXX). Deleting
+        # the CIF insert must not delete the station names entry.
+        # Sort after timetable.mca, or the TI insert in that file re-adds it.
+        (feed / "zz-delete.mca").write_text(
+            _line({"record_type": "TD", "tiploc": "NOTT"}, CIF_TIPLOC_DELETE) + "\n",
+            encoding="utf-8",
+        )
+        timetable = TimetableDb().load_feed(feed)
+        self.assertEqual(timetable.crs_for_tiploc("NOTT"), "NOT")
+        self.assertIsNotNone(timetable.station_for_tiploc("NOTT"))
+        self.assertNotIn("NOTT", timetable.cif_crs_by_tiploc)
 
 
 if __name__ == "__main__":

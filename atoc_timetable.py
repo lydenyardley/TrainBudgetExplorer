@@ -48,6 +48,23 @@ def _text(line: str, offsets: dict[str, tuple[int, int]], name: str) -> str:
     return line[start:end].strip()
 
 
+def normalize_tiploc(value: str) -> str:
+    """Canonicalise a TIPLOC so padded and lower-case keys cannot split it.
+
+    A CIF location field is eight characters wide but only the first seven are
+    the TIPLOC; the eighth can be a non-space path/platform flag. Taking the
+    stripped whole field and then slicing it (the old behaviour) turned
+    ``ABHLJN 2`` into ``ABHLJN `` while the station names file held ``ABHLJN``,
+    so one location acquired two keys. The raw value is kept for the audit.
+    """
+    return value.strip().upper()
+
+
+def stop_tiploc_from_field(field: str) -> str:
+    """Read the seven-character TIPLOC from an eight-character location field."""
+    return normalize_tiploc(field[:7])
+
+
 CIF_HEADER = (
     ("record_type", 2),
     ("file_identity", 20),
@@ -317,6 +334,12 @@ class TimetableDb:
         self.stations_by_tiploc: dict[str, TimetableStation] = {}
         self.crs_by_tiploc: dict[str, str] = {}
         self.cif_crs_by_tiploc: dict[str, str] = {}
+        # Every CIF TIPLOC insert, including the ones with a blank CRS. Those
+        # are real operational or non-passenger locations, not missing data, and
+        # the audit separates them from a TIPLOC no record mentions at all.
+        self.cif_locations_by_tiploc: dict[str, str] = {}
+        # canonical TIPLOC -> raw seven-character values that differ from it.
+        self.tiploc_variants: dict[str, set[str]] = {}
         self.schedules: list[Schedule] = []
         self.report = ParseReport()
         self.files_read = self.report.files_read
@@ -394,10 +417,18 @@ class TimetableDb:
     def _load_station_line(self, line: str) -> None:
         if line[:1] != "A":
             return
-        tiploc = _text(line, MSN_STATION_OFFSETS, "tiploc")
-        crs = _text(line, MSN_STATION_OFFSETS, "crs").upper()
+        # The first line of the real MSN file is a control record whose category
+        # is the letter S, not one of the numeric station categories. Reading it
+        # as a station is how the invalid "tiploc" PEC=05 and CRS 2/0 appeared.
+        if not _text(line, MSN_STATION_OFFSETS, "category").isdigit():
+            return
+        raw_tiploc = _text(line, MSN_STATION_OFFSETS, "tiploc")
+        tiploc = normalize_tiploc(raw_tiploc)
         if not tiploc:
             return
+        if raw_tiploc != tiploc:
+            self.tiploc_variants.setdefault(tiploc, set()).add(raw_tiploc)
+        crs = _text(line, MSN_STATION_OFFSETS, "crs").upper()
         self.stations_by_tiploc[tiploc] = TimetableStation(
             tiploc=tiploc,
             crs=crs,
@@ -422,7 +453,7 @@ class TimetableDb:
         elif record_type == "LO":
             state.stops.append(
                 CallingPoint(
-                    tiploc=self._require(line, CIF_ORIGIN_OFFSETS, "location")[:7],
+                    tiploc=self._stop_tiploc(line, CIF_ORIGIN_OFFSETS),
                     arrival=None,
                     departure=_minutes(self._require(line, CIF_ORIGIN_OFFSETS, "scheduled_departure")),
                     public_arrival=None,
@@ -432,7 +463,7 @@ class TimetableDb:
         elif record_type == "LI":
             state.stops.append(
                 CallingPoint(
-                    tiploc=self._require(line, CIF_INTERMEDIATE_OFFSETS, "location")[:7],
+                    tiploc=self._stop_tiploc(line, CIF_INTERMEDIATE_OFFSETS),
                     arrival=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_arrival")),
                     departure=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "scheduled_departure")),
                     public_arrival=_minutes(self._require(line, CIF_INTERMEDIATE_OFFSETS, "public_arrival")),
@@ -442,7 +473,7 @@ class TimetableDb:
         elif record_type == "LT":
             state.stops.append(
                 CallingPoint(
-                    tiploc=self._require(line, CIF_TERMINUS_OFFSETS, "location")[:7],
+                    tiploc=self._stop_tiploc(line, CIF_TERMINUS_OFFSETS),
                     arrival=_minutes(self._require(line, CIF_TERMINUS_OFFSETS, "scheduled_arrival")),
                     departure=None,
                     public_arrival=_minutes(self._require(line, CIF_TERMINUS_OFFSETS, "public_arrival")),
@@ -450,14 +481,24 @@ class TimetableDb:
                 )
             )
         elif record_type in {"TI", "TA"}:
-            tiploc = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "tiploc")
-            crs = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "crs").upper()
-            if tiploc and crs:
-                self.cif_crs_by_tiploc.setdefault(tiploc, crs)
+            tiploc = normalize_tiploc(_text(line, CIF_TIPLOC_INSERT_OFFSETS, "tiploc"))
+            raw_crs = _text(line, CIF_TIPLOC_INSERT_OFFSETS, "crs")
+            crs = raw_crs.upper()
+            if tiploc:
+                # Keep the location even when its CRS is blank: a blank CRS is
+                # how the feed marks an operational or non-passenger location.
+                existing = self.cif_locations_by_tiploc.get(tiploc)
+                if existing is None or (not existing and crs):
+                    self.cif_locations_by_tiploc[tiploc] = crs
+                if crs:
+                    self.cif_crs_by_tiploc.setdefault(tiploc, crs)
         elif record_type == "TD":
-            tiploc = _text(line, CIF_TIPLOC_DELETE_OFFSETS, "tiploc")
+            tiploc = normalize_tiploc(_text(line, CIF_TIPLOC_DELETE_OFFSETS, "tiploc"))
+            # A CIF delete removes a CIF insert, not a station names entry. The
+            # station names file wins whatever the load order (ADR-0006), so
+            # popping stations_by_tiploc here was wrong.
             self.cif_crs_by_tiploc.pop(tiploc, None)
-            self.stations_by_tiploc.pop(tiploc, None)
+            self.cif_locations_by_tiploc.pop(tiploc, None)
 
     @staticmethod
     def _require(line: str, offsets: dict[str, tuple[int, int]], name: str) -> str:
@@ -466,6 +507,17 @@ class TimetableDb:
         if len(line) < end:
             raise ValueError(f"record is {len(line)} characters, {name} needs {end}")
         return _text(line, offsets, name)
+
+    def _stop_tiploc(self, line: str, offsets: dict[str, tuple[int, int]]) -> str:
+        """Read and canonicalise a calling point's TIPLOC, keeping the raw value."""
+        start, end = offsets["location"]
+        if len(line) < end:
+            raise ValueError(f"record is {len(line)} characters, location needs {end}")
+        raw = line[start:start + 7]
+        tiploc = stop_tiploc_from_field(line[start:end])
+        if raw != tiploc:
+            self.tiploc_variants.setdefault(tiploc, set()).add(raw)
+        return tiploc
 
     def _commit(self, state: _CifState) -> None:
         if state.train_uid and len(state.stops) >= 2:
@@ -499,17 +551,49 @@ class TimetableDb:
         millions of times on a full-network build, where an uncached double
         dict probe per call is the profile's single largest cost.
         """
-        cached = self._crs_cache.get(tiploc, _MISSING)
+        key = normalize_tiploc(tiploc)
+        cached = self._crs_cache.get(key, _MISSING)
         if cached is not _MISSING:
             return cached
-        crs = self.crs_by_tiploc.get(tiploc)
+        crs = self.crs_by_tiploc.get(key)
         if not crs:
-            crs = self.cif_crs_by_tiploc.get(tiploc)
-        self._crs_cache[tiploc] = crs
+            crs = self.cif_crs_by_tiploc.get(key)
+        self._crs_cache[key] = crs
         return crs
 
     def station_for_tiploc(self, tiploc: str) -> TimetableStation | None:
-        return self.stations_by_tiploc.get(tiploc)
+        return self.stations_by_tiploc.get(normalize_tiploc(tiploc))
+
+    def used_tiplocs(self) -> set[str]:
+        """Every canonical TIPLOC a schedule calls at."""
+        return {
+            stop.tiploc
+            for schedule in self.schedules
+            for stop in schedule.stops
+            if stop.tiploc
+        }
+
+    def tiploc_resolution(self, tiploc: str) -> str:
+        """Classify why a TIPLOC does or does not resolve to a station code.
+
+        "No CRS" is not the same as "not a station": the feed marks operational
+        and non-passenger locations with a TIPLOC insert and a blank CRS, and
+        those must not be read as a missing station record.
+        """
+        key = normalize_tiploc(tiploc)
+        if not key:
+            return "empty"
+        if self.crs_for_tiploc(key):
+            return "resolved"
+        if key in self.stations_by_tiploc:
+            return "station_record_without_crs"
+        if key in self.cif_locations_by_tiploc:
+            return "location_record_without_crs"
+        return "no_record"
+
+    def normalized_tiploc_count(self) -> int:
+        """Canonical TIPLOCs whose raw seven-character value was not identical."""
+        return len(self.tiploc_variants)
 
     def connection_minutes_at(self, crs: str) -> int:
         for station in self.stations_by_tiploc.values():
