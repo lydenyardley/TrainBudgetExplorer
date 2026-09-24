@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 from atoc_fares import FaresDb
@@ -22,7 +23,9 @@ from feeds_cli import add_feed_args
 SAMPLE_LIMIT = 10
 
 
-def audit(fares: FaresDb, timetable: TimetableDb) -> dict[str, object]:
+def audit(
+    fares: FaresDb, timetable: TimetableDb, *, day: date | None = None
+) -> dict[str, object]:
     """Collect the coverage picture a first real run needs."""
     fare_crs = set(fares.locations_by_crs)
     timetable_crs = {station.crs for station in timetable.stations_by_tiploc.values() if station.crs}
@@ -51,6 +54,7 @@ def audit(fares: FaresDb, timetable: TimetableDb) -> dict[str, object]:
 
     return {
         "fares": fares.stats(),
+        "fare_coverage": fares.fare_coverage_audit(day=day),
         "timetable": timetable.stats(),
         "fares_report": fares.report.summary(),
         "timetable_report": timetable.report.summary(),
@@ -120,6 +124,34 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
         f"  dates {report['schedule_dates_from'] or 'unknown'} to {report['schedule_dates_to'] or 'unknown'}, "
         f"stp {report['stp_indicators']}, days {report['service_day_patterns']}"
     )
+
+    coverage = report["fare_coverage"]
+    print("Fare location coverage")
+    print(
+        f"  shared group codes {coverage['groupCodes']}, "
+        f"group-origin flows {coverage['groupOriginFlows']}, "
+        f"stations potentially hidden by groups {coverage['stationsPotentiallyHiddenByGroup']}"
+    )
+    print(
+        f"  stations with multiple location codes {coverage['stationsWithMultipleLocationCodes']}, "
+        f"fare flows with missing locations {coverage['fareFlowsWithMissingLocation']}, "
+        f"with no station code {coverage['fareFlowsWithNoStationCode']}"
+    )
+    for sample in coverage["sampleStationsPotentiallyHiddenByGroup"][:limit]:
+        print(
+            f"  group {sample['groupNlc']} may cover {sample['crs']} "
+            f"{sample['name']} ({sample['flowCount']} flows)"
+        )
+    for sample in coverage["sampleStationsWithMultipleLocationCodes"][:limit]:
+        print(
+            f"  location aliases for {sample['crs']} {sample['name']}: "
+            f"{', '.join(sample['nlcs'])}"
+        )
+    for sample in coverage["sampleFareFlowsWithUnmappedDestinations"][:limit]:
+        print(
+            f"  unmapped fare flow {sample['flowId']} -> "
+            f"{sample['destinationNlc']} ({sample['label']})"
+        )
 
     print("Coverage between the two feeds")
     print(f"  a fare and no timetable entry: {report['stations_with_a_fare_and_no_timetable_entry']}")

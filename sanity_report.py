@@ -44,6 +44,8 @@ SAMPLE_LIMIT = 8
 DROPPED_REASONS = (
     "destination_has_no_station_code",
     "destination_has_no_location_record",
+    "flow_expired",
+    "flow_not_yet_valid",
     "flow_with_no_fare",
     "fare_with_no_ticket_type",
     "ticket_is_not_a_standard_return",

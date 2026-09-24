@@ -12,11 +12,13 @@ open-source parsers named in README.md.
 from __future__ import annotations
 
 import bisect
+import pickle
+import zipfile
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from parse_report import ParseReport, count, peek, read_feed_files
+from parse_report import ParseReport, count, decode_lines, peek, read_feed_files
 
 # Onward departures the one-change search will consider at each interchange.
 # 200 is measured, not guessed: it is the smallest cap that lost no journey on
@@ -351,11 +353,91 @@ class TimetableDb:
         self._schedule_crs: dict[int, tuple[str | None, ...]] = {}
         self._schedule_dest_stops: dict[int, dict[str, list[int]]] = {}
         self._change_times: dict[str, int] = {}
+        # A focused load keeps only schedules touching the requested stations.
+        # None means the normal complete database used by audit and analysis.
+        self._focus_tiplocs: set[str] | None = None
 
     # -- loading ---------------------------------------------------------
 
-    def load_feed(self, path: str | Path) -> "TimetableDb":
+    def _preload_focus_stations(self, path: str | Path, focus_crs: set[str]) -> None:
+        """Read MSN station names before CIF schedules are streamed.
+
+        DTD timetable archives place MSN before MCA, but this explicit pass also
+        handles extracted folders and keeps the focused loader independent of
+        directory ordering.
+        """
+        root = Path(path)
+
+        def read_station_file(handle) -> None:
+            for line in decode_lines(handle, ParseReport()):
+                self._load_station_line(line)
+
+        if root.is_dir():
+            for child in sorted(root.iterdir()):
+                if not child.is_file():
+                    continue
+                if child.suffix.lower() == ".msn":
+                    with child.open("rb") as handle:
+                        read_station_file(handle)
+                elif child.suffix.lower() == ".zip" and zipfile.is_zipfile(child):
+                    with zipfile.ZipFile(child) as archive:
+                        for name in sorted(archive.namelist()):
+                            if name.lower().endswith(".msn"):
+                                with archive.open(name) as handle:
+                                    read_station_file(handle)
+        elif root.suffix.lower() == ".zip" and zipfile.is_zipfile(root):
+            with zipfile.ZipFile(root) as archive:
+                for name in sorted(archive.namelist()):
+                    if name.lower().endswith(".msn"):
+                        with archive.open(name) as handle:
+                            read_station_file(handle)
+        self._focus_tiplocs = {
+            station.tiploc
+            for station in self.stations_by_tiploc.values()
+            if station.crs in focus_crs
+        }
+
+    def load_feed(
+        self,
+        path: str | Path,
+        *,
+        focus_origin: str | None = None,
+        focus_destinations: set[str] | None = None,
+        cache_path: str | Path | None = None,
+    ) -> "TimetableDb":
+        """Load a timetable, optionally focused and cached for one page build.
+
+        A cache hit skips the multi-million-record parse entirely. The cache is
+        opt-in so audit and general analysis retain their complete-feed
+        semantics; the page builder supplies a path derived from the feed and
+        requested stations.
+        """
+        if cache_path is not None:
+            cache = Path(cache_path)
+            if cache.is_file():
+                try:
+                    with cache.open("rb") as handle:
+                        loaded = pickle.load(handle)
+                    if isinstance(loaded, TimetableDb):
+                        loaded._invalidate_indexes()
+                        return loaded
+                except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError):
+                    pass
+
+        focus_crs = set(focus_destinations or ())
+        if focus_origin:
+            focus_crs.add(focus_origin.strip().upper())
+        if focus_crs:
+            self._preload_focus_stations(path, focus_crs)
         read_feed_files(path, self.report, self._load_lines)
+        if cache_path is not None:
+            self._invalidate_indexes()
+            cache = Path(cache_path)
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_suffix(cache.suffix + ".tmp")
+            with temporary.open("wb") as handle:
+                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary.replace(cache)
         return self
 
     def _load_lines(self, name: str, lines) -> None:
@@ -521,6 +603,10 @@ class TimetableDb:
 
     def _commit(self, state: _CifState) -> None:
         if state.train_uid and len(state.stops) >= 2:
+            if self._focus_tiplocs is not None and not any(
+                stop.tiploc in self._focus_tiplocs for stop in state.stops
+            ):
+                return
             self.schedules.append(
                 Schedule(
                     train_uid=state.train_uid,
