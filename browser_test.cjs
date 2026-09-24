@@ -160,7 +160,11 @@ async function main() {
     ).catch(() => {});
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
-    check("and says to tick the railcard box", /^Two Together Railcard: tick the box/m.test(partyCopy), partyCopy);
+    check(
+      "and says the discount is not included and to tick the box",
+      /^Railcard discount not included: tick the Two Together box/m.test(partyCopy),
+      partyCopy
+    );
 
     // 7. At a phone width the ticket action is on-screen, without horizontal
     // scroll (ADR-0019's blocker). Measured, not assumed.
