@@ -59,14 +59,59 @@ class DemoPageTest(unittest.TestCase):
 
     def test_every_destination_carries_both_prices_and_a_journey(self) -> None:
         rows = {row["crs"]: row for row in self.payload["destinations"]}
-        # SDR is the reviewed Anytime Day Return price; the cheaper off-peak
-        # CDR is dropped by the public selector, and no railcard discount is
-        # shown, so the party price is two Anytime Day Returns.
-        self.assertEqual(rows["NOT"]["adultPence"], 1420)
+        # The page now includes the cheapest standard return found in the feed,
+        # even when it is restricted. The browser budget filter does the final
+        # selection; the synthetic fixture's cheaper CDR is therefore visible.
+        self.assertEqual(rows["NOT"]["adultPence"], 1160)
         self.assertIsNone(rows["NOT"]["railcardPence"])
-        self.assertEqual(rows["NOT"]["partyPence"], 2840)
+        self.assertEqual(rows["NOT"]["partyPence"], 2320)
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
+
+    def test_expired_flows_are_absent_from_all_ticket_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+            fares._load_flows(
+                _line(
+                    {
+                        "update_marker": "R",
+                        "record_type": "F",
+                        "origin_nlc": "1000",
+                        "destination_nlc": "2000",
+                        "route_code": "00000",
+                        "flow_id": "0000001",
+                        "start_date": "01012020",
+                        "end_date": "31122020",
+                    },
+                    FLOW_F,
+                )
+            )
+            payload = build_payload(
+                fares, None, "GRN", day=date(2026, 9, 24)
+            )
+
+        for mode in ("destinations", "singleDestinations", "anytimeDestinations"):
+            self.assertNotIn("NOT", {row["crs"] for row in payload[mode]})
+
+    def test_the_page_carries_separate_ticket_modes(self) -> None:
+        self.assertEqual(self.payload["destinations"][0]["destinationType"], "city")
+        self.assertIn('<option value="city">Cities</option>', self.html)
+        self.assertIn("matchesType", self.html)
+        self.assertIn("singleDestinations", self.payload)
+        self.assertTrue(self.payload["singleDestinations"])
+        self.assertIn("anytimeDestinations", self.payload)
+        self.assertTrue(self.payload["anytimeDestinations"])
+        self.assertIn('name="ticketMode"', self.html)
+        self.assertIn('value="single"', self.html)
+        self.assertIn('value="anytime"', self.html)
+        self.assertIn("activeDestinations", self.html)
+        self.assertIn("unrestricted Anytime Day Return", self.html)
+        self.assertIn("no qualifying", self.html)
+        self.assertIn("PAGE_SIZE = 20", self.html)
+        self.assertIn('id="pagination"', self.html)
+
 
     def test_the_cheapest_destination_is_listed_first(self) -> None:
         prices = [row["adultPence"] for row in self.payload["destinations"]]
@@ -106,25 +151,36 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="priceSource" hidden', self.html)
         self.assertIn("DATA.priceSource", self.html)
 
-    def test_no_railcard_estimate_is_shown_and_the_page_says_why(self) -> None:
-        # The railcard records are parsed but not evaluated, so the page does
-        # not guess a discount: the party price is two reviewed Anytime Day
-        # Returns and the note says that rather than presenting an estimate.
-        self.assertNotIn("railcardBasis", self.payload)
-        self.assertIsNone(self.payload["destinations"][0]["railcardPence"])
-        self.assertIn("not shown yet", self.payload["railcardNote"])
-        self.assertIn("Anytime Day Return", self.payload["railcardNote"])
-        self.assertIn("DATA.railcardNote", self.html)
+    def test_each_destination_carries_its_fare_restriction_status(self) -> None:
+        rows = {row["crs"]: row for row in self.payload["destinations"]}
+        self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
+        self.assertIn("restriction", rows["NOT"]["restrictionDescription"].lower())
+        self.assertEqual(rows["SLP"]["restrictionCode"], "")
+        self.assertIn("restrictionCode", self.html)
+        self.assertIn("restrictionDescription", self.html)
+        self.assertIn('destination.restrictionCode + (destination.restrictionDescription', self.html)
+        self.assertIn("ITX placeholder fares", self.html)
 
-    def test_a_real_data_build_names_its_source_and_drops_the_estimate_caveat(self) -> None:
-        payload = build_payload(
-            self.fares,
-            self.timetable,
-            "GRN",
-            price_source="the RSP fares feed, downloaded 22 September 2026",
-        )
-        self.assertIn("RSP fares feed", payload["priceSource"])
-        self.assertIsNone(payload["destinations"][0]["railcardPence"])
+    def test_railcard_pricing_is_available_from_the_feed(self) -> None:
+        # The fixture's general R9 rule means no destination is eligible. The
+        # page must say so rather than turning the old estimate back on.
+        self.assertFalse(self.payload["railcardAvailable"])
+        self.assertIn("one-third discount", self.payload["railcardNote"])
+        self.assertIn("RR route", self.payload["railcardNote"])
+        self.assertIn("DATA.railcardNote", self.html)
+        self.assertIn("Math.min(base, cardTotal)", self.html)
+
+    def test_the_page_evaluates_a_railcard_for_each_selected_fare(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+            fares.restrictions.railcard_rows.clear()
+            fares.minimum_fares.clear()
+            payload = build_payload(fares, None, "GRN")
+        rows = {row["crs"]: row for row in payload["destinations"]}
+        self.assertEqual(rows["NOT"]["railcardPence"], 770)
+        self.assertTrue(payload["railcardAvailable"])
 
     def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
         # Three distinct obligations, three paragraphs: one run-on would let a
@@ -195,6 +251,81 @@ class DemoPageTest(unittest.TestCase):
             build_demo_page.price_source_from_metadata({"downloaded": "3 October 2026"}),
             None,
         )
+
+    def test_a_real_download_without_metadata_reads_the_downloader_manifest(self) -> None:
+        # dtd_download.py writes download-manifest.json even when nobody
+        # hand-writes a metadata.json. A real download must never fall back to
+        # the synthetic default just because nobody typed a note.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            (Path(tmp) / "download-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "downloads": [
+                            {
+                                "name": "fares",
+                                "source": "dtd",
+                                "downloaded_at": "2026-09-23T14:02:11Z",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = Path(tmp) / "site" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+            self.assertEqual(code, 0)
+            page = out.read_text(encoding="utf-8")
+            self.assertIn("the National Rail Data Portal DTD fares feed", page)
+            self.assertIn("downloaded 23 September 2026", page)
+            self.assertNotIn("Synthetic demo data", page)
+            self.assertIn("price line read from the download manifest", buffer.getvalue())
+
+    def test_the_manifest_entry_newest_wins_and_kb_feeds_do_not(self) -> None:
+        self.assertEqual(
+            build_demo_page.price_source_from_manifest(
+                {
+                    "downloads": [
+                        {"name": "fares", "source": "dtd", "downloaded_at": "2026-09-23T14:02:11Z"},
+                        {"name": "timetable", "source": "dtd", "downloaded_at": "2026-09-24T03:00:00Z"},
+                    ]
+                }
+            ),
+            "the National Rail Data Portal DTD timetable feed, downloaded 24 September 2026",
+        )
+        # A knowledgebase entry is reference data, not what the page is built
+        # from, so it cannot supply the price line.
+        self.assertIsNone(
+            build_demo_page.price_source_from_manifest(
+                {"downloads": [{"name": "stations", "source": "knowledgebase", "downloaded_at": "2026-09-24T03:00:00Z"}]}
+            )
+        )
+
+    def test_a_manifest_alone_does_not_rescue_a_broken_metadata_note(self) -> None:
+        # metadata.json present but names no 'source' -> still a refusal. The
+        # manifest is a fallback for an absent note, not a way around one that
+        # its operator left unfinished.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            (feed / "metadata.json").write_text(
+                json.dumps({"downloaded": "3 October 2026"}), encoding="utf-8"
+            )
+            (Path(tmp) / "download-manifest.json").write_text(
+                json.dumps(
+                    {"downloads": [{"name": "fares", "source": "dtd", "downloaded_at": "2026-09-23T14:02:11Z"}]}
+                ),
+                encoding="utf-8",
+            )
+            out = Path(tmp) / "site" / "index.html"
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+            self.assertEqual(code, 2)
+            self.assertFalse(out.exists())
+            self.assertIn("names no 'source'", stderr.getvalue())
 
     def test_unreadable_metadata_is_named_not_silent(self) -> None:
         # Provenance that silently fell back to the default is provenance the
@@ -339,7 +470,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("[hidden] { display: none !important; }", self.html)
 
     def test_an_unpriced_origin_gets_its_own_first_sentence(self) -> None:
-        payload = dict(self.payload, destinations=[])
+        payload = dict(self.payload, destinations=[], singleDestinations=[])
         html = render_page(payload, budget_pounds=20)
         self.assertIn('id="unpriced"', html)
         script = html.split("<script>")[1].split("</script>")[0]
@@ -357,7 +488,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('if (summary) summary.hidden = true;', script)
         # render() runs after provenance() and would un-hide the budget's empty
         # message; on an unpriced page it must not run at all.
-        self.assertIn("if (!DATA.destinations.length) return;", script)
+        self.assertIn("if (!available.length) return;", script)
 
     def test_an_unpriced_origin_with_no_stations_at_all_says_that(self) -> None:
         payload = dict(self.payload, destinations=[], stations=[])
@@ -387,7 +518,8 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="originPicks"', self.html)
         # The options are real anchors, not a custom listbox.
         self.assertIn('link.href = station.href', self.html)
-        self.assertNotIn("<select", self.html.split("<script")[0])
+        self.assertIn('<select id="q"', self.html.split("<script")[0])
+        self.assertIn('value="city"', self.html.split("<script")[0])
 
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
         self.assertIn('event.key === "Escape"', self.html)
@@ -398,7 +530,7 @@ class DemoPageTest(unittest.TestCase):
         # the first holds the fare code, so it says so.
         self.assertIn('<th scope="col">Fare code</th>', self.html)
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
-        self.assertEqual(self.html.count('<th scope="col"'), 6)
+        self.assertEqual(self.html.count('<th scope="col"'), 7)
 
     def test_keyboard_focus_is_visible_everywhere(self) -> None:
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.html)
@@ -495,7 +627,7 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_slider_ceiling_covers_the_dearest_destination(self) -> None:
         ceiling = int(re.search(r'id="budget"[^>]*max="(\d+)"', self.html).group(1))
-        dearest = max(row["partyPence"] for row in self.payload["destinations"])
+        dearest = max(row["adultPence"] for row in self.payload["destinations"])
         self.assertGreaterEqual(ceiling * 100, dearest)
 
     def test_a_script_tag_in_the_data_cannot_close_the_script_early(self) -> None:
@@ -674,7 +806,9 @@ class AllOriginsCliTest(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         pooled = (self.out.parent / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
-        self.assertEqual(single, pooled)
+        # Build timestamp is deliberately shared between the in-process and
+        # worker paths so their generated pages are byte-for-byte comparable.
+        self.assertEqual(single.replace(single.split('"builtAt":"')[1][:20], "TIMESTAMP"), pooled.replace(pooled.split('"builtAt":"')[1][:20], "TIMESTAMP"))
 
     def test_the_build_says_how_to_open_what_it_wrote(self) -> None:
         # The pages are build output and their links are root-absolute, so

@@ -33,9 +33,10 @@ selection. The endpoint examples and the current terms are recorded in
       no CRS and no-record-at-all, and normalises padded keys. The real audit
       reads 4,139 used TIPLOCs, 1,146 unresolved (1,070 known locations, 76 with
       no record), and 1,294 normalised from a padded raw value
-- [ ] Railcard discounts: parsed but **not** published. The `.RST` `RR` records are
-      read; until their route/ticket/location rules are evaluated, the publishable
-      selector refuses a railcard rather than guess the discount
+- [x] Railcard discounts: the publishable selector evaluates the current `.RST`
+      `RR` records against each fare's ticket, route, and endpoint locations;
+      blank fields are wildcards, and a matching total ban or restriction code
+      removes the discount
 
 The first four rows are marketplace products whose §5 fill controls use. The
 DTD row is a separate portal subscription and must be checked against the

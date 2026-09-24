@@ -28,7 +28,7 @@ PRIVACY = """<!doctype html>
 <body>
 <nav><a href="__BASE__/">Back to the station chooser</a></nav>
 <h1>Privacy</h1>
-<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you type is stored anywhere: the budget you drag and the filter you type never leave your device.</p>
+<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored anywhere: the budget you drag and the destination type you select never leave your device.</p>
 <h2>What this site does not do</h2>
 <ul>
   <li>No cookies are set by this site.</li>
@@ -62,13 +62,13 @@ TEMPLATE = """<!doctype html>
             --best: rgba(125, 180, 245, .12); --field: #1c2127; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 1.5rem; max-width: 60rem;
+  body { margin: 0 auto; padding: 1.5rem; max-width: 60rem;
          background: var(--bg); color: var(--fg);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
   .sub { color: var(--muted); margin: 0 0 1.25rem; }
   /* The budget leads: the biggest type on the page and the wider column. The
-     party switch and the town filter refine it, so they share one narrower
+     party switch and the destination-type filter refine it, so they share one narrower
      secondary column rather than competing as three equal cards. */
   /* Layouts that set their own display defeat the hidden attribute, so every
      one of them re-declares display:none here. */
@@ -77,6 +77,9 @@ TEMPLATE = """<!doctype html>
               padding: 1.25rem; border: 1px solid var(--line); border-radius: .5rem; align-items: start; }
   .controls .secondary { display: grid; gap: 1rem; align-content: start; }
   .budget { font-size: 2.75rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; line-height: 1.1; }
+  .budget-entry { display: flex; align-items: center; gap: .4rem; }
+  #budgetNumber { width: 5.5rem; padding: .35rem .4rem; border: 1px solid var(--line); border-radius: .35rem;
+                  background: var(--field); color: var(--fg); font: inherit; font-weight: 700; }
   input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; }
   fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: .35rem; }
   legend, label.caption { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -85,8 +88,8 @@ TEMPLATE = """<!doctype html>
   .choices label { display: flex; align-items: center; gap: .5rem; font-size: .95rem; color: var(--fg);
                    padding: .55rem 0; cursor: pointer; }
   .choices input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
-  input[type=search] { width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .35rem;
-                      font: inherit; color: var(--fg); background: var(--field); }
+  input[type=search], select { width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .35rem;
+                              font: inherit; color: var(--fg); background: var(--field); }
   /* Generous after the controls, tight onto its table: the summary belongs to
      the list below it, not to the panel above. */
   #summary { margin: 1.75rem 0 .5rem; font-weight: 600; }
@@ -110,6 +113,9 @@ TEMPLATE = """<!doctype html>
   tr.detail li { font-variant-numeric: tabular-nums; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr.best td { background: var(--best); }
+  .restriction { font-size: .78rem; color: var(--muted); }
+  .restriction[data-status="restricted"] { color: #9a6700; }
+  .restriction[data-status="unrestricted"] { color: var(--muted); }
   .tag { font-size: .75rem; color: var(--muted); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .9rem; }
@@ -176,38 +182,61 @@ TEMPLATE = """<!doctype html>
 <div class="controls">
   <div>
     <label class="caption" for="budget">Budget</label>
-    <div class="budget" id="budgetOut">&pound;__BUDGET__</div>
+    <div class="budget-entry">
+      <span aria-hidden="true">&pound;</span>
+      <input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__"
+             inputmode="numeric" aria-label="Budget in pounds">
+    </div>
     <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__"
            aria-describedby="budgetHint">
-    <div class="tag" id="budgetHint">Drag to change what we can afford.</div>
+    <div class="tag" id="budgetHint">Drag the slider or click the number to type a budget.</div>
   </div>
   <div class="secondary">
+    <fieldset class="choices">
+      <legend>Ticket type</legend>
+      <label><input type="radio" name="ticketMode" value="return" checked> Return journey</label>
+      <label><input type="radio" name="ticketMode" value="single"> Outbound single</label>
+      <label><input type="radio" name="ticketMode" value="anytime"> Unrestricted Anytime Day Return</label>
+    </fieldset>
     <fieldset class="choices">
       <legend>The budget covers</legend>
       <label><input type="radio" name="unit" value="adult" checked> One adult, standard fare</label>
       <label><input type="radio" name="unit" value="party"> The two of us</label>
+      <label><input id="railcard" type="checkbox"> Apply railcard discount</label>
     </fieldset>
     <div>
-      <label class="caption" for="q">Prefer a city or town?</label>
-      <input id="q" type="search" placeholder="Type part of a name or code, e.g. Lincoln" autocomplete="off">
+      <label class="caption" for="q">Destination type</label>
+      <select id="q" name="destinationType">
+        <option value="all">All destinations</option>
+        <option value="city">Cities</option>
+        <option value="town">Towns and villages</option>
+        <option value="other">Other destinations</option>
+      </select>
     </div>
   </div>
 </div>
 
-<p id="summary"></p>
-<p class="tag" id="priceSource" hidden></p>
+<p id="summary"></p>  <p class="tag" id="priceSource" hidden></p>
+  <p class="tag" id="buildMetadata" hidden></p>
 <table>
-  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Restriction</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <p id="empty" hidden>Nothing inside this budget. Raise it or switch who it covers.</p>
 <p id="more" hidden></p>
+<nav id="pagination" hidden aria-label="Results pages">
+  <button id="previousPage" type="button" class="toggle">Previous</button>
+  <span id="pageStatus" role="status"></span>
+  <button id="nextPage" type="button" class="toggle">Next</button>
+</nav>
 
 <footer>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
-  <p>Cheapest reviewed Anytime Day Return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed.</p>
+  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded; advance fares can be cheaper, and the tool does not promise them.</p>
   <p>The times on this page are options in the timetable, not a booking: the fare shown is valid on every service listed, so none is picked for you.</p>
+  <p id="pricingBasis"></p>
+  <p id="feedCoverage" class="tag"></p>
   <p id="railcardNote"></p>
   <p id="linkNote" hidden></p>
   <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
@@ -220,12 +249,30 @@ TEMPLATE = """<!doctype html>
 const DATA = __DATA__;
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");
-const budgetOut = document.getElementById("budgetOut");
+const budgetNumber = document.getElementById("budgetNumber");
+const railcard = document.getElementById("railcard");
 const summary = document.getElementById("summary");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
-const query = document.getElementById("q");
-const PAGE = 40;
+const destinationType = document.getElementById("q");
+const PAGE_SIZE = 20;
+let currentPage = 1;
+const pagination = document.getElementById("pagination");
+const previousPage = document.getElementById("previousPage");
+const nextPage = document.getElementById("nextPage");
+const pageStatus = document.getElementById("pageStatus");
+
+function ticketMode() {
+  return document.querySelector('input[name="ticketMode"]:checked').value;
+}
+function activeDestinations() {
+  if (ticketMode() === "single") return DATA.singleDestinations;
+  if (ticketMode() === "anytime") return DATA.anytimeDestinations;
+  return DATA.destinations;
+}
+function budgetCeiling() {
+  return Math.max(1, Math.ceil(Math.max(0, ...activeDestinations().map((d) => d.adultPence)) / 100));
+}
 
 // A prices-only build has no times to show, and two columns of dashes are
 // noise where a shorter table is honest: the columns stand down entirely.
@@ -249,11 +296,24 @@ function unit() {
   return document.querySelector('input[name="unit"]:checked').value;
 }
 function priceOf(destination) {
-  return unit() === "party" ? destination.partyPence : destination.adultPence;
+  const party = unit() === "party";
+  const base = party ? destination.partyPence : destination.adultPence;
+  if (railcard.checked && destination.railcardPence !== null) {
+    const cardTotal = destination.railcardPence * (party ? 2 : 1);
+    return Math.min(base, cardTotal);
+  }
+  return base;
 }
-function matches(destination, needle) {
-  return destination.name.toLowerCase().includes(needle)
-    || destination.crs.toLowerCase() === needle;
+function matchesType(destination, wantedType) {
+  return wantedType === "all" || destination.destinationType === wantedType;
+}
+function typeLabel() {
+  const value = destinationType.value;
+  return value === "all" ? "" : " in " + destinationType.options[destinationType.selectedIndex].text.toLowerCase();
+}
+function stationInFeedMessage(station) {
+  return station.name + " (" + station.crs + ") is in the feed, but this origin has no qualifying " +
+    "return or single fare flow to it in this download.";
 }
 
 function render() {
@@ -261,16 +321,33 @@ function render() {
   // stood the controls and the table down, and anything this function wrote
   // ("Nothing inside this budget") would contradict the page's own first
   // sentence. So it does nothing at all.
-  if (!DATA.destinations.length) return;
+  const available = activeDestinations();
+  const ceiling = budgetCeiling();
+  budget.max = String(ceiling);
+  budgetNumber.max = String(ceiling);
+  if (Number(budget.value) > ceiling) budget.value = String(ceiling);
+  const coverage = document.getElementById("feedCoverage");
+  if (coverage) {
+    coverage.textContent = ticketMode() === "single"
+      ? DATA.singleDestinations.length + " displayable outbound single fares are available in this mode." +
+        (DATA.singleJourneyNote ? " " + DATA.singleJourneyNote : "")
+      : ticketMode() === "anytime"
+        ? DATA.anytimeDestinations.length + " reviewed unrestricted Anytime Day Return fares are available in this mode."
+        : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
+          DATA.excludedItxCount + " had only ITX placeholder fares and are not shown.";
+  }
+  if (!available.length) return;
   const cap = Number(budget.value) * 100;
-  const needle = query.value.trim().toLowerCase();
-  const wanted = DATA.destinations.filter(
-    (d) => priceOf(d) <= cap && (!needle || matches(d, needle))
+  const wanted = available.filter(
+    (d) => priceOf(d) <= cap && matchesType(d, destinationType.value)
   );
-  budgetOut.textContent = money(cap);
+  budgetNumber.value = budget.value;
   rows.replaceChildren();
 
-  for (const destination of wanted.slice(0, PAGE)) {
+  const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
+  currentPage = Math.min(Math.max(1, currentPage), pageCount);
+  const pageItems = wanted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  for (const destination of pageItems) {
     const row = document.createElement("tr");
     if (destination === wanted[0]) row.className = "best";
     const cells = [
@@ -281,13 +358,24 @@ function render() {
       cells.push([duration(destination.minutes), "num"]);
       cells.push([destination.changes === null ? "-" : String(destination.changes), "num"]);
     }
-    cells.push([destination.ticket + (destination.offPeak ? " off-peak" : ""), ""]);
+    cells.push([destination.ticket + (destination.offPeak ? " off-peak" : "") + " · " + destination.quality, ""]);
     for (const [text, className] of cells) {
       const cell = document.createElement("td");
       cell.textContent = text;
       if (className) cell.className = className;
       row.append(cell);
     }
+    const restriction = document.createElement("td");
+    restriction.className = "restriction";
+    const restricted = Boolean(destination.restrictionCode);
+    restriction.dataset.status = restricted ? "restricted" : "unrestricted";
+    restriction.textContent = restricted
+      ? destination.restrictionCode + (destination.restrictionDescription ? " — " + destination.restrictionDescription : "")
+      : "None";
+    restriction.title = restricted
+      ? (destination.restrictionDescription || "This fare has a restriction code; check the seller before buying.")
+      : "No fare restriction code is attached to this fare.";
+    row.append(restriction);
     cellWithLinks(row, destination, wanted);
     rows.append(row);
   }
@@ -295,12 +383,18 @@ function render() {
   const what = unit() === "party" ? "for the two of us" : "each";
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
-  summary.textContent = DATA.destinations.length && wanted.length
+  summary.textContent = available.length && wanted.length
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " within " + money(cap) + " " + what
-    : DATA.destinations.length ? "No destinations within " + money(cap) + " " + what : "";
+    : available.length ? "No destinations within " + money(cap) + " " + what : "";
   empty.hidden = wanted.length > 0;
-  more.hidden = wanted.length <= PAGE;
-  more.textContent = "Showing the " + PAGE + " cheapest of " + wanted.length + ".";
+  empty.textContent = wanted.length
+    ? ""
+    : "No destinations within " + money(cap) + " " + what + typeLabel() + ". Raise the budget or switch the destination type.";
+  more.hidden = true;
+  pagination.hidden = pageCount <= 1;
+  pageStatus.textContent = "Page " + currentPage + " of " + pageCount + " · " + wanted.length + " results";
+  previousPage.disabled = currentPage === 1;
+  nextPage.disabled = currentPage === pageCount;
 }
 
 function cellWithLinks(row, destination, wanted) {
@@ -365,7 +459,7 @@ function provenance() {
   // An origin the build could not price is a different page from one whose
   // prices sit outside this budget, so it gets its own first sentence and its
   // own way forward — not an empty table under a slider that can't help.
-  if (!DATA.destinations.length) {
+  if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) {
     document.getElementById("pageIntro").hidden = true;
     const unpriced = document.getElementById("unpriced");
     const intro = "We couldn't price any journeys from " + DATA.origin.name +
@@ -393,17 +487,30 @@ function provenance() {
     if (summary) summary.hidden = true;
   }
 
+  const available = activeDestinations();
   const parts = [
     "Origin " + DATA.origin.name + " (" + DATA.origin.crs + ")",
-    DATA.destinations.length + " priced destinations in the feed",
+    available.length + (ticketMode() === "single" ? " outbound single destinations" : ticketMode() === "anytime" ? " unrestricted Anytime Day Return destinations" : " return destinations") + " in the feed",
   ];
   if (DATA.hasJourneys) {
     parts.push(DATA.serviceDate ? "services on " + DATA.serviceDate : "typical services in the feed");
   } else {
     parts.push("no timetable loaded, so no times are shown");
   }
-  if (!DATA.hasTwoTogether) parts.push("party prices are two Anytime Day Returns; railcard discounts are not shown yet");
+  if (DATA.railcardAvailable !== undefined) {
+    railcard.disabled = !DATA.railcardAvailable;
+    if (!DATA.railcardAvailable) railcard.closest("label").textContent = "Railcard discounts unavailable in this feed";
+  }
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
+  document.getElementById("pricingBasis").textContent = DATA.pricingBasis
+    ? DATA.pricingBasis + ". Use the ticket-type control to switch between return and outbound single fares, then use the budget filter to narrow the list."
+    : "";
+  if (DATA.rawFareDestinationCount !== undefined) {
+    document.getElementById("feedCoverage").textContent =
+      DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
+      DATA.excludedItxCount + " had only ITX placeholder fares and are not shown. " +
+      "Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations.";
+  }
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.
   if (DATA.linkNote) {
@@ -439,6 +546,11 @@ function provenance() {
     const parts = ["Prices from " + DATA.priceSource];
     if (DATA.serviceDate) parts.push("feed dated " + humanDate(DATA.serviceDate));
     line.textContent = parts.join(", ") + ".";
+    line.hidden = false;
+  }
+  if (DATA.builtAt) {
+    const line = document.getElementById("buildMetadata");
+    line.textContent = "Site built " + DATA.builtAt.replace("T", " ").replace("Z", " UTC") + ".";
     line.hidden = false;
   }
   if (DATA.tracked) {
@@ -583,9 +695,17 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   originSearch.addEventListener("input", renderPicks);
 }
 
-budget.addEventListener("input", render);
-query.addEventListener("input", render);
+budget.addEventListener("input", () => { budgetNumber.value = budget.value; render(); });
+budgetNumber.addEventListener("input", () => {
+  const value = Math.max(1, Math.min(Number(budget.max), Number(budgetNumber.value) || 1));
+  budget.value = value; render();
+});
+railcard.addEventListener("change", render);
+destinationType.addEventListener("change", render);
 for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", render);
+for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); });
+previousPage.addEventListener("click", () => { currentPage -= 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+nextPage.addEventListener("click", () => { currentPage += 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 provenance();
 render();
 </script>
