@@ -9,30 +9,38 @@ answer, and "I think that's fine" is not an answer.
 
 ## 1. The licence — this blocks everything else
 
-**Where:** `raildata.org.uk`, the fares product, its **licence** (`termsAndConditions`)
-tab, **while signed in as the account holder**. The Rail Data Marketplace licence is
-a generic agreement with a per-product **Schedule 1**, and Schedule 1 is the
-operative part. Nothing about it is readable anonymously (ADR-0005), and the
-published template is the wrapper, not the terms.
+**Where:** the National Rail Data Portal (NRDP/DTD) account for fares and
+timetable access, plus the current NRE developer terms and brand pack. The
+supplied Knowledgebase URLs are reference feeds, not the DTD fares/timetable
+subscription. The DTD research, source links, zero-cost conclusion, and
+escalation route are in `docs/dtd-licensing-and-data-access.md`.
 
-**How to find a product.** Searching the marketplace for `Schedule 1` returns
-nothing, because Schedule 1 is a section *inside* the downloaded licence PDF, not a
-catalogue field. `RJFAF` returns nothing either: it is the legacy ATOC file prefix
-for the fares feed, not the product name. Products are named in words, and the one
-the download is for is stated in Schedule 1 §3 as `LICENCED DATA` with its product
-id. Search by the words — **Fares**, **Knowledgebase**, **Ticketing fares and
-retail** — or browse that category. Each product's licence downloads as a PDF named
-`<Product name>-license-P-<product id>.pdf`; keep one per product.
+**How to verify DTD access.** The DTD registration/subscription screen is the
+place to confirm the separate **Fares, Routeing Guide and Timetable data**
+selection. The Knowledgebase URLs in the project are not evidence of that
+selection. The endpoint examples and the current terms are recorded in
+`docs/dtd-licensing-and-data-access.md`.
 
-- [ ] Opened the fares product's licence tab while signed in
-- [ ] Read **Schedule 1** for the fares product, not only the agreement above it
-- [ ] Recorded the four answers below, in writing, with the date read
-- [x] Re-read the same for the timetable product — **read 22 September 2026**, see below
+- [ ] Confirmed the DTD subscription selection in the account
+- [ ] Read the current DTD/NRE terms and brand pack, not only the older marketplace schedules
+- [ ] Recorded the answers below, in writing, with the date read
+- [x] Re-read the Darwin timetable product — **read 22 September 2026**, see below
+- [x] The fares data has a reviewed selector, not the broad query: `publishable_destinations_within`
+      keeps only the exact standard-class ANYTIME DAY R ticket codes (`8AE`, `AAB`,
+      `E2R`, `HX9`, `SDR`, `XAR`) with a blank restriction code, and refuses to
+      run unless the `.RST` restriction file parsed with no rejected records
+- [x] The timetable audit separates unresolved TIPLOCs into known locations with
+      no CRS and no-record-at-all, and normalises padded keys. The real audit
+      reads 4,139 used TIPLOCs, 1,146 unresolved (1,070 known locations, 76 with
+      no record), and 1,294 normalised from a padded raw value
+- [ ] Railcard discounts: parsed but **not** published. The `.RST` `RR` records are
+      read; until their route/ticket/location rules are evaluated, the publishable
+      selector refuses a railcard rather than guess the discount
 
-One row per product. `§5 permits publication?` is the field that decides everything:
-Schedule 1 §5 is filled in per product, and the Data Sharing Agreement products say in
-clause 2.3 that publication is not permitted *save as the Agreement allows* — so if §5
-restricts the use, the product cannot go on a public page (ADR-0021).
+The first four rows are marketplace products whose §5 fill controls use. The
+DTD row is a separate portal subscription and must be checked against the
+current NRE/DTD terms; it must not be treated as an OGL or RSP product by
+analogy.
 
 | product | agreement | §5 permits publication? | attribution required | licence fee | read |
 |---|---|---|---|---|---|
@@ -40,28 +48,26 @@ restricts the use, the product cannot go on a public page (ADR-0021).
 | Knowledgebase Ticket Types data feed | Data Sharing Agreement | **yes** — "freely available or otherwise distributed to third parties" | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Knowledgebase Ticket Restrictions data feed | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Fare Locations Reference Data v1.3 | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
-| **the fares product** (flows and fares, railcard minimum fares) | — | **not held** | — | — | — |
+| **NRDP/DTD fares and timetable** (RSPS5045 fares and public timetable ZIPs) | current DTD/NRE terms — confirm in the account | **must be confirmed** | NRE source credit and **Powered by National Rail Enquiries** treatment/logo | working conclusion: nil for static DTD downloads; verify | 24 Sep 2026 |
 
 The licences themselves are in `licences/`, one PDF per product, with the register that
 these rows are drawn from and a test that keeps the two in step.
 
-Still to answer, and only for the fares product: **commercial use** (may these prices sit
-on a page that earns commission?) and **redistribution**. For the other four the answer
-is in the table above.
+Still to answer for the DTD route: whether the current account/product schedule
+expressly permits the intended public display and affiliate-linked use, and
+whether any current fee applies. The public charging document supports a
+zero-cost static-download conclusion, but it is not a signed entitlement. Do not
+publish until the account terms and brand pack have been checked.
 
-**Where the fares licence comes from.** The route is the **RSP Data Licence** from Rail
-Settlement Plan Limited, obtained by contacting Rail Delivery Group, which BR Fares Ltd's
-licensing page describes as governing the fares data, as requiring RSP to be named as the
-ultimate source where it is shown publicly, and as **"generally free of charge"**
-(ADR-0022). The paid **Easy Fares API** is not the source: it is priced per station-pair
-query and this project queries a locally held bulk feed.
-
-- [ ] Asked RDG for an RSP Data Licence for the bulk fares feed, in the same message as
-      the timetable §5 question (ADR-0020, ADR-0021)
-- [ ] **RSP is credited as the ultimate source** — a third attribution, owed only once the
-      licence is actually held
-- [ ] Restriction details are **not** displayed, so the "Powered by National Rail
-      Enquiries" branding obligation that attaches to them stays out of scope
+- [x] Researched the DTD/NRE route and recorded the source links and caveats in
+      `docs/dtd-licensing-and-data-access.md`
+- [ ] Confirmed that the account subscription includes **Fares, Routeing Guide and
+      Timetable data**, not only the Knowledgebase feeds
+- [ ] Read the current DTD/NRE terms and recorded the public-use/attribution answer
+- [ ] **NRE is acknowledged as source** and the required **Powered by National Rail
+      Enquiries** treatment/logo is visible in the generated page
+- [ ] If RDG quotes a non-zero fee, the project rejects it and keeps the zero-cost
+      route rather than silently adding a cost
 
 ### What the timetable licence says
 
@@ -77,13 +83,15 @@ they disagree:
   attributed if the data is subsequently published", then lists none. Under the OGL
   head, that means the fallback wording is the required one:
   `Contains public sector information licensed under the Open Government Licence v3.0.`
-- **Schedule 2 sets the fee at nil** — `Open (OGL3)`, no charge. The fee question is
-  answered for this product; it does not transfer to the fares product.
+- **Schedule 2 sets the fee at nil** — `Open (OGL3)`, no charge. That answer belongs
+  to this Darwin product only; it does not decide the DTD subscription or the
+  fares publication terms.
 - Term is one year, auto-renewing, with one month's notice for convenience; the data
   may be retained after the term; the update frequency is daily.
 
 Nothing here is a formality: §5 may forbid the public page entirely, so it is a
-question for RDG in writing before launch, not a reading to be argued in-house. Three
+question for RDG in writing before launch, not a reading to be argued in-house. The
+letter is drafted in `docs/rdg-licence-enquiry.md`. Three
 further products have since been read under the same template, and **their** §5 permits
 distribution in terms — so the restrictive wording is a choice, not boilerplate, and the
 strict reading of this one is the one to plan around (ADR-0021).

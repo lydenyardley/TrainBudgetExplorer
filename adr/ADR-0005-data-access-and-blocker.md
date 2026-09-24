@@ -43,3 +43,14 @@ the data.
 - If the licence forbids the intended use, the work to date is not wasted: the
   same parser answers personal budget questions, and ADR-0004's tripwire still
   bounds the project.
+
+## Amendment: DTD route and tooling (24 September 2026)
+
+The account has since been created. The supplied Knowledgebase subscriptions
+are reference feeds and do not establish access to the separate DTD **Fares,
+Routeing Guide and Timetable data** subscription. `dtd_download.py` now
+supports the documented zero-cost DTD route using environment-only credentials,
+and `dtd_audit.py` distinguishes missing or invalid downloads from a valid but
+empty parser result. The licensing research and caveats are recorded in
+`docs/dtd-licensing-and-data-access.md`; the public-use and attribution gate
+remains open until the current DTD terms are confirmed.
