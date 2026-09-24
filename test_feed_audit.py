@@ -7,9 +7,15 @@ import unittest
 from pathlib import Path
 
 from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
+from atoc_timetable import (
+    CIF_ORIGIN,
+    CIF_SCHEDULE,
+    CIF_TERMINUS,
+    CIF_TIPLOC_INSERT,
+    TimetableDb,
+)
 from feed_audit import audit
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
 
 class FeedAuditTest(unittest.TestCase):
@@ -48,6 +54,11 @@ class FeedAuditTest(unittest.TestCase):
 
     def test_reports_no_unresolved_tiplocs(self) -> None:
         self.assertEqual(self.report["unresolved_tiplocs"], 0)
+
+    def test_reports_no_restriction_file_in_the_plain_fixture(self) -> None:
+        self.assertEqual(self.report["restrictions"]["files"], 0)
+        self.assertEqual(self.report["restrictions"]["records"], 0)
+        self.assertIsNotNone(self.fares.restrictions.gate_problem())
 
     def test_reports_the_stp_mix_days_and_date_span(self) -> None:
         self.assertEqual(self.report["stp_indicators"], {"P": 9, "O": 1, "C": 1})
@@ -130,6 +141,65 @@ class ParseRobustnessTest(unittest.TestCase):
             from_zip = FaresDb().load_feed(archive)
             self.assertEqual(from_zip.stats(), from_folder.stats())
             self.assertEqual(from_zip.destinations_within("GRN", 2000), from_folder.destinations_within("GRN", 2000))
+
+
+class AuditRestrictionsAndTiplocTest(unittest.TestCase):
+    def test_audit_reports_the_restriction_file_and_tiploc_categories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fares = FaresDb().load_feed(
+                build_synthetic_feed(root / "fares", include_restrictions=True)
+            )
+            timetable_path = build_synthetic_timetable(root / "timetable")
+            lines = [
+                _line(
+                    {"record_type": "TI", "tiploc": "OPERTN", "crs": ""},
+                    CIF_TIPLOC_INSERT,
+                ),
+                _line(
+                    {
+                        "record_type": "BS",
+                        "transaction_type": "N",
+                        "train_uid": "T10888",
+                        "date_runs_from": "260921",
+                        "date_runs_to": "261211",
+                        "days": "1111110",
+                        "stp_indicator": "P",
+                    },
+                    CIF_SCHEDULE,
+                ),
+                _line(
+                    {
+                        "record_type": "LO",
+                        "location": "OPERTN",
+                        "scheduled_departure": "0900",
+                        "public_departure": "0900",
+                    },
+                    CIF_ORIGIN,
+                ),
+                _line(
+                    {
+                        "record_type": "LT",
+                        "location": "GRNT",
+                        "scheduled_arrival": "1000",
+                        "public_arrival": "1000",
+                    },
+                    CIF_TERMINUS,
+                ),
+            ]
+            (timetable_path / "operational.mca").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8"
+            )
+            timetable = TimetableDb().load_feed(timetable_path)
+            report = audit(fares, timetable)
+
+        self.assertEqual(report["restrictions"]["files"], 1)
+        self.assertGreaterEqual(report["restrictions"]["records"], 9)
+        self.assertEqual(report["restrictions"]["rejected"], 0)
+        self.assertEqual(
+            report["unresolved_tiploc_categories"], {"location_record_without_crs": 1}
+        )
+        self.assertEqual(report["sample_unresolved_tiplocs"], ["OPERTN"])
 
 
 if __name__ == "__main__":
