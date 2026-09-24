@@ -1,9 +1,9 @@
 """The licence register must stay true to the shelf of PDFs beside it.
 
 A licence that is downloaded, filed and forgotten is the failure this test exists to
-prevent. Every licence PDF in `licences/` must have a row in `licences/README.md`, and
-every row must point at a file that is really there, so the two cannot drift apart as
-more products are subscribed to (ADR-0021).
+prevent. Every product licence PDF in `licences/` must have a row in
+`licences/README.md`, and every row must point at a file that is really there, so
+the two cannot drift apart as more products are subscribed to (ADR-0021).
 """
 
 from __future__ import annotations
@@ -30,7 +30,12 @@ FEE_OUTCOMES = ("nil", "free", "no charge", "not held")
 # Supporting documents kept as evidence but issued by nobody and licensing nothing:
 # price schedules, specifications. They carry no product id, and the register lists
 # them outside the product table (ADR-0022).
-SUPPORTING = ("BR Fares RDM Pricing.pdf",)
+# These are source documents, not per-product Marketplace licences, so they do
+# not carry a product id or occupy a row in the product table.
+SUPPORTING = (
+    "BR Fares RDM Pricing.pdf",
+    "National Rail Data Portal Terms-and-conditions.pdf",
+)
 
 
 class LicenceRegisterTest(unittest.TestCase):
