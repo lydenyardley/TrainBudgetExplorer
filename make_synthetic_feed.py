@@ -18,6 +18,7 @@ from atoc_fares import (
     RAILCARD,
     TICKET_TYPE,
 )
+from atoc_restrictions import RESTRICTION_LAYOUTS
 from atoc_timetable import (
     CIF_HEADER,
     CIF_INTERMEDIATE,
@@ -39,7 +40,7 @@ STATIONS = (
 
 UNSERVED_STATION = ("7000", "SLP", "SLEEPY")
 UNSERVED_FLOW = ("0000007", "1000", "7000", "00000")
-UNSERVED_FARE = ("0000007", "SDR", 1200, "00")
+UNSERVED_FARE = ("0000007", "SDR", 1200, "")
 
 TICKET_TYPES = (
     ("SDR", "ANYTIME DAY R", "2", "R", "0"),
@@ -61,14 +62,17 @@ FLOWS = (
 )
 
 FARES = (
-    ("0000001", "SDR", 1420, "00"),
+    # SDR is the real ANYTIME DAY R code and the real feed's SDR fares carry a
+    # blank restriction code. The fixture matches that: "00" is an invented
+    # no-restriction code, blank is what the DTD feed actually writes.
+    ("0000001", "SDR", 1420, ""),
     ("0000001", "CDR", 1160, "1A"),
     ("0000001", "FDR", 2600, "00"),
     ("0000001", "SDS", 700, "00"),
-    ("0000002", "SDR", 870, "00"),
-    ("0000003", "SDR", 2240, "00"),
-    ("0000004", "SDR", 8400, "00"),
-    ("0000005", "SDR", 1420, "00"),
+    ("0000002", "SDR", 870, ""),
+    ("0000003", "SDR", 2240, ""),
+    ("0000004", "SDR", 8400, ""),
+    ("0000005", "SDR", 1420, ""),
     ("0000006", "FDR", 1500, "00"),
 )
 
@@ -96,11 +100,11 @@ REAL_SHAPE_FLOWS = (
 REAL_SHAPE_FARES = (
     ("0000010", "CDR", 990, "00"),
     ("0000013", "CDR", 5000, "00"),
-    ("0000011", "SDR", 500, "00"),
-    ("0000012", "SDR", 500, "00"),
-    ("0000099", "SDR", 1234, "00"),
-    ("0000015", "SDR", 800, "00"),
-    ("0000016", "SDR", 600, "00"),
+    ("0000011", "SDR", 500, ""),
+    ("0000012", "SDR", 500, ""),
+    ("0000099", "SDR", 1234, ""),
+    ("0000015", "SDR", 800, ""),
+    ("0000016", "SDR", 600, ""),
 )
 
 RAILCARDS = (
@@ -150,12 +154,15 @@ def build_synthetic_feed(
     *,
     include_unserved_station: bool = False,
     include_real_shapes: bool = False,
+    include_restrictions: bool = False,
 ) -> Path:
     """Write the fares feed.
 
     The unserved station carries a fare and no train. The real shapes add the
     awkward records: several route codes for one station pair, destinations with
     a fare and no station code, a flow with no fare, and a fare with no flow.
+    The restrictions file is off by default so existing fixtures keep their five
+    files; tests for the publishable selector turn it on.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -233,7 +240,143 @@ def build_synthetic_feed(
     (path / "rjfaf.tty").write_text("\n".join(ticket_lines) + "\n", encoding="utf-8")
     (path / "rjfaf.rlc").write_text("\n".join(railcard_lines) + "\n", encoding="utf-8")
     (path / "rjfaf.rcm").write_text("\n".join(minimum_lines) + "\n", encoding="utf-8")
+    if include_restrictions:
+        (path / "rjfaf.rst").write_text(
+            "\n".join(_restriction_lines()) + "\n", encoding="utf-8"
+        )
     return path
+
+
+def _restriction_lines() -> list[str]:
+    """One clean .RST fixture, exercising every record type the parser reads."""
+    return [
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "RH",
+                "cf_marker": "C",
+                "restriction_code": "R1",
+                "description": "PEAK TO LONDON",
+                "desc_out": "NOT VALID DEPARTING BEFORE 0930",
+                "desc_rtn": "NOT VALID ARRIVING BEFORE 0930",
+                "type_out": "O",
+                "type_rtn": "R",
+                "change_ind": "N",
+            },
+            RESTRICTION_LAYOUTS["RH"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "HD",
+                "cf_marker": "C",
+                "restriction_code": "R1",
+                "date_from": "0101",
+                "date_to": "1231",
+                "days": "YYYYYNN",
+            },
+            RESTRICTION_LAYOUTS["HD"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "TR",
+                "cf_marker": "C",
+                "restriction_code": "R1",
+                "sequence_no": "0001",
+                "out_ret": "O",
+                "time_from": "0430",
+                "time_to": "0930",
+                "arr_dep_via": "D",
+                "location": "EUS",
+                "rstr_type": "T",
+                "train_type": "A",
+                "min_fare_flag": "N",
+            },
+            RESTRICTION_LAYOUTS["TR"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "TD",
+                "cf_marker": "C",
+                "restriction_code": "R1",
+                "sequence_no": "0001",
+                "out_ret": "O",
+                "date_from": "0101",
+                "date_to": "1231",
+                "days": "YYYYYNN",
+            },
+            RESTRICTION_LAYOUTS["TD"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "TT",
+                "cf_marker": "C",
+                "restriction_code": "R1",
+                "sequence_no": "0001",
+                "out_ret": "O",
+                "toc_code": "LM",
+            },
+            RESTRICTION_LAYOUTS["TT"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "RR",
+                "cf_marker": "C",
+                "railcard_code": "TWO",
+                "sequence_no": "0001",
+                "ticket_code": "SDR",
+                "route_code": "00002",
+                "location": "",
+                "restriction_code": "",
+                "total_ban": "Y",
+            },
+            RESTRICTION_LAYOUTS["RR"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "RR",
+                "cf_marker": "C",
+                "railcard_code": "TWO",
+                "sequence_no": "0002",
+                "ticket_code": "",
+                "route_code": "",
+                "location": "",
+                "restriction_code": "R9",
+                "total_ban": "",
+            },
+            RESTRICTION_LAYOUTS["RR"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "EC",
+                "cf_marker": "C",
+                "exception_code": "A",
+                "description": "TEST EXCEPTION",
+            },
+            RESTRICTION_LAYOUTS["EC"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "CA",
+                "cf_marker": "C",
+                "ticket_code": "SDR",
+                "cal_type": "1",
+                "route_code": "00000",
+                "country_code": "0",
+                "date_from": "0101",
+                "date_to": "1231",
+                "days": "YYYYYNN",
+            },
+            RESTRICTION_LAYOUTS["CA"],
+        ),
+    ]
 
 
 def build_synthetic_timetable(path: str | Path) -> Path:
@@ -302,6 +445,7 @@ def build_synthetic_timetable(path: str | Path) -> Path:
             {
                 "record_type": "A",
                 "name": name,
+                "category": "0",
                 "tiploc": tiploc,
                 "crs": crs,
                 "change_time": change_time,
@@ -534,6 +678,7 @@ def build_large_synthetic_feed(
                 # Short enough to survive the fixed width name field. A longer
                 # name is truncated on read, which made two stations look alike.
                 "name": f"SYNTH {index:04d}",
+                "category": "0",
                 "tiploc": tiplocs[index],
                 "crs": crs_codes[index],
                 "change_time": "05",
@@ -595,6 +740,9 @@ if __name__ == "__main__":
                 arguments.path,
                 include_unserved_station=arguments.unserved_station,
                 include_real_shapes=arguments.real_shapes,
+                # The demo page now depends on the reviewed selector, which
+                # depends on a clean .RST file, so the demo feed carries one.
+                include_restrictions=True,
             )
         )
     if arguments.kind in {"timetable", "both"}:

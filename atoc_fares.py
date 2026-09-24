@@ -10,10 +10,12 @@ says otherwise, so a party price is adults x per-adult.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+from atoc_restrictions import RestrictionIndex
 from parse_report import ParseReport, count, read_feed_files
 
 ROUNDING_STEP_PENCE = 5
@@ -155,6 +157,24 @@ MINIMUM_FARE_OFFSETS = _offsets(MINIMUM_FARE)
 STANDARD_CLASS = "2"
 RETURN_TYPE = "R"
 
+# The reviewed public selector. These are the ticket codes whose real ticket
+# type is standard class, return, marked unrestricted by train, and whose name
+# is exactly ANYTIME DAY R in the DTD feed. The code set is fixed here rather
+# than derived by a name test, so a future ticket-catalogue change cannot widen
+# what the site publishes without a person editing this table.
+#
+# The real DTD feed carries fares for 8AE, HX9, SDR and XAR. AAB and E2R are
+# listed because the ticket catalogue defines them as the same product; they are
+# harmless to include and would otherwise be an unexplained omission.
+REVIEWED_ANYTIME_DAY_RETURN_TICKETS: dict[str, str] = {
+    "8AE": "ANYTIME DAY R",
+    "AAB": "ANYTIME DAY R",
+    "E2R": "ANYTIME DAY R",
+    "HX9": "ANYTIME DAY R",
+    "SDR": "ANYTIME DAY R",
+    "XAR": "ANYTIME DAY R",
+}
+
 
 @dataclass(frozen=True)
 class Location:
@@ -254,6 +274,7 @@ class FaresDb:
         # themselves; kept in step by the same loader lines that write them.
         self.flows_by_origin_nlc: dict[str, list[Flow]] = {}
         self.minimum_fares: dict[tuple[str, str], int] = {}
+        self.restrictions = RestrictionIndex()
         self.report = ParseReport()
         self.files_read = self.report.files_read
 
@@ -271,6 +292,7 @@ class FaresDb:
             "tty": self._load_ticket_types,
             "rlc": self._load_railcards,
             "rcm": self._load_minimum_fares,
+            "rst": self._load_restrictions,
         }.get(extension)
         if loader is None:
             # A download this project has no reader for must be named, or the
@@ -282,6 +304,8 @@ class FaresDb:
             )
             return
         self.report.files_read.append(name)
+        if extension == "rst":
+            self.restrictions.files_read.append(name)
         count(lines, loader, self.report, name)
 
     def _load_flows(self, line: str) -> None:
@@ -386,6 +410,9 @@ class FaresDb:
             return
         self.minimum_fares[(railcard_code, ticket_code)] = pence
 
+    def _load_restrictions(self, line: str) -> None:
+        self.restrictions.load_line(line)
+
     # -- querying --------------------------------------------------------
 
     def stats(self) -> dict[str, int]:
@@ -410,6 +437,10 @@ class FaresDb:
                 if flow_id not in self.flows
                 for _ in bucket
             ),
+            "restriction_files": len(self.restrictions.files_read),
+            "restriction_records": self.restrictions.parsed_records,
+            "restriction_codes": len(self.restrictions.code_record_counts),
+            "restriction_railcards": len(self.restrictions.railcard_record_counts),
         }
 
     def railcard_code(self, name: str) -> str | None:
@@ -451,7 +482,103 @@ class FaresDb:
         Pass a dict as tally to record why each flow or fare did not become a
         destination. A destination the feed prices but cannot name is dropped,
         and a count that ignores those is wrong without saying so.
+
+        This is the broad query, and it still accepts every class-2 return fare
+        the feed offers, restricted or not. Use ``publishable_destinations_within``
+        before putting a price on a public page.
         """
+        return self._destinations_within(
+            origin_crs,
+            budget_pence,
+            adults=adults,
+            railcard=railcard,
+            party_budget=party_budget,
+            tally=tally,
+            selector=None,
+        )
+
+    def publishable_destinations_within(
+        self,
+        origin_crs: str,
+        budget_pence: int,
+        *,
+        adults: int = 1,
+        railcard: str | None = None,
+        party_budget: bool = False,
+        tally: dict[str, int] | None = None,
+        require_restrictions: bool = True,
+    ) -> list[Reachable]:
+        """The reviewed selector for public prices: Anytime Day Return only.
+
+        With ``require_restrictions`` true (the default), the query refuses to
+        run at all unless the ``.RST`` restriction file loaded cleanly, keeps
+        only ticket codes in ``REVIEWED_ANYTIME_DAY_RETURN_TICKETS`` whose real
+        ticket type is a standard-class, train-unrestricted exact ANYTIME DAY R,
+        and drops any fare whose restriction code is not blank. A railcard is
+        refused in this mode: the ``.RST`` railcard records are parsed but not
+        evaluated, so a discounted price cannot be published yet.
+
+        ``require_restrictions=False`` is for analysis and synthetic feeds only.
+        It allows the conventional no-restriction code ``00`` and computes
+        railcard discounts as the broad query does. Do not put its output on a
+        public page.
+        """
+        if require_restrictions:
+            problem = self.restrictions.gate_problem()
+            if problem is not None:
+                raise ValueError(problem)
+            if railcard is not None:
+                raise ValueError(
+                    "railcard prices are not publishable: the .RST railcard "
+                    "restriction records are parsed but not evaluated. Query "
+                    "without a railcard, or pass require_restrictions=False "
+                    "for a non-publishable analysis."
+                )
+        return self._destinations_within(
+            origin_crs,
+            budget_pence,
+            adults=adults,
+            railcard=railcard,
+            party_budget=party_budget,
+            tally=tally,
+            selector=self._publishable_rejection(strict=require_restrictions),
+        )
+
+    def _publishable_rejection(
+        self, *, strict: bool
+    ) -> Callable[[Fare, TicketType], str | None]:
+        """Build the reviewed selector used by ``publishable_destinations_within``."""
+
+        def reject(fare: Fare, ticket: TicketType) -> str | None:
+            expected_name = REVIEWED_ANYTIME_DAY_RETURN_TICKETS.get(ticket.code)
+            if (
+                expected_name is None
+                or ticket.name.strip().upper() != expected_name
+                or not ticket.is_standard_return
+                or ticket.restricted_by_train
+            ):
+                return "ticket_is_not_a_reviewed_anytime_day_return"
+            restriction = fare.restriction_code.strip()
+            if not restriction:
+                return None
+            if not strict and restriction == "00":
+                return None
+            return "fare_restriction_code_is_not_reviewed"
+
+        return reject
+
+    def _destinations_within(
+        self,
+        origin_crs: str,
+        budget_pence: int,
+        *,
+        adults: int,
+        railcard: str | None,
+        party_budget: bool,
+        tally: dict[str, int] | None,
+        selector: Callable[[Fare, TicketType], str | None] | None,
+    ) -> list[Reachable]:
+        """Shared query loop. ``selector`` adds the publishable-fare filter."""
         origin = self.locations_by_crs.get(origin_crs.strip().upper())
         if origin is None:
             raise KeyError(f"origin station {origin_crs!r} is not in the feed")
@@ -484,7 +611,12 @@ class FaresDb:
                     if ticket is None:
                         _tally(tally, "fare_with_no_ticket_type")
                         continue
-                    if not ticket.is_standard_return:
+                    if selector is not None:
+                        rejection = selector(fare, ticket)
+                        if rejection is not None:
+                            _tally(tally, rejection)
+                            continue
+                    elif not ticket.is_standard_return:
                         _tally(tally, "ticket_is_not_a_standard_return")
                         continue
                     railcard_pence = (
