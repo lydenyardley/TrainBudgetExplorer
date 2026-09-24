@@ -79,14 +79,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"origin {args.origin!r} not found in feed. Files read: {db.files_read}", file=sys.stderr)
         return 2
 
-    results = db.destinations_within(
-        origin.crs,
-        budget_pence,
-        adults=args.adults,
-        railcard=args.railcard,
-        party_budget=args.party_budget,
-    )
-
     day: date | None = None
     if args.date:
         try:
@@ -94,6 +86,15 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             print(f"date {args.date!r} is not YYYY-MM-DD", file=sys.stderr)
             return 2
+
+    results = db.destinations_within(
+        origin.crs,
+        budget_pence,
+        adults=args.adults,
+        railcard=args.railcard,
+        party_budget=args.party_budget,
+        day=day,
+    )
 
     timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
     rows = (

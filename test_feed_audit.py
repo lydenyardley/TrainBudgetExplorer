@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FaresDb
+from atoc_fares import FLOW_F, FLOW_T, LOCATION, FaresDb
 from atoc_timetable import (
     CIF_ORIGIN,
     CIF_SCHEDULE,
@@ -65,6 +65,62 @@ class FeedAuditTest(unittest.TestCase):
         self.assertEqual(self.report["service_day_patterns"], {"1111110": 10, "0000001": 1})
         self.assertEqual(self.report["schedule_dates_from"], "260921")
         self.assertEqual(self.report["schedule_dates_to"], "261211")
+
+    def test_reports_fares_hidden_by_a_shared_group_location(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = FaresDb().load_feed(build_synthetic_feed(Path(tmp) / "fares"))
+            for nlc, crs, name in (
+                ("3000", "LCN", "LINCOLN"),
+                ("5000", "KGX", "LONDON KINGS X"),
+            ):
+                fares._load_locations(
+                    _line(
+                        {
+                            "update_marker": "R",
+                            "record_type": "L",
+                            "nlc": nlc,
+                            "description": name,
+                            "crs": crs,
+                            "group_nlc": "GRP1",
+                        },
+                        LOCATION,
+                    )
+                )
+            fares._load_flows(
+                _line(
+                    {
+                        "record_type": "F",
+                        "origin_nlc": "3000",
+                        "destination_nlc": "2000",
+                        "route_code": "00000",
+                        "flow_id": "0000091",
+                    },
+                    FLOW_F,
+                )
+            )
+            fares._load_flows(
+                _line(
+                    {
+                        "record_type": "T",
+                        "flow_id": "0000091",
+                        "ticket_code": "SDR",
+                        "fare_pence": "500",
+                    },
+                    FLOW_T,
+                )
+            )
+            timetable = TimetableDb().load_feed(
+                build_synthetic_timetable(Path(tmp) / "timetable")
+            )
+            report = audit(fares, timetable)
+
+        coverage = report["fare_coverage"]
+        self.assertEqual(coverage["groupCodes"], 1)
+        self.assertEqual(coverage["groupOriginFlows"], 1)
+        self.assertEqual(
+            {row["crs"] for row in coverage["sampleStationsPotentiallyHiddenByGroup"]},
+            {"KGX"},
+        )
 
 
 class ParseRobustnessTest(unittest.TestCase):

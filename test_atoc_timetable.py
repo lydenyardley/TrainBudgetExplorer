@@ -42,6 +42,25 @@ class TimetableParserTest(unittest.TestCase):
         self.assertEqual(self.timetable.stats()["schedules"], 11)
         self.assertEqual(self.timetable.connection_minutes_at("NOT"), 10)
 
+    def test_focused_load_is_narrower_and_reuses_its_cache(self) -> None:
+        cache = Path(self._tmp.name) / "timetable-cache.pickle"
+        focused = TimetableDb().load_feed(
+            self.feed,
+            focus_origin="GRN",
+            focus_destinations={"LCN"},
+            cache_path=cache,
+        )
+        self.assertLess(focused.stats()["schedules"], self.timetable.stats()["schedules"])
+        self.assertIsNotNone(focused.best_journey("GRN", "NOT"))
+        cached = TimetableDb().load_feed(
+            self.feed,
+            focus_origin="GRN",
+            focus_destinations={"LCN"},
+            cache_path=cache,
+        )
+        self.assertEqual(cached.stats(), focused.stats())
+        self.assertEqual(cached.best_journey("GRN", "NOT").duration, 45)
+
     def test_station_names_file_wins_over_a_tiploc_insert(self) -> None:
         self.assertEqual(self.timetable.cif_crs_by_tiploc["NOTT"], "XXX")
         self.assertEqual(self.timetable.crs_for_tiploc("NOTT"), "NOT")

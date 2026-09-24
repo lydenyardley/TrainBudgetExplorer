@@ -55,6 +55,7 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         advertiser_id=_WORKER["advertiser_id"],
         publisher_id=_WORKER["publisher_id"],
         departure_limit=_WORKER["departures"],
+        built_at=_WORKER.get("built_at"),
     )
     base_path = _WORKER["base_path"]
     payload["stations"] = [
