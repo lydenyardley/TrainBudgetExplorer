@@ -9,10 +9,12 @@ then at the downloaded feeds, with no change to the page:
 
 The synthetic feed invents `GRN` for Grantham; the real code is `GRA`.
 
-A destination is carried at two prices: the cheapest return for one adult, and
-the total for two adults travelling together on a Two Together Railcard. The
-page lets the reader choose which one the budget applies to, because those are
-different questions with different answers.
+Every price on the page comes from the reviewed Anytime Day Return selector in
+``atoc_fares.py``: a destination is carried at the fare for one adult and at the
+total for two, and the page lets the reader choose which one the budget applies
+to, because those are different questions with different answers. Railcard
+discounts are not priced yet -- the ``.RST`` railcard rules are parsed but not
+evaluated -- so the two-person price is two full fares, and the page says so.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
 
 EVERYTHING_PENCE = 1_000_000
-TWO_TOGETHER = "Two Together"
 DEPARTURE_LIMIT = 5
 # The per-origin tripwire (ADR-0024): one origin should take tens of seconds
 # on a real network, not minutes. Exceeding this means the journey search's
@@ -44,17 +45,14 @@ DEFAULT_NOTE = (
     "the pipeline. Real fares and times replace them once the feed download clears."
 )
 # The provenance line sits with the prices, not the footer, because where a
-# number came from is part of the number. The railcard basis states what the
-# Easy Fares reality-check found: the model's third-off estimate sits 5-15p
-# ABOVE the database's own discounted price, so it never sends a reader over
-# budget on a rounding (checked 2026-09-22, tools/easy_fares_check.py).
+# number came from is part of the number. A real feed overrides it from its own
+# metadata.json (read_feed_metadata), so the default only ever reaches a page
+# built from the synthetic feed.
 DEFAULT_PRICE_SOURCE = "the synthetic demo feed"
-DEFAULT_RAILCARD_BASIS = (
-    "Railcard prices are estimates - a third off, rounded up to 5p. A check "
-    "against the National Rail fares database (Easy Fares demo, 22 September "
-    "2026) found the estimate sits 5-15p above the real discounted price, so "
-    "any budget that fits the estimate also fits the real fare."
-)
+# Railcard discounts are deliberately not priced. The .RST railcard records are
+# parsed and counted (atoc_restrictions.py) but their route, ticket, and
+# location rules are not evaluated, so a discount would be a guess. The party
+# price on the page is two reviewed Anytime Day Returns, and the page says so.
 # Licence notice wordings (ADR-0020, ADR-0021). The OGL sentence is the
 # standard wording; the accuracy notice carries the substance of the Data
 # Sharing Agreement's cl. 3.3.2 and its liability clause 7.2. Composed by
@@ -338,7 +336,6 @@ def build_payload(
     note: str = DEFAULT_NOTE,
     attribution: str | None = None,
     price_source: str = DEFAULT_PRICE_SOURCE,
-    railcard_basis: str | None = DEFAULT_RAILCARD_BASIS,
     base_path: str = "",
     provider: str = DEFAULT_PROVIDER,
     # Fallback by default: the parameterised link is not known to land on a
@@ -351,7 +348,7 @@ def build_payload(
     publisher_id: str = "",
     departure_limit: int = DEPARTURE_LIMIT,
 ) -> dict:
-    """Every priced destination from the origin, with both party prices.
+    """Every publishable destination from the origin, at both party prices.
 
     Each destination carries the ticket links and the next few journeys. The
     journeys are options in the feed, not a booking: the fare reported is a
@@ -359,27 +356,23 @@ def build_payload(
     the reader.
     """
     origin = fares.locations_by_crs[origin_crs.strip().upper()]
-    single = {row.crs: row for row in fares.destinations_within(origin.crs, EVERYTHING_PENCE, adults=1)}
-    pair = (
-        {
-            row.crs: row
-            for row in fares.destinations_within(
-                origin.crs,
-                EVERYTHING_PENCE,
-                adults=2,
-                railcard=TWO_TOGETHER,
-                party_budget=True,
-            )
-        }
-        if fares.railcard_code(TWO_TOGETHER)
-        else {}
-    )
+    # Public prices come only from the reviewed selector: exact standard-class
+    # ANYTIME DAY R tickets with a blank restriction code. The broad query is
+    # for analysis and must not reach a page.
+    single = {
+        row.crs: row
+        for row in fares.publishable_destinations_within(
+            origin.crs, EVERYTHING_PENCE, adults=1
+        )
+    }
+    # Nothing here prices a railcard discount: the .RST railcard rules are
+    # parsed but not evaluated, so there is no discounted per-person figure to
+    # carry and the price for two is two full Anytime Day Returns (below).
 
     destinations = []
     tracked = False
     disclosure: str | None = None
     for crs, one in sorted(single.items(), key=lambda item: item[1].best_pence):
-        together = pair.get(crs)
         journey = (
             timetable.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
             if timetable
@@ -408,8 +401,9 @@ def build_payload(
                 "crs": crs,
                 "name": one.station,
                 "adultPence": one.best_pence,
-                "partyPence": together.party_pence if together else one.best_pence * 2,
-                "railcardPence": together.railcard_pence if together else None,
+                # Two full Anytime Day Returns: no railcard discount is priced.
+                "partyPence": one.best_pence * 2,
+                "railcardPence": None,
                 "ticket": one.ticket_code,
                 "offPeak": one.off_peak,
                 "minutes": journey.duration if journey else None,
@@ -444,7 +438,10 @@ def build_payload(
         # all" is on the page rather than inferred from an empty table.
         "stationCount": len(fares.locations_by_crs),
         "hasJourneys": timetable is not None,
-        "hasTwoTogether": bool(pair),
+        # No discounted price is ever computed, so the page always says its
+        # party price is two full fares. Kept as a payload key because the
+        # template branches on it.
+        "hasTwoTogether": False,
         "serviceDate": day.isoformat() if day else None,
         "note": note,
         "attribution": attribution,
@@ -453,7 +450,6 @@ def build_payload(
         # number; the footer keeps the licence wording, which is a different
         # reader's question.
         "priceSource": price_source,
-        "railcardBasis": railcard_basis,
         # Internal links are prefixed when the host does not serve the site at
         # its domain root (ADR-0024). The template carries it too, for the
         # links that are written as HTML rather than built in JS.
@@ -468,9 +464,10 @@ def build_payload(
         "tracked": tracked,
         "disclosure": disclosure,
         "railcardNote": (
-            f"Sellers do not accept a railcard in a link, so the price shown for two with a "
-            f"{TWO_TOGETHER} Railcard is what it costs with the card: tick the railcard box on "
-            "their site."
+            "The price for two is two Anytime Day Returns. Railcard discounts are not "
+            "shown yet: the restriction records behind them have been parsed but not "
+            "evaluated, so this page does not guess one. Tick the railcard box on the "
+            "seller's site to see your price there."
         ),
         # Without a date every schedule in the feed is read, so a train that has
         # a change of plan appears as its permanent and its covering version.
@@ -486,8 +483,14 @@ def build_payload(
 
 
 def _priced_destinations(fares: FaresDb, timetable, origin_crs: str) -> int:
-    """How many destinations an origin's page would carry, for the index."""
-    return len(fares.destinations_within(origin_crs, EVERYTHING_PENCE, adults=1))
+    """How many destinations an origin's page would carry, for the index.
+
+    Uses the same reviewed selector as the page itself, so the chooser never
+    offers a station whose page would be empty under the publication rule.
+    """
+    return len(
+        fares.publishable_destinations_within(origin_crs, EVERYTHING_PENCE, adults=1)
+    )
 
 
 def build_station_index(
@@ -503,7 +506,6 @@ def build_station_index(
     chooser's cold start, which is derived from the feed rather than an invented
     "popular stations" list.
     """
-    taken: set[str] = set()
     index = []
     slugs = station_slugs_for(all_locations)
     for crs, count in sorted(priced_by_origin.items(), key=lambda item: (-item[1], item[0])):
@@ -550,10 +552,19 @@ def render_privacy(note: str, base_path: str = "") -> str:
 
 
 def render_chooser(
-    index: list[dict], *, budget_pounds: int, analytics: str = "", base_path: str = ""
+    index: list[dict],
+    *,
+    budget_pounds: int,
+    analytics: str = "",
+    base_path: str = "",
+    note: str = DEFAULT_NOTE,
 ) -> str:
-    """The root page: the station chooser itself, with no fares on it."""
-    note = DEFAULT_NOTE
+    """The root page: the station chooser itself, with no fares on it.
+
+    ``note`` is the same provenance note the station pages carry, so a real-feed
+    site does not have a chooser claiming synthetic data above pages that name
+    the real feed.
+    """
     stations = json.dumps(
         [
             {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/"), "destinations": e["destinations"]}
@@ -586,6 +597,19 @@ def main(argv: list[str] | None = None) -> int:
 
     fares = FaresDb().load_feed(args.feed)
     timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
+
+    # A public price needs the reviewed selector, and the selector needs the
+    # .RST restriction file to have parsed cleanly. Refuse before rendering
+    # rather than shipping a page whose prices came from the broad query.
+    gate_problem = fares.restrictions.gate_problem()
+    if gate_problem:
+        print(
+            f"error: refusing to build a public price page: {gate_problem}. "
+            "Download the fares feed with its .RST file, or use the broad query "
+            "for analysis only.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Where the prices came from is read from the feed's metadata.json, not
     # retyped per build; --price-source overrides it. A synthetic build with
@@ -738,8 +762,17 @@ def main(argv: list[str] | None = None) -> int:
             page.parent.mkdir(parents=True, exist_ok=True)
             page.write_text(html, encoding="utf-8")
             print(f"wrote {page} from {origin_name}")
-        chooser = render_chooser(index, budget_pounds=20, analytics=analytics, base_path=base_path)
+        chooser = render_chooser(
+            index,
+            budget_pounds=20,
+            analytics=analytics,
+            base_path=base_path,
+            note=args.note,
+        )
         root = out_dir / "index.html"
+        # A feed with no reviewed price for any origin writes no station pages,
+        # so the chooser's own folder has to exist before the chooser does.
+        out_dir.mkdir(parents=True, exist_ok=True)
         root.write_text(chooser, encoding="utf-8")
         print(f"wrote {root} (the chooser) with {len(index)} priced stations")
         # Pages from an earlier build are not deleted -- that is destructive
@@ -777,6 +810,10 @@ def main(argv: list[str] | None = None) -> int:
             f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
             "the page says so and points at the chooser"
         )
+    # A fresh output folder is the normal case (the README tells the operator to
+    # delete a stale _site/), so the single-page path creates it rather than
+    # only working when a previous build left it behind.
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
     print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
     # The footer links to the privacy page, so a single-page build writes it
@@ -803,7 +840,10 @@ def main(argv: list[str] | None = None) -> int:
     if not payload["hasJourneys"]:
         print("no timetable given, so the page shows prices without times")
     if not payload["hasTwoTogether"]:
-        print("no Two Together railcard in the feed, so party prices are doubled instead of discounted")
+        print(
+            "railcard discounts are not shown: the .RST railcard rules are parsed "
+            "but not evaluated, so party prices are two Anytime Day Returns"
+        )
     return 0
 
 

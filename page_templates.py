@@ -185,7 +185,7 @@ TEMPLATE = """<!doctype html>
     <fieldset class="choices">
       <legend>The budget covers</legend>
       <label><input type="radio" name="unit" value="adult" checked> One adult, standard fare</label>
-      <label><input type="radio" name="unit" value="party"> The two of us, Two Together Railcard</label>
+      <label><input type="radio" name="unit" value="party"> The two of us</label>
     </fieldset>
     <div>
       <label class="caption" for="q">Prefer a city or town?</label>
@@ -206,11 +206,10 @@ TEMPLATE = """<!doctype html>
 <footer>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
-  <p>Cheapest Anytime or Off-Peak return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed.</p>
+  <p>Cheapest reviewed Anytime Day Return found in the feed. Advance single fares can be cheaper, and the tool does not promise them. A return journey is assumed.</p>
   <p>The times on this page are options in the timetable, not a booking: the fare shown is valid on every service listed, so none is picked for you.</p>
   <p id="railcardNote"></p>
   <p id="linkNote" hidden></p>
-  <p class="tag" id="railcardBasis" hidden></p>
   <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
   <p class="tag" id="provenance"></p>
   <p id="disclosure" hidden></p>
@@ -403,7 +402,7 @@ function provenance() {
   } else {
     parts.push("no timetable loaded, so no times are shown");
   }
-  if (!DATA.hasTwoTogether) parts.push("no Two Together railcard found, so party prices are doubled");
+  if (!DATA.hasTwoTogether) parts.push("party prices are two Anytime Day Returns; railcard discounts are not shown yet");
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.
@@ -442,13 +441,6 @@ function provenance() {
     line.textContent = parts.join(", ") + ".";
     line.hidden = false;
   }
-  if (DATA.railcardBasis) {
-    // Visible small print, not a tooltip: a caveat a reader can only find by
-    // hovering is not stated, and touch has no hover at all.
-    const basis = document.getElementById("railcardBasis");
-    basis.textContent = DATA.railcardBasis;
-    basis.hidden = false;
-  }
   if (DATA.tracked) {
     const disclosure = document.getElementById("disclosure");
     disclosure.textContent = DATA.disclosure;
@@ -479,7 +471,7 @@ function journeyText(destination) {
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
-  if (together) lines.push("Two Together Railcard: tick the box on the seller's site");
+  if (together) lines.push("Railcard discount not included: tick the Two Together box on the seller's site");
   return lines.join("\\n");
 }
 

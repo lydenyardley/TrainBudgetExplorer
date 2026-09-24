@@ -39,7 +39,11 @@ class DemoPageTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._tmp = tempfile.TemporaryDirectory()
         cls.fares = FaresDb().load_feed(
-            build_synthetic_feed(Path(cls._tmp.name) / "fares", include_unserved_station=True)
+            build_synthetic_feed(
+                Path(cls._tmp.name) / "fares",
+                include_unserved_station=True,
+                include_restrictions=True,
+            )
         )
         cls.timetable = TimetableDb().load_feed(build_synthetic_timetable(Path(cls._tmp.name) / "timetable"))
         cls.payload = build_payload(cls.fares, cls.timetable, "GRN")
@@ -55,9 +59,12 @@ class DemoPageTest(unittest.TestCase):
 
     def test_every_destination_carries_both_prices_and_a_journey(self) -> None:
         rows = {row["crs"]: row for row in self.payload["destinations"]}
-        self.assertEqual(rows["NOT"]["adultPence"], 1160)
-        self.assertEqual(rows["NOT"]["railcardPence"], 775)
-        self.assertEqual(rows["NOT"]["partyPence"], 1550)
+        # SDR is the reviewed Anytime Day Return price; the cheaper off-peak
+        # CDR is dropped by the public selector, and no railcard discount is
+        # shown, so the party price is two Anytime Day Returns.
+        self.assertEqual(rows["NOT"]["adultPence"], 1420)
+        self.assertIsNone(rows["NOT"]["railcardPence"])
+        self.assertEqual(rows["NOT"]["partyPence"], 2840)
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
 
@@ -99,12 +106,15 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="priceSource" hidden', self.html)
         self.assertIn("DATA.priceSource", self.html)
 
-    def test_the_railcard_estimate_carries_its_checked_basis(self) -> None:
-        # The third-off assumption is stated with what the real database said
-        # about it, so "estimate" is not a bare warning but a bounded one.
-        self.assertIn("5-15p above the real discounted price", self.payload["railcardBasis"])
-        self.assertIn('id="railcardBasis" hidden', self.html)
-        self.assertIn("DATA.railcardBasis", self.html)
+    def test_no_railcard_estimate_is_shown_and_the_page_says_why(self) -> None:
+        # The railcard records are parsed but not evaluated, so the page does
+        # not guess a discount: the party price is two reviewed Anytime Day
+        # Returns and the note says that rather than presenting an estimate.
+        self.assertNotIn("railcardBasis", self.payload)
+        self.assertIsNone(self.payload["destinations"][0]["railcardPence"])
+        self.assertIn("not shown yet", self.payload["railcardNote"])
+        self.assertIn("Anytime Day Return", self.payload["railcardNote"])
+        self.assertIn("DATA.railcardNote", self.html)
 
     def test_a_real_data_build_names_its_source_and_drops_the_estimate_caveat(self) -> None:
         payload = build_payload(
@@ -112,10 +122,9 @@ class DemoPageTest(unittest.TestCase):
             self.timetable,
             "GRN",
             price_source="the RSP fares feed, downloaded 22 September 2026",
-            railcard_basis=None,
         )
         self.assertIn("RSP fares feed", payload["priceSource"])
-        self.assertIsNone(payload["railcardBasis"])
+        self.assertIsNone(payload["destinations"][0]["railcardPence"])
 
     def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
         # Three distinct obligations, three paragraphs: one run-on would let a
@@ -251,7 +260,7 @@ class DemoPageTest(unittest.TestCase):
         # The card is never sent anywhere; it is named as something to tick, and
         # only when the price on screen is the one that needs it.
         self.assertIn('const together = unit() === "party";', self.html)
-        self.assertIn('if (together) lines.push("Two Together Railcard: tick the box', self.html)
+        self.assertIn('if (together) lines.push("Railcard discount not included: tick the Two Together box', self.html)
 
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
         # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
@@ -447,6 +456,18 @@ class DemoPageTest(unittest.TestCase):
         # The ranked count is the cold start, derived from the feed.
         self.assertLess(html.index("/from/london-kings-x/"), html.index("/from/nottingham/"))
 
+    def test_the_chooser_carries_the_note_it_is_given(self) -> None:
+        # A real-feed chooser must not sit above station pages claiming
+        # synthetic data, so the note is a parameter rather than a constant.
+        html = render_chooser(
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5}],
+            budget_pounds=20,
+            note="the RSP fares feed, downloaded 3 October 2026",
+        )
+        self.assertIn("the RSP fares feed, downloaded 3 October 2026", html)
+        self.assertNotIn("Synthetic demo data", html)
+        self.assertIn("Synthetic demo data", render_chooser([], budget_pounds=20))
+
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
         html = render_chooser([], budget_pounds=20)
         script = html.split("<script>")[1].split("</script>")[0]
@@ -572,7 +593,9 @@ class AllOriginsCliTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         root = Path(self._tmp.name)
-        self.feed = build_synthetic_feed(root / "fares", include_unserved_station=True)
+        self.feed = build_synthetic_feed(
+            root / "fares", include_unserved_station=True, include_restrictions=True
+        )
         self.timetable = build_synthetic_timetable(root / "timetable")
         self.out = root / "site" / "index.html"
 
@@ -660,6 +683,40 @@ class AllOriginsCliTest(unittest.TestCase):
         self.assertIn("http.server", said)
         self.assertIn("http://localhost", said)
 
+    def test_a_feed_with_no_reviewed_price_still_writes_the_chooser(self) -> None:
+        # A real feed can price nothing under the selector. The all-origins
+        # build writes no station pages then, so the chooser's folder has to be
+        # created by the chooser write rather than by a station page.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            deletes = "".join(
+                _line(
+                    {
+                        "update_marker": "D",
+                        "record_type": "T",
+                        "flow_id": flow_id,
+                        "ticket_code": "SDR",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+                for flow_id in ("0000001", "0000002", "0000003", "0000004", "0000005")
+            )
+            (feed / "zz-delete.ffl").write_text(deletes, encoding="utf-8")
+            out = root / "site" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--all-origins", "--out", str(out),
+                    ]
+                )
+            self.assertEqual(code, 0)
+            chooser = out.read_text(encoding="utf-8")
+            self.assertIn("Nothing is priced from any station in this build", chooser)
+
 
 
 class SlugAgreementTest(unittest.TestCase):
@@ -681,7 +738,9 @@ class SlugAgreementTest(unittest.TestCase):
         # priced from and to GRANTHAM, written in the real record layouts. NMP
         # needs an outgoing flow of its own so it is a priceable origin -- a
         # slug collision only bites when both same-named stations get pages.
-        cls.feed = build_synthetic_feed(root / "fares", include_unserved_station=True)
+        cls.feed = build_synthetic_feed(
+            root / "fares", include_unserved_station=True, include_restrictions=True
+        )
         with open(cls.feed / "rjfaf.loc", "a", encoding="utf-8") as locations:
             locations.write(
                 _line(
@@ -717,7 +776,7 @@ class SlugAgreementTest(unittest.TestCase):
                         "flow_id": "0000020",
                         "ticket_code": "SDR",
                         "fare_pence": "1050",
-                        "restriction_code": "00",
+                        "restriction_code": "",
                     },
                     FLOW_T,
                 )
@@ -741,7 +800,7 @@ class SlugAgreementTest(unittest.TestCase):
                         "flow_id": "0000021",
                         "ticket_code": "SDR",
                         "fare_pence": "1050",
-                        "restriction_code": "00",
+                        "restriction_code": "",
                     },
                     FLOW_T,
                 )
@@ -758,9 +817,11 @@ class SlugAgreementTest(unittest.TestCase):
         payload = build_payload(fares, self.timetable, "GRN")
         hrefs = {station["crs"]: station["href"] for station in payload["stations"]}
         # The all-origins build's folder names: the index's slugs.
+        # Counted with the same reviewed selector main() uses, so this test
+        # cannot pass on a station set the --all-origins build would not write.
         index = build_station_index(
             {
-                crs: len(fares.destinations_within(crs, 1_000_000, adults=1))
+                crs: build_demo_page._priced_destinations(fares, self.timetable, crs)
                 for crs in fares.locations_by_crs
             },
             fares.locations_by_crs,
@@ -802,7 +863,7 @@ class PartialMetadataTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
-        feed = build_synthetic_feed(root / "fares")
+        feed = build_synthetic_feed(root / "fares", include_restrictions=True)
         (feed / "metadata.json").write_text(
             json.dumps({"downloaded": "3 October 2026"}), encoding="utf-8"
         )
@@ -819,7 +880,7 @@ class PartialMetadataTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
-        feed = build_synthetic_feed(root / "fares")
+        feed = build_synthetic_feed(root / "fares", include_restrictions=True)
         (feed / "metadata.json").write_text(
             json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
             encoding="utf-8",
@@ -836,7 +897,7 @@ class PartialMetadataTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
-        feed = build_synthetic_feed(root / "fares")
+        feed = build_synthetic_feed(root / "fares", include_restrictions=True)
         (feed / "metadata.json").write_text(
             json.dumps({"downloaded": "3 October 2026"}), encoding="utf-8"
         )
@@ -849,6 +910,61 @@ class PartialMetadataTest(unittest.TestCase):
             )
         self.assertEqual(code, 0)
         self.assertIn("the 2026 RSP download", out.read_text(encoding="utf-8"))
+
+
+class PublicationGateTest(unittest.TestCase):
+    """No page at all without the data the reviewed selector depends on.
+
+    The gate is the change's whole point: a fares feed whose .RST file never
+    arrived cannot have its restriction codes checked, so the build refuses
+    rather than falling back to the broad query's prices.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        # include_restrictions defaults to False: a feed with no .RST.
+        self.feed = build_synthetic_feed(self.root / "fares")
+        self.assertTrue((self.feed / "rjfaf.rst").exists() is False)
+
+    def run_build(self, out: Path, *extra: str) -> tuple[int, str]:
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            code = build_demo_page.main(["--feed", str(self.feed), "--out", str(out), *extra])
+        return code, stderr.getvalue()
+
+    def test_a_feed_with_no_restriction_file_refuses_the_build(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, said = self.run_build(out)
+        self.assertEqual(code, 2)
+        self.assertFalse(out.exists(), "a refused build must write no page")
+        self.assertIn("no .RST restriction file", said)
+
+    def test_the_refusal_also_writes_no_chooser_or_station_pages(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, _ = self.run_build(out, "--all-origins")
+        self.assertEqual(code, 2)
+        self.assertFalse(out.parent.exists(), "a refused build must leave no folder behind")
+
+
+class FreshOutputFolderTest(unittest.TestCase):
+    """The README tells the operator to delete a stale _site/, so the build must
+    create a missing output folder rather than only working when one exists."""
+
+    def test_a_single_origin_build_creates_its_output_folder(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+        out = root / "fresh" / "site" / "index.html"
+        self.assertFalse(out.parent.exists())
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.exists())
+        self.assertIn("GRANTHAM", out.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
