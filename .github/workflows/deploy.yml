@@ -10,12 +10,13 @@
 # Required once, in the repository settings:
 #   Settings -> Pages -> Source: GitHub Actions.
 #
-# Building from the real feeds here is deliberately not the default. The
-# feeds are licensed data and git-ignored; if you keep a copy in a private
-# repository artifact (repository variable FEEDS_ARTIFACT names it), the
-# workflow downloads it and builds from feeds/ instead. Otherwise the demo
-# feed ships, and the pages say so -- provenance comes from the feed's
-# metadata.json either way.
+# The workflow downloads the licensed feeds from the National Rail Data Portal,
+# audits them, tests the application, and publishes only when all of those steps
+# pass. Add NRDP_USERNAME and NRDP_PASSWORD as repository secrets before enabling
+# the schedule; they are never written to the manifest or logs.
+#
+# The scheduled run is UTC 03:17 daily. GitHub may delay scheduled jobs, but
+# a failed audit prevents publication rather than deploying questionable data.
 #
 # When the deploy targets a subpath (a project site like
 # owner.github.io/repo/), set the repository variable SITE_BASE_PATH to the
@@ -26,6 +27,8 @@ name: build and publish
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,6 +43,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.feed_check.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,14 +52,37 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fetch the licensed feeds, if they are kept as an artifact
-        if: vars.FEEDS_ARTIFACT != ''
-        uses: actions/download-artifact@v4
+      - name: Restore the last successful feed manifest
+        uses: actions/cache/restore@v4
         with:
-          name: ${{ vars.FEEDS_ARTIFACT }}
-          path: feeds
+          path: .feed-state
+          key: feed-manifest-v1-
 
-      - name: Build the site
+      - name: Download the licensed DTD feeds
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds
+
+      - name: Detect whether the feed changed
+        id: feed_check
+        shell: bash
+        run: |
+          mkdir -p .feed-state
+          if [ -f .feed-state/download-manifest.json ] && cmp -s feeds/download-manifest.json .feed-state/download-manifest.json; then
+            echo "Feed manifest is unchanged; keeping the existing site."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Feed manifest changed; a full audited build is required."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit downloaded feeds
+        if: steps.feed_check.outputs.changed == 'true'
+        run: python dtd_audit.py --feed feeds/fares --timetable feeds/timetable
+
+      - name: Build the site from audited fares
+        if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
         run: |
@@ -62,24 +90,16 @@ jobs:
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
           fi
-          if [ -f feeds/metadata.json ] || [ -n "$(find feeds -maxdepth 2 -name '*.ffl' 2>/dev/null | head -1)" ]; then
-            # Real feeds, or at least the fares one: the page degrades to
-            # prices-only when no timetable is present, and says so.
-            python build_demo_page.py \
-              --feed feeds \
-              --all-origins \
-              --out _site/index.html \
-              --notices rdg,ogl,accuracy \
-              "${BASE_ARGS[@]}"
-          else
-            python make_synthetic_feed.py _demo_feed --kind both
-            python build_demo_page.py \
-              --feed _demo_feed \
-              --timetable _demo_feed \
-              --all-origins \
-              --out _site/index.html \
-              "${BASE_ARGS[@]}"
-          fi
+          # The fares feed is the public price source. The national timetable
+          # is audited above but is intentionally not loaded for every daily
+          # page build: it contains millions of calling points and turns this
+          # small static publication into a long batch job.
+          python build_demo_page.py \
+            --feed feeds/fares \
+            --origin GRA \
+            --out _site/index.html \
+            --notices rdg,ogl,accuracy \
+            "${BASE_ARGS[@]}"
 
       - name: Test the build
         run: |
@@ -94,19 +114,24 @@ jobs:
         # the chooser is a different page and would fail the fare assertions.
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
-          PAGE=$(find _site/from -name index.html | head -1)
-          if [ -z "$PAGE" ]; then
-            echo "no station pages in the build; nothing to drive in a browser"
-            exit 1
-          fi
+          PAGE=_site/index.html
           npx --yes --package playwright node browser_test.cjs "$PAGE"
 
+      - name: Save the successful feed manifest
+        if: steps.feed_check.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .feed-state/download-manifest.json
+          key: feed-manifest-v1-${{ hashFiles('feeds/download-manifest.json') }}
+
       - uses: actions/upload-pages-artifact@v3
+        if: steps.feed_check.outputs.changed == 'true'
         with:
           path: _site
 
   deploy:
     needs: build
+    if: needs.build.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
