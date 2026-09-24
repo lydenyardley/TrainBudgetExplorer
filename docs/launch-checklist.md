@@ -55,8 +55,9 @@ community signal appears.
 
 Things the post must do:
 
-- [ ] Say in the first sentence what the tool does **and what it is not**: cheapest
-      Anytime and Off-Peak returns, not Advance singles, not a booking engine
+- [ ] Say in the first sentence what the tool does **and what it is not**: reviewed
+      Anytime Day Returns, not Advance singles, not a booking engine. Railcard
+      discounts are not priced yet, so a party quote is two of those fares
 - [ ] Disclose any affiliate link in the post itself. A community that discovers it
       undeclared is a community lost, and that is the whole audience
 - [ ] Meet the predictable "split ticketing is cheaper" reply by agreeing with it,

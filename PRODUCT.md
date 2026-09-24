@@ -17,9 +17,11 @@ only if worthy), so they are reading a stranger's recommendation in a thread and
 deciding in seconds whether this is worth a click.
 
 **Travelling as a pair is a first-class case, not a variant.** Two adults on a Two
-Together Railcard is the only railcard in v1 and party pricing is core maths rather
-than a display option (ADR-0002), so a large share of readers are two people
-asking what the trip costs *them*.
+Together Railcard is the only railcard in v1 (ADR-0002), so a large share of
+readers are two people asking what the trip costs *them*. The card's discount is
+not priced on the public page yet: the DTD `.RST` railcard records are parsed but
+not evaluated, so the party total is two reviewed Anytime Day Returns and the page
+says so (ADR-0025).
 
 **The operator is the owner**, acting part-time. The staged plan bounds the whole
 experiment at roughly four weeks part-time, with a hard build stop and a written
@@ -30,7 +32,7 @@ review (ADR-0004).
 Turn a price into a shortlist of places. Given an origin station and a budget, the
 page lists **every** destination reachable by train inside that budget, with the
 fastest journey time, the number of changes, the fare for one adult, and the total
-for two adults on a Two Together Railcard.
+for two adults at two Anytime Day Returns (ADR-0025).
 
 It exists as a demand experiment whose commercial shape, if it survives, is
 affiliate lead generation (ADR-0003). Success for v1 is therefore a **signal, not
@@ -47,10 +49,11 @@ you can go. The glossary calls the shape a **"fare-ochrone"** — reachable with
 *price* limit rather than a time limit.
 
 What a neighbouring product could not truthfully copy is the second half of that:
-this one publishes its own limits as content. It promises scheduled walk-up
-Anytime/Off-Peak **returns** and says out loud that Advance singles can undercut
-them; it refuses to send a railcard or a chosen train to a seller because it cannot
-honestly know either; and when no ticket link could be verified, it was the link —
+this one publishes its own limits as content. It promises reviewed Anytime Day
+**Returns** and says out loud that Advance singles can undercut them; it refuses
+not only a chosen train but a railcard *discount* it cannot yet validate, and it
+never sends a railcard or a chosen train to a seller; and when no ticket link
+could be verified, it was the link —
 not the claim — that changed (ADR-0017, ADR-0018). A competitor optimising for
 conversion would not make those moves.
 
@@ -60,11 +63,12 @@ conversion would not make those moves.
   and a timetable feed and writes one self-contained HTML file. The design source
   of truth is the `TEMPLATE` string in that Python file, not the `demo*.html`
   output, which is derived and gitignored. Regenerating overwrites hand edits.
-- **The data is licensed and roughly triennial.** The fares feed is released about
-  three times a year through the Rail Data Marketplace (`raildata.org.uk`), which
-  needs an account and an accepted licence held in the owner's name. Nothing about
-  the feeds is anonymously readable, and the download is currently blocked on that
-  account (ADR-0005, `docs/stage-1-results.md`).
+- **The data is licensed and refreshes on the provider's schedule.** The DTD fares
+  feed updates weekly and the public timetable daily; both arrive through the
+  National Rail Data Portal account and are pulled by `dtd_download.py`, which
+  needs no credentials stored in the repository (environment only). The refreshed
+  ZIP replaces the previous one, and the audit and page build read whatever ZIP is
+  current, so a rebuild is the update (ADR-0025, `docs/dtd-licensing-and-data-access.md`).
 - **How the page is used:** arrive on your own town's page, drag the budget,
   optionally filter to a city or town, switch whether the budget covers one adult
   or the two of them, expand a row for the next few departures, follow the ticket
@@ -85,7 +89,7 @@ conversion would not make those moves.
 
 **Confirmed functionality.** Station picker (search by name or three-letter code,
 resolving to the station's page); budget slider; destination filter by name or code;
-party switch (one adult standard fare, or two adults on a Two Together Railcard); per
+party switch (one adult, or two adults at two Anytime Day Returns); per
 destination a price, the fastest journey time, the number of changes, the fare type
 code, an expander holding the next few departures, and one ticket link on the row;
 date-aware schedules when the page is built with a date, and an explicit note that
@@ -97,10 +101,14 @@ every schedule was read when it is not.
   (ADR-0010). No webfonts, no CDN imagery, no framework, nothing fetched at
   runtime. There are currently **no images, logos, icons, or font files in the
   repository at all**, and designing one in means inlining it.
-- **Fares are scheduled walk-up Anytime/Off-Peak returns.** Advance fares can be
+- **Fares are reviewed Anytime Day Returns.** The public page uses only exact
+  standard-class ANYTIME DAY R ticket codes with a blank restriction code, and
+  refuses to build without a clean `.RST` file (ADR-0025). Advance fares can be
   cheaper and the page must never imply them. A return is assumed.
-- **Two Together is the only railcard in v1**, and the railcard is never sent to a
-  seller; the page tells the reader to tick the box instead (ADR-0014).
+- **Two Together is the only railcard in v1**, but its discount is not priced yet:
+  the `.RST` railcard rules are parsed and not evaluated, so the page says the
+  party total is two Anytime Day Returns (ADR-0025). The railcard is never sent to
+  a seller; the page tells the reader to tick the box instead (ADR-0014).
 - **No train is ever chosen for the reader.** A departure or a journey identifier
   in a link would turn a price list into a booking suggestion the data cannot
   support.

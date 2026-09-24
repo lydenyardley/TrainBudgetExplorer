@@ -6,8 +6,11 @@ count of Grantham destinations under £20 return per adult. Go/no-go follows.
 
 ## Outcome in one line
 
-The parser is built and verified. The data download is blocked on an account
-only the owner can create. No anonymous, lawful route to the fares feed exists.
+The parser is built and verified. The account is now registered, but the
+Knowledgebase URLs supplied for the project are not the DTD fares/timetable
+subscription. The remaining data gate is the account's **Fares, Routeing Guide
+and Timetable data** entitlement; the zero-cost DTD route and its caveats are
+recorded in `docs/dtd-licensing-and-data-access.md`.
 
 ## What is reachable without an account
 
@@ -93,14 +96,20 @@ record also begins with an update marker, and it reported sixteen stations when
 five existed. File classification now requires the four spaces that follow a
 station name record type, and a test covers the combined folder.
 
-## The single blocking action
+## The remaining data action
 
-The owner needs to create an account on `raildata.org.uk`, accept the licence for
-the fares feed (and the timetable feed for Stage 2), download the current `RJFAF`
-release, and drop the folder into the project. Then:
+The owner has registered on the National Rail Data Portal and has the
+Knowledgebase subscriptions listed in the research document. The next action
+is to confirm that the same account includes **Fares, Routeing Guide and
+Timetable data**. If it does, set `NRDP_USERNAME` and `NRDP_PASSWORD` in the
+local environment and run:
 
+```bash
+python dtd_download.py
+python dtd_audit.py
+python grantham_sweep.py --feed feeds/fares --origin GRA --budget 20 --adults 2 --railcard "Two Together"
 ```
-python grantham_sweep.py --feed <downloaded folder> --origin GRN --budget 20 --adults 2 --railcard "Two Together"
-```
 
-The count it prints is the Stage 1 go/no-go input. Everything else is ready.
+The real Grantham code is `GRA`; `GRN` belongs only to the synthetic fixture.
+The count printed by the sweep is the Stage 1 go/no-go input. A Knowledgebase
+download alone cannot produce this count.
