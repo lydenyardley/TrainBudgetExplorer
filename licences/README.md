@@ -28,6 +28,12 @@ information **must not be changed or misrepresented**.
 Common to all five: the term is **1 year, renewing automatically**; data received may be
 **retained** after the term; the Data Consumer field is blank on every export.
 
+The NRE charging/terms and brand-pack source documents are supporting evidence,
+not per-product Marketplace licences, so they do not have a product-id row:
+`National Rail Data Portal Terms-and-conditions.pdf` and the charging document
+linked from `docs/dtd-licensing-and-data-access.md`. `BR Fares RDM Pricing.pdf`
+is likewise a supporting price schedule.
+
 Differences worth knowing:
 
 | | Darwin Timetable Files | the three Data Sharing Agreement feeds |
@@ -46,33 +52,44 @@ Differences worth knowing:
 - `test_licences.py` — asserts every PDF in this folder has a row above and every row
   names a file that exists, so a licence can never be downloaded, filed, and forgotten.
 
-## Not yet held
+## DTD access (preferred zero-cost route)
 
-The **fares product itself** — the one carrying the flows and fares records (`ffl`) and
-the railcard minimum fares (`rcm`), and a railcards feed (`rlc`). Everything above is
-reference and rules data: names, codes, ticket types, restrictions. None of it contains
-a price. Until that licence is read, the question that decides this project is open.
+The current working route for bulk fares and timetable data is the National Rail
+Data Portal (NRDP/DTD), not a per-query fare API. The public NRE charging
+material says that most NRE feeds, including feeds used by independent and
+commercial developers, are free; the high-volume charge is for Darwin
+Webservice feeds rather than scheduled static DTD downloads. This is a
+**documented zero-cost working conclusion**, not a written RDG confirmation.
+The account must separately subscribe to **Fares, Routeing Guide and Timetable
+data**; the Knowledgebase feeds listed in the project research do not establish
+that entitlement.
 
-The route is the **RSP Data Licence**, from Rail Settlement Plan Limited, and the licence
-template names the data precisely: \"**Fares Data** comprising of RSP fares files as
-specified by RSP from time to time in document **RSPS5045**\". RSPS5045 is the interface
-specification this project's parser was built to read (ADR-0005).
+The DTD/NRE terms require acknowledgement of NRE as source, and the current
+developer brand pack calls for the official **Powered by National Rail
+Enquiries** treatment/logo where the feed is predominant or standalone. The
+full source list, caveats, fallback, and escalation contacts are in
+`docs/dtd-licensing-and-data-access.md`.
 
-**It is not free.** The template's clause 8.1 provides for a **Licence Fee** and, if
-applicable, a **Datafeeds Charge**, and its Schedule fixes the amount in a blank that is
-completed per licensee (`£xxxx.00 [monthly data] or £xxxx.00 [daily data]`). What a
-licence costs is therefore **unknown until RSP quotes it**, and it must be quoted before
-this project can say whether the public page is viable. The fee is reviewed annually.
+The fares product is not represented by one of the marketplace PDFs in this
+folder yet. That is expected: DTD is a portal subscription/download route,
+not one of the product schedules already registered above. Do not infer a
+price or publication permission for DTD from the absence of a PDF; verify the
+account and current terms before launch.
 
-Two other things the template settles: the **Permitted Use is left blank** and is
-negotiated per licensee, and clause 2.3 permits a licensee to use the data to provide
-services to its clients and to **charge its clients** for them, so a commercial page is
-within the shape of the agreement — the fee, not the purpose, is the open question.
+## Considered and not taken for the zero-cost build
 
-The **Easy Fares API demo** (100 calls, no charge) is held for a different reason: a
-real-data sanity check against the National Rail fares database, not as a data source.
+The **RSP Data Licence**, from Rail Settlement Plan Limited, remains a
+possible alternative route, but its published template contains a licence-fee
+field and a possible Datafeeds Charge, with permitted-use and schedule fields
+completed per licensee. It is not a documented zero-cost route. If RDG quotes
+a non-zero fee, reject it and retain DTD.
 
-## Considered and not taken
+The **Easy Fares API** remains a small real-data sanity check only. It is a
+station-pair query API with a paid usage schedule after its demo allowance and
+is the wrong shape for a locally held bulk feed used to rank every destination
+from an origin.
+
+### Paid API detail
 
 The **Easy Fares API** from BR Fares Ltd is published on this marketplace in three volume
 tiers — and the volume tier names are a price list, not a service level. Low volume is
