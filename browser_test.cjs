@@ -92,31 +92,34 @@ async function main() {
     check("renders priced rows", initial > 0, `${initial} rows`);
 
     // 2. Dragging the budget slider to the floor empties the list.
-    const startBudget = (await page.textContent("#budgetOut")).trim();
+    const startBudget = (await page.inputValue("#budgetNumber")).trim();
     const track = await page.locator("#budget").boundingBox();
     await page.mouse.move(track.x + track.width / 2, track.y + track.height / 2);
     await page.mouse.down();
     await page.mouse.move(track.x + 1, track.y + track.height / 2, { steps: 12 });
     await page.mouse.up();
-    const draggedBudget = (await page.textContent("#budgetOut")).trim();
+    const draggedBudget = (await page.inputValue("#budgetNumber")).trim();
     const afterDrag = await rows();
     check("the slider responds to a real drag", draggedBudget !== startBudget, `${startBudget} -> ${draggedBudget}`);
     check("a dragged-down budget drops rows", afterDrag < initial, `${initial} -> ${afterDrag}`);
     check("an empty budget says so rather than showing nothing", await page.locator("#empty").isVisible());
     check("the summary counts what is left", /No destinations within/.test(await page.textContent("#summary")));
 
-    // 3. The town filter narrows to the match, by name.
+    // 3. The destination-type filter narrows the result set, not a free-text
+    // station search. The synthetic lookup classifies the priced city
+    // destinations, while the £20 default leaves only two of them in view.
     await page.goto(url);
-    await page.fill("#q", "lincoln");
+    await page.selectOption("#q", "city");
     const filtered = await rows();
-    check("the town filter leaves one match", filtered === 1, `${filtered} rows`);
+    check("the city filter leaves the priced city destinations", filtered === 2, `${filtered} rows`);
     check(
-      "and it is the station that was asked for",
-      /LINCOLN/.test(await page.textContent("#rows tr")),
-      await page.textContent("#rows tr")
+      "and the rows are the city destinations",
+      (await page.textContent("#rows")).includes("LINCOLN") &&
+        (await page.textContent("#rows")).includes("NOTTINGHAM"),
+      await page.textContent("#rows")
     );
-    check("clearing the filter restores the list", (await (async () => {
-      await page.fill("#q", "");
+    check("clearing the type filter restores the list", (await (async () => {
+      await page.selectOption("#q", "all");
       return rows();
     })()) === initial);
 

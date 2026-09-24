@@ -12,20 +12,20 @@ and timetable access still depends on the separate DTD subscription entitlement.
 
 From any UK station, find every destination reachable for under a set budget
 (e.g. "≤£20 return from Grantham"), with the journey time and the number of
-changes. Prices are reviewed Anytime Day Returns; a railcard discount is not
-priced yet, so the party total is two of those fares.
+changes. Prices are standard-class return fares; the page also shows a Two Together price
+where the current DTD railcard restriction records permit that fare.
 
 ## Decided summary
 
 - **What:** Grantham-only demo. Every destination reachable from Grantham under
-  a budget (cheapest reviewed Anytime Day Return per adult), a city/town filter,
+  a budget (cheapest reviewed Anytime Day Return per adult), a destination-type filter,
   and a party total for two adults. Static data, honest disclaimers.
 - **Hypothesis:** affiliate lead-gen asset (Trainline, applied post-launch).
 - **Discovery:** communities first (r/uktrains, local FB groups, HN); SEO only
   after a community signal.
-- **Scope:** Two Together is the only railcard in v1, but its discount is not
-  priced on the public page yet: the `.RST` railcard records are parsed but not
-  evaluated, so the party total is two Anytime Day Returns (ADR-0025).
+- **Scope:** Two Together is the only railcard in v1. Its one-third discount and
+  feed minimum fare are shown only when the current DTD RR rules permit the
+  fare's ticket, route, and endpoint locations.
 - **Plan:** Stage 1 licence and data verification, then go/no-go, then a
   one-week build hard-stopped at 30 September, launch w/c 5 October, written
   review **21 October** with park-by-default if unsure.
@@ -127,6 +127,7 @@ one-off diagnostics and their tests in `tools/`, and decisions in `adr/`
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
+| `docs/github-pages-deployment.md` | GitHub Pages setup, safe Actions secrets, scheduled deployment, and troubleshooting |
 | `docs/launch-checklist.md` | Where the page goes, how the result is measured, and what the October review reads |
 | `docs/glossary.md` | Domain terms |
 | `CONTRIBUTING.md` | Commit convention and how to run the tests |
@@ -202,11 +203,10 @@ and `tools/check_commit_message.py` checks a message against them.
 git log -1 --format=%B | python tools/check_commit_message.py
 ```
 
-## The demo page
+## The demo page`build_demo_page.py` writes one self-contained HTML file: every priced destination
+from an origin, with a budget slider, a city/town/other destination-type filter,
+and a choice of whether the budget covers one adult or two. The page is generated from
 
-`build_demo_page.py` writes one self-contained HTML file: every priced
-destination from an origin, with a budget slider, a city or town filter, and a
-choice of whether the budget covers one adult or two. The page is generated from
 a feed rather than hand-written, so the real feeds replace the synthetic ones
 with no change to the page. Prices come only from the reviewed Anytime Day
 Return selector; the builder refuses to run without a clean `.RST` file.
