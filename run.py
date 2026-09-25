@@ -73,6 +73,13 @@ def build(args: argparse.Namespace) -> int:
 
     print("Building the site ...")
     result = subprocess.run(cmd, cwd=ROOT)
+    if result.returncode == 0 and not args.all_origins:
+        # The single-origin runner serves _site/index.html, but a previous
+        # all-origins run may have left a browsable /from/<origin>/ tree. It is
+        # generated output, so remove it before serving the fresh single page.
+        import shutil
+        shutil.rmtree(SITE / "from", ignore_errors=True)
+        (SITE / "current.html").unlink(missing_ok=True)
     return result.returncode
 
 
