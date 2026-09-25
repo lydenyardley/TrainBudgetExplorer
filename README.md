@@ -57,6 +57,18 @@ unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
 
+The `nature` list is a floor, and the tool that keeps it honest is
+`tools/propose_nature_stations.py`. Given reserve pages it reads the station
+each one names, matches it against the codes the feed carries, and prints every
+proposal **with the sentence it came from**. It writes nothing: a proposal is not
+a reviewed list, and only a person can say a reserve is worth a destination
+category.
+
+```
+python tools/propose_nature_stations.py   --url https://www.wildlifetrusts.org/nature-reserves   --allow-host essexwt.org.uk --allow-host ywt.org.uk
+```
+
+
 Four limits worth stating plainly. `island` is a reviewed list, not an
 official one: no UK open dataset names island *settlements* at a size this page
 cares about, so the entry says so in its own `source` text. `transport` and
@@ -172,6 +184,8 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy) |
 | `build_workers.py` | The per-process feed cache and job function behind `--workers` |
 | `tools/check_commit_message.py` | Checks a commit message against the convention |
+| `tools/test_propose_nature_stations.py` | Proposer tests: host guard, name matching, and never writing a file |
+| `tools/propose_nature_stations.py` | Reads Wildlife Trust and WWT reserve pages and proposes station codes, with the sentence each came from, for a person to review |
 | `tests/test_atoc_fares.py` | Fares parser and publishable-selector tests |
 | `tests/test_atoc_restrictions.py` | `.RST` field offsets, real sample records, and the gate |
 | `tests/test_atoc_timetable.py` | Timetable parser, TIPLOC normalisation, and journey tests |
