@@ -185,6 +185,89 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.railcard_price(railcard, "CDS", 1210), 805)
         self.assertEqual(self.db.railcard_price(railcard, "CDS", 1330), 885)
 
+    @unittest.skipUnless(
+        Path("feeds/fares/dtd-fares.zip").is_file(),
+        "licensed DTD feed is not available",
+    )
+    def test_real_gra_to_not_keeps_two_together_r9_price(self) -> None:
+        db = FaresDb().load_feed("feeds/fares/dtd-fares.zip", focus_origin="GRA")
+        row = next(
+            row
+            for row in db.page_destinations_within("GRA", 1_000_000)
+            if row.crs == "NOT"
+        )
+        code = db.railcard_code("Two Together")
+        rules = db.railcard_rules(
+            code,
+            ticket_code=row.ticket_code,
+            route_code=row.route_code,
+            origin_crs="GRA",
+            destination_crs=row.crs,
+            origin_nlc=row.origin_nlc,
+            destination_nlc=row.destination_nlc,
+        )
+        self.assertEqual([rule.restriction_code for rule in rules], ["R9"])
+        self.assertFalse(any(rule.total_ban for rule in rules))
+        self.assertEqual(
+            db.railcard_price_for(
+                code,
+                ticket_code=row.ticket_code,
+                route_code=row.route_code,
+                origin_crs="GRA",
+                destination_crs=row.crs,
+                origin_nlc=row.origin_nlc,
+                destination_nlc=row.destination_nlc,
+                standard_pence=row.standard_pence,
+            ),
+            db.railcard_price(code, row.ticket_code, row.standard_pence),
+        )
+
+    def test_rr_restriction_code_is_a_condition_not_a_railcard_ban(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+        rules = db.railcard_rules(
+            "TWO",
+            ticket_code="CDR",
+            route_code="00000",
+            origin_crs="GRN",
+            destination_crs="NOT",
+            origin_nlc="1000",
+            destination_nlc="2000",
+        )
+        self.assertEqual([rule.restriction_code for rule in rules], ["R9"])
+        self.assertFalse(any(rule.total_ban for rule in rules))
+        self.assertIsNone(
+            db.railcard_restriction(
+                "TWO",
+                ticket_code="CDR",
+                route_code="00000",
+                origin_crs="GRN",
+                destination_crs="NOT",
+                origin_nlc="1000",
+                destination_nlc="2000",
+            )
+        )
+
+    def test_rr_total_ban_still_removes_the_discount(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+        context = {
+            "ticket_code": "SDR",
+            "route_code": "00002",
+            "origin_crs": "GRN",
+            "destination_crs": "NOT",
+            "origin_nlc": "1000",
+            "destination_nlc": "2000",
+        }
+        self.assertTrue(db.railcard_restriction("TWO", **context).total_ban)
+        self.assertIsNone(
+            db.railcard_price_for("TWO", standard_pence=2400, **context)
+        )
+
     def test_flow_validity_dates_exclude_expired_and_future_fares(self) -> None:
         db = FaresDb().load_feed(self.feed)
         flow_id = "0000001"
@@ -359,10 +442,11 @@ class PublishableSelectorTest(unittest.TestCase):
         rows = self.db.publishable_destinations_within(
             "GRN", 2000, railcard="Two Together"
         )
-        # The fixture's general R9 RR row applies to the reviewed SDR fare, so
-        # no railcard price is emitted while the standard fare remains useful.
-        self.assertEqual({row.crs for row in rows}, {"LCN", "NOT"})
-        self.assertTrue(all(row.railcard_pence is None for row in rows))
+        # The fixture's general R9 RR row attaches the Two Together travel
+        # condition. It is not a total ban, so the reviewed fares stay priced.
+        self.assertEqual({row.crs for row in rows}, {"LCN", "NOT", "PBO"})
+        prices = {row.crs: row.railcard_pence for row in rows}
+        self.assertEqual(prices, {"LCN": 1200, "NOT": 1200, "PBO": 1490})
 
     def test_a_railcard_price_is_kept_when_no_rr_rule_matches(self) -> None:
         db = FaresDb().load_feed(self.feed)

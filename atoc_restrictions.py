@@ -12,8 +12,9 @@ character.
 
 This module parses the records and keeps the current and future restriction data
 needed by the fare selector. The railcard rows are evaluated against the fare's
-ticket, route, and endpoint locations; a matching total ban or restriction code
-removes the discount for that fare.
+ticket, route, and endpoint locations. A matching total ban removes the discount;
+a matching restriction code supplies or overrides the discounted fare's travel
+condition and is not itself a ban.
 """
 
 from __future__ import annotations
@@ -269,9 +270,10 @@ class RestrictionHeader:
 class RailcardRestrictionRow:
     """One ``RR`` record: a railcard restriction for a ticket/route/location.
 
-    ``total_ban`` is ``Y`` when the row bans the combination outright. A row is
-    kept so the fare selector can evaluate the current rule against the exact
-    ticket, route, and location context.
+    ``total_ban`` is ``Y`` when the row bans the combination outright. Otherwise
+    ``restriction_code`` may supply or override the discounted fare's travel
+    condition. The fare selector evaluates the row against its exact ticket,
+    route, and location context.
     """
 
     railcard_code: str

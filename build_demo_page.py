@@ -49,8 +49,9 @@ DEFAULT_NOTE = (
 # metadata.json (read_feed_metadata), so the default only ever reaches a page
 # built from the synthetic feed.
 DEFAULT_PRICE_SOURCE = "the synthetic demo feed"
-# Railcard prices are emitted only when the current DTD RR rules do not ban or
-# otherwise restrict the fare's ticket, route, or endpoint locations.
+# Railcard prices are emitted unless a current DTD RR total ban matches the
+# fare's ticket, route, or endpoint locations. RR restriction codes are retained
+# as travel conditions rather than mistaken for bans.
 # Licence notice wordings (ADR-0020, ADR-0021). The OGL sentence is the
 # standard wording; the accuracy notice carries the substance of the Data
 # Sharing Agreement's cl. 3.3.2 and its liability clause 7.2. Composed by
@@ -567,14 +568,14 @@ def build_payload(
     )
     anytime_tickets = {row.crs: row for row in anytime_ticket_rows}
     # Two Together is evaluated against the current DTD RR records below. A
-    # destination carries a railcard price only when its ticket, route, and
-    # locations have no matching total ban or restriction code.
+    # destination carries a railcard price unless its ticket, route, and
+    # locations have a matching total ban.
 
     tracked = False
     disclosure: str | None = None
     # Two Together is the railcard used for the current two-adult question. The
     # price is calculated from the feed's minimum-fare table and the current RR
-    # restriction records; a matching RR row removes it for that destination.
+    # restriction records; only a matching total ban removes it.
     railcard_code = fares.railcard_code("Two Together")
     railcard_in_feed = railcard_code is not None
 
@@ -589,7 +590,7 @@ def build_payload(
                 "rule": None,
                 "reason": "No Two Together railcard record is present, so no discounted price can be calculated from this DTD download.",
             }
-        restriction = fares.railcard_restriction(
+        rules = fares.railcard_rules(
             railcard_code,
             ticket_code=one.ticket_code,
             route_code=one.route_code,
@@ -598,55 +599,81 @@ def build_payload(
             origin_nlc=one.origin_nlc,
             destination_nlc=one.destination_nlc,
         )
+        ban = next((rule for rule in rules if rule.total_ban), None)
+        condition = next((rule for rule in rules if rule.restriction_code), None)
+        shown_rule = ban or condition
         minimum = fares.minimum_fares.get((railcard_code, one.ticket_code))
         rule = None
-        if restriction is not None:
+        if shown_rule is not None:
             scope = []
-            if restriction.ticket_code:
-                scope.append(f"ticket {restriction.ticket_code}")
-            else:
-                scope.append("any ticket")
-            scope.append(f"route {restriction.route_code}" if restriction.route_code else "any route")
-            scope.append(f"location {restriction.location}" if restriction.location else "any location")
+            scope.append(
+                f"ticket {shown_rule.ticket_code}" if shown_rule.ticket_code else "any ticket"
+            )
+            scope.append(
+                f"route {shown_rule.route_code}" if shown_rule.route_code else "any route"
+            )
+            scope.append(
+                f"location {shown_rule.location}" if shown_rule.location else "any location"
+            )
             rule = {
-                "sequence": restriction.sequence_no,
-                "status": "current" if restriction.current_or_future.upper() == "C" else restriction.current_or_future,
-                "ticketCode": restriction.ticket_code or "any",
-                "routeCode": restriction.route_code or "any",
-                "location": restriction.location or "any",
-                "restrictionCode": restriction.restriction_code or "none",
-                "totalBan": restriction.total_ban,
+                "sequence": shown_rule.sequence_no,
+                "status": (
+                    "current"
+                    if shown_rule.current_or_future.upper() == "C"
+                    else shown_rule.current_or_future
+                ),
+                "ticketCode": shown_rule.ticket_code or "any",
+                "routeCode": shown_rule.route_code or "any",
+                "location": shown_rule.location or "any",
+                "restrictionCode": shown_rule.restriction_code or "none",
+                "totalBan": shown_rule.total_ban,
                 "text": (
-                    f"Current RR {restriction.sequence_no}: {', '.join(scope)}; "
-                    f"total ban {'yes' if restriction.total_ban else 'no'}; "
-                    f"restriction {restriction.restriction_code or 'none'}."
+                    f"Current RR {shown_rule.sequence_no}: {', '.join(scope)}; "
+                    f"total ban {'yes' if shown_rule.total_ban else 'no'}; "
+                    f"restriction {shown_rule.restriction_code or 'none'}."
                 ),
             }
-        if restriction is not None:
+        if ban is not None:
             reason = (
-                "This exact DTD RR rule matches the fare, so Two Together cannot be applied"
-                + (": the rule records a total ban." if restriction.total_ban
-                   else f": restriction code {restriction.restriction_code} is attached.")
+                "This exact DTD RR rule matches the fare and records a total ban, "
+                "so Two Together cannot be applied."
             )
             price = None
             state = "blocked"
         else:
             price = fares.railcard_price(railcard_code, one.ticket_code, one.standard_pence)
             state = "eligible"
-            reason = (
-                "No current Two Together RR rule matches this ticket, route, or either endpoint. "
+            if condition is None:
+                reason = (
+                    "No current Two Together RR rule matches this ticket, route, or either endpoint. "
+                )
+            else:
+                reason = (
+                    f"No matching RR total ban applies. Current RR {condition.sequence_no} instead "
+                    f"attaches restriction {condition.restriction_code}, which is a travel condition "
+                    "rather than a card ban. "
+                )
+            reason += (
                 f"The feed's two-thirds discount gives {format_pence(price)} per adult"
             )
             if minimum is None:
-                reason += "; no minimum fare is listed for this ticket, so the discounted fare is used."
+                reason += "; no minimum fare is listed for this ticket, so the discounted fare is used"
             elif minimum >= price:
-                reason += f", but the DTD minimum fare of {format_pence(minimum)} is higher."
+                reason += f", but the DTD minimum fare of {format_pence(minimum)} is higher"
             else:
-                reason += f"; the DTD minimum is {format_pence(minimum)} and does not raise it."
+                reason += f"; the DTD minimum is {format_pence(minimum)} and does not raise it"
             reason += "."
         return {
             "state": state,
-            "title": "Two Together is available for this fare" if state == "eligible" else "Two Together is not available for this fare",
+            "title": (
+                (
+                    "Two Together is available for this fare, subject to its RR conditions"
+                    if condition is not None
+                    else "Two Together is available for this fare"
+                )
+                if state == "eligible"
+                else "Two Together is not available for this fare"
+            ),
             "pricePence": price,
             "minimumFarePence": minimum,
             "rule": rule or {
@@ -823,14 +850,14 @@ def build_payload(
                 f"Two Together is in this feed. {railcard_eligible_count} currently eligible "
                 "destination fares are discounted using its minimum-fare table and a one-third "
                 "discount, rounded down to the nearest 5p. Current DTD RR route, ticket, "
-                "location, and total-ban rules are checked for every destination; fares without "
-                "a permitted railcard price keep their standard fare."
+                "location, and total-ban rules are checked for every destination; matching "
+                "restriction codes are retained as travel conditions. Fares without a permitted "
+                "railcard price keep their standard fare."
             )
             if railcard_in_feed and railcard_eligible_count
             else (
                 "Two Together is in this feed, but none of the displayed fares is currently "
-                "eligible under the DTD railcard rules. The control stays visible so the "
-                "catalogue support is clear, but the prices shown are standard fares."
+                "eligible under the DTD railcard rules. The prices shown are standard fares."
                 if railcard_in_feed
                 else "Two Together is not present in this feed. The prices shown are standard fares."
             )

@@ -36,19 +36,24 @@ zero rejected records; without that file it raises rather than running. The broa
 `destinations_within` stays for analysis, but the page-side query is the
 selector.
 
-## Finding 2: railcard rules are parsed, not evaluated, so the discount is refused
+## Finding 2: railcard rules need exact fare context, and only total bans remove a discount
 
 The `RR` records are keyed by railcard code and carry ticket, route, location,
 restriction, and total-ban fields. Two Together (`2TR`) has 1,144 rows: route
 bans, ADT location bans, an `R9` row that applies generally, and a single `SDR`
-route-00524/Wimbledon ban. Deciding whether any of these applies to one flow
-needs the full route and ticket context, which this static query does not model.
+route-00524/Wimbledon ban. The first implementation refused every discounted
+price because it treated both a total ban and a restriction code as a ban.
 
-**Decision.** The parser reads and counts `RR` rows and keeps a few samples, but
-the publishable selector refuses a railcard outright. A cardholder can always
-decline the discount, so the standard price is still honest; publishing a
-discounted price whose conditions are unknown is not. The broad query and
-`require_restrictions=False` still compute railcard prices for analysis.
+The real Granham-to-Nottingham fare disproved that interpretation. Its only
+matching current rule is `RR 0001`, any ticket/route/location, `R9`, with
+`TOTAL_BAN=N`. RSPS5045 uses that row to attach the Two Together travel
+condition; it does not prohibit the card.
+
+**Decision.** Evaluate every current `RR` row against the fare's ticket, route,
+and endpoint locations. A matching `TOTAL_BAN=Y` removes the price. A matching
+restriction code is retained and explained as a condition on the discounted
+fare. This restores valid prices such as GRA-NOT while preserving the exact rule
+in the per-fare Card details drawer.
 
 ## Finding 3: padded TIPLOCs split one location into two keys
 
@@ -87,8 +92,10 @@ rather than "no record".
   price and refuses to run without a clean `.RST` file. The page therefore shows
   only reviewed Anytime Day Returns. The cheap off-peak `CDR` that the demo used
   to lead with is gone by design, and the page's footer says which fare it shows.
-- The party price is two Anytime Day Returns, not a railcard discount, and the
-  page says why. This is a deliberate product regression until the `RR` rules are
-  evaluated: it keeps a reader's quote honest rather than attractive.
-- The `RR` rows are the next review: evaluating route and location bans would let
-  the selector price a Two Together party honestly.
+- The page now emits a Two Together price when no matching `RR` total ban
+  applies. Any matching restriction code, including Two Together's general R9
+  condition, is shown in the fare's rule drawer rather than being misreported as
+  unavailability.
+- A restriction condition still has to be honoured when buying (for R9, that
+  includes its day/time rules). The page identifies the condition; it does not
+  turn a conditional railcard fare into an unconditional one.

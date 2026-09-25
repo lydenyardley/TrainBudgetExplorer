@@ -170,8 +170,8 @@ async function main() {
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(
-      "and does not promise a railcard for an ineligible synthetic fare",
-      !/Two Together discount/.test(partyCopy),
+      "and names the railcard when the fare is eligible",
+      /Two Together discount/.test(partyCopy),
       partyCopy
     );
 

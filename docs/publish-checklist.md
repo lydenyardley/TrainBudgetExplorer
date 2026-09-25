@@ -35,8 +35,9 @@ selection. The endpoint examples and the current terms are recorded in
       no record), and 1,294 normalised from a padded raw value
 - [x] Railcard discounts: the publishable selector evaluates the current `.RST`
       `RR` records against each fare's ticket, route, and endpoint locations;
-      blank fields are wildcards, and a matching total ban or restriction code
-      removes the discount
+      blank fields are wildcards, a matching total ban removes the discount, and
+      a matching restriction code is retained as the discounted fare's travel
+      condition
 
 The first four rows are marketplace products whose §5 fill controls use. The
 DTD row is a separate portal subscription and must be checked against the
