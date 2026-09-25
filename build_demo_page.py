@@ -37,6 +37,7 @@ from atoc_fares import (
     is_advance_fare,
 )
 from atoc_timetable import TimetableDb
+from destination_coverage import UnsourcedReport
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
 
@@ -488,6 +489,13 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "progress, and resume pages already completed from the same feeds/config",
     )
     parser.add_argument("--max-changes", type=int, default=1)
+    parser.add_argument(
+        "--fail-on-unsourced",
+        action="store_true",
+        help="refuse to write pages when a priced destination has no settlement "
+        "class from any source. Off by default, because a full-network build "
+        "meets stations no filter can name; the warning is printed either way",
+    )
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument(
         "--note",
@@ -945,18 +953,26 @@ def build_payload(
 
 
 def _priced_destinations(
-    fares: FaresDb, timetable, origin_crs: str, day: date | None = None
+    fares: FaresDb,
+    timetable,
+    origin_crs: str,
+    day: date | None = None,
+    coverage: UnsourcedReport | None = None,
 ) -> int:
     """How many destinations an origin's page would carry, for the index.
 
     Uses the same reviewed selector as the page itself, so the chooser never
-    offers a station whose page would be empty under the publication rule.
+    offers a station whose page would be empty under the publication rule. When
+    a coverage report is passed, the same rows are checked for a station no
+    source could classify -- the query has already been run, so naming the gap
+    costs nothing extra on a 2,500-origin build.
     """
-    return len(
-        fares.publishable_destinations_within(
-            origin_crs, EVERYTHING_PENCE, adults=1, day=day
-        )
+    rows = fares.publishable_destinations_within(
+        origin_crs, EVERYTHING_PENCE, adults=1, day=day
     )
+    if coverage is not None:
+        coverage.note_fares_rows(fares, rows, origin_crs)
+    return len(rows)
 
 
 def build_station_index(
@@ -1304,10 +1320,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.fast_all_origins:
             print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
         priced_counts: dict[str, int] = {}
+        # One report for the whole build: a station met from fifty origins is
+        # named once, and the build can refuse on a total rather than per page.
+        coverage = UnsourcedReport()
         for number, crs in enumerate(origins, 1):
-            priced_counts[crs] = _priced_destinations(fares, timetable, crs, day)
+            priced_counts[crs] = _priced_destinations(fares, timetable, crs, day, coverage)
             if args.fast_all_origins and (number == len(origins) or number % 100 == 0):
                 print(f"  priced {number:,}/{len(origins):,} stations", flush=True)
+        # Refuse before writing 2,500 pages rather than after: a refused build
+        # must leave no half-published site behind, and the check costs nothing
+        # here because the origins have already been queried.
+        if args.fail_on_unsourced and coverage:
+            return coverage.exit_code(True)
         index = build_station_index(priced_counts, fares.locations_by_crs)
         by_crs = {entry["crs"]: entry for entry in index}
         # One shared config for every page, handed to workers once through the
@@ -1468,13 +1492,22 @@ def main(argv: list[str] | None = None) -> int:
             f"python -m http.server --directory {out_dir} 8000, then http://localhost:8000/ "
             f"(station links start at /from/, so the file system cannot resolve them)"
         )
-        return 0
+        coverage.report()
+        return coverage.exit_code(args.fail_on_unsourced)
 
     if not payload["destinations"]:
         print(
             f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
             "the page says so and points at the chooser"
         )
+    # A destination with no settlement class is a destination the page's own
+    # settlement filters cannot return, so the build names it rather than
+    # letting it disappear quietly -- and refuses before writing anything, the
+    # same rule the other refusals follow.
+    coverage = UnsourcedReport()
+    coverage.from_payload(payload)
+    if args.fail_on_unsourced and coverage:
+        return coverage.exit_code(True)
     # A fresh output folder is the normal case (the README tells the operator to
     # delete a stale _site/), so the single-page path creates it rather than
     # only working when a previous build left it behind.
@@ -1519,6 +1552,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Two Together is present; {payload['railcardEligibleCount']} displayed fare rows are eligible"
         )
+    coverage.report()
     return 0
 
 
