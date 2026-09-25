@@ -10,7 +10,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import FLOW_F, FLOW_T, Fare, FaresDb, TicketType
+from atoc_fares import FLOW_F, FLOW_T, Fare, FaresDb, Location, TicketType
 from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
 
 
@@ -36,6 +36,19 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.destination_type("GRN"), "town")
         self.assertEqual(self.db.destination_type("XFD"), "other")
 
+    def test_major_london_and_non_england_wales_stations_have_a_fallback(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "KGX": Location("1000", "KGX", "LONDON KINGS X", ""),
+            "GLC": Location("2000", "GLC", "GLASGOW CENTRAL", ""),
+            "CDD": Location("3000", "CDD", "CARDIFF CENTRAL", ""),
+        }
+        db._apply_major_station_fallbacks()
+        self.assertEqual(db.destination_type("KGX"), "city")
+        self.assertEqual(db.destination_type("GLC"), "city")
+        self.assertEqual(db.destination_type("CDD"), "city")
+        self.assertIn("London", db.location_type_source or "")
+
     def test_codes_destinations_inside_the_budget_cheapest_first(self) -> None:
         results = self.db.destinations_within("GRN", 2000)
         self.assertEqual([reachable.crs for reachable in results], ["LCN", "NOT"])
@@ -48,6 +61,39 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(narrowed, full)
         self.assertLess(focused.stats()["fares"], self.db.stats()["fares"])
         self.assertEqual(focused._focus_origin_nlcs, {"1000"})
+
+    def test_persisted_origin_indexes_are_isolated_and_reusable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            common, indexes = root / "common.pickle", root / "indexes"
+            self.db.write_fare_indexes(common, indexes, ["GRN", "LCN"])
+
+            grantham = FaresDb.load_fare_index(common, indexes / "GRN.pickle")
+            lincoln = FaresDb.load_fare_index(common, indexes / "LCN.pickle")
+            self.assertEqual(grantham._cache_origin, "GRN")
+            self.assertEqual(lincoln._cache_origin, "LCN")
+            self.assertEqual(
+                {row.crs for row in grantham.destinations_within("GRN", 2000)},
+                {"LCN", "NOT"},
+            )
+            self.assertEqual(
+                [row.crs for row in lincoln.destinations_within("LCN", 2000)],
+                [],
+            )
+            self.assertLess(grantham.stats()["fares"], self.db.stats()["fares"])
+
+            # The persisted index is usable without reopening the source feed.
+            source_backup = root / "feed-copy"
+            source_backup.mkdir()
+            for item in self.feed.iterdir():
+                source_backup.joinpath(item.name).write_bytes(item.read_bytes())
+            for item in source_backup.iterdir():
+                item.unlink()
+            reopened = FaresDb.load_fare_index(common, indexes / "GRN.pickle")
+            self.assertEqual(
+                [row.crs for row in reopened.destinations_within("GRN", 2000)],
+                ["LCN", "NOT"],
+            )
 
     def test_page_query_drops_all_itx_placeholder_families(self) -> None:
         db = FaresDb().load_feed(self.feed)

@@ -14,8 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
+import io
+import os
 import json
+import pickle
 from pathlib import Path
+import re
+import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -28,6 +33,64 @@ ROUNDING_STEP_PENCE = 5
 # Together included. The feed carries the authoritative rules in its dis and frr
 # files; see adr/ADR-0002-budget-semantics-and-railcards.md for the upgrade path.
 RAILCARD_DISCOUNT = Fraction(2, 3)
+
+# The station KB FareLocations feed describes fare locations; it does not carry
+# a settlement class. For real DTD builds, classify stations against the ONS
+# Census 2021 individual built-up-area table instead. Major/large BUAs are shown
+# as cities, medium/small as towns, and minor BUAs as other. The generated cache
+# lives beside the downloaded feed, so later builds remain deterministic and do
+# not need a network connection.
+ONS_BUILT_UP_AREAS_DATASET_URL = (
+    "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/datasets/"
+    "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021"
+)
+ONS_BUILT_UP_AREAS_FILE_URL = (
+    "https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/housing/datasets/"
+    "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021/2021/"
+    "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021.xlsx"
+)
+LOCATION_TYPE_SOURCE = (
+    "Office for National Statistics, Census 2021 built-up-area size bands"
+)
+# The cited ONS workbook covers England (excluding London) and Wales. London
+# station names therefore cannot match its settlement rows, and the major
+# stations in Scotland and Northern Ireland cannot match a national table that
+# does not cover those countries. Keep that gap explicit rather than allowing
+# every unmatched station to be called "other".
+#
+# These are station-to-settlement fallbacks, not a second guess at the ONS
+# bands. A London name is in the ONS Greater London region, whose capital
+# built-up area is a major BUA; the remaining codes are reviewed classifications
+# for the largest destinations outside the workbook's coverage. They are applied
+# only after the ONS/name lookup misses, so a future ONS match always wins.
+LONDON_STATION_CRS = frozenset({
+    "ACT", "BAT", "BFN", "BKF", "BWD", "CDL", "CHC", "CHT", "CLJ", "CBR",
+    "CTK", "DLK", "DLP", "EUS", "FST", "GLR", "GTN", "HAY", "HMY", "IPD",
+    "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD", "PIM", "RGY",
+    "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
+})
+MAJOR_UK_STATION_FALLBACKS = {
+    # Scotland
+    "ABD": "city", "DEQ": "city", "EDB": "city", "GLC": "city", "INV": "city",
+    "PER": "city", "QGS": "city", "SGL": "city",
+    # Wales outside the England-and-Wales BUA workbook's usual settlement names
+    "CDD": "city", "SWA": "city", "NPT": "town",
+    # Northern Ireland
+    "BNV": "city", "BHC": "city", "LBN": "town", "BNG": "town", "LAR": "town",
+    "NIR": "town", "PTN": "town", "LDY": "city", "BCH": "town", "BFL": "town",
+    "BQU": "town", "BHD": "town", "WRE": "town",
+}
+LOCATION_FALLBACK_SOURCE = (
+    "ONS 2021 geography coverage with reviewed London, Scottish, Welsh, and "
+    "Northern Ireland major-station fallbacks"
+)
+LOCATION_BAND_TYPES = {
+    "major": "city",
+    "large": "city",
+    "medium": "town",
+    "small": "town",
+    "minor": "other",
+}
 
 # The real feed's standard-return catalogue contains a family of ITX
 # placeholder records. They are not purchasable public fares: the current
@@ -300,11 +363,11 @@ class FaresDb:
     def __init__(self) -> None:
         self.locations_by_nlc: dict[str, Location] = {}
         self.locations_by_crs: dict[str, Location] = {}
-        # DTD location reference data classifies stations as cities, towns, or
-        # other places. It is a separate KB feed from the fares LOC file, so
-        # keep it as an optional index rather than pretending LOC has this
-        # information.
+        # Destination settlement type is reference data, not a fares LOC field.
+        # A reviewed JSON cache beside the feed is preferred; a real DTD build
+        # can populate it from the ONS Census built-up-area source.
         self.location_types_by_crs: dict[str, str] = {}
+        self.location_type_source: str | None = None
         # One station code can hold several location codes, and a real feed does
         # this for most towns. Flows are keyed by location code, so a query has
         # to consider all of them or it misses fares that are right there.
@@ -330,8 +393,122 @@ class FaresDb:
         # every Fare object makes the local app spend most of its time building
         # prices it will never query. This is None for the normal/full database.
         self._focus_origin_nlcs: set[str] | None = None
+        # Focus caches are named by the feed and origin, but keep the identity
+        # inside the object too so a hand-reused path cannot silently return a
+        # different origin's fares.
+        self._cache_origin: str | None = None
 
     # -- loading ---------------------------------------------------------
+
+    def _write_cache(self, cache: Path, value: object) -> None:
+        """Write a cache atomically without assuming a process-local suffix."""
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+        with temporary.open("wb") as handle:
+            pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        temporary.replace(cache)
+
+    def write_fare_indexes(
+        self,
+        base_path: str | Path,
+        index_dir: str | Path,
+        origins: list[str] | tuple[str, ...],
+    ) -> None:
+        """Persist common fare metadata once and a small index per origin.
+
+        A worker's page build needs the location/ticket/restriction tables, but
+        only the flows and fares queryable from its own origin. Keeping those
+        two pieces in the common file would make every origin cache a copy of
+        the national feed. The index files therefore contain just the selected
+        flow/fare objects; workers load the common file once and apply one
+        index per page.
+        """
+        common = FaresDb()
+        common.locations_by_nlc = self.locations_by_nlc
+        common.locations_by_crs = self.locations_by_crs
+        common.location_types_by_crs = self.location_types_by_crs
+        common.location_type_source = self.location_type_source
+        common.nlcs_by_crs = self.nlcs_by_crs
+        common.ticket_types = self.ticket_types
+        common.railcards = self.railcards
+        common.minimum_fares = self.minimum_fares
+        common.restrictions = self.restrictions
+        common.report = self.report
+        common.files_read = common.report.files_read
+        self._write_cache(Path(base_path), common)
+
+        directory = Path(index_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        for origin in origins:
+            origin = origin.strip().upper()
+            location = self.locations_by_crs.get(origin)
+            if location is None:
+                continue
+            origin_nlcs = self.nlcs_by_crs.get(origin, {location.nlc})
+            flow_ids: set[str] = set()
+            flows_by_origin_nlc: dict[str, list[Flow]] = {}
+            for nlc in origin_nlcs:
+                selected = [
+                    flow
+                    for flow in self.flows_by_origin_nlc.get(nlc, ())
+                    if flow.flow_id not in flow_ids
+                ]
+                if selected:
+                    flows_by_origin_nlc[nlc] = selected
+                    flow_ids.update(flow.flow_id for flow in selected)
+            self._write_cache(
+                directory / f"{origin}.pickle",
+                {
+                    "schema": 1,
+                    "origin": origin,
+                    "origin_nlcs": set(origin_nlcs),
+                    "flows": {
+                        flow_id: self.flows[flow_id]
+                        for flow_id in flow_ids
+                        if flow_id in self.flows
+                    },
+                    "fares": {
+                        flow_id: self.fares_by_flow.get(flow_id, {})
+                        for flow_id in flow_ids
+                    },
+                    "flows_by_origin_nlc": flows_by_origin_nlc,
+                },
+            )
+
+    @classmethod
+    def load_fare_common(cls, common_path: str | Path) -> "FaresDb":
+        """Load the shared metadata half of a persisted fares cache."""
+        with Path(common_path).open("rb") as handle:
+            db = pickle.load(handle)
+        if not isinstance(db, FaresDb):
+            raise ValueError("invalid common fares cache")
+        return db
+
+    @classmethod
+    def load_fare_index(
+        cls, common_path: str | Path, index_path: str | Path
+    ) -> "FaresDb":
+        """Load common metadata and one persisted origin index."""
+        return cls.apply_fare_index(cls.load_fare_common(common_path), index_path)
+
+    @classmethod
+    def apply_fare_index(cls, db: "FaresDb", index_path: str | Path) -> "FaresDb":
+        """Apply one origin index to an already loaded common database."""
+        with Path(index_path).open("rb") as handle:
+            index = pickle.load(handle)
+        if not isinstance(index, dict):
+            raise ValueError("invalid fares index")
+        if index.get("schema") != 1:
+            raise ValueError("unsupported fares index schema")
+        origin = str(index.get("origin", "")).strip().upper()
+        if not origin:
+            raise ValueError("fares index has no origin")
+        db.flows = index["flows"]
+        db.fares_by_flow = index["fares"]
+        db.flows_by_origin_nlc = index["flows_by_origin_nlc"]
+        db._focus_origin_nlcs = set(index["origin_nlcs"])
+        db._cache_origin = origin
+        return db
 
     def _preload_focus_locations(self, path: str | Path, origin_crs: str) -> None:
         """Find the origin NLCs before the stream reaches the FFL file.
@@ -374,28 +551,61 @@ class FaresDb:
         if self._focus_origin_nlcs is not None:
             self._focus_origin_nlcs.add(_text(line, LOCATION_OFFSETS, "nlc"))
 
-    def load_feed(self, path: str | Path, *, focus_origin: str | None = None) -> "FaresDb":
+    def load_feed(
+        self,
+        path: str | Path,
+        *,
+        focus_origin: str | None = None,
+        cache_path: str | Path | None = None,
+    ) -> "FaresDb":
         """Load a feed, optionally retaining fares for one origin only.
 
         ``focus_origin`` is for a one-origin page build. It is deliberately not
         used by audit or multi-origin builds, whose results must describe the
-        whole feed.
+        whole feed. When ``cache_path`` is supplied, a focused database is
+        persisted atomically and reused on later page builds. The cache is
+        opt-in so audit and general analysis retain their complete-feed
+        semantics.
         """
+        origin = focus_origin.strip().upper() if focus_origin is not None else None
+        if cache_path is not None and origin is not None:
+            cache = Path(cache_path)
+            if cache.is_file():
+                try:
+                    with cache.open("rb") as handle:
+                        loaded = pickle.load(handle)
+                    if (
+                        isinstance(loaded, FaresDb)
+                        and loaded._cache_origin == origin
+                    ):
+                        return loaded
+                except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError):
+                    pass
+
         if focus_origin is not None:
             self._focus_origin_nlcs = set()
-            self._preload_focus_locations(path, focus_origin.strip().upper())
+            self._preload_focus_locations(path, origin)
         read_feed_files(path, self.report, self._load_lines)
         self._load_location_lookup(path)
+        if cache_path is not None and focus_origin is not None:
+            self._cache_origin = origin
+            cache = Path(cache_path)
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_name(
+                f"{cache.name}.{os.getpid()}.tmp"
+            )
+            with temporary.open("wb") as handle:
+                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary.replace(cache)
         return self
 
     def _load_location_lookup(self, path: str | Path) -> None:
-        """Load the optional station classification reference beside a feed.
+        """Load a reviewed cache or derive one from official ONS BUA data.
 
-        The DTD fares ZIP and the Knowledgebase reference feeds are commonly
-        kept as siblings under ``feeds/``. Accept a lookup inside the fares
-        folder too, which keeps synthetic and downloaded fixtures self-contained.
-        JSON is deliberately supported as well as the DTD XML format: it makes a
-        small reviewed correction possible without changing the page code.
+        ``FareLocationsRefData`` is deliberately not treated as a settlement
+        classification: it contains fare-location records, not CRS-to-type
+        records. A real DTD download can be recognised by its sibling download
+        manifest; only then is a missing cache filled from ONS and written back.
         """
         root = Path(path)
         candidates: list[Path] = []
@@ -420,8 +630,17 @@ class FaresDb:
                     self._load_location_types_xml(candidate)
             except (OSError, ValueError, ET.ParseError) as error:
                 self.report.skip_file(f"{candidate.name}: station classification lookup unreadable: {error}")
+            self._apply_major_station_fallbacks()
             if self.location_types_by_crs:
                 return
+
+        if root.parent.joinpath("download-manifest.json").is_file():
+            try:
+                self._load_ons_location_types()
+                self._write_location_cache(root.parent / "location-types.json")
+            except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
+                self.report.skip_file(f"ONS station classification unavailable: {error}")
+        self._apply_major_station_fallbacks()
 
     @staticmethod
     def _normalise_location_type(value: object) -> str | None:
@@ -432,8 +651,38 @@ class FaresDb:
             return "town"
         return "other" if text else None
 
+    def _apply_major_station_fallbacks(self) -> None:
+        """Classify major stations outside the ONS workbook's national coverage."""
+        for crs, location in self.locations_by_crs.items():
+            if location.name.strip().upper().startswith("LONDON") and crs not in self.location_types_by_crs:
+                self.location_types_by_crs[crs] = "city"
+        for crs in LONDON_STATION_CRS:
+            if crs in self.locations_by_crs and crs not in self.location_types_by_crs:
+                self.location_types_by_crs[crs] = "city"
+        for crs, kind in MAJOR_UK_STATION_FALLBACKS.items():
+            if crs in self.locations_by_crs and crs not in self.location_types_by_crs:
+                self.location_types_by_crs[crs] = kind
+        if any(
+            crs in self.location_types_by_crs
+            for crs in set(LONDON_STATION_CRS) | set(MAJOR_UK_STATION_FALLBACKS)
+        ):
+            self.location_type_source = LOCATION_FALLBACK_SOURCE
+
     def _load_location_types_json(self, data: object) -> None:
-        records = data.values() if isinstance(data, dict) else data
+        if isinstance(data, dict):
+            self.location_type_source = str(
+                data.get("source") or data.get("sourceName") or ""
+            ) or None
+            # Generated ONS caches use a compact CRS -> type object. Synthetic
+            # fixtures use the older list-of-records shape, retained below.
+            nested = data.get("records")
+            if isinstance(nested, dict):
+                for crs, value in nested.items():
+                    kind = self._normalise_location_type(value)
+                    if crs and kind:
+                        self.location_types_by_crs[str(crs).strip().upper()] = kind
+                return
+        records = data.get("records") if isinstance(data, dict) else data
         if not isinstance(records, (list, tuple)):
             return
         for record in records:
@@ -464,6 +713,102 @@ class FaresDb:
             kind = self._normalise_location_type(kind)
             if crs and kind:
                 self.location_types_by_crs[crs.strip().upper()] = kind
+
+    @staticmethod
+    def _normalise_settlement_name(value: object) -> str:
+        return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
+
+    @staticmethod
+    def _xlsx_cell_value(cell: ET.Element, shared: list[str]) -> str:
+        cell_type = cell.attrib.get("t", "")
+        if cell_type == "inlineStr":
+            return "".join(node.text or "" for node in cell.iter() if node.tag.endswith("}t"))
+        value = next((node.text or "" for node in cell if node.tag.endswith("}v")), "")
+        if cell_type == "s" and value.isdigit():
+            return shared[int(value)]
+        return value
+
+    def _read_ons_built_up_areas(self, data: bytes) -> dict[str, dict[str, str]]:
+        """Read ONS table 1c/1d using only the standard library.
+
+        The workbook's row shape is stable: F is the BUA name and G its size
+        band. Reading only those two cells avoids pinning a spreadsheet library
+        into this otherwise self-contained project.
+        """
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            shared: list[str] = []
+            if "xl/sharedStrings.xml" in archive.namelist():
+                root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+                shared = [
+                    "".join(node.text or "" for node in item.iter() if node.tag.endswith("}t"))
+                    for item in root
+                    if item.tag.endswith("}si")
+                ]
+
+            bands: dict[str, dict[str, str]] = {}
+            for name in archive.namelist():
+                if not re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name):
+                    continue
+                root = ET.fromstring(archive.read(name))
+                for row in root.iter():
+                    if not row.tag.endswith("}row"):
+                        continue
+                    values = {
+                        cell.attrib.get("r", "").rstrip("0123456789"):
+                        self._xlsx_cell_value(cell, shared)
+                        for cell in row
+                        if cell.tag.endswith("}c")
+                    }
+                    band = values.get("G", "").strip().lower()
+                    settlement = values.get("F", "").strip()
+                    if settlement and band in LOCATION_BAND_TYPES:
+                        bands[self._normalise_settlement_name(settlement)] = {
+                            "name": settlement,
+                            "type": LOCATION_BAND_TYPES[band],
+                            "band": band,
+                        }
+            if not bands:
+                raise ValueError("ONS workbook contains no built-up-area size bands")
+            return bands
+
+    def _load_ons_location_types(self) -> None:
+        request = urllib.request.Request(
+            ONS_BUILT_UP_AREAS_FILE_URL,
+            headers={"User-Agent": "TrainBudgetExplorer/1.0 (station classification build)"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            workbook = response.read()
+        areas = self._read_ons_built_up_areas(workbook)
+        for crs, location in self.locations_by_crs.items():
+            if not crs or not location.name:
+                continue
+            area = areas.get(self._normalise_settlement_name(location.name))
+            if area:
+                self.location_types_by_crs[crs] = area["type"]
+        self._apply_major_station_fallbacks()
+        if self.location_type_source != LOCATION_FALLBACK_SOURCE:
+            self.location_type_source = LOCATION_TYPE_SOURCE
+
+    def _write_location_cache(self, path: Path) -> None:
+        cache = {
+            "schema": 1,
+            "source": LOCATION_TYPE_SOURCE,
+            "sourceUrl": ONS_BUILT_UP_AREAS_DATASET_URL,
+            "mapping": {
+                "city": ["major", "large"],
+                "town": ["medium", "small"],
+                "other": ["minor"],
+            },
+            "coverage": (
+                "ONS Census 2021 BUA matches, then reviewed major-station fallbacks "
+                "for London and UK areas outside the workbook"
+            ),
+            "fallbackSource": LOCATION_FALLBACK_SOURCE,
+            "fallbackLondonStations": sorted(LONDON_STATION_CRS),
+            "fallbackOtherStations": dict(sorted(MAJOR_UK_STATION_FALLBACKS.items())),
+            "records": dict(sorted(self.location_types_by_crs.items())),
+        }
+        path.write_text(json.dumps(cache, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def destination_type(self, crs: str) -> str:
         """Return ``city``, ``town``, or ``other`` for a station CRS."""
