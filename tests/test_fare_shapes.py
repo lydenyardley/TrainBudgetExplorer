@@ -134,7 +134,7 @@ class RealShapeFareTest(unittest.TestCase):
     def test_the_clean_feed_reports_none_of_this(self) -> None:
         clean = FaresDb().load_feed(build_synthetic_feed(Path(self._tmp.name) / "clean"))
         self.assertEqual(clean.stats()["flows"], 6)
-        self.assertEqual(clean.stats()["fares"], 9)
+        self.assertEqual(clean.stats()["fares"], 10)
         self.assertEqual(clean.stats()["fares_with_no_flow_record"], 0)
         self.assertEqual(clean.stats()["locations_without_a_station_code"], 0)
 

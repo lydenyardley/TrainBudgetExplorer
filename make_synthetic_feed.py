@@ -15,6 +15,7 @@ from atoc_fares import (
     FLOW_F,
     FLOW_T,
     LOCATION,
+    LOCATION_CACHE_SCHEMA,
     MINIMUM_FARE,
     RAILCARD,
     TICKET_TYPE,
@@ -39,7 +40,7 @@ STATIONS = (
     ("6000", "XFD", "FIRSTONLY"),
 )
 
-UNSERVED_STATION = ("7000", "SLP", "SLEEPY")
+UNSERVED_STATION = ("7000", "SLP", "TOWER HILL UND")
 UNSERVED_FLOW = ("0000007", "1000", "7000", "00000")
 UNSERVED_FARE = ("0000007", "SDR", 1200, "")
 
@@ -48,6 +49,7 @@ TICKET_TYPES = (
     ("CDR", "OFF-PEAK DAY R", "2", "R", "1"),
     ("FDR", "FIRST DAY R", "1", "R", "0"),
     ("SDS", "ANYTIME DAY S", "2", "S", "0"),
+    ("2AS", "ADVANCE", "2", "S", "1"),
 )
 
 # (flow_id, origin NLC, destination NLC, route code). A real feed prices the
@@ -70,9 +72,10 @@ FARES = (
     ("0000001", "CDR", 1160, "1A"),
     ("0000001", "FDR", 2600, "00"),
     ("0000001", "SDS", 700, "00"),
+    ("0000001", "2AS", 100, "AS"),
     ("0000002", "SDR", 870, ""),
     ("0000003", "SDR", 2240, ""),
-    ("0000004", "SDR", 8400, ""),
+    ("0000004", "SDR", 12600, ""),
     ("0000005", "SDR", 1420, ""),
     ("0000006", "FDR", 1500, "00"),
 )
@@ -117,14 +120,16 @@ MINIMUM_FARES = (("TWO", "SDR", 1200),)
 
 # The production fares feed carries CRS, name, and NLC only. The station
 # classification is a separate reference feed, so the synthetic fixture keeps
-# its small reviewed equivalent in the same shape.
+# its small reviewed equivalent in the same shape. These values are chosen to
+# exercise every filter the page can render; they are a fixture, not the ONS
+# result for these towns, which the checked-in reference data holds.
 LOCATION_TYPES = {
     "GRN": "town",
     "NOT": "city",
     "LCN": "city",
-    "PBO": "city",
+    "PBO": "small_town",
     "KGX": "city",
-    "XFD": "other",
+    "XFD": "village",
     "SLP": "other",
 }
 LOCATION_FACETS = {
@@ -132,6 +137,7 @@ LOCATION_FACETS = {
     "NOT": ["university"],
     "PBO": ["university"],
     "XFD": ["island"],
+    "SLP": ["heritage"],
 }
 
 # Stations with a minimum interchange time. The 10 minutes at NOTT is what makes
@@ -263,7 +269,7 @@ def build_synthetic_feed(
     (path.parent / f"{path.name}.location-types.json").write_text(
         json.dumps(
             {
-                "schema": 2,
+                "schema": LOCATION_CACHE_SCHEMA,
                 "source": "reviewed synthetic station classification",
                 "records": {
                     crs: {

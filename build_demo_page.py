@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import html
 import json
+import functools
 import os
 import re
 import sys
@@ -32,6 +33,7 @@ from atoc_fares import (
     FaresDb,
     PLACEHOLDER_TICKET_CODES,
     format_pence,
+    is_advance_fare,
 )
 from atoc_timetable import TimetableDb
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
@@ -99,6 +101,33 @@ METADATA_NAME = "metadata.json"
 MANIFEST_NAME = "download-manifest.json"
 BUILD_STATE_NAME = ".trainbudget-build.json"
 CACHE_DIR = Path(__file__).parent / "_cache"
+SOURCE_FILES = (
+    "atoc_fares.py",
+    "atoc_restrictions.py",
+    "atoc_timetable.py",
+    "build_demo_page.py",
+    "build_workers.py",
+    "feeds_cli.py",
+    "page_templates.py",
+    "parse_report.py",
+    "retailer.py",
+    "reference-data/destination-facets.json",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def source_fingerprint() -> str:
+    """Hash the source files that can change a generated page.
+
+    Cached because it is asked once per page by a 2,500-page build, and the
+    sources cannot change while one process is running.
+    """
+    root = Path(__file__).parent
+    digest = hashlib.sha256()
+    for name in SOURCE_FILES:
+        digest.update(name.encode("utf-8"))
+        digest.update((root / name).read_bytes())
+    return digest.hexdigest()[:16]
 
 
 def feed_fingerprint(path: str | Path) -> str:
@@ -119,6 +148,7 @@ def feed_fingerprint(path: str | Path) -> str:
 def resumable_signature(shared: dict, index: list[dict]) -> str:
     """Identity of the inputs and decisions represented by a station build."""
     stable = {
+        "source": source_fingerprint(),
         "feed": feed_fingerprint(shared["feed"]),
         "timetable": feed_fingerprint(shared["timetable"]) if shared["timetable"] else None,
         "config": {key: value for key, value in shared.items()
@@ -542,9 +572,9 @@ def build_payload(
     """Every publishable destination from the origin, at both party prices.
 
     Each destination carries the ticket links and the next few journeys. The
-    journeys are options in the feed, not a booking: the fare reported is a
-    walk-up fare valid on any of them, which is why no single one is chosen for
-    the reader.
+    journeys are options in the feed, not a booking: an unrestricted fare is
+    valid on any of them, while an Advance single is valid only on a
+    qualifying train, which is why no train is chosen for the reader.
     """
     origin = fares.locations_by_crs[origin_crs.strip().upper()]
     # Every destination is included, then the browser's price filter decides
@@ -740,7 +770,9 @@ def build_payload(
             "railcard": card,
             "destinationType": fares.destination_type(crs),
             "destinationTypes": fares.destination_types(crs),
+            "heritageSites": fares.heritage_sites(crs),
             "ticket": one.ticket_code,
+            "isAdvance": is_advance_fare(one.ticket_name, one.restriction_code),
             "quality": quality,
             "offPeak": one.off_peak,
             "restrictionCode": one.restriction_code,
@@ -796,6 +828,7 @@ def build_payload(
 
     return {
         "origin": {"crs": origin_row.crs, "name": origin_row.name},
+        "sourceFingerprint": source_fingerprint(),
         "builtAt": built_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "destinations": destinations,
         "singleDestinations": single_destinations,
@@ -829,7 +862,7 @@ def build_payload(
         "railcardInFeed": railcard_in_feed,
         "railcardEligibleCount": railcard_eligible_count,
         "railcardAvailable": railcard_eligible_count > 0,
-        "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, and ITX placeholders are excluded",
+        "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
         "attribution": attribution,

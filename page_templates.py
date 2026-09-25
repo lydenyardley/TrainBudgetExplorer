@@ -74,9 +74,10 @@ TEMPLATE = """<!doctype html>
   .sub { color: var(--muted); max-width: 75ch; }
   .heading-field { display: inline-flex; align-items: baseline; color: var(--accent);
                    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-                   border-radius: .15rem .15rem 0 0; }
+                   border-radius: .15rem .15rem 0 0; cursor: text; }
   .heading-field:focus-within { background: var(--best); border-bottom-style: solid; }
-  #budgetNumber { width: 3.2ch; min-width: 2.5rem; padding: .05rem .1rem; border: 0; outline: 0;
+  .budget-prefix { user-select: none; }
+  #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
                   letter-spacing: inherit; appearance: textfield; }
   #budgetNumber::-webkit-inner-spin-button { appearance: none; }
@@ -141,6 +142,9 @@ TEMPLATE = """<!doctype html>
   .restriction { font-size: .78rem; color: var(--muted); }
   .restriction[data-status="restricted"] { color: #9a6700; }
   .restriction[data-status="unrestricted"] { color: var(--muted); }
+  .heritage-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
+  .heritage-proof a { color: inherit; text-underline-offset: .15em; }
+  .heritage-proof a:hover, .heritage-proof a:focus-visible { color: var(--accent); }
   .tag { font-size: .75rem; color: var(--muted); }
   #railcardDrawer { width: min(30rem, calc(100% - 1rem)); max-width: none; height: 100dvh;
                     max-height: none; margin: 0 0 0 auto; padding: 1.25rem;
@@ -153,7 +157,7 @@ TEMPLATE = """<!doctype html>
   .drawer-status { margin: 1.25rem 0; padding: .8rem; border: 1px solid var(--line);
                     border-radius: .5rem; background: var(--best); }
   .drawer-status[data-state=blocked], .drawer-status[data-state=unavailable] { border-color: #b7791f; }
-  #railcardRule { padding: .8rem; border-left: 3px solid var(--accent); background: var(--bg);
+  #railcardRule { padding: .8rem; border: 1px solid var(--line); border-left-color: var(--accent); background: var(--bg);
                   font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85rem; }
   #railcardDrawer dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem .8rem; }
   #railcardDrawer dt { color: var(--muted); }
@@ -217,7 +221,7 @@ TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-<h1 id="pageHeading">Where can we go for under <span class="heading-field"><span aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
+<h1 id="pageHeading">Where can we go for under <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
 <p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
@@ -293,8 +297,8 @@ TEMPLATE = """<!doctype html>
 <footer>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
-  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded; advance fares can be cheaper, and the tool does not promise them.</p>
-  <p>The times on this page are options in the timetable, not a booking: the fare shown is valid on every service listed, so none is picked for you.</p>
+  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
+  <p>The times on this page are options in the timetable, not a booking. Unrestricted fares are valid on the services listed; an Advance single is valid only on a qualifying train, so no train is picked for you.</p>
   <details class="method">
     <summary>How these prices were calculated</summary>
     <p id="pricingBasis"></p>
@@ -312,6 +316,7 @@ TEMPLATE = """<!doctype html>
 const DATA = __DATA__;
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
+const budgetField = document.getElementById("budgetField");
 const railcard = document.getElementById("railcard");
 
 
@@ -349,7 +354,10 @@ if (!DATA.hasJourneys) {
 }
 const columnCount = () => document.querySelectorAll("thead th").length;
 
-const money = (pence) => "\u00a3" + (pence / 100).toFixed(2).replace(/\\.00$/, "");
+// Prices are always two decimal places. The pound sign lines up down the
+// column, which is the whole point of a price-first list, and £8.70 is easier
+// to compare with £8.65 than £8.70 is with £9.
+const money = (pence) => "\u00a3" + (pence / 100).toFixed(2);
 const duration = (minutes) => {
   if (minutes === null || minutes === undefined) return "-";
   const hours = Math.floor(minutes / 60);
@@ -388,10 +396,15 @@ function typeLabel() {
     .map((input) => input.parentElement.textContent.trim().toLowerCase());
   return labels.length ? " in " + labels.join(" and ") : "";
 }
+function sizeBudgetField() {
+  const digits = Math.max(1, String(budgetNumber.value || "1").length);
+  budgetNumber.style.width = digits + "ch";
+}
 function setBudget(value) {
   const safe = Math.max(1, Math.min(Number(budget.max) || 1, Number(value) || 1));
   budget.value = String(safe);
   budgetNumber.value = String(safe);
+  sizeBudgetField();
   return safe;
 }
 function stationInFeedMessage(station) {
@@ -426,6 +439,7 @@ function render() {
     (d) => priceOf(d) <= cap && matchesType(d, wantedTypes)
   );
   budgetNumber.value = budget.value;
+  sizeBudgetField();
   rows.replaceChildren();
 
   const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
@@ -442,21 +456,40 @@ function render() {
       cells.push([duration(destination.minutes), "num", "Time"]);
       cells.push([destination.changes === null ? "-" : String(destination.changes), "num", "Changes"]);
     }
-    const qualityLabel = destination.quality === "outbound single"
-      ? "Standard outbound single"
-      : destination.quality === "unrestricted Anytime Day Return"
-        ? "Unrestricted Anytime Day Return"
-        : "Standard return fare";
-    cells.push([
-      (destination.restrictionCode ? "Restricted fare — check seller conditions" : qualityLabel) + " · " + destination.ticket,
-      "",
-      "Fare",
-    ]);
+    // An Advance single is train-specific whatever the feed calls it, so it
+    // replaces the other labels rather than qualifying them: a reader must not
+    // read a walk-up label on a price that only exists on one train.
+    const fareLabel = destination.isAdvance
+      ? "Advance single — choose a qualifying train; price and availability can change"
+      : destination.restrictionCode
+        ? "Restricted fare — check seller conditions"
+        : destination.quality === "outbound single"
+          ? "Standard outbound single"
+          : destination.quality === "unrestricted Anytime Day Return"
+            ? "Unrestricted Anytime Day Return"
+            : "Standard return fare";
+    cells.push([fareLabel + " · " + destination.ticket, "", "Fare"]);
     for (const [text, className, label] of cells) {
       const cell = document.createElement("td");
       cell.dataset.label = label;
       cell.textContent = text;
       if (className) cell.className = className;
+      if (label === "Station" && destination.heritageSites?.length) {
+        const heritage = document.createElement("span");
+        heritage.className = "heritage-proof";
+        heritage.append("World heritage: ");
+        destination.heritageSites.forEach((site, index) => {
+          if (index) heritage.append("; ");
+          const link = document.createElement("a");
+          link.href = site.url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = site.name;
+          link.title = "UNESCO World Heritage List site " + site.id;
+          heritage.append(link);
+        });
+        cell.append(heritage);
+      }
       row.append(cell);
     }
     const restriction = document.createElement("td");
@@ -688,7 +721,8 @@ function provenance() {
   }
   if (DATA.builtAt) {
     const line = document.getElementById("buildMetadata");
-    line.textContent = "Site built " + DATA.builtAt.replace("T", " ").replace("Z", " UTC") + ".";
+    line.textContent = "Site built " + DATA.builtAt.replace("T", " ").replace("Z", " UTC") +
+      (DATA.sourceFingerprint ? " · source " + DATA.sourceFingerprint : "") + ".";
     line.hidden = false;
   }
   if (DATA.tracked) {
@@ -837,6 +871,12 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
 
 budget.addEventListener("input", () => { setBudget(budget.value); render(); });
 budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); render(); });
+budgetField.addEventListener("click", (event) => {
+  if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
+    budgetNumber.focus();
+    budgetNumber.select();
+  }
+});
 railcard.addEventListener("change", render);
 for (const input of destinationTypeInputs) {
   input.addEventListener("change", () => {
@@ -859,6 +899,7 @@ nextPage.addEventListener("click", () => { currentPage += 1; render(); window.sc
 const requestedBudget = Number(new URLSearchParams(window.location.search).get("budget"));
 if (Number.isFinite(requestedBudget) && requestedBudget > 0) setBudget(requestedBudget);
 provenance();
+sizeBudgetField();
 render();
 document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
 </script>
