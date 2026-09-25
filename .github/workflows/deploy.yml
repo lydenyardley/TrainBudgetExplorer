@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .feed-state
-          key: feed-manifest-v1-
+          key: feed-manifest-v2-
 
       - name: Download the licensed DTD feeds
         env:
@@ -69,11 +69,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p .feed-state
-          if [ -f .feed-state/download-manifest.json ] && cmp -s feeds/download-manifest.json .feed-state/download-manifest.json; then
-            echo "Feed manifest is unchanged; keeping the existing site."
+          INPUTS=$(sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1)
+          if [ -f .feed-state/download-manifest.json ] && cmp -s feeds/download-manifest.json .feed-state/download-manifest.json && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
+            echo "Feed manifest and build inputs are unchanged; keeping the existing site."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Feed manifest changed; a full audited build is required."
+            echo "Feed manifest or build inputs changed; a full audited build is required."
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -85,6 +86,7 @@ jobs:
         if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
+          PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
         run: |
           BASE_ARGS=()
           if [ -n "$SITE_BASE_PATH" ]; then
@@ -117,12 +119,18 @@ jobs:
           PAGE=_site/index.html
           npx --yes --package playwright node browser_test.cjs "$PAGE"
 
+      - name: Save the successful feed manifest and build fingerprint
+        if: steps.feed_check.outputs.changed == 'true'
+        run: sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1 > .feed-state/build-inputs.sha256
+
       - name: Save the successful feed manifest
         if: steps.feed_check.outputs.changed == 'true'
         uses: actions/cache/save@v4
         with:
-          path: .feed-state/download-manifest.json
-          key: feed-manifest-v1-${{ hashFiles('feeds/download-manifest.json') }}
+          path: |
+            .feed-state/download-manifest.json
+            .feed-state/build-inputs.sha256
+          key: feed-manifest-v2-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ hashFiles('feeds/download-manifest.json') }}
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.feed_check.outputs.changed == 'true'

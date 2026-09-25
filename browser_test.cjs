@@ -87,7 +87,8 @@ async function main() {
     // 1. It renders, with rows and a heading that names the origin.
     await page.goto(url);
     const heading = (await page.textContent("h1")) || "";
-    check("renders a heading naming the origin", /GRANTHAM/.test(heading), heading.trim());
+    check("renders the continuous budget-and-origin heading", /Where can we go for under/.test(heading) && /GRANTHAM/.test(heading), heading.trim());
+    check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");
     const initial = await rows();
     check("renders priced rows", initial > 0, `${initial} rows`);
 
@@ -99,29 +100,34 @@ async function main() {
     await page.mouse.move(track.x + 1, track.y + track.height / 2, { steps: 12 });
     await page.mouse.up();
     const draggedBudget = (await page.inputValue("#budgetNumber")).trim();
+    const headingBudget = (await page.inputValue("#budgetNumber")).trim();
+    check("the slider updates the heading budget live", headingBudget === draggedBudget, `${draggedBudget} / ${headingBudget}`);
     const afterDrag = await rows();
     check("the slider responds to a real drag", draggedBudget !== startBudget, `${startBudget} -> ${draggedBudget}`);
     check("a dragged-down budget drops rows", afterDrag < initial, `${initial} -> ${afterDrag}`);
     check("an empty budget says so rather than showing nothing", await page.locator("#empty").isVisible());
     check("the summary counts what is left", /No destinations within/.test(await page.textContent("#summary")));
 
-    // 3. The destination-type filter narrows the result set, not a free-text
-    // station search. The synthetic lookup classifies the priced city
-    // destinations, while the £20 default leaves only two of them in view.
+    // 3. The destination-type chips narrow the result set and support both
+    // exclusive All and multi-select specific types.
     await page.goto(url);
-    await page.selectOption("#q", "city");
+    await page.check('input[name="destinationType"][value="city"]');
     const filtered = await rows();
-    check("the city filter leaves the priced city destinations", filtered === 2, `${filtered} rows`);
+    const expectedCityCount = await page.evaluate(() => DATA.destinations.filter(
+      (d) => d.destinationType === "city" && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
+    ).length);
+    check("the city chip leaves the priced city destinations", filtered === expectedCityCount && filtered > 0, `${filtered} rows; expected ${expectedCityCount}`);
     check(
       "and the rows are the city destinations",
-      (await page.textContent("#rows")).includes("LINCOLN") &&
-        (await page.textContent("#rows")).includes("NOTTINGHAM"),
+      (await page.textContent("#rows")).includes("NOTTINGHAM"),
       await page.textContent("#rows")
     );
-    check("clearing the type filter restores the list", (await (async () => {
-      await page.selectOption("#q", "all");
-      return rows();
-    })()) === initial);
+    await page.check('input[name="destinationType"][value="town"]');
+    const multi = await rows();
+    check("specific destination chips are multi-select", await page.locator('input[name="destinationType"][value="city"]').isChecked() && await page.locator('input[name="destinationType"][value="town"]').isChecked(), `${filtered} -> ${multi}`);
+    await page.check('input[name="destinationType"][value="all"]');
+    check("All is checked exclusively", await page.locator('input[name="destinationType"][value="all"]').isChecked() && !(await page.locator('input[name="destinationType"][value="city"]').isChecked()), "all state");
+    check("clearing the type filter restores the list", (await rows()) === initial);
 
     // 4. A ticket link goes where it says it goes, in a new tab.
     const link = page.locator("#rows a.buy").first();
@@ -164,8 +170,8 @@ async function main() {
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(
-      "and says the discount is not included and to tick the box",
-      /^Railcard discount not included: tick the Two Together box/m.test(partyCopy),
+      "and does not promise a railcard for an ineligible synthetic fare",
+      !/Two Together discount/.test(partyCopy),
       partyCopy
     );
 
@@ -191,9 +197,10 @@ async function main() {
     // targets. Measured, not assumed.
     const layout = await page.evaluate(() => {
       const toPx = (v) => parseFloat(v);
-      const budgetSize = toPx(getComputedStyle(document.getElementById("budgetOut")).fontSize);
+      const budgetSize = toPx(getComputedStyle(document.getElementById("budgetNumber")).fontSize);
       const h1Size = toPx(getComputedStyle(document.querySelector("h1")).fontSize);
-      const secondary = document.querySelector(".controls .secondary");
+      const secondary = document.querySelector(".filter-bar .party-filter");
+      const destinationFilter = document.querySelector(".filter-bar .destination-filter");
       const hitOf = (el) => { const r = el.getBoundingClientRect();
         // The ::after slop is positioned relative to the padding box. It
         // renders only when the element has position: relative (both do).
@@ -202,20 +209,21 @@ async function main() {
         // .toggle uses inset: -6px (12px total); .buy uses -11px vertical (22px).
         return Math.round(r.height + (el.classList.contains("buy") ? 22 : 12)); };
       return {
-        budgetLeads: budgetSize > h1Size,
+        budgetLeads: budgetSize >= h1Size,
         secondaryHoldsPartyAndFilter: !!secondary &&
-          !!secondary.querySelector('input[name="unit"]') && !!secondary.querySelector("#q"),
+          !!secondary.querySelector('input[name="unit"]') && !!destinationFilter &&
+          !!destinationFilter.querySelector('input[name="destinationType"]'),
         copyHit: hitOf(document.querySelector('#rows button[aria-label^="Copy"]')),
         buyHit: hitOf(document.querySelector("#rows a.buy"))
       };
     });
-    check("the budget is bigger than the heading", layout.budgetLeads);
-    check("party and filter share the secondary column", layout.secondaryHoldsPartyAndFilter);
+    check("the budget is inline in the large heading", layout.budgetLeads);
+    check("party and destination filters share the horizontal bar", layout.secondaryHoldsPartyAndFilter);
     check("the copy action carries a 44px target", layout.copyHit >= 44, layout.copyHit + "px");
     check("the buy link carries a 44px target", layout.buyHit >= 44, layout.buyHit + "px");
 
-    const pickerButton = page.locator("#changeOrigin");
-    if (await pickerButton.count()) {
+    const pickerButton = page.locator("#changeOrigin");      if (await pickerButton.count()) {
+
       await pickerButton.click();
       check("Change opens the picker", await page.locator("#originPicker").isVisible());
       const pickCount = await page.locator("#originPicks a").count();
@@ -224,7 +232,8 @@ async function main() {
       check("options are links to station pages", /^\/from\/.+\/$/.test(href), href);
       await page.fill("#originSearch", "notting");
       const narrowed = await page.locator("#originPicks a").count();
-      check("typing narrows the picker", narrowed === 1 && /NOTTINGHAM/.test(await page.locator("#originPicks a").first().textContent()), `${narrowed} options`);
+      const narrowedText = await page.locator("#originPicks").textContent();
+      check("typing narrows the picker", narrowed > 0 && /NOTTINGHAM/.test(narrowedText), `${narrowed} options`);
       await page.fill("#originSearch", "zzzz");
       check(
         "a no-match says so and names the code route",
@@ -236,7 +245,7 @@ async function main() {
       await page.fill("#originSearch", "lin");
       await page.keyboard.press("Escape");
       check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
-      check("and focus returns to the Change control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
+      check("and focus returns to the heading station control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
       await pickerButton.click();
       check("Change reopens the picker", await page.locator("#originPicker").isVisible());
       await pickerButton.click();

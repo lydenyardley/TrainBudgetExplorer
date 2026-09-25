@@ -12,35 +12,39 @@ PRIVACY = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy</title>
 <style>
-  :root { --bg:#fff; --fg:#11161d; --muted:#5b6472; }
+  :root { --bg:#fff; --fg:#11161d; --muted:#5b6472; --accent:#14509b; --ochre:#a65d00; --line:#d0d5dd; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#14181d; --fg:#e7ebf0; --muted:#9aa4b2; }
+    :root { --bg:#14181d; --fg:#e7ebf0; --muted:#9aa4b2; --accent:#7db4f5; --ochre:#f0b35b; --line:#3a424c; }
   }
   body { margin:0; padding:1.5rem; max-width:40rem; background:var(--bg); color:var(--fg);
          font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  h1 { font-size:1.5rem; margin:0 0 1rem; }
+  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
+           text-transform: uppercase; margin: 0 0 1.25rem; }
+  h1 { font-size: clamp(2rem, 5vw, 5rem); line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
   h2 { font-size:1.05rem; margin:1.5rem 0 .25rem; }
   p, li { margin:.4rem 0; }
   .muted { color:var(--muted); }
-  a { color:inherit; }
+  a { color:var(--accent); }
+  .back-link { display:inline-flex; align-items:center; min-height:44px; margin-bottom:1rem; }
 </style>
 </head>
 <body>
-<nav><a href="__BASE__/">Back to the station chooser</a></nav>
+<nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
+<p class="brand">Rail Budget</p>
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored anywhere: the budget you drag and the destination type you select never leave your device.</p>
 <h2>What this site does not do</h2>
 <ul>
   <li>No cookies are set by this site.</li>
   <li>No analytics run. If the operator later adds analytics, this page will name them here first.</li>
-  <li>Nothing about your visit is recorded by this site itself.</li>
+  <li>The site code does not intentionally collect visit data.</li>
 </ul>
 <h2>Ticket links</h2>
 <p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
 <h2>Hosting</h2>
-<p>The site is static files served by the operator's chosen host. The host's own logs may record standard technical information such as IP address and pages requested; what happens to it is governed by the operator's hosting arrangement.</p>
-<h2>Contact</h2>
-<p class="muted">The operator's contact address goes here before the site is published.</p>
+<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>  <h2>Contact</h2>  <p class="muted">__CONTACT__</p>
+
+
 <p class="muted">__NOTE__</p>
 </body>
 </html>
@@ -62,32 +66,52 @@ TEMPLATE = """<!doctype html>
             --best: rgba(125, 180, 245, .12); --field: #1c2127; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0 auto; padding: 1.5rem; max-width: 60rem;
+  body { margin: 0 auto; padding: clamp(1rem, 3vw, 2.25rem); max-width: 78rem;
          background: var(--bg); color: var(--fg);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-  .sub { color: var(--muted); margin: 0 0 1.25rem; }
-  /* The budget leads: the biggest type on the page and the wider column. The
-     party switch and the destination-type filter refine it, so they share one narrower
-     secondary column rather than competing as three equal cards. */
-  /* Layouts that set their own display defeat the hidden attribute, so every
-     one of them re-declares display:none here. */
+  h1 { font-size: clamp(2rem, 5vw, 5rem);
+       line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
+  .sub { color: var(--muted); margin: -1rem 0 1.5rem; max-width: 52rem; }
+  .heading-field { display: inline-flex; align-items: baseline; color: var(--accent);
+                   border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+                   border-radius: .15rem .15rem 0 0; }
+  .heading-field:focus-within { background: var(--best); border-bottom-style: solid; }
+  #budgetNumber { width: 3.2ch; min-width: 2.5rem; padding: .05rem .1rem; border: 0; outline: 0;
+                  background: transparent; color: inherit; font: inherit; font-weight: inherit;
+                  letter-spacing: inherit; appearance: textfield; }
+  #budgetNumber::-webkit-inner-spin-button { appearance: none; }
+  #changeOrigin { display: inline-flex; align-items: baseline; gap: .4rem; padding: .05rem .15rem;
+                  border: 0; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+                  border-radius: .15rem .15rem 0 0; background: transparent; color: var(--accent);
+                  font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
+  #changeOrigin:hover, #changeOrigin:focus-visible { background: var(--best); border-bottom-style: solid; }
+  #changeOrigin::after { content: "↕"; font-size: .5em; opacity: .65; }
   [hidden] { display: none !important; }
-  .controls { display: grid; gap: 1.25rem 2rem; grid-template-columns: minmax(16rem, 1.5fr) minmax(12rem, 1fr);
-              padding: 1.25rem; border: 1px solid var(--line); border-radius: .5rem; align-items: start; }
-  .controls .secondary { display: grid; gap: 1rem; align-content: start; }
-  .budget { font-size: 2.75rem; font-weight: 700; color: var(--accent); letter-spacing: -.02em; line-height: 1.1; }
-  .budget-entry { display: flex; align-items: center; gap: .4rem; }
-  #budgetNumber { width: 5.5rem; padding: .35rem .4rem; border: 1px solid var(--line); border-radius: .35rem;
-                  background: var(--field); color: var(--fg); font: inherit; font-weight: 700; }
-  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; }
-  fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: .35rem; }
-  legend, label.caption { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  /* The whole label is the touch target: the party switch changes every price
-     on the page, so a thumb must land it first time. */
-  .choices label { display: flex; align-items: center; gap: .5rem; font-size: .95rem; color: var(--fg);
-                   padding: .55rem 0; cursor: pointer; }
-  .choices input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
+  .filter-bar { display: grid; grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr);
+                gap: 1.25rem 2rem; align-items: start; padding: 1.1rem 1.25rem 1.25rem;
+                border: 1px solid var(--line); border-radius: .7rem; background: color-mix(in srgb, var(--field) 75%, transparent); }
+  .filter-bar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
+                                      text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
+  .segmented label, .choice-chip { position: relative; display: inline-flex; align-items: center; min-height: 2.25rem;
+                                   padding: .4rem .7rem; border: 1px solid var(--line); border-radius: .45rem;
+                                   color: var(--fg); background: var(--field); cursor: pointer; font-size: .9rem; }
+  .segmented input, .choice-chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented label:has(input:checked), .choice-chip:has(input:checked) { border-color: var(--accent);
+                                                                       background: var(--best); color: var(--accent); font-weight: 650; }
+  .segmented label:has(input:focus-visible), .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .segmented label:hover, .choice-chip:hover { border-color: var(--accent); }
+  .choice-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: .15rem; }
+  .choice-chip input { pointer-events: auto; }
+  .choice-chip span { pointer-events: none; }
+  .choice-chip input { position: absolute; opacity: 0; }
+  .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.25rem; margin: 0; }
+  .filter-bar input[type=checkbox] { accent-color: var(--accent); }
+  .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.25rem; }
+  .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
+  .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
   input[type=search], select { width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .35rem;
                               font: inherit; color: var(--fg); background: var(--field); }
   /* Generous after the controls, tight onto its table: the summary belongs to
@@ -95,6 +119,7 @@ TEMPLATE = """<!doctype html>
   #summary { margin: 1.75rem 0 .5rem; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
+  td[data-label]::before { content: none; }
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
             border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
@@ -117,6 +142,22 @@ TEMPLATE = """<!doctype html>
   .restriction[data-status="restricted"] { color: #9a6700; }
   .restriction[data-status="unrestricted"] { color: var(--muted); }
   .tag { font-size: .75rem; color: var(--muted); }
+  #railcardDrawer { width: min(30rem, calc(100% - 1rem)); max-width: none; height: 100dvh;
+                    max-height: none; margin: 0 0 0 auto; padding: 1.25rem;
+                    border: 0; border-left: 1px solid var(--line); color: var(--fg);
+                    background: var(--field); box-shadow: -1rem 0 2.5rem rgba(0,0,0,.18); }
+  #railcardDrawer::backdrop { background: rgba(0,0,0,.38); }
+  .drawer-head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+  .drawer-head h2 { margin: 0; font-size: 1.25rem; }
+  .drawer-close { min-width: 2.75rem; min-height: 2.75rem; }
+  .drawer-status { margin: 1.25rem 0; padding: .8rem; border: 1px solid var(--line);
+                    border-radius: .5rem; background: var(--best); }
+  .drawer-status[data-state=blocked], .drawer-status[data-state=unavailable] { border-color: #b7791f; }
+  #railcardRule { padding: .8rem; border-left: 3px solid var(--accent); background: var(--bg);
+                  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85rem; }
+  #railcardDrawer dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem .8rem; }
+  #railcardDrawer dt { color: var(--muted); }
+  #railcardDrawer dd { margin: 0; font-variant-numeric: tabular-nums; }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .9rem; }
   .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
@@ -124,10 +165,12 @@ TEMPLATE = """<!doctype html>
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
   #originPicker { margin: .75rem 0 1rem; }
+  .origin-picker-label { display: block; margin-bottom: .35rem; font-size: .8rem;
+                         text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   #originPicker input[type=search] { width: 100%; max-width: 24rem; padding: .5rem; border: 1px solid var(--line);
                                      border-radius: .35rem; font: inherit; color: var(--fg); background: var(--field); }
   #originPicks { list-style: none; margin: .5rem 0 0; padding: 0; max-width: 24rem; }
-  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; padding: .45rem .4rem;
+  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; min-height: 44px; padding: .55rem .4rem;
                    color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #originPicks .code { color: var(--muted); }
@@ -137,6 +180,8 @@ TEMPLATE = """<!doctype html>
   .unpriced { margin: 0 0 1.25rem; }
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+  .method { margin-top: 1rem; }
+  .method summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); cursor: pointer; }
   .footnav a { color: inherit; }
   @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
   code { font-size: .95em; }
@@ -148,15 +193,21 @@ TEMPLATE = """<!doctype html>
   /* 44rem, not 40: measured, the six-column table needs ~700px before its three
      row actions stop wrapping onto a second line, so the stacked layout keeps
      the band between 640 and 704px that the table cannot hold. */
+  @media (max-width: 62rem) {
+    .filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .destination-filter { grid-column: 1 / -1; }
+  }
   @media (max-width: 44rem) {
     body { padding: 1rem .75rem; }
-    .controls { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
-    .budget { font-size: 2.5rem; }
+    .filter-bar { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
+    .destination-filter { grid-column: auto; }
     table, tbody { display: block; }
-    thead { display: none; }
+    thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+             clip-path: inset(50%); white-space:nowrap; border:0; }
     tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem;
          padding: .5rem 0; border-bottom: 1px solid var(--line); }
-    td { display: block; border-bottom: 0; padding: .1rem .25rem; }
+    td[data-label]::before { content: attr(data-label) " "; color: var(--muted); font-size: .78rem;
+                             text-transform: uppercase; letter-spacing: .04em; }
     td:first-child { flex: 1 1 100%; padding-left: 0; font-weight: 600; }
     td.num { text-align: left; }
     td:last-child { margin-left: auto; }
@@ -166,12 +217,12 @@ TEMPLATE = """<!doctype html>
 </style>
 </head>
 <body>
-<h1 id="pageHeading">Where can we go from __ORIGIN__? <button id="changeOrigin" type="button" class="toggle" aria-expanded="false" aria-controls="originPicker">Change</button></h1>
-<p class="sub" id="pageIntro">Every destination reachable by train for the budget below, with the fastest journey time and the number of changes.</p>
+<h1 id="pageHeading">Where can we go for under <span class="heading-field"><span aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
+<p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
-  <label class="caption" for="originSearch">Start from a different station</label>
+  <span class="origin-picker-label">Start from a different station</span>
   <input id="originSearch" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
          aria-describedby="originStatus">
   <span id="originStatus" class="sr-only" role="status"></span>
@@ -179,44 +230,42 @@ TEMPLATE = """<!doctype html>
   <p id="originNomatch" hidden></p>
 </div>
 
-<div class="controls">
-  <div>
-    <label class="caption" for="budget">Budget</label>
-    <div class="budget-entry">
-      <span aria-hidden="true">&pound;</span>
-      <input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__"
-             inputmode="numeric" aria-label="Budget in pounds">
+<section class="filter-bar" aria-label="Journey and destination filters">
+  <fieldset class="budget-track">
+    <legend class="sr-only">Budget</legend>
+    <label class="sr-only" for="budget">Budget in pounds</label>
+    <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
+    <span class="tag" id="budgetHint">Drag to change the budget in the heading.</span>
+  </fieldset>
+  <fieldset class="ticket-filter">
+    <legend>Ticket type</legend>
+    <div class="filter-options segmented">
+      <label><input type="radio" name="ticketMode" value="return" checked> Return</label>
+      <label><input type="radio" name="ticketMode" value="single"> Single</label>
+      <label><input type="radio" name="ticketMode" value="anytime"> Anytime Day Return</label>
     </div>
-    <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__"
-           aria-describedby="budgetHint">
-    <div class="tag" id="budgetHint">Drag the slider or click the number to type a budget.</div>
-  </div>
-  <div class="secondary">
-    <fieldset class="choices">
-      <legend>Ticket type</legend>
-      <label><input type="radio" name="ticketMode" value="return" checked> Return journey</label>
-      <label><input type="radio" name="ticketMode" value="single"> Outbound single</label>
-      <label><input type="radio" name="ticketMode" value="anytime"> Unrestricted Anytime Day Return</label>
-    </fieldset>
-    <fieldset class="choices">
-      <legend>The budget covers</legend>
-      <label><input type="radio" name="unit" value="adult" checked> One adult, standard fare</label>
-      <label><input type="radio" name="unit" value="party"> The two of us</label>
-      <label><input id="railcard" type="checkbox"> Apply railcard discount</label>
-    </fieldset>
-    <div>
-      <label class="caption" for="q">Destination type</label>
-      <select id="q" name="destinationType">
-        <option value="all">All destinations</option>
-        <option value="city">Cities</option>
-        <option value="town">Towns and villages</option>
-        <option value="other">Other destinations</option>
-      </select>
+  </fieldset>
+  <fieldset class="party-filter">
+    <legend>The budget covers</legend>
+    <div class="filter-options">
+      <label class="railcard-choice"><input type="radio" name="unit" value="adult" checked> One adult</label>
+      <label class="railcard-choice"><input type="radio" name="unit" value="party"> Two adults</label>
+      <label class="railcard-choice" id="railcardChoice"><input id="railcard" type="checkbox"> Two Together railcard</label>
     </div>
-  </div>
-</div>
+    <span class="railcard-help" id="railcardHelp">Eligibility is checked against each fare.</span>
+  </fieldset>
+  <fieldset class="destination-filter">
+    <legend>Destination type</legend>
+    <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">
+      <label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>
+      <label class="choice-chip"><input type="checkbox" name="destinationType" value="city"> <span>Cities</span></label>
+      <label class="choice-chip"><input type="checkbox" name="destinationType" value="town"> <span>Towns &amp; villages</span></label>
+      <label class="choice-chip"><input type="checkbox" name="destinationType" value="other"> <span>Other</span></label>
+    </div>
+  </fieldset>
+</section>
 
-<p id="summary"></p>  <p class="tag" id="priceSource" hidden></p>
+<p id="summary" role="status" aria-live="polite"></p>  <p class="tag" id="priceSource" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
 <table>
   <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Restriction</th><th scope="col">Tickets</th></tr></thead>
@@ -230,37 +279,61 @@ TEMPLATE = """<!doctype html>
   <button id="nextPage" type="button" class="toggle">Next</button>
 </nav>
 
+<dialog id="railcardDrawer" aria-labelledby="railcardDrawerTitle" aria-describedby="railcardReason">
+  <div class="drawer-head">
+    <h2 id="railcardDrawerTitle">Two Together eligibility</h2>
+    <button id="railcardClose" class="toggle drawer-close" type="button" aria-label="Close railcard details">Close</button>
+  </div>
+  <p id="railcardDestination" class="tag"></p>
+  <p id="railcardReason" class="drawer-status"></p>
+  <dl>
+    <dt>Standard fare</dt><dd id="railcardStandard"></dd>
+    <dt>Discounted fare</dt><dd id="railcardDiscounted"></dd>
+    <dt>DTD minimum</dt><dd id="railcardMinimum"></dd>
+  </dl>
+  <h3>Exact DTD rule</h3>
+  <p id="railcardRule"></p>
+</dialog>
+
 <footer>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
   <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded; advance fares can be cheaper, and the tool does not promise them.</p>
   <p>The times on this page are options in the timetable, not a booking: the fare shown is valid on every service listed, so none is picked for you.</p>
-  <p id="pricingBasis"></p>
-  <p id="feedCoverage" class="tag"></p>
-  <p id="railcardNote"></p>
-  <p id="linkNote" hidden></p>
+  <details class="method">
+    <summary>How these prices were calculated</summary>
+    <p id="pricingBasis"></p>
+    <p id="feedCoverage" class="tag"></p>
+    <p id="railcardNote"></p>
+    <p id="linkNote" hidden></p>
+    <p class="tag" id="provenance"></p>
+    <p id="disclosure" hidden></p>
+  </details>
   <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
-  <p class="tag" id="provenance"></p>
-  <p id="disclosure" hidden></p>
   <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
 <script>
 const DATA = __DATA__;
 const rows = document.getElementById("rows");
-const budget = document.getElementById("budget");
-const budgetNumber = document.getElementById("budgetNumber");
+const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
 const railcard = document.getElementById("railcard");
+
+
+const railcardChoice = document.getElementById("railcardChoice");
 const summary = document.getElementById("summary");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
-const destinationType = document.getElementById("q");
+const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
+const destinationType = document.getElementById("destinationTypes");
 const PAGE_SIZE = 20;
 let currentPage = 1;
 const pagination = document.getElementById("pagination");
 const previousPage = document.getElementById("previousPage");
 const nextPage = document.getElementById("nextPage");
 const pageStatus = document.getElementById("pageStatus");
+const railcardDrawer = document.getElementById("railcardDrawer");
+const railcardClose = document.getElementById("railcardClose");
 
 function ticketMode() {
   return document.querySelector('input[name="ticketMode"]:checked').value;
@@ -304,12 +377,25 @@ function priceOf(destination) {
   }
   return base;
 }
-function matchesType(destination, wantedType) {
-  return wantedType === "all" || destination.destinationType === wantedType;
+function selectedDestinationTypes() {
+  return new Set(destinationTypeInputs
+    .filter((input) => input.value !== "all" && input.checked)
+    .map((input) => input.value));
+}
+function matchesType(destination, wantedTypes) {
+  return wantedTypes.size === 0 || wantedTypes.has(destination.destinationType);
 }
 function typeLabel() {
-  const value = destinationType.value;
-  return value === "all" ? "" : " in " + destinationType.options[destinationType.selectedIndex].text.toLowerCase();
+  const labels = destinationTypeInputs
+    .filter((input) => input.value !== "all" && input.checked)
+    .map((input) => input.parentElement.textContent.trim().toLowerCase());
+  return labels.length ? " in " + labels.join(" and ") : "";
+}
+function setBudget(value) {
+  const safe = Math.max(1, Math.min(Number(budget.max) || 1, Number(value) || 1));
+  budget.value = String(safe);
+  budgetNumber.value = String(safe);
+  return safe;
 }
 function stationInFeedMessage(station) {
   return station.name + " (" + station.crs + ") is in the feed, but this origin has no qualifying " +
@@ -325,7 +411,7 @@ function render() {
   const ceiling = budgetCeiling();
   budget.max = String(ceiling);
   budgetNumber.max = String(ceiling);
-  if (Number(budget.value) > ceiling) budget.value = String(ceiling);
+  if (Number(budget.value) > ceiling) setBudget(ceiling);
   const coverage = document.getElementById("feedCoverage");
   if (coverage) {
     coverage.textContent = ticketMode() === "single"
@@ -338,8 +424,9 @@ function render() {
   }
   if (!available.length) return;
   const cap = Number(budget.value) * 100;
+  const wantedTypes = selectedDestinationTypes();
   const wanted = available.filter(
-    (d) => priceOf(d) <= cap && matchesType(d, destinationType.value)
+    (d) => priceOf(d) <= cap && matchesType(d, wantedTypes)
   );
   budgetNumber.value = budget.value;
   rows.replaceChildren();
@@ -351,27 +438,38 @@ function render() {
     const row = document.createElement("tr");
     if (destination === wanted[0]) row.className = "best";
     const cells = [
-      [destination.name + " (" + destination.crs + ")", ""],
-      [money(priceOf(destination)), "num"],
+      [destination.name + " (" + destination.crs + ")", "", "Station"],
+      [money(priceOf(destination)), "num", "Price"],
     ];
     if (DATA.hasJourneys) {
-      cells.push([duration(destination.minutes), "num"]);
-      cells.push([destination.changes === null ? "-" : String(destination.changes), "num"]);
+      cells.push([duration(destination.minutes), "num", "Time"]);
+      cells.push([destination.changes === null ? "-" : String(destination.changes), "num", "Changes"]);
     }
-    cells.push([destination.ticket + (destination.offPeak ? " off-peak" : "") + " · " + destination.quality, ""]);
-    for (const [text, className] of cells) {
+    const qualityLabel = destination.quality === "outbound single"
+      ? "Standard outbound single"
+      : destination.quality === "unrestricted Anytime Day Return"
+        ? "Unrestricted Anytime Day Return"
+        : "Standard return fare";
+    cells.push([
+      (destination.restrictionCode ? "Restricted fare — check seller conditions" : qualityLabel) + " · " + destination.ticket,
+      "",
+      "Fare",
+    ]);
+    for (const [text, className, label] of cells) {
       const cell = document.createElement("td");
+      cell.dataset.label = label;
       cell.textContent = text;
       if (className) cell.className = className;
       row.append(cell);
     }
     const restriction = document.createElement("td");
     restriction.className = "restriction";
+    restriction.dataset.label = "Restriction";
     const restricted = Boolean(destination.restrictionCode);
     restriction.dataset.status = restricted ? "restricted" : "unrestricted";
     restriction.textContent = restricted
       ? destination.restrictionCode + (destination.restrictionDescription ? " — " + destination.restrictionDescription : "")
-      : "None";
+      : "No restriction code";
     restriction.title = restricted
       ? (destination.restrictionDescription || "This fare has a restriction code; check the seller before buying.")
       : "No fare restriction code is attached to this fare.";
@@ -402,6 +500,7 @@ function cellWithLinks(row, destination, wanted) {
   // the action, and hiding it behind a second click loses the click. The
   // expander carries the journeys, which are what a reader checks first.
   const cell = document.createElement("td");
+  cell.dataset.label = "Tickets";
   const link = document.createElement("a");
   link.className = "buy";
   link.href = destination.link.url;
@@ -421,6 +520,13 @@ function cellWithLinks(row, destination, wanted) {
   }
   // The ticket link is the plain one by default and carries no journey, so the
   // row hands the reader the four things the seller will ask for (ADR-0018).
+  const cardDetails = document.createElement("button");
+  cardDetails.className = "toggle";
+  cardDetails.type = "button";
+  cardDetails.textContent = "Card details";
+  cardDetails.setAttribute("aria-label", "Two Together eligibility for " + destination.name);
+  cardDetails.addEventListener("click", () => showRailcardDetails(destination));
+  cell.append(cardDetails);
   const copy = document.createElement("button");
   copy.className = "toggle";
   copy.type = "button";
@@ -431,6 +537,26 @@ function cellWithLinks(row, destination, wanted) {
   cell.append(copy);
   row.append(cell);
 }
+
+function showRailcardDetails(destination) {
+  const details = destination.railcard;
+  document.getElementById("railcardDestination").textContent =
+    destination.name + " (" + destination.crs + ") · " + destination.quality;
+  const status = document.getElementById("railcardReason");
+  status.dataset.state = details.state;
+  status.textContent = details.title + ". " + details.reason;
+  document.getElementById("railcardStandard").textContent = money(destination.adultPence) + " per adult";
+  document.getElementById("railcardDiscounted").textContent =
+    details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
+  document.getElementById("railcardMinimum").textContent =
+    details.minimumFarePence === null ? "Not listed for " + destination.ticket : money(details.minimumFarePence);
+  document.getElementById("railcardRule").textContent = details.rule.text;
+  railcardDrawer.showModal();
+}
+railcardClose.addEventListener("click", () => railcardDrawer.close());
+railcardDrawer.addEventListener("click", (event) => {
+  if (event.target === railcardDrawer) railcardDrawer.close();
+});
 
 function toggleDetail(row, destination, toggle) {
   const open = toggle.getAttribute("aria-expanded") === "true";
@@ -473,7 +599,7 @@ function provenance() {
       unpriced.textContent = intro + " Nothing was priced from any station, so there is nothing to explore yet.";
     }
     unpriced.hidden = false;
-    const controls = document.querySelector(".controls");
+    const controls = document.querySelector(".filter-bar");
     if (controls) controls.hidden = true;
     // The table scaffold and the budget's empty message answer a question
     // this page is not asking: nothing was priced, so no budget could help.
@@ -497,9 +623,20 @@ function provenance() {
   } else {
     parts.push("no timetable loaded, so no times are shown");
   }
-  if (DATA.railcardAvailable !== undefined) {
+  if (DATA.locationTypeSource) parts.push("destination types: " + DATA.locationTypeSource);
+  if (DATA.railcardInFeed !== undefined) {
     railcard.disabled = !DATA.railcardAvailable;
-    if (!DATA.railcardAvailable) railcard.closest("label").textContent = "Railcard discounts unavailable in this feed";
+    const help = document.getElementById("railcardHelp");
+    if (!DATA.railcardInFeed) {
+      help.textContent = "Not present in this feed; prices are standard fares.";
+      if (railcardChoice) railcardChoice.hidden = true;
+    } else if (!DATA.railcardAvailable) {
+      help.textContent = "Present in the feed, but no displayed fare is currently eligible under the DTD rules; prices are standard fares.";
+      if (railcardChoice) railcardChoice.hidden = true;
+    } else {
+      help.textContent = DATA.railcardEligibleCount + " displayed fare rows currently qualify; each fare is checked separately.";
+      if (railcardChoice) railcardChoice.hidden = false;
+    }
   }
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
@@ -583,7 +720,9 @@ function journeyText(destination) {
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
-  if (together) lines.push("Railcard discount not included: tick the Two Together box on the seller's site");
+  if (together && DATA.railcardAvailable && destination.railcardPence !== null) {
+    lines.push("Two Together discount is not sent to the seller: confirm the railcard on their site");
+  }
   return lines.join("\\n");
 }
 
@@ -695,19 +834,32 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   originSearch.addEventListener("input", renderPicks);
 }
 
-budget.addEventListener("input", () => { budgetNumber.value = budget.value; render(); });
-budgetNumber.addEventListener("input", () => {
-  const value = Math.max(1, Math.min(Number(budget.max), Number(budgetNumber.value) || 1));
-  budget.value = value; render();
-});
+budget.addEventListener("input", () => { setBudget(budget.value); render(); });
+budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); render(); });
 railcard.addEventListener("change", render);
-destinationType.addEventListener("change", render);
+for (const input of destinationTypeInputs) {
+  input.addEventListener("change", () => {
+    const all = destinationTypeInputs.find((candidate) => candidate.value === "all");
+    if (input.value === "all") {
+      for (const candidate of destinationTypeInputs) candidate.checked = candidate === all;
+    } else if (input.checked) {
+      all.checked = false;
+    } else if (destinationTypeInputs.filter((candidate) => candidate.value !== "all").every((candidate) => !candidate.checked)) {
+      all.checked = true;
+    }
+    currentPage = 1;
+    render();
+  });
+}
 for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", render);
 for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); });
 previousPage.addEventListener("click", () => { currentPage -= 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 nextPage.addEventListener("click", () => { currentPage += 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+const requestedBudget = Number(new URLSearchParams(window.location.search).get("budget"));
+if (Number.isFinite(requestedBudget) && requestedBudget > 0) setBudget(requestedBudget);
 provenance();
 render();
+document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
 </script>
 __ANALYTICS__
 </body>
@@ -722,10 +874,10 @@ CHOOSER_TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Where can we go for &pound;__BUDGET__? Pick your station</title>
 <style>
-  :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
+  :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b; --ochre: #a65d00;
           --field: #fff; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5;
+    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5; --ochre: #f0b35b;
             --field: #1c2127; }
   }
   * { box-sizing: border-box; }
@@ -734,17 +886,21 @@ CHOOSER_TEMPLATE = """<!doctype html>
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
   .sub { color: var(--muted); margin: 0 0 1.25rem; }
+  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
+           text-transform: uppercase; margin: 0 0 1.25rem; }
   label.caption { display: block; font-size: .8rem; text-transform: uppercase;
                   letter-spacing: .04em; color: var(--muted); margin-bottom: .35rem; }
   input[type=search] { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
                        font: inherit; color: var(--fg); background: var(--field); }
   #picks { list-style: none; margin: .5rem 0 0; padding: 0; }
-  #picks a { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem .4rem;
+  #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .5rem .4rem;
              color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #picks a:hover, #picks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #picks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
   #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap; }
   #nomatch { color: var(--muted); margin-top: .5rem; }
+  #chooserBudget { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
+                   font: inherit; color: var(--fg); background: var(--field); margin-bottom: 1rem; }
   p.tag { color: var(--muted); font-size: .85rem; margin-top: 2rem; }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -752,13 +908,17 @@ CHOOSER_TEMPLATE = """<!doctype html>
 </head>
 <body>
 <h1>Where can we go for &pound;__BUDGET__?</h1>
+<p class="brand">Rail Budget</p>
 <p class="sub">Pick the station you are starting from, and see every destination reachable by train inside the budget.</p>
+<label class="caption" for="chooserBudget">Starting budget</label>
+<input id="chooserBudget" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric">
 <label class="caption" for="pick">Your station</label>
 <input id="pick" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
        aria-describedby="pickStatus">
 <span id="pickStatus" class="sr-only" role="status"></span>
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
+<p id="capMessage" class="tag" hidden></p>
 <p class="tag">__NOTE__</p>
 <script>
 const STATIONS = __STATIONS__;
@@ -766,6 +926,13 @@ const picks = document.getElementById("picks");
 const nomatch = document.getElementById("nomatch");
 const status = document.getElementById("pickStatus");
 const pick = document.getElementById("pick");
+const chooserBudget = document.getElementById("chooserBudget");
+const capMessage = document.getElementById("capMessage");
+const CHOOSER_LIMIT = 40;
+if (chooserBudget) {
+  const storedBudget = new URLSearchParams(window.location.search).get("budget");
+  if (storedBudget && Number(storedBudget) > 0) chooserBudget.value = storedBudget;
+}
 
 function render() {
   // A build that priced no stations has nothing to search over, so the field
@@ -786,10 +953,15 @@ function render() {
     (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
   );
   picks.replaceChildren();
-  for (const station of wanted.slice(0, 40)) {
+  for (const station of wanted.slice(0, CHOOSER_LIMIT)) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = station.href;
+    if (chooserBudget) {
+      const url = new URL(link.href, window.location.href);
+      url.searchParams.set("budget", Math.max(1, Number(chooserBudget.value) || 1));
+      link.href = url.pathname + url.search + url.hash;
+    }
     const name = document.createElement("span");
     name.textContent = station.name;
     const code = document.createElement("span");
@@ -801,6 +973,12 @@ function render() {
     link.append(name, code, count);
     item.append(link);
     picks.append(item);
+  }
+  if (capMessage) {
+    capMessage.textContent = wanted.length > CHOOSER_LIMIT
+      ? "Showing " + CHOOSER_LIMIT + " of " + wanted.length + " matching stations. Refine the search to see the rest."
+      : "";
+    capMessage.hidden = wanted.length <= CHOOSER_LIMIT;
   }
   // The no-match wording answers typed input; with an empty field it would
   // quote nothing back at the reader, so it stays hidden instead.
@@ -816,7 +994,12 @@ function render() {
   status.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
 }
 
-pick.addEventListener("input", render);
+if (chooserBudget) {
+  chooserBudget.addEventListener("input", () => {
+    document.title = "Where can we go for £" + Math.max(1, Number(chooserBudget.value) || 1) + "? Pick your station";
+    render();
+  });
+}
 render();
 pick.focus();
 </script>
