@@ -550,7 +550,9 @@ function showRailcardDetails(destination) {
     details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
   document.getElementById("railcardMinimum").textContent =
     details.minimumFarePence === null ? "Not listed for " + destination.ticket : money(details.minimumFarePence);
-  document.getElementById("railcardRule").textContent = details.rule.text;
+  document.getElementById("railcardRule").textContent = details.rule
+    ? details.rule.text
+    : "No Two Together railcard rule applies because the railcard is not in this feed.";
   railcardDrawer.showModal();
 }
 railcardClose.addEventListener("click", () => railcardDrawer.close());
@@ -627,14 +629,16 @@ function provenance() {
   if (DATA.railcardInFeed !== undefined) {
     railcard.disabled = !DATA.railcardAvailable;
     const help = document.getElementById("railcardHelp");
-    if (!DATA.railcardInFeed) {
-      help.textContent = "Not present in this feed; prices are standard fares.";
-      if (railcardChoice) railcardChoice.hidden = true;
-    } else if (!DATA.railcardAvailable) {
-      help.textContent = "Present in the feed, but no displayed fare is currently eligible under the DTD rules; prices are standard fares.";
+    if (!DATA.railcardInFeed || !DATA.railcardAvailable) {
+      // If the control is hidden, its help must be hidden with it. Leaving the
+      // sentence visible made it look like help for the remaining party-size
+      // radios even though it described a control the reader could not see.
+      help.textContent = "";
+      help.hidden = true;
       if (railcardChoice) railcardChoice.hidden = true;
     } else {
-      help.textContent = DATA.railcardEligibleCount + " displayed fare rows currently qualify; each fare is checked separately.";
+      help.textContent = DATA.railcardEligibleCount + " destinations receive a lower Two Together price; Card details show RR conditions.";
+      help.hidden = false;
       if (railcardChoice) railcardChoice.hidden = false;
     }
   }

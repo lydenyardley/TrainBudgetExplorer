@@ -1147,6 +1147,33 @@ class FaresDb:
             discounted = max(discounted, minimum)
         return discounted
 
+    def railcard_rules(
+        self,
+        railcard_code: str,
+        *,
+        ticket_code: str,
+        route_code: str,
+        origin_crs: str,
+        destination_crs: str,
+        origin_nlc: str,
+        destination_nlc: str,
+    ) -> list[RailcardRestrictionRow]:
+        """Return every current DTD ``RR`` rule that applies to one fare.
+
+        Blank RR fields are wildcards. An RR restriction code changes or
+        overrides the fare's restriction; it is not itself a total ban. The
+        caller can therefore preserve conditions such as Two Together's R9
+        without refusing the discount.
+        """
+        stations = {value.strip().upper() for value in (origin_crs, destination_crs, origin_nlc, destination_nlc) if value}
+        return [
+            row
+            for row in self.restrictions.active_railcard_rows(railcard_code)
+            if (not row.ticket_code or row.ticket_code == ticket_code)
+            and (not row.route_code or row.route_code == route_code)
+            and (not row.location or row.location.strip().upper() in stations)
+        ]
+
     def railcard_restriction(
         self,
         railcard_code: str,
@@ -1158,25 +1185,23 @@ class FaresDb:
         origin_nlc: str,
         destination_nlc: str,
     ) -> RailcardRestrictionRow | None:
-        """Find the first current DTD ``RR`` rule that applies to a fare.
-
-        Blank RR fields are wildcards. ``TOTAL_BAN = Y`` disallows the railcard;
-        a non-blank restriction code also means that the rule has not been
-        cleared for a generic fare query, so it must not receive a discounted
-        price. This is deliberately conservative: a railcard price is only
-        emitted when the feed has no applicable prohibition.
-        """
-        stations = {value.strip().upper() for value in (origin_crs, destination_crs, origin_nlc, destination_nlc) if value}
-        for row in self.restrictions.active_railcard_rows(railcard_code):
-            if row.ticket_code and row.ticket_code != ticket_code:
-                continue
-            if row.route_code and row.route_code != route_code:
-                continue
-            if row.location and row.location.strip().upper() not in stations:
-                continue
-            if row.total_ban or row.restriction_code:
-                return row
-        return None
+        """Return the first matching current ``RR`` total ban, if there is one."""
+        return next(
+            (
+                row
+                for row in self.railcard_rules(
+                    railcard_code,
+                    ticket_code=ticket_code,
+                    route_code=route_code,
+                    origin_crs=origin_crs,
+                    destination_crs=destination_crs,
+                    origin_nlc=origin_nlc,
+                    destination_nlc=destination_nlc,
+                )
+                if row.total_ban
+            ),
+            None,
+        )
 
     def railcard_price_for(
         self,
@@ -1328,8 +1353,8 @@ class FaresDb:
         ticket type is a standard-class, train-unrestricted exact ANYTIME DAY R,
         and drops any fare whose restriction code is not blank. Railcard prices
         are evaluated against the current ``RR`` rows in the same feed: blank
-        fields are wildcards, and a matching total ban or restriction code
-        removes the discount for that fare.
+        fields are wildcards, a matching total ban removes the discount, and a
+        matching restriction code supplies the railcard fare's travel condition.
 
         ``require_restrictions=False`` is for analysis and synthetic feeds only.
         It allows the conventional no-restriction code ``00`` and computes

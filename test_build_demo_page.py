@@ -64,7 +64,7 @@ class DemoPageTest(unittest.TestCase):
         # even when it is restricted. The browser budget filter does the final
         # selection; the synthetic fixture's cheaper CDR is therefore visible.
         self.assertEqual(rows["NOT"]["adultPence"], 1160)
-        self.assertIsNone(rows["NOT"]["railcardPence"])
+        self.assertEqual(rows["NOT"]["railcardPence"], 770)
         self.assertEqual(rows["NOT"]["partyPence"], 2320)
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
@@ -164,13 +164,13 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("ITX placeholder fares", self.html)
 
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
-        # The fixture's general R9 rule means no destination is eligible. The
-        # page must say so rather than turning the old estimate back on.
+        # R9 is the railcard's travel condition, not a total ban, so the
+        # synthetic fares that carry it remain eligible.
         self.assertTrue(self.payload["railcardInFeed"])
-        self.assertFalse(self.payload["railcardAvailable"])
-        self.assertEqual(self.payload["railcardEligibleCount"], 0)
+        self.assertTrue(self.payload["railcardAvailable"])
+        self.assertEqual(self.payload["railcardEligibleCount"], 3)
         self.assertIn("Two Together is in this feed", self.payload["railcardNote"])
-        self.assertIn("none of the displayed fares", self.payload["railcardNote"])
+        self.assertIn("restriction codes are retained as travel conditions", self.payload["railcardNote"])
         self.assertIn("DATA.railcardNote", self.html)
         self.assertIn("Math.min(base, cardTotal)", self.html)
 
@@ -192,18 +192,34 @@ class DemoPageTest(unittest.TestCase):
     def test_each_destination_exposes_its_exact_railcard_decision(self) -> None:
         row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
         details = row["railcard"]
-        self.assertEqual(details["state"], "blocked")
+        self.assertEqual(details["state"], "eligible")
         self.assertIn("any ticket", details["rule"]["text"])
         self.assertIn("RR", details["rule"]["text"])
-        self.assertIsNone(details["pricePence"])
+        self.assertEqual(details["rule"]["restrictionCode"], "R9")
+        self.assertFalse(details["rule"]["totalBan"])
+        self.assertEqual(details["pricePence"], 770)
         self.assertEqual(
             details["minimumFarePence"],
             self.fares.minimum_fares.get(("TWO", row["ticket"])),
         )
-        self.assertIn("cannot be applied", details["reason"])
+        self.assertIn("travel condition rather than a card ban", details["reason"])
         self.assertIn('id="railcardDrawer"', self.html)
         self.assertIn("showRailcardDetails(destination)", self.html)
+        self.assertIn("? details.rule.text", self.html)
         self.assertIn("Exact DTD rule", self.html)
+
+    def test_unavailable_railcard_hides_its_own_help(self) -> None:
+        payload = dict(
+            self.payload,
+            railcardAvailable=False,
+            railcardEligibleCount=0,
+        )
+        html = render_page(payload, budget_pounds=20)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn('help.textContent = ""', script)
+        self.assertIn("help.hidden = true", script)
+        self.assertIn("railcardChoice.hidden = true", script)
+        self.assertNotIn("no displayed fare is currently eligible", html)
 
     def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
         # Three distinct obligations, three paragraphs: one run-on would let a
