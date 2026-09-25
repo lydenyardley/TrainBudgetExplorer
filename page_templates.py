@@ -71,7 +71,7 @@ TEMPLATE = """<!doctype html>
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   h1 { font-size: clamp(2rem, 5vw, 5rem);
        line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
-  .sub { color: var(--muted); margin: -1rem 0 1.5rem; max-width: 52rem; }
+  .sub { color: var(--muted); max-width: 75ch; }
   .heading-field { display: inline-flex; align-items: baseline; color: var(--accent);
                    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
                    border-radius: .15rem .15rem 0 0; }
