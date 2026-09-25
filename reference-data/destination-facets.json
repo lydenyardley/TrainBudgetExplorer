@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "source": "Office for National Statistics, Census 2021 built-up-area size bands and coastal classification",
-  "feed": "feeds\\fares\\dtd-fares.zip",
+  "feed": "feeds/fares/dtd-fares.zip",
   "stations": 3436,
   "facetSources": {
     "seaside": {
@@ -14,18 +14,198 @@
       "url": "http://learning-provider.data.ac.uk/data/learning-providers-plus.tsv",
       "coverage": "United Kingdom"
     },
+    "heritage": {
+      "name": "UNESCO World Heritage List, UK properties, with a reviewed list of the stations those properties are reached from",
+      "url": "https://whc.unesco.org/en/list",
+      "coverage": "United Kingdom"
+    },
     "island": {
       "name": "reviewed island station list (no official UK settlement-level island list is published as open data)",
       "url": "",
       "coverage": "England, Wales and Scotland, as covered by the DTD feed"
+    },
+    "airport": {
+      "name": "reviewed rail stations serving a UK airport, checked against the UK airport station list and the feed's own station names",
+      "url": "https://www.nationalrail.co.uk/travel-information/airport-stations/",
+      "coverage": "United Kingdom, as covered by the DTD feed"
+    },
+    "nature": {
+      "name": "reviewed list of stations reaching The Wildlife Trusts' reserve sites (46 member trusts) and the Wildfowl and Wetlands Trust's wetland centres, cross-referenced against the station each reserve or trust page names",
+      "url": "https://www.wildlifetrusts.org/nature-reserves",
+      "coverage": "United Kingdom, as covered by the DTD feed"
+    },
+    "transport": {
+      "name": "reviewed coach, tram, metro, stadium, and parkway or park-and-ride locations, identified from the feed's own station names and each operator's interchange list",
+      "url": "",
+      "coverage": "United Kingdom, as covered by the DTD feed"
     }
   },
   "supportedFacets": [
+    "airport",
+    "heritage",
     "island",
+    "nature",
     "seaside",
+    "transport",
     "university"
   ],
   "facets": {
+    "ATB": [
+      "nature"
+    ],
+    "BKA": [
+      "nature"
+    ],
+    "BND": [
+      "nature"
+    ],
+    "BRE": [
+      "nature"
+    ],
+    "CDU": [
+      "nature"
+    ],
+    "HAY": [
+      "nature"
+    ],
+    "HBY": [
+      "nature"
+    ],
+    "HLS": [
+      "nature"
+    ],
+    "SEV": [
+      "nature"
+    ],
+    "ZHD": [
+      "nature"
+    ],
+    "ZHX": [
+      "nature"
+    ],
+    "APN": [
+      "airport"
+    ],
+    "BHI": [
+      "airport"
+    ],
+    "EDA": [
+      "airport"
+    ],
+    "EMA": [
+      "airport"
+    ],
+    "GGT": [
+      "airport"
+    ],
+    "GTW": [
+      "airport"
+    ],
+    "HAF": [
+      "airport"
+    ],
+    "HLL": [
+      "airport"
+    ],
+    "HWA": [
+      "airport"
+    ],
+    "HWE": [
+      "airport"
+    ],
+    "HWV": [
+      "airport"
+    ],
+    "HWX": [
+      "airport"
+    ],
+    "HXX": [
+      "airport"
+    ],
+    "IVA": [
+      "airport"
+    ],
+    "LHR": [
+      "airport"
+    ],
+    "LJL": [
+      "airport"
+    ],
+    "LPD": [
+      "airport"
+    ],
+    "LTN": [
+      "airport"
+    ],
+    "LUA": [
+      "airport"
+    ],
+    "MIA": [
+      "airport"
+    ],
+    "MNA": [
+      "airport"
+    ],
+    "PRA": [
+      "airport"
+    ],
+    "RHA": [
+      "airport"
+    ],
+    "SIA": [
+      "airport"
+    ],
+    "SOA": [
+      "airport"
+    ],
+    "SSD": [
+      "airport"
+    ],
+    "TEA": [
+      "airport"
+    ],
+    "XCF": [
+      "airport"
+    ],
+    "XFI": [
+      "airport"
+    ],
+    "XPB": [
+      "airport"
+    ],
+    "XQB": [
+      "airport"
+    ],
+    "XTH": [
+      "airport"
+    ],
+    "ZHJ": [
+      "airport"
+    ],
+    "BCB": [
+      "nature"
+    ],
+    "BCJ": [
+      "nature"
+    ],
+    "EMD": [
+      "transport"
+    ],
+    "LGM": [
+      "transport"
+    ],
+    "LPY": [
+      "transport"
+    ],
+    "PEA": [
+      "transport"
+    ],
+    "PPR": [
+      "transport"
+    ],
+    "TPC": [
+      "transport"
+    ],
     "ABD": [
       "university"
     ],
@@ -45,11 +225,17 @@
       "seaside",
       "university"
     ],
+    "BDI": [
+      "heritage"
+    ],
     "BDM": [
       "university"
     ],
     "BDN": [
       "island"
+    ],
+    "BDQ": [
+      "heritage"
     ],
     "BDT": [
       "seaside"
@@ -57,8 +243,15 @@
     "BEB": [
       "seaside"
     ],
+    "BLP": [
+      "heritage"
+    ],
     "BMH": [
       "seaside"
+    ],
+    "BNG": [
+      "seaside",
+      "university"
     ],
     "BOG": [
       "seaside"
@@ -73,22 +266,39 @@
       "seaside"
     ],
     "BRM": [
+      "heritage",
       "seaside"
     ],
     "BSR": [
       "seaside"
     ],
+    "BTH": [
+      "heritage"
+    ],
     "BTN": [
       "university"
     ],
+    "BUX": [
+      "heritage"
+    ],
     "CAR": [
+      "heritage",
       "university"
     ],
     "CBB": [
       "seaside"
     ],
+    "CBE": [
+      "heritage"
+    ],
     "CBG": [
       "university"
+    ],
+    "CBN": [
+      "heritage"
+    ],
+    "CBW": [
+      "heritage"
     ],
     "CCC": [
       "seaside"
@@ -103,6 +313,7 @@
       "seaside"
     ],
     "CFS": [
+      "heritage",
       "seaside"
     ],
     "CLE": [
@@ -110,6 +321,9 @@
     ],
     "CLT": [
       "seaside"
+    ],
+    "CMF": [
+      "heritage"
     ],
     "CMN": [
       "university"
@@ -121,6 +335,7 @@
       "seaside"
     ],
     "CNW": [
+      "heritage",
       "seaside"
     ],
     "COL": [
@@ -128,6 +343,9 @@
     ],
     "COV": [
       "university"
+    ],
+    "CRB": [
+      "heritage"
     ],
     "CRU": [
       "island"
@@ -139,6 +357,7 @@
       "seaside"
     ],
     "CTR": [
+      "heritage",
       "university"
     ],
     "CWB": [
@@ -157,7 +376,11 @@
       "seaside"
     ],
     "DHM": [
+      "heritage",
       "university"
+    ],
+    "DVP": [
+      "heritage"
     ],
     "DWL": [
       "seaside"
@@ -172,6 +395,7 @@
       "island"
     ],
     "EDB": [
+      "heritage",
       "university"
     ],
     "EGH": [
@@ -184,6 +408,7 @@
       "seaside"
     ],
     "EXM": [
+      "heritage",
       "seaside"
     ],
     "FBY": [
@@ -225,6 +450,9 @@
     "GYM": [
       "seaside"
     ],
+    "HAT": [
+      "university"
+    ],
     "HAV": [
       "seaside"
     ],
@@ -251,6 +479,7 @@
       "seaside"
     ],
     "HRL": [
+      "heritage",
       "seaside"
     ],
     "HUD": [
@@ -266,6 +495,9 @@
       "seaside"
     ],
     "HYL": [
+      "seaside"
+    ],
+    "IHS": [
       "seaside"
     ],
     "INV": [
@@ -285,6 +517,12 @@
     ],
     "KNT": [
       "seaside"
+    ],
+    "KWB": [
+      "heritage"
+    ],
+    "KWG": [
+      "heritage"
     ],
     "KYL": [
       "island"
@@ -328,6 +566,9 @@
     "LLW": [
       "seaside"
     ],
+    "LNK": [
+      "heritage"
+    ],
     "LOO": [
       "seaside"
     ],
@@ -340,8 +581,14 @@
     "LWT": [
       "seaside"
     ],
+    "MAC": [
+      "heritage"
+    ],
     "MAR": [
       "seaside"
+    ],
+    "MAT": [
+      "heritage"
     ],
     "MBR": [
       "university"
@@ -370,10 +617,18 @@
     "MRY": [
       "seaside"
     ],
+    "MTB": [
+      "heritage"
+    ],
     "MUB": [
       "university"
     ],
     "NCL": [
+      "heritage",
+      "university"
+    ],
+    "NCZ": [
+      "heritage",
       "university"
     ],
     "NFL": [
@@ -441,6 +696,7 @@
       "seaside"
     ],
     "POO": [
+      "heritage",
       "seaside",
       "university"
     ],
@@ -457,6 +713,7 @@
       "seaside"
     ],
     "PTM": [
+      "heritage",
       "seaside"
     ],
     "PWL": [
@@ -471,11 +728,20 @@
     "RDG": [
       "university"
     ],
+    "RED": [
+      "heritage"
+    ],
     "RHL": [
       "seaside"
     ],
     "RHO": [
       "seaside"
+    ],
+    "RIA": [
+      "seaside"
+    ],
+    "RMD": [
+      "heritage"
     ],
     "RTR": [
       "seaside"
@@ -494,6 +760,9 @@
     ],
     "SAB": [
       "island"
+    ],
+    "SAE": [
+      "heritage"
     ],
     "SAN": [
       "island",
@@ -527,6 +796,7 @@
       "seaside"
     ],
     "SGE": [
+      "heritage",
       "seaside"
     ],
     "SGM": [
@@ -555,6 +825,7 @@
       "seaside"
     ],
     "SOS": [
+      "heritage",
       "island"
     ],
     "SOT": [
@@ -607,6 +878,9 @@
     "TQY": [
       "seaside"
     ],
+    "TRU": [
+      "heritage"
+    ],
     "TTN": [
       "seaside"
     ],
@@ -620,13 +894,18 @@
       "island"
     ],
     "ULV": [
+      "heritage",
       "seaside"
     ],
     "VAL": [
       "island",
       "seaside"
     ],
+    "WDM": [
+      "heritage"
+    ],
     "WEY": [
+      "heritage",
       "seaside"
     ],
     "WHI": [
@@ -644,6 +923,9 @@
     "WRH": [
       "seaside"
     ],
+    "WRX": [
+      "heritage"
+    ],
     "WTB": [
       "seaside"
     ],
@@ -656,6 +938,9 @@
     "WVH": [
       "university"
     ],
+    "WXC": [
+      "heritage"
+    ],
     "XMT": [
       "seaside"
     ],
@@ -667,6 +952,12 @@
     ],
     "YRK": [
       "university"
+    ],
+    "ZTH": [
+      "heritage"
+    ],
+    "ZWM": [
+      "heritage"
     ]
   }
 }

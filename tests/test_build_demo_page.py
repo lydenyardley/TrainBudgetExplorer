@@ -6,6 +6,8 @@ import json
 import re
 import tempfile
 import unittest
+import zipfile
+from unittest import mock
 from datetime import date
 import contextlib
 import io
@@ -54,6 +56,10 @@ class DemoPageTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
 
+    def test_payload_records_the_source_fingerprint_used_to_build_the_page(self) -> None:
+        self.assertRegex(self.payload["sourceFingerprint"], r"^[0-9a-f]{16}$")
+        self.assertIn("sourceFingerprint", self.html)
+
     def test_the_page_carries_every_priced_destination_not_just_the_cheap_ones(self) -> None:
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(sorted(rows), ["KGX", "LCN", "NOT", "PBO", "SLP"])
@@ -68,6 +74,26 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(rows["NOT"]["partyPence"], 2320)
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
+
+    def test_single_mode_keeps_and_labels_the_cheaper_advance_ticket(self) -> None:
+        row = next(row for row in self.payload["singleDestinations"] if row["crs"] == "NOT")
+        self.assertEqual(row["adultPence"], 100)
+        self.assertEqual(row["ticket"], "2AS")
+        self.assertTrue(row["isAdvance"])
+        self.assertIn("Advance single", self.html)
+
+    def test_a_heritage_destination_carries_its_named_unesco_property(self) -> None:
+        row = next(row for row in self.payload["destinations"] if row["crs"] == "SLP")
+        self.assertEqual(
+            row["heritageSites"],
+            [{
+                "id": 488,
+                "name": "Tower of London",
+                "url": "https://whc.unesco.org/en/list/488/",
+            }],
+        )
+        self.assertIn("World heritage: ", self.html)
+        self.assertIn("destination.heritageSites", self.html)
 
     def test_expired_flows_are_absent_from_all_ticket_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -480,6 +506,11 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="destinationTypes"', self.html)
         self.assertIn('value="party"', self.html)
         self.assertIn("Where can we go for under", self.html)
+
+    def test_every_price_renders_with_two_decimal_places(self) -> None:
+        # £9 next to £8.70 is harder to scan down a column than £9.00 is.
+        self.assertIn("(pence / 100).toFixed(2)", self.html)
+        self.assertNotIn("replace(/\\.00$/", self.html)
 
     # -- the origin picker (ADR-0019) -------------------------------------
 

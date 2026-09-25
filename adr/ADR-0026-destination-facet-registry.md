@@ -25,6 +25,18 @@ Government's islands layer carries polygons with blank names.
 
 ## Decision
 
+0. The primary class is the ONS size band itself, named for what it is:
+   `city` (major, large), `town` (medium), `small_town` (small), `village`
+   (minor), and   `other` only where the workbook does not name the station's
+   settlement. The reader no longer sees that value as a **No settlement band**
+   chip — it read as unfinished work, and the filter could only ever return an
+   unsourced remainder. The value stays in the payload for auditing, and a
+   reviewed list covers the places the page prices. The
+   first cut collapsed the two smallest bands into one "town", which filed
+   5,586 settlements — every village, Ancaster and Bottesford among them — as
+   "other" and made that bucket meaningless. It also matters which direction
+   the error goes: `other` is the answer the page gave when it did not know,
+   and it was also the answer for every village.
 1. A station has exactly one primary settlement class, from ONS built-up-area
    size bands, and any number of independent facets. A station can be a city and
    an island at once, and neither value replaces the other.
@@ -35,14 +47,34 @@ Government's islands layer carries polygons with blank names.
 3. A facet whose source is not a published settlement list declares itself as
    reviewed in its own `source` text, and its station codes are intersected with
    the stations the feed actually contains, so a stale code is dropped rather
-   than inventing a station.
-4. Facets are merged across every file that names a station — the checked-in
+   than inventing a station. A curated list may be checked against its own
+   source on every build — the heritage list is keyed by UNESCO site id and a
+   delisted site stops contributing — and any curated name that no longer
+   matches a station is reported.
+   A reviewed facet may also declare name markers, for the categories the feed's
+   own names identify without a published list: a coach, tram, metro, stadium
+   or parkway station is a node in a network, and a code written per stop would
+   be stale the week after it was written. Substring matching is what makes
+   "BPOOL NTHBUSTRAM" findable, and it is also what catches Bushey, BUSBY,
+   CAMBUSLANG and Shepherd's Bush, so a reviewed facet may exclude the
+   settlements its markers catch wrongly.
+4. Station names are matched to a source's settlements as whole names, and only
+   ever after a trailing bracketed county is dropped ("Ascot (Berks)" is Ascot).
+   Prefix matching would be more generous and is wrong: Bathgate is not Bath,
+   Bradford-on-Avon is not Bradford, and Chester Road is in Sheffield. Where the
+   feed writes a qualifier onto a station name, a curated list names the station
+   the way the feed does rather than loosening the match for everything.
+5. Facets are merged across every file that names a station — the checked-in
    reference data, a cache beside the feed, an XML lookup — rather than
    replaced. Replacement made the answer depend on the order the directory was
    listed in and let a stale cache delete a facet.
-5. A page offers only the types its own destinations carry. A chip that can only
+6. A cache written under an older schema is recognised and its primary classes
+   dropped, because a cache that predates the band split would otherwise keep
+   calling every village "other" for as long as anyone kept the file. Its
+   facets are kept, because those are still true.
+7. A page offers only the types its own destinations carry. A chip that can only
    ever return nothing reads as a broken control.
-6. `tools/regenerate_destination_facets.py` rebuilds the checked-in reference
+8. `tools/regenerate_destination_facets.py` rebuilds the checked-in reference
    data from the named sources, and can carry a facet forward
    (`--keep-unavailable`) when a source is temporarily unreachable, printing
    what it could not read instead of writing a file that quietly lost it.
@@ -50,12 +82,27 @@ Government's islands layer carries polygons with blank names.
 ## Consequences
 
 Adding a sourced type is one registry entry, one reader, and a regeneration
-run. The three shipped facets carry their coverage honestly: `seaside` is
-England and Wales, `university` is the whole UK, and `island` is a reviewed
-list covering the stations this feed carries — a floor, not a ceiling, because a
-new feed revision can add island stations without adding them to the list.
+run. The four shipped facets carry their coverage honestly: `seaside` is
+England and Wales, `university` and `heritage` are the whole UK, and `island`
+is a reviewed list covering the stations this feed carries — a floor, not a
+ceiling, because a new feed revision can add island stations without adding
+them to the list.
 
 The registry makes the honest answer easy to see: a reviewer can read one list
 and learn which classifications are sourced, which are reviewed, and which
 countries each one covers. That is the point of writing it down, because the
 alternative is a filter whose labels imply a provenance the data does not have.
+
+What is left is stated rather than papered over. The ONS workbook covers
+England and Wales only, and it names settlements, not the stations inside them.
+On the current Grantham page, 19 of 47 destinations have no settlement band:
+15 are real small settlements or halts for which the built-up-area workbook has
+no row, and four are airport or underground sites that are not settlements.
+`MAN` and `ECR` were found to be genuine omissions in the reviewed major-city
+fallback and are now classified as cities. The remaining names cannot safely be
+filled by prefix matching: a station qualifier often denotes a junction, halt or
+airport label rather than a separately populated settlement. Closing the
+remaining gap needs a per-station mapping — either a reviewed alias list, or a
+settlement-level source for Scotland and Northern Ireland, which the Rural Urban
+Classification would provide if it were published at built-up-area level. It
+is not, and it is not what this decision claims.

@@ -12,7 +12,7 @@ import re
 import unittest
 from pathlib import Path
 
-LICENCES = Path(__file__).parent / "licences"
+LICENCES = Path(__file__).parent.parent / "licences"
 REGISTER = LICENCES / "README.md"
 
 # The product id the marketplace puts in the licence filename and in Schedule 1 §3.

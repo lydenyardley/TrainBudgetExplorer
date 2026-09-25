@@ -89,6 +89,17 @@ async function main() {
     const heading = (await page.textContent("h1")) || "";
     check("renders the continuous budget-and-origin heading", /Where can we go for under/.test(heading) && /GRANTHAM/.test(heading), heading.trim());
     check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");
+    const budgetWidthAt20 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
+    await page.fill("#budgetNumber", "9");
+    const budgetWidthAt9 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
+    await page.fill("#budgetNumber", "126");
+    const budgetWidthAt126 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
+    check("the heading budget width follows its character count", budgetWidthAt9 < budgetWidthAt20 && budgetWidthAt126 > budgetWidthAt20, `${budgetWidthAt9} / ${budgetWidthAt20} / ${budgetWidthAt126}`);
+    await page.locator(".budget-prefix").click();
+    await page.keyboard.type("7");
+    const replacedAmount = (await page.inputValue("#budgetNumber")).trim();
+    check("clicking the £ selects the whole editable amount", replacedAmount === "7", replacedAmount);
+    await page.fill("#budgetNumber", "20");
     const initial = await rows();
     check("renders priced rows", initial > 0, `${initial} rows`);
 
@@ -133,6 +144,27 @@ async function main() {
     const university = await rows();
     check("the university facet finds the university town", university >= 1 && /NOTTINGHAM/.test(universityText), `${university} rows; ${universityText}`);
     check("a facet with no destination here offers no chip", (await page.locator('input[name="destinationType"][value="island"]').count()) === 0, "island chip rendered");
+    await page.locator('.ticket-filter label').filter({ hasText: "Single" }).click();
+    const singleText = await page.textContent("#rows");
+    check("an advance single is labelled as train-specific", /Advance single/.test(singleText), singleText.slice(0, 240));
+    await page.locator('input[name="ticketMode"][value="return"]').check({ force: true });
+    await page.goto(url);
+    await page.check('input[name="destinationType"][value="heritage"]');
+    const heritageText = await page.textContent("#rows");
+    const heritageHref = await page.locator("#rows .heritage-proof a").getAttribute("href");
+    check("a heritage row names and links its UNESCO property", heritageText.includes("World heritage: Tower of London") && heritageHref === "https://whc.unesco.org/en/list/488/", heritageText);
+    await page.uncheck('input[name="destinationType"][value="heritage"]');
+    // Peterborough costs more than the page's opening budget, so the class is
+    // only worth looking at with the budget raised.
+    await page.uncheck('input[name="destinationType"][value="university"]');
+    await page.fill("#budgetNumber", "30");
+    await page.check('input[name="destinationType"][value="small_town"]');
+    const smallTown = await rows();
+    const smallTownText = await page.textContent("#rows");
+    check("a small town is its own class, not a town", smallTown === 1 && /PETERBOROUGH/.test(smallTownText), `${smallTown} rows; ${smallTownText}`);
+    await page.fill("#budgetNumber", "20");
+    await page.uncheck('input[name="destinationType"][value="small_town"]');
+    await page.check('input[name="destinationType"][value="university"]');
     await page.check('input[name="destinationType"][value="seaside"]');
     const universityAndCoast = await rows();
     // The two sets can overlap -- a station can be coastal and a university

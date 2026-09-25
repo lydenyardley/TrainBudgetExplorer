@@ -17,10 +17,21 @@ where the current DTD railcard restriction records permit that fare.
 
 ## Destination types
 
-Destination metadata has one primary settlement class per station (`city`,
-`town`, or `other`) from ONS Census 2021 built-up-area size bands, and any
-number of independent facets. A city can also be coastal, a university town or
-an island without either value replacing the other.
+Destination metadata has one primary settlement class per station from ONS
+Census 2021 built-up-area size bands, and any number of independent facets. A
+city can also be coastal, a university town or an island without either value
+replacing the other.
+
+The primary class is the settlement's population band, and the labels say what
+the bands are: `city` (100,000 and over, and 25,000–99,999), `town`
+(10,000–24,999), `small_town` (5,000–9,999), `village` (under 5,000) and
+`other` for a station whose settlement the workbook does not name at all.
+Folding the two smallest bands into one "town" is what left villages filed as
+"other"; Ancaster and Bottesford are both `village` now. `other` is still the
+payload value for an unnamed settlement, but it is no longer a filter chip:
+**No settlement band** read as unfinished work rather than a choice. A
+reviewed list covers the places a page prices, so Newcastle is a city, an
+airport station is an airport, and Attenborough is a village.
 
 Every facet is one entry in `DESTINATION_FACET_SOURCES` in `atoc_fares.py`:
 the label, the dataset it comes from, where that dataset lives, what geography
@@ -33,7 +44,11 @@ finding a second place to remember. The current facets:
 | --- | --- | --- |
 | `seaside` | ONS Census 2021 coastal communities built-up areas | England and Wales |
 | `university` | UK Learning Providers, universities keyed by UKPRN and HESA provider id | United Kingdom |
+| `heritage` | UNESCO World Heritage List, UK properties, with a reviewed list of the stations they are reached from | United Kingdom |
 | `island` | reviewed station list (see below) | England, Wales and Scotland, as the DTD feed covers them |
+| `airport` | reviewed list of rail stations serving a UK airport | United Kingdom, as the DTD feed covers them |
+| `nature` | reviewed list of stations reaching The Wildlife Trusts' reserve sites and the WWT wetland centres, from the station each reserve or trust page names | United Kingdom, as the DTD feed covers them |
+| `transport` | reviewed coach, tram, metro, stadium, and parkway or park-and-ride locations, matched from the feed's own station names | United Kingdom, as the DTD feed covers them |
 
 `reference-data/destination-facets.json` is the checked-in, source-backed
 mapping, and `tools/regenerate_destination_facets.py` rebuilds it from those
@@ -41,13 +56,27 @@ sources against a real fares download. A facet whose source is temporarily
 unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
-Two limits worth stating plainly. `island` is a reviewed list, not an official
-one: no UK open dataset names island *settlements* at a size this page cares
-about, so the entry says so in its own `source` text. And TfL is not a source
-for any of this — its data covers Greater London only, so it can describe
-London stations and nothing else in the network. A page only offers the types
-its own destinations carry, because a chip that can only ever return nothing
-reads as a broken control.
+Four limits worth stating plainly. `island` is a reviewed list, not an
+official one: no UK open dataset names island *settlements* at a size this page
+cares about, so the entry says so in its own `source` text. `transport` and
+`nature` are reviewed too, and say so the same way: the coach, tram, metro and
+parkway tags come from the feed's own station names, with a small list of
+settlements the markers catch wrongly (Bushey, BUSBY, CAMBUSLANG and Shepherd's
+Bush are places, not interchanges), and the nature tag only credits reserves a
+Wildlife Trust or the WWT actually manages. `heritage` has a
+reviewed settlement side for the same reason — UNESCO names whole properties,
+not the towns inside them — but its site ids are checked against UNESCO's live
+list on every build, so a delisted site stops tagging destinations and a
+curated station name that no longer exists is reported rather than ignored.
+The primary settlement classes come from ONS built-up-area population bands,
+not from a general gazetteer: a real village or hamlet can therefore have no
+band. Rather than showing **No settlement band**, the page keeps the `other`
+value in the payload for auditing and covers the places it prices with a
+reviewed list; a station-to-settlement or station-to-LSOA crosswalk is still
+the honest way to close the remaining gap. TfL is not a source for any of this — its data covers Greater
+London only, so it can describe London stations and nothing else in the
+network. A page only offers the types its own destinations carry, because a
+chip that can only ever return nothing reads as a broken control.
 
 ## Decided summary
 
@@ -115,10 +144,10 @@ value changes without the argument changing with it.
 
 ## Files
 
-The root holds the pipeline and the tests. Reader-facing prose lives in
-`docs/` (checklists, the glossary, the stage report, the licence enquiry),
-one-off diagnostics and their tests in `tools/`, and decisions in `adr/`
--- the root stays the build, not the filing cabinet.
+The root holds the executable pipeline and its launchers. Automated tests live in
+`tests/`; reader-facing prose lives in `docs/` (checklists, the glossary, the stage
+report, the licence enquiry), one-off diagnostics and their tests in `tools/`, and
+decisions in `adr/`. The root stays the build, not the filing cabinet.
 
 | File | Purpose |
 |---|---|
@@ -141,23 +170,23 @@ one-off diagnostics and their tests in `tools/`, and decisions in `adr/`
 | `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy) |
 | `build_workers.py` | The per-process feed cache and job function behind `--workers` |
 | `tools/check_commit_message.py` | Checks a commit message against the convention |
-| `test_atoc_fares.py` | Fares parser and publishable-selector tests |
-| `test_atoc_restrictions.py` | `.RST` field offsets, real sample records, and the gate |
-| `test_atoc_timetable.py` | Timetable parser, TIPLOC normalisation, and journey tests |
-| `test_grantham_sweep.py` | Two tests for the fare and service merge |
-| `test_feed_audit.py` | Nine tests for the audit and for damaged input |
-| `test_dtd_download.py` | Downloader safety, authentication, validation, and DTD audit tests |
-| `test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `test_build_demo_page.py` | Seventy-five tests for the page payload, template, licence slot, copy control, and the origin picker |
+| `tests/test_atoc_fares.py` | Fares parser and publishable-selector tests |
+| `tests/test_atoc_restrictions.py` | `.RST` field offsets, real sample records, and the gate |
+| `tests/test_atoc_timetable.py` | Timetable parser, TIPLOC normalisation, and journey tests |
+| `tests/test_grantham_sweep.py` | Two tests for the fare and service merge |
+| `tests/test_feed_audit.py` | Nine tests for the audit and for damaged input |
+| `tests/test_dtd_download.py` | Downloader safety, authentication, validation, and DTD audit tests |
+| `tests/test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
+| `tests/test_build_demo_page.py` | Page payload, template, licence slot, copy control, and origin-picker tests |
 | `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
-| `browser_test.cjs` | Playwright test: drives the generated page in a real browser |
-| `test_fare_shapes.py` | Sixteen tests for route codes, shared station codes, and the skip tally |
-| `test_damaged_feed.py` | Twenty tests for damaged input |
-| `test_sanity_report.py` | Fourteen tests for the count report |
-| `test_retailer.py` | Twenty-one tests for the ticket links |
+| `tests/browser_test.cjs` | Playwright test: drives the generated page in a real browser |
+| `tests/test_fare_shapes.py` | Route codes, shared station codes, and the skip tally |
+| `tests/test_damaged_feed.py` | Damaged-input tests |
+| `tests/test_sanity_report.py` | Count-report tests |
+| `tests/test_retailer.py` | Ticket-link tests |
 | `tools/test_check_links.py` | Fourteen tests for the link checker's verdicts |
-| `test_fuzzed_feed.py` | Fifteen tests for the accounting and the fuzzer |
-| `test_commit_message.py` | Eleven tests for the message checker |
+| `tests/test_fuzzed_feed.py` | Accounting and fuzzer tests |
+| `tools/test_commit_message.py` | Commit-message checker tests |
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
@@ -238,7 +267,7 @@ git log -1 --format=%B | python tools/check_commit_message.py
 ```
 
 ## The demo page`build_demo_page.py` writes one self-contained HTML file: every priced destination
-from an origin, with a budget slider, a city/town/other destination-type filter,
+from an origin, with a budget slider, a settlement and character destination-type filter,
 and a choice of whether the budget covers one adult or two. The page is generated from
 
 a feed rather than hand-written, so the real feeds replace the synthetic ones
@@ -390,7 +419,7 @@ The page is the whole product, and none of the Python tests opens a browser, so
 one test drives it in a real one:
 
 ```
-npx --yes --package playwright node browser_test.cjs
+npx --yes --package playwright node tests/browser_test.cjs
 ```
 
 It drags the budget slider to the floor, filters to a town, follows a ticket link
@@ -417,6 +446,13 @@ provenance once, so every build reads it and no operator retypes it:
 That file supplies the price line the page shows beside its prices ("Prices from
 the RSP feeds, downloaded 3 October 2026."). `--price-source` overrides it;
 `--feed-metadata <dir>` points at it when the file is not beside the feed.
+Without either, the build reads the downloader's own `download-manifest.json` --
+including one that sits two levels above a zipped feed, which is the real
+`feeds/fares/dtd-fares.zip` layout. A build that finds neither, but can see the
+feed is a DTD download (a manifest nearby, or `RJFAF*` members in the zip),
+**refuses** rather than falling back to the synthetic default: calling real
+fares "the synthetic demo feed" is the one claim this machinery exists to
+prevent. A synthetic feed still gets the synthetic line, with a warning.
 
 **2. Audit before trusting any number.**
 
@@ -520,7 +556,7 @@ The individual commands behind it, if you want them separately:
 python make_synthetic_feed.py _demo_feed --unserved-station
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
 python -m http.server 8000   # then open http://localhost:8000/demo.html
-python -m unittest discover -p "test_*.py"
+python -m unittest discover -s tests -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --date 2026-09-27

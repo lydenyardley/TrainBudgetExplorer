@@ -65,6 +65,7 @@ ONS_COASTAL_BUILT_UP_AREAS_FILE_URL = (
 LEARNING_PROVIDERS_FILE_URL = (
     "http://learning-provider.data.ac.uk/data/learning-providers-plus.tsv"
 )
+UNESCO_WORLD_HERITAGE_DATASET_URL = "https://whc.unesco.org/en/list"
 LOCATION_TYPE_SOURCE = (
     "Office for National Statistics, Census 2021 built-up-area size bands and "
     "coastal classification"
@@ -82,32 +83,90 @@ LOCATION_TYPE_SOURCE = (
 # only after the ONS/name lookup misses, so a future ONS match always wins.
 LONDON_STATION_CRS = frozenset({
     "ACT", "BAT", "BFN", "BKF", "BWD", "CDL", "CHC", "CHT", "CLJ", "CBR",
-    "CTK", "DLK", "DLP", "EUS", "FST", "GLR", "GTN", "HAY", "HMY", "IPD",
-    "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD", "PIM", "RGY",
-    "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
+    "CTK", "DLK", "DLP", "ECR", "EUS", "FST", "GLR", "GTN", "HAY", "HMY",
+    "IPD", "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD", "PIM",
+    "RGY", "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
 })
 MAJOR_UK_STATION_FALLBACKS = {
     # Scotland
     "ABD": "city", "DEQ": "city", "EDB": "city", "GLC": "city", "INV": "city",
-    "PER": "city", "QGS": "city", "SGL": "city",
+    "MAN": "city", "PER": "city", "QGS": "city", "SGL": "city",
     # Wales outside the England-and-Wales BUA workbook's usual settlement names
     "CDD": "city", "SWA": "city", "NPT": "town",
     # Northern Ireland
     "BNV": "city", "BHC": "city", "LBN": "town", "BNG": "town", "LAR": "town",
     "NIR": "town", "PTN": "town", "LDY": "city", "BCH": "town", "BFL": "town",
     "BQU": "town", "BHD": "town", "WRE": "town",
+    # England. A reviewed list, used only where the ONS built-up-area workbook
+    # has no row for the station, so a major city is not filed as "other".
+    "NCL": "city", "NCZ": "city", "NCX": "city", "BMG": "city", "BMH": "city",
+    "BML": "city", "BCU": "city", "BHM": "city", "SOL": "city", "LEI": "city",
+    "TRU": "city", "BRI": "city", "EXC": "city", "EXT": "city", "SOU": "city",
+    "STP": "city", "HGY": "city", "YRK": "town", "WKF": "town", "HUL": "town",
 }
 LOCATION_FALLBACK_SOURCE = (
-    "ONS 2021 geography coverage with reviewed London, Scottish, Welsh, and "
-    "Northern Ireland major-station fallbacks"
+    "ONS 2021 geography coverage with reviewed London, Scottish, Welsh, "
+    "Northern Ireland, and major English city fallbacks"
 )
 LOCATION_BAND_TYPES = {
     "major": "city",
     "large": "city",
     "medium": "town",
-    "small": "town",
-    "minor": "other",
+    "small": "small_town",
+    "minor": "village",
 }
+
+# Some stations the workbook cannot name are nevertheless an obvious
+# settlement, and the page's "No settlement band" answer was poor UX for
+# them. This reviewed list is the floor that removes that answer from the
+# destinations a page can actually price. Each entry is a judgement, so it
+# lives beside the other reviewed lists and is only applied to stations the
+# feed contains.
+REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
+    # Grantham, Sheffield, Rotherham, Hyde and the Yorkshire settlements
+    "DOR": "town", "HOP": "village", "DAN": "town", "MHS": "town",
+    "RMC": "city", "CLN": "village", "EDL": "village", "KIV": "village",
+    "SWN": "town", "BTD": "village", "BYK": "village", "AWK": "village",
+    "NMC": "small_town", "MRP": "village", "SRN": "village", "BDY": "village",
+    "BNT": "village", "HYC": "town", "HYT": "town", "CGW": "village",
+    "CYB": "village", "HPE": "village", "BCJ": "village",
+    # Attenborough is a village; the same page also earns the nature facet.
+    "ATB": "village",
+    # Settlements the workbook misses because the feed's station name carries a
+    # qualifier it omits ("Berwick on Tweed", "Newark Northgate"), or a name it
+    # does not hold at all. Each is the settlement the station is named for.
+    "ALM": "village", "ARB": "town", "BDQ": "city", "BEE": "town",
+    "BUH": "village", "BWK": "town", "CBG": "city", "CLM": "village",
+    "DEE": "city", "DUN": "town", "ELO": "village", "FKG": "small_town",
+    "GLE": "village", "HBB": "village", "HRS": "town", "HVN": "village",
+    "HYM": "village", "INK": "village", "KDY": "town", "KIN": "village",
+    "KTL": "village", "LAG": "village", "LEU": "village", "LGM": "small_town",
+    "LJL": "city", "LPY": "city", "MTS": "town", "NLW": "village",
+    "NNG": "town", "PIT": "village", "PTH": "city", "RAU": "village",
+    "RDF": "village", "SHY": "town", "SPO": "village", "STG": "city",
+    "STN": "town", "TPC": "village", "WFL": "village", "WWL": "village",
+    # Nottingham Express Transit and East Midlands Parkway tram stops, and
+    # park-and-ride platforms named after the village they serve
+    "EMD": "village", "PEA": "village", "PPR": "town",
+    # Further settlements the workbook does not name, checked against the feed
+    "BKM": "town", "BLW": "town", "DVP": "town", "GBL": "town", "LTG": "village",
+    "MDL": "village", "MRD": "village", "SAF": "village", "SGB": "town",
+}
+
+# An airport station is a destination in its own right, and the settlement it
+# serves is still a place a reader might budget for. These are the settlement
+# classes behind the airport list below, so an airport row is not left as the
+# unsourced remainder.
+AIRPORT_SETTLEMENT_CLASSES: dict[str, str] = {
+    "APN": "city", "BHI": "city", "EDA": "village", "EMA": "village",
+    "GGT": "city", "GTW": "city", "HAF": "city", "HLL": "city", "HWA": "city",
+    "HWE": "city",    "HWV": "city", "HWX": "city", "HXX": "city", "IVA": "city",
+    "LHR": "city", "LJL": "city", "LPD": "city", "LTN": "city", "LUA": "city",
+    "MIA": "city", "MNA": "city", "PRA": "town", "RHA": "city", "SIA": "city", "SOA": "city",
+    "SSD": "village", "TEA": "village", "XCF": "city", "XFI": "village",
+    "XPB": "city", "XQB": "village", "XTH": "village", "ZHJ": "city",
+}
+REVIEWED_SETTLEMENT_FALLBACKS.update(AIRPORT_SETTLEMENT_CLASSES)
 
 # Settlement class and destination facets are deliberately separate. A station
 # has exactly one primary settlement class, while independent tags such as
@@ -122,7 +181,11 @@ LOCATION_BAND_TYPES = {
 # place to remember to update. ``reviewed_station_codes`` is the escape hatch
 # for a facet no published dataset names at station level; it is only
 # intersected with stations the feed actually contains, and the entry says so
-# in its ``source`` text rather than implying an official list.
+# in its ``source`` text rather than implying an official list. A facet the
+# published sources cannot name at all, but whose stations the feed's own names
+# identify, declares ``reviewed_name_markers`` instead: the markers are matched
+# against the feed's station name, so a new coach stop or parkway is tagged
+# without a code being written for it.
 @dataclass(frozen=True)
 class DestinationFacet:
     """One destination facet, its official source, and how to read it."""
@@ -134,6 +197,16 @@ class DestinationFacet:
     coverage: str
     reader: str
     reviewed_station_codes: frozenset[str] = frozenset()
+    reviewed_name_markers: tuple[str, ...] = ()
+    # Settlements whose own name merely contains a marker -- Bushey, BUSBY,
+    # CAMBUSLANG and Shepherd's Bush are places, not interchanges. The feed
+    # truncates names, so a substring marker is the only way to catch
+    # "BPOOL NTHBUSTRAM", and these are the settlements it catches wrongly.
+    excluded_station_codes: frozenset[str] = frozenset()
+
+    @property
+    def is_reviewed(self) -> bool:
+        return bool(self.reviewed_station_codes or self.reviewed_name_markers)
 
 
 # Island settlements are the one facet with no published settlement list this
@@ -155,6 +228,121 @@ ISLAND_STATION_CRS = frozenset({
     # Scottish islands
     "ADS", "CRU", "CTB", "KYL", "MLG", "PEE", "RTY", "SCB", "SOY", "SOS", "ULP",
 })
+
+# Airport stations are their own destination category: a reader budgeting for
+# a city centre does not mean the airport bus stop or the airport park-and-ride.
+# The codes are the feed's own names for a rail station serving a UK airport.
+AIRPORT_STATION_CRS = frozenset({
+    "APN", "BHI", "EDA", "EMA", "GGT", "GTW", "HAF", "HLL", "HWA", "HWE",
+    "HWV", "HWX", "HXX", "IVA", "LHR", "LJL", "LPD", "LTN", "LUA", "MIA",
+    "MNA", "PRA", "RHA", "SIA", "SOA", "SSD", "TEA", "XCF", "XFI", "XQB",
+    "XTH", "XPB", "ZHJ",
+})
+
+# The Wildlife Trusts run roughly 2,300 reserves across the UK. This reviewed
+# list records the station a reader reaches them from; the trust names and the
+# reserve pages are in the source text so the evidence is checkable. It is a
+# floor, not a ceiling: a reserve added later needs one entry here.
+WILDLIFE_TRUSTS = (
+    "Alderney", "Avon", "Berkshire, Buckinghamshire and Oxfordshire",
+    "Birmingham and the Black Country", "Cheshire", "Cornwall", "Cumbria",
+    "Derbyshire", "Devon", "Dorset", "Durham", "Essex", "Gloucestershire",
+    "Gwent", "Hampshire and Isle of Wight", "Herefordshire",
+    "Herts and Middlesex", "Isles of Scilly", "Kent",
+    "Leicestershire and Rutland", "Lincolnshire", "London", "Manx",
+    "Montgomeryshire", "Norfolk", "North Wales", "Northumberland",
+    "Nottinghamshire", "Radnorshire", "Scottish", "Sheffield and Rotherham",
+    "Shropshire", "Somerset", "Staffordshire", "Suffolk", "Surrey", "Sussex",
+    "Tees Valley", "Bedfordshire, Cambridgeshire and Northamptonshire",
+    "Birmingham and the Black Country", "Lancashire, Manchester and North Merseyside",
+    "South and West Wales", "Ulster", "Warwickshire", "Wiltshire",
+    "Worcestershire",
+)
+NATURE_SITE_STATION_CRS = frozenset({
+    # Attenborough Nature Reserve, five minutes from the station on the trust's
+    # own "plan your visit" page (Nottinghamshire Wildlife Trust)
+    "ATB",
+    # Martin Mere Wetland Centre, named as the recommended station on WWT's
+    # own directions page (Wildfowl and Wetlands Trust, the reserve the
+    # Lancashire, Manchester and North Merseyside Wildlife Trust sits beside)
+    "BCB", "BCJ",
+    # Thorndon Country Park, "close to Brentwood station" per the trust
+    # (Essex Wildlife Trust)
+    "BRE",
+    # Weeting Heath, about 3.5 km from Brandon on the only documented walk
+    # (Norfolk Wildlife Trust)
+    "BND",
+    # Sevenoaks Wildlife Reserve, just under 2 km from the station out of town
+    # and up past the A25 (Kent Wildlife Trust)
+    "SEV",
+    # Bodenham Arboretum, about fifteen minutes from Hartlebury
+    # (Worcestershire Wildlife Trust)
+    "HBY",
+    # WWT Slimbridge: "the nearest train station is Cam & Dursley"
+    "CDU",
+    # The three London Wildlife Trust sites that name their station themselves
+    "HAY",  # Yeading Brook Meadows, 30 minutes from Hayes and Harlington
+    "ZHX",  # Huckerby's Meadows, 15 minutes from Hatton Cross
+    "ZHD",  # Gutteridge Wood and Meadows, 12 minutes from Hillingdon
+    # Reserves whose trust names no station of its own, checked against the
+    # trust's reserve page
+    "BKA",  # Bookham Common (Surrey Wildlife Trust)
+    "HLS",  # Titchfield Haven (Hampshire and Isle of Wight Wildlife Trust)
+})
+# Three places a reader might expect here are deliberately absent: Kempton Park
+# is one of the Royal Parks, Epping Forest is run by Epping Forest District
+# Council, and Rainham Marshes is an RSPB reserve. None of them is a Wildlife
+# Trusts site, so tagging them would be a false claim.
+
+# Locations whose purpose is to move people between networks: coach and bus
+# stations, tram and metro stops, stadium stations, and parkway or park-and-ride
+# platforms. These are destinations a reader can travel to, and without the
+# tag the page had no answer for them at all. Most are found by the facet's
+# name markers; the codes here are the ones whose names say nothing (a park and
+# ride named after the village it serves, for instance).
+TRANSPORT_STATION_CRS = frozenset({
+    # Nottingham Express Transit and East Midlands Parkway tram stops
+    "EMD", "LGM", "PEA",
+    # Park and ride named after its settlement
+    "PPR", "TPC",
+})
+
+# UNESCO's list names whole properties, not the towns inside them, so the
+# settlement side of a World Heritage facet is a reviewed list. Each tuple is
+# (site id, official site name, feed station names). The reader checks the ids
+# against the live list: a site that has been delisted stops contributing, and
+# a curated station name that no longer matches anything is reported rather
+# than silently doing nothing. Keeping the title beside the stations also lets
+# the page explain why a destination earned the tag instead of reducing the
+# evidence to an unexplained boolean.
+HERITAGE_PROPERTIES: tuple[tuple[int, str, tuple[str, ...]], ...] = (
+    (370, "Durham Castle and Cathedral", ("Durham",)),
+    (374, "Castles and Town Walls of King Edward in Gwynedd", ("Caernarfon", "Conwy", "Harlech")),
+    (422, "English Lake District", ("Ulverston", "Windermere")),
+    (426, "Westminster Palace, Westminster Abbey and St Margaret's Church", ("Westminster Und",)),
+    (429, "New Lanark", ("Lanark",)),
+    (430, "Hadrian's Wall", ("Carlisle", "Chester", "Corbridge", "Newcastle")),
+    (488, "Tower of London", ("Tower Hill Und",)),
+    (496, "Canterbury Cathedral, St Augustine's Abbey, and St Martin's Church", ("Canterbury East", "Canterbury West", "Dover Priory")),
+    (514, "Heart of Neolithic Orkney", ("Stromness",)),
+    (728, "Old and New Towns of Edinburgh", ("Edinburgh",)),
+    (1028, "Saltaire", ("Bradford F Sq", "Bradford Interch", "Saltaire")),
+    (1029, "Dorset and East Devon Coast", ("Exmouth", "Poole", "Swanage", "Weymouth")),
+    (1030, "Derwent Valley Mills", ("Belper", "Cromford", "Matlock", "Matlock Bath")),
+    (1084, "Royal Botanic Gardens, Kew", ("Kew Bridge", "Kew Gardens", "Richmond London")),
+    (1215, "Cornwall and West Devon Mining Landscape", ("Camborne", "Redruth", "Truro")),
+    (1303, "Pontcysyllte Aqueduct and Canal", ("Wrexham Central", "Wrexham General")),
+    (1594, "Jodrell Bank", ("Macclesfield",)),
+    (1613, "City of Bath", ("Bath Spa", "Buxton")),
+    (1633, "Slate Landscape of Northwest Wales", ("Barmouth", "Caernarfon", "Porthmadog")),
+)
+HERITAGE_SITE_NAMES_BY_ID = {
+    site_id: name for site_id, name, _stations in HERITAGE_PROPERTIES
+}
+HERITAGE_STATIONS_BY_SITE = {
+    site_id: stations for site_id, _name, stations in HERITAGE_PROPERTIES
+}
+UNESCO_WORLD_HERITAGE_FILE_URL = "https://whc.unesco.org/en/list/xml"
 
 DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
     DestinationFacet(
@@ -180,6 +368,17 @@ DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
         reader="uk_learning_provider_towns",
     ),
     DestinationFacet(
+        key="heritage",
+        label="World heritage",
+        source=(
+            "UNESCO World Heritage List, UK properties, with a reviewed list "
+            "of the stations those properties are reached from"
+        ),
+        url=UNESCO_WORLD_HERITAGE_DATASET_URL,
+        coverage="United Kingdom",
+        reader="unesco_world_heritage_stations",
+    ),
+    DestinationFacet(
         key="island",
         label="Islands",
         source=(
@@ -191,8 +390,59 @@ DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
         reader="reviewed_station_codes",
         reviewed_station_codes=ISLAND_STATION_CRS,
     ),
+    DestinationFacet(
+        key="airport",
+        label="Airports",
+        source=(
+            "reviewed rail stations serving a UK airport, checked against the "
+            "UK airport station list and the feed's own station names"
+        ),
+        url="https://www.nationalrail.co.uk/travel-information/airport-stations/",
+        coverage="United Kingdom, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_station_codes=AIRPORT_STATION_CRS,
+    ),
+    DestinationFacet(
+        key="nature",
+        label="Nature sites",
+        source=(
+            "reviewed list of stations reaching The Wildlife Trusts' reserve "
+            "sites (46 member trusts) and the Wildfowl and Wetlands Trust's "
+            "wetland centres, cross-referenced against the station each reserve "
+            "or trust page names"
+        ),
+        url="https://www.wildlifetrusts.org/nature-reserves",
+        coverage="United Kingdom, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_station_codes=NATURE_SITE_STATION_CRS,
+    ),
+    DestinationFacet(
+        key="transport",
+        label="Transport interchanges",
+        source=(
+            "reviewed coach, tram, metro, stadium, and parkway or park-and-ride "
+            "locations, identified from the feed's own station names and each "
+            "operator's interchange list"
+        ),
+        url="",
+        coverage="United Kingdom, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_station_codes=TRANSPORT_STATION_CRS,
+        # The markers are what let a new coach stop or parkway earn the tag
+        # without a code here. They are deliberately narrow: a name that says
+        # BUS, TRAM, METRO or STADIUM, or ends in a parkway or park-and-ride
+        # marker, is a node in a network rather than a settlement.
+        reviewed_name_markers=(
+            "BUS", "TRAM", "METRO", "METROLINK", "STADIUM", "PARKWAY", "PKWY",
+            "S PWAY", "PRK LDNR",
+        ),
+        excluded_station_codes=frozenset({"BSH", "BUS", "CBL", "SPB"}),
+    ),
 )
 SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACET_SOURCES)
+# Bumped when the primary classes change shape, so a cache written before the
+# change is recognised rather than trusted.
+LOCATION_CACHE_SCHEMA = 3
 DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOURCES}
 # Reader id -> the FaresDb method that returns normalised settlement names for
 # it. Registering the reader here keeps a new facet to a registry entry plus a
@@ -200,14 +450,21 @@ DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOU
 DESTINATION_FACET_READERS: dict[str, str] = {
     "ons_coastal_built_up_areas": "_read_ons_coastal_facet",
     "uk_learning_provider_towns": "_read_learning_provider_facet",
+    "unesco_world_heritage_stations": "_read_unesco_heritage_facet",
 }
 # The primary settlement classes come from ONS BUA size bands; the facets are
 # appended from the registry so a new sourced type shows up in the UI with no
-# other edit.
+# other edit. The bands are population classes, so the labels say what they
+# are: 10,000-24,999 is a town and under 5,000 is a village. There is no
+# "No settlement band" chip: a station the published workbooks cannot name is
+# still a destination, and a filter that only ever returns an unsourced
+# remainder reads as a gap in the page rather than a choice. Those stations keep
+# the ``other`` class in the payload, so a build can still audit them.
 DESTINATION_TYPE_FILTERS: tuple[tuple[str, str], ...] = (
     ("city", "Cities"),
-    ("town", "Towns & villages"),
-    ("other", "Other"),
+    ("town", "Towns"),
+    ("small_town", "Small towns"),
+    ("village", "Villages"),
 ) + tuple((facet.key, facet.label) for facet in DESTINATION_FACET_SOURCES)
 
 # The real feed's standard-return catalogue contains a family of ITX
@@ -375,6 +632,25 @@ REVIEWED_ANYTIME_DAY_RETURN_TICKETS: dict[str, str] = {
 }
 
 
+# The restriction code the DTD uses for a yield-managed fare. A row carrying it
+# is train-specific whatever its ticket is called, and a ticket called ADVANCE
+# is train-specific whatever code it carries, so a caller asks about both
+# through one predicate rather than retyping either test.
+ADVANCE_RESTRICTION_CODE = "AS"
+
+
+def is_advance_ticket(name: object) -> bool:
+    """Whether a ticket name identifies a yield-managed, train-specific fare."""
+    return bool(re.search(r"\bADV(?:ANCE)?\b", str(name or "").upper()))
+
+
+def is_advance_fare(ticket_name: object, restriction_code: object) -> bool:
+    """Whether a published fare row is an Advance single, by either test."""
+    return is_advance_ticket(ticket_name) or str(
+        restriction_code or ""
+    ).strip().upper() == ADVANCE_RESTRICTION_CODE
+
+
 @dataclass(frozen=True)
 class Location:
     nlc: str
@@ -398,6 +674,17 @@ class TicketType:
     @property
     def is_standard_single(self) -> bool:
         return self.tkt_class == STANDARD_CLASS and self.tkt_type == "S"
+
+    @property
+    def is_advance(self) -> bool:
+        """Whether the catalogue explicitly identifies a yield-managed fare.
+
+        This is the one definition of "advance": the page builder asks the
+        ticket and the restriction code through the same test rather than
+        retyping the word, so a catalogue that spells it differently cannot
+        leave the page labelling a fare two ways.
+        """
+        return is_advance_ticket(self.name)
 
 
 @dataclass(frozen=True)
@@ -797,17 +1084,19 @@ class FaresDb:
                 self._load_ons_location_types()
             except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
                 self.report.skip_file(f"ONS station classification unavailable: {error}")
-            for facet in DESTINATION_FACET_SOURCES:
-                if facet.reviewed_station_codes:
-                    continue
-                try:
-                    self._apply_destination_facet(facet)
-                except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
-                    self.report.skip_file(
-                        f"{facet.key} station classification unavailable: {error}"
-                    )
-            if self.location_types_by_crs:
-                self._write_location_cache(lookup_root / "location-types.json")
+        for facet in DESTINATION_FACET_SOURCES:
+            if facet.is_reviewed:
+                continue
+            try:
+                self._apply_destination_facet(facet)
+            except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
+                self.report.skip_file(
+                    f"{facet.key} station classification unavailable: {error}"
+                )
+        # One cache write for the whole pass: the facets above have all landed
+        # by now, so a per-facet write would publish a partial classification.
+        if self.location_types_by_crs:
+            self._write_location_cache(lookup_root / "location-types.json")
         self._apply_major_station_fallbacks()
         self._apply_reviewed_facets()
 
@@ -816,7 +1105,11 @@ class FaresDb:
         text = str(value or "").strip().lower()
         if "city" in text or "cities" in text or text in {"c", "urban", "metropolitan"}:
             return "city"
-        if "town" in text or text in {"t", "village", "rural"}:
+        if "small" in text and ("town" in text or text == "small"):
+            return "small_town"
+        if "village" in text or text in {"v", "hamlet"}:
+            return "village"
+        if "town" in text or text in {"t", "rural"}:
             return "town"
         return "other" if text else None
 
@@ -826,18 +1119,27 @@ class FaresDb:
         These facets exist because no open settlement list covers them, so the
         entry says so in its source text and the codes are intersected with the
         feed's own stations: a stale code is dropped rather than inventing a
-        station.
+        station. A facet that also declares name markers tags any feed station
+        whose own name carries one, which is how a new coach stop reaches the
+        page without a code being written for it.
         """
         for facet in DESTINATION_FACET_SOURCES:
-            if not facet.reviewed_station_codes:
+            if not facet.is_reviewed:
                 continue
             for crs in facet.reviewed_station_codes:
                 if crs in self.locations_by_crs:
                     self._tag_station(crs, facet.key)
+            for marker in facet.reviewed_name_markers:
+                needle = marker.upper()
+                for crs, location in self.locations_by_crs.items():
+                    if crs in facet.excluded_station_codes:
+                        continue
+                    if needle in location.name.upper():
+                        self._tag_station(crs, facet.key)
 
     def _apply_destination_facet(self, facet: DestinationFacet) -> None:
         """Tag every station whose settlement is named by the facet's source."""
-        if facet.reviewed_station_codes:
+        if facet.is_reviewed:
             self._apply_reviewed_facets()
             return
         reader = DESTINATION_FACET_READERS.get(facet.reader)
@@ -849,9 +1151,30 @@ class FaresDb:
         names = method()
         if not names:
             raise ValueError(f"{facet.source} returned no settlement names")
-        for crs, location in self.locations_by_crs.items():
-            if self._normalise_settlement_name(location.name) in names:
-                self._tag_station(crs, facet.key)
+        matched = {
+            crs
+            for crs, location in self.locations_by_crs.items()
+            if self._settlement_matches(location.name, names)
+        }
+        if facet.key == "heritage":
+            # A curated name that no longer names a station is a list that has
+            # gone stale, and silence would leave it looking current.
+            unmatched = sorted(
+                station
+                for station in names
+                if not any(
+                    self._settlement_matches(location.name, {station})
+                    for location in self.locations_by_crs.values()
+                )
+            )
+            if unmatched:
+                self.report.skip_file(
+                    f"heritage: {len(unmatched)} curated station names match no station in this "
+                    f"feed: {', '.join(unmatched[:8])}"
+                    + (" ..." if len(unmatched) > 8 else "")
+                )
+        for crs in matched:
+            self._tag_station(crs, facet.key)
         if self.location_type_source:
             self.location_type_source = LOCATION_TYPE_SOURCE
 
@@ -866,16 +1189,40 @@ class FaresDb:
         for crs, kind in MAJOR_UK_STATION_FALLBACKS.items():
             if crs in self.locations_by_crs and crs not in self.location_types_by_crs:
                 self.location_types_by_crs[crs] = kind
+        for crs, kind in REVIEWED_SETTLEMENT_FALLBACKS.items():
+            if crs in self.locations_by_crs and self.location_types_by_crs.get(crs) in (None, "other"):
+                self.location_types_by_crs[crs] = kind
         if (
             not self.location_type_source
             and any(
                 crs in self.location_types_by_crs
-                for crs in set(LONDON_STATION_CRS) | set(MAJOR_UK_STATION_FALLBACKS)
+                for crs in set(LONDON_STATION_CRS)
+            | set(MAJOR_UK_STATION_FALLBACKS)
+            | set(REVIEWED_SETTLEMENT_FALLBACKS)
             )
         ):
             self.location_type_source = LOCATION_FALLBACK_SOURCE
 
     def _load_location_types_json(self, data: object) -> None:
+        # A cache written under an older schema still holds valid facets, but
+        # its primary classes were collapsed into three values and would call
+        # every village and small town "other" forever. Drop those records and
+        # say so; keeping the facets costs nothing because they are additive.
+        if isinstance(data, dict) and isinstance(data.get("schema"), int):
+            if data["schema"] < LOCATION_CACHE_SCHEMA and isinstance(data.get("records"), dict):
+                self.report.skip_file(
+                    f"station classification cache is schema {data['schema']}, this build writes "
+                    f"schema {LOCATION_CACHE_SCHEMA}: its primary classes were ignored, its facets kept"
+                )
+                # Keep the facets, which are additive and still true, and drop
+                # only the primary class each record carried.
+                data = {
+                    **data,
+                    "records": {
+                        crs: {**value, "primary": None} if isinstance(value, dict) else None
+                        for crs, value in data["records"].items()
+                    },
+                }
         if isinstance(data, dict):
             top_level_facets = data.get("facets")
             if isinstance(top_level_facets, dict):
@@ -972,6 +1319,31 @@ class FaresDb:
     def _normalise_settlement_name(value: object) -> str:
         return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
+    @classmethod
+    def _settlement_name_candidates(cls, name: object) -> list[str]:
+        """Return the station name and, for a qualifier, the settlement under it.
+
+        The feed disambiguates with a bracketed county -- "Ascot (Berks)" --
+        where the ONS workbook simply says "Ascot". Dropping a trailing
+        bracketed qualifier is safe in a way that dropping any other word is
+        not, because a county never changes which settlement a station is in.
+        """
+        text = str(name or "").strip()
+        candidates = [cls._normalise_settlement_name(text)]
+        bracketed = re.match(r"^(.*?)\s*\([^)]*\)\s*$", text)
+        if bracketed and bracketed.group(1).strip():
+            candidates.append(cls._normalise_settlement_name(bracketed.group(1)))
+        return [candidate for candidate in candidates if candidate]
+
+    def _settlement_matches(self, name: object, settlements: set[str]) -> bool:
+        """Say whether a station's name is one of a source's settlements.
+
+        Only the whole name matches. Loosening this to "starts with" is what
+        would make Bathgate claim Bath and Bradford-on-Avon claim Bradford, so
+        a curated list names stations as the feed writes them instead.
+        """
+        return any(candidate in settlements for candidate in self._settlement_name_candidates(name))
+
     @staticmethod
     def _xlsx_cell_value(cell: ET.Element, shared: list[str]) -> str:
         cell_type = cell.attrib.get("t", "")
@@ -1036,9 +1408,11 @@ class FaresDb:
         for crs, location in self.locations_by_crs.items():
             if not crs or not location.name:
                 continue
-            area = areas.get(self._normalise_settlement_name(location.name))
-            if area:
-                self.location_types_by_crs[crs] = area["type"]
+            for candidate in self._settlement_name_candidates(location.name):
+                area = areas.get(candidate)
+                if area:
+                    self.location_types_by_crs[crs] = area["type"]
+                    break
         self._apply_major_station_fallbacks()
         if not self.location_type_source:
             self.location_type_source = LOCATION_TYPE_SOURCE
@@ -1096,6 +1470,47 @@ class FaresDb:
             workbook = response.read()
         return self._read_ons_coastal_areas(workbook)
 
+    def _read_unesco_heritage_facet(self) -> set[str]:
+        """Return station names for the UK properties the curated list names.
+
+        The list is validated against UNESCO's own XML on every read: an id
+        that is no longer a current UK property stops contributing, so a
+        delisted site cannot keep tagging destinations.
+        """
+        request = urllib.request.Request(
+            UNESCO_WORLD_HERITAGE_FILE_URL,
+            headers={"User-Agent": "TrainBudgetExplorer/1.0 (station classification build)"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = response.read()
+        root = ET.fromstring(body)
+        current: set[int] = set()
+        for row in root:
+            if row.tag.rsplit("}", 1)[-1] != "row":
+                continue
+            fields = {
+                child.tag.rsplit("}", 1)[-1]: (child.text or "").strip() for child in row
+            }
+            if "united kingdom" not in fields.get("states", "").lower():
+                continue
+            try:
+                current.add(int(fields.get("id_number", "")))
+            except ValueError:
+                continue
+        names: set[str] = set()
+        for site_id, stations in HERITAGE_STATIONS_BY_SITE.items():
+            if site_id not in current:
+                self.report.skip_file(
+                    f"heritage: curated site {site_id} is not a current UK World Heritage "
+                    "property; its stations were not applied"
+                )
+                continue
+            for station in stations:
+                names.add(self._normalise_settlement_name(station))
+        if not names:
+            raise ValueError("no curated World Heritage site is a current UK property")
+        return names
+
     def _read_learning_provider_facet(self) -> set[str]:
         """Return the towns that have a university in the UKPRN provider list.
 
@@ -1128,7 +1543,10 @@ class FaresDb:
 
     def _write_location_cache(self, path: Path) -> None:
         cache = {
-            "schema": 2,
+            # 3: the primary classes split into city/town/small_town/village,
+            # so a cache written under 2 would call every village and small
+            # town "other" forever.
+            "schema": 3,
             "source": LOCATION_TYPE_SOURCE,
             "sources": {
                 "primary": {
@@ -1145,9 +1563,10 @@ class FaresDb:
                 for facet in DESTINATION_FACET_SOURCES
             },
             "mapping": {
-                "city": ["major", "large"],
-                "town": ["medium", "small"],
-                "other": ["minor"],
+                type_name: [
+                    band for band, kind in LOCATION_BAND_TYPES.items() if kind == type_name
+                ]
+                for type_name in ("city", "town", "small_town", "village")
             },
             "supportedFacets": sorted(SUPPORTED_DESTINATION_FACETS),
             "coverage": (
@@ -1174,6 +1593,25 @@ class FaresDb:
         """Return the primary class followed by any independent destination facets."""
         code = crs.strip().upper()
         return [self.destination_type(code), *sorted(self.location_facets_by_crs.get(code, set()))]
+
+    def heritage_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the UNESCO properties that make this station a heritage match."""
+        code = crs.strip().upper()
+        location = self.locations_by_crs.get(code)
+        if location is None or "heritage" not in self.location_facets_by_crs.get(code, set()):
+            return []
+        return [
+            {
+                "id": site_id,
+                "name": name,
+                "url": f"https://whc.unesco.org/en/list/{site_id}/",
+            }
+            for site_id, name, stations in HERITAGE_PROPERTIES
+            if self._settlement_matches(
+                location.name,
+                {self._normalise_settlement_name(station) for station in stations},
+            )
+        ]
 
     def _load_lines(self, name: str, lines) -> None:
         extension = Path(name).suffix.lower().lstrip(".")
@@ -1671,7 +2109,13 @@ class FaresDb:
         tally: dict[str, int] | None = None,
         day: date | None = None,
     ) -> list[Reachable]:
-        """Displayable standard-class singles, excluding catalogue placeholders."""
+        """Displayable standard-class singles, excluding catalogue placeholders.
+
+        Advance singles are valid fares, but they are attached to a particular
+        train rather than being an unrestricted walk-up price. They remain in
+        the result; callers must label them as train-specific instead of
+        silently treating them like an anytime fare.
+        """
         rows = self._destinations_within(
             origin_crs,
             budget_pence,

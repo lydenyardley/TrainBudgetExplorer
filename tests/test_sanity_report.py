@@ -72,7 +72,7 @@ class SanityReportTest(unittest.TestCase):
 
     def test_the_reasons_a_record_was_dropped_are_counted(self) -> None:
         dropped, feed_counts = dropped_reasons(self.fares, "GRN", 2000)
-        self.assertEqual(dropped["ticket_is_not_a_standard_return"], 3)
+        self.assertEqual(dropped["ticket_is_not_a_standard_return"], 4)
         self.assertEqual(dropped["fare_above_the_budget"], 2)
         self.assertEqual(feed_counts["fares_with_no_flow_record"], 0)
 

@@ -20,6 +20,8 @@ from atoc_fares import (
     DESTINATION_FACETS_BY_KEY,
     DESTINATION_FACET_READERS,
     DESTINATION_TYPE_FILTERS,
+    LOCATION_BAND_TYPES,
+    LOCATION_CACHE_SCHEMA,
     SUPPORTED_DESTINATION_FACETS,
     FLOW_F,
     FLOW_T,
@@ -51,11 +53,29 @@ class FaresParserTest(unittest.TestCase):
     def test_reads_destination_types_from_the_separate_reference_lookup(self) -> None:
         self.assertEqual(self.db.destination_type("NOT"), "city")
         self.assertEqual(self.db.destination_type("GRN"), "town")
-        self.assertEqual(self.db.destination_type("XFD"), "other")
+        self.assertEqual(self.db.destination_type("XFD"), "village")
         self.assertEqual(self.db.destination_types("NOT"), ["city", "university"])
         self.assertEqual(self.db.destination_types("LCN"), ["city", "seaside", "university"])
-        self.assertEqual(self.db.destination_types("XFD"), ["other", "island"])
+        self.assertEqual(self.db.destination_types("XFD"), ["village", "island"])
+        self.assertEqual(self.db.destination_types("PBO"), ["small_town", "university"])
+        self.assertEqual(self.db.destination_types("SLP"), ["other", "heritage"])
         self.assertIn("synthetic", self.db.location_type_source or "")
+
+    def test_heritage_details_come_from_the_curated_station_to_site_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_unserved_station=True)
+            )
+        self.assertEqual(db.destination_types("SLP"), ["other", "heritage"])
+        self.assertEqual(
+            db.heritage_sites("SLP"),
+            [{
+                "id": 488,
+                "name": "Tower of London",
+                "url": "https://whc.unesco.org/en/list/488/",
+            }],
+        )
+        self.assertEqual(db.heritage_sites("NOT"), [])
 
     def test_facets_from_several_files_are_merged_not_replaced(self) -> None:
         # The checked-in reference data, a cache beside the feed and the feed's
@@ -75,14 +95,198 @@ class FaresParserTest(unittest.TestCase):
         db = FaresDb()
         db.locations_by_crs = {
             "KGX": Location("1000", "KGX", "LONDON KINGS X", ""),
-            "GLC": Location("2000", "GLC", "GLASGOW CENTRAL", ""),
-            "CDD": Location("3000", "CDD", "CARDIFF CENTRAL", ""),
+            "ECR": Location("2000", "ECR", "EAST CROYDON", ""),
+            "MAN": Location("3000", "MAN", "MANCHESTER PIC", ""),
+            "GLC": Location("4000", "GLC", "GLASGOW CENTRAL", ""),
+            "CDD": Location("5000", "CDD", "CARDIFF CENTRAL", ""),
         }
         db._apply_major_station_fallbacks()
         self.assertEqual(db.destination_type("KGX"), "city")
+        self.assertEqual(db.destination_type("ECR"), "city")
+        self.assertEqual(db.destination_type("MAN"), "city")
         self.assertEqual(db.destination_type("GLC"), "city")
         self.assertEqual(db.destination_type("CDD"), "city")
         self.assertIn("London", db.location_type_source or "")
+
+    def test_the_size_bands_name_what_they_are(self) -> None:
+        # The ONS bands are population classes, and collapsing the two smallest
+        # into one "town" is what left villages filed as "other". The "other"
+        # remainder keeps its payload class but is no longer offered as a
+        # filter: "No settlement band" read as a gap, not a choice.
+        self.assertEqual(LOCATION_BAND_TYPES["major"], "city")
+        self.assertEqual(LOCATION_BAND_TYPES["large"], "city")
+        self.assertEqual(LOCATION_BAND_TYPES["medium"], "town")
+        self.assertEqual(LOCATION_BAND_TYPES["small"], "small_town")
+        self.assertEqual(LOCATION_BAND_TYPES["minor"], "village")
+        self.assertEqual(
+            [key for key, _ in DESTINATION_TYPE_FILTERS[:4]],
+            ["city", "town", "small_town", "village"],
+        )
+        self.assertNotIn("other", [key for key, _ in DESTINATION_TYPE_FILTERS])
+        self.assertNotIn("No settlement band", [label for _, label in DESTINATION_TYPE_FILTERS])
+
+    def test_a_major_city_is_not_filed_as_other(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "NCL": Location("1", "NCL", "NEWCASTLE", ""),
+            "EDL": Location("2", "EDL", "EDALE", ""),
+        }
+        db._apply_major_station_fallbacks()
+        self.assertEqual(db.destination_type("NCL"), "city")
+        self.assertEqual(db.destination_type("EDL"), "village")
+        self.assertNotIn("other", db.destination_types("NCL"))
+        self.assertNotIn("other", db.destination_types("EDL"))
+
+    def test_attenborough_is_a_village_and_a_nature_site(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {"ATB": Location("1", "ATB", "ATTENBOROUGH", "")}
+        db._apply_major_station_fallbacks()
+        db._apply_reviewed_facets()
+        self.assertEqual(db.destination_type("ATB"), "village")
+        self.assertIn("nature", db.destination_types("ATB"))
+        self.assertNotIn("other", db.destination_types("ATB"))
+
+    def test_an_airport_station_is_in_the_airport_category(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {"XQB": Location("1", "XQB", "EAST M AIR LGE", "")}
+        db._apply_major_station_fallbacks()
+        db._apply_reviewed_facets()
+        self.assertIn("airport", db.destination_types("XQB"))
+        self.assertIn("airport", SUPPORTED_DESTINATION_FACETS)
+        self.assertIn(("airport", "Airports"), DESTINATION_TYPE_FILTERS)
+        # The airport is its own category, and the settlement it serves is
+        # still classified, so the row is not left as the unsourced remainder.
+        self.assertEqual(db.destination_type("XQB"), "village")
+        self.assertNotIn("other", db.destination_types("XQB"))
+
+    def test_a_station_settlement_band_becomes_a_village_not_other(self) -> None:
+        db = FaresDb()
+        db._read_ons_built_up_areas = lambda data: {  # type: ignore[method-assign]
+            "ANCASTER": {"name": "Ancaster", "type": "village", "band": "minor"},
+            "BOTTESFORD": {"name": "Bottesford", "type": "village", "band": "minor"},
+            "RETFORD": {"name": "Retford", "type": "town", "band": "medium"},
+        }
+        db.locations_by_crs = {
+            "ANC": Location("1", "ANC", "ANCASTER", ""),
+            "BTF": Location("2", "BTF", "BOTTESFORD", ""),
+            "RET": Location("3", "RET", "RETFORD", ""),
+        }
+        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
+            db._load_ons_location_types()
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(db.destination_type("BTF"), "village")
+        self.assertEqual(db.destination_type("RET"), "town")
+
+    def test_a_bracketed_county_does_not_hide_a_settlement(self) -> None:
+        db = FaresDb()
+        self.assertEqual(db._settlement_name_candidates("Ascot (Berks)"), ["ASCOTBERKS", "ASCOT"])
+        self.assertEqual(db._settlement_name_candidates("ADLINGTON CHES"), ["ADLINGTONCHES"])
+        self.assertEqual(db._settlement_name_candidates("(Berks)"), ["BERKS"])
+        areas = {"ASCOT"}
+        self.assertTrue(db._settlement_matches("Ascot (Berks)", areas))
+        self.assertFalse(db._settlement_matches("Adlington Ches", areas))
+
+    def test_matching_is_never_a_prefix_match(self) -> None:
+        # "starts with" would let Bathgate claim Bath and Bradford-on-Avon
+        # claim Bradford, so a curated list has to name stations as the feed
+        # writes them instead.
+        db = FaresDb()
+        settled = {"BATH", "BRADFORD", "CHESTER"}
+        self.assertFalse(db._settlement_matches("BATHGATE", settled))
+        self.assertFalse(db._settlement_matches("BRADFORD ON AVON", settled))
+        self.assertFalse(db._settlement_matches("CHESTER ROAD", settled))
+        self.assertTrue(db._settlement_matches("BATH", settled))
+
+    def test_an_older_cache_cannot_keep_calling_villages_other(self) -> None:
+        db = FaresDb()
+        db._load_location_types_json(
+            {
+                "schema": LOCATION_CACHE_SCHEMA - 1,
+                "source": "an older build",
+                "records": {"ANC": {"primary": "other", "facets": ["seaside"]}},
+            }
+        )
+        self.assertNotIn("ANC", db.location_types_by_crs)
+        # The facets in an older file are still good, and they are additive.
+        self.assertEqual(db.location_facets_by_crs["ANC"], {"seaside"})
+        self.assertTrue(any("schema" in note for note in db.report.skipped_files))
+
+    def test_the_heritage_reader_only_uses_current_uk_properties(self) -> None:
+        body = (
+            '<?xml version="1.0"?><query>'
+            "<row><id_number>428</id_number><states>United Kingdom of Great Britain "
+            "and Northern Ireland</states><category>Cultural</category></row>"
+            "<row><id_number>371</id_number><states>United Kingdom of Great Britain "
+            "and Northern Ireland</states><category>Cultural</category></row>"
+            "<row><id_number>1613</id_number><states>Germany,United Kingdom</states>"
+            "</row>"
+            "<row><id_number>1133</id_number><states>Austria</states></row>"
+            "</query>"
+        )
+        db = FaresDb()
+        db.locations_by_crs = {
+            "BTH": Location("1", "BTH", "BATH SPA", ""),
+            "BGX": Location("2", "BGX", "BATHGATE", ""),
+        }
+        with mock.patch.object(
+            atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
+        ):
+            db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["heritage"])
+        self.assertEqual(db.location_facets_by_crs["BTH"], {"heritage"})
+        # Bathgate is a different place that merely starts with the same word.
+        self.assertNotIn("BGX", db.location_facets_by_crs)
+        # The rest of the curated list names stations this feed does not carry,
+        # and that is reported rather than left looking current.
+        self.assertTrue(
+            any("curated station names match no station" in note for note in db.report.skipped_files)
+        )
+
+    def test_a_delisted_heritage_site_stops_tagging_destinations(self) -> None:
+        body = (
+            '<?xml version="1.0"?><query><row><id_number>9999</id_number>'
+            "<states>United Kingdom</states></row></query>"
+        )
+        db = FaresDb()
+        db.locations_by_crs = {"BTH": Location("1", "BTH", "BATH SPA", "")}
+        with mock.patch.object(
+            atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
+        ):
+            with self.assertRaises(ValueError):
+                db._read_unesco_heritage_facet()
+        self.assertTrue(any("not a current UK World Heritage" in note for note in db.report.skipped_files))
+
+    def test_a_coach_or_parkway_station_is_a_transport_interchange(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "XDO": Location("1", "XDO", "BATH BUS STATION", ""),
+            "TIN": Location("2", "TIN", "MAGNA TRAM STOP", ""),
+            "TPC": Location("3", "TPC", "THORPE CULVERT", ""),
+            "BUS": Location("4", "BUS", "BUSBY", ""),
+            "ATB": Location("5", "ATB", "ATTENBOROUGH", ""),
+        }
+        db._apply_reviewed_facets()
+        self.assertIn("transport", db.destination_types("XDO"))
+        self.assertIn("transport", db.destination_types("TIN"))
+        # A park and ride named after the village it serves carries no marker,
+        # so the code list has to reach it.
+        self.assertIn("transport", db.destination_types("TPC"))
+        # BUSBY is a village whose name merely contains the marker.
+        self.assertNotIn("transport", db.destination_types("BUS"))
+        self.assertNotIn("transport", db.destination_types("ATB"))
+        self.assertIn(("transport", "Transport interchanges"), DESTINATION_TYPE_FILTERS)
+
+    def test_every_reviewed_facet_code_is_a_station_code(self) -> None:
+        # The codes are intersected with the feed's own stations, so a typo is
+        # silently dropped rather than failing a build. Checking the shape here
+        # is what catches one; the names are checked against a real download.
+        for facet in DESTINATION_FACET_SOURCES:
+            if not facet.is_reviewed:
+                continue
+            self.assertTrue(facet.reviewed_station_codes or facet.reviewed_name_markers, facet.key)
+            for crs in facet.reviewed_station_codes:
+                self.assertRegex(crs, r"^[A-Z]{3}$", facet.key)
+            for marker in facet.reviewed_name_markers:
+                self.assertEqual(marker, marker.upper(), facet.key)
 
     def test_every_facet_declares_a_readable_source_and_reaches_the_filter(self) -> None:
         for facet in DESTINATION_FACET_SOURCES:
@@ -90,18 +294,21 @@ class FaresParserTest(unittest.TestCase):
             self.assertIn((facet.key, facet.label), DESTINATION_TYPE_FILTERS)
             self.assertTrue(facet.source.strip(), facet.key)
             self.assertTrue(facet.coverage.strip(), facet.key)
-            if facet.reviewed_station_codes:
+            if facet.is_reviewed:
                 # A reviewed facet has to say so, or the page reads as if an
                 # official list produced it.
                 self.assertIn("reviewed", facet.source.lower())
             else:
                 self.assertTrue(facet.url.startswith("http"), facet.key)
                 self.assertIn(facet.reader, DESTINATION_FACET_READERS)
+            for crs in facet.excluded_station_codes:
+                self.assertNotIn(crs, facet.reviewed_station_codes, facet.key)
         # The primary classes come first, and the facets follow in registry
         # order, so the filter reads settlements first and character last.
         self.assertEqual(
             [key for key, _ in DESTINATION_TYPE_FILTERS],
-            ["city", "town", "other"] + [facet.key for facet in DESTINATION_FACET_SOURCES],
+            ["city", "town", "small_town", "village"]
+            + [facet.key for facet in DESTINATION_FACET_SOURCES],
         )
 
     def test_a_facet_with_no_registered_reader_is_reported_not_raised_as_keyerror(self) -> None:
@@ -227,9 +434,17 @@ class FaresParserTest(unittest.TestCase):
         self.assertTrue(set(families).isdisjoint({row.ticket_code for row in rows}))
 
     def test_page_single_query_returns_standard_single_fares(self) -> None:
-        rows = self.db.page_single_destinations_within("GRN", 1_000_000)
+        rows = {
+            row.crs: row
+            for row in self.db.page_single_destinations_within("GRN", 1_000_000)
+        }
         self.assertTrue(rows)
-        self.assertTrue(all(row.ticket_code == "SDS" for row in rows))
+        self.assertTrue(all(row.ticket_code in {"SDS", "2AS"} for row in rows.values()))
+        # Advance is a valid fare. The page keeps the cheaper one and labels it
+        # train-specific rather than silently replacing it with a walk-up fare.
+        self.assertEqual(rows["NOT"].standard_pence, 100)
+        self.assertEqual(rows["NOT"].ticket_code, "2AS")
+        self.assertEqual(rows["NOT"].ticket_name, "ADVANCE")
 
     def test_picks_the_cheapest_return_ticket_per_destination(self) -> None:
         results = {reachable.crs: reachable for reachable in self.db.destinations_within("GRN", 3000)}
@@ -280,8 +495,10 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.flows[flow_id].direction, "R")
         forward = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
         reverse = {row.crs: row for row in db.page_single_destinations_within("NOT", 1_000_000)}
-        self.assertEqual(forward["NOT"].standard_pence, 500)
+        self.assertEqual(forward["NOT"].standard_pence, 100)
+        self.assertEqual(forward["NOT"].ticket_code, "2AS")
         self.assertEqual(reverse["GRN"].standard_pence, 500)
+        self.assertEqual(reverse["GRN"].ticket_code, "SDS")
 
     def test_two_together_prices_the_party(self) -> None:
         results = {
@@ -628,6 +845,38 @@ class PublishableSelectorTest(unittest.TestCase):
         self.assertEqual(self.db.restrictions.headers["R1"].description, "PEAK TO LONDON")
         self.assertIn("TWO", self.db.restrictions.railcard_record_counts)
         self.assertEqual(self.plain_db.restrictions.gate_problem() is not None, True)
+
+
+class AdvanceFareTest(unittest.TestCase):
+    """One definition of "advance", asked two ways.
+
+    The page labels an Advance single differently from a walk-up fare, so the
+    test that decides it has to agree with the ticket catalogue. A fare the DTD
+    marks with restriction code AS is train-specific whatever the ticket is
+    called, and a ticket called ADVANCE is train-specific whatever code it
+    carries.
+    """
+
+    def test_a_restriction_code_alone_marks_the_fare_advance(self) -> None:
+        self.assertTrue(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", " as "))
+        self.assertFalse(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", "RH"))
+        self.assertFalse(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", ""))
+
+    def test_a_ticket_name_alone_marks_the_fare_advance(self) -> None:
+        self.assertTrue(atoc_fares.is_advance_fare("ANYTIME ADVANCE DAY S", ""))
+        self.assertTrue(
+            atoc_fares.TicketType("2AS", "ADVANCE", "2", "S", True).is_advance
+        )
+        self.assertFalse(
+            atoc_fares.TicketType("CDR", "OFF-PEAK DAY R", "2", "R", False).is_advance
+        )
+
+    def test_a_nameless_fare_is_not_advance(self) -> None:
+        # An empty ticket name must not be read as containing the word: this is
+        # the shape the feed gives an unnamed catalogue record.
+        self.assertFalse(atoc_fares.is_advance_ticket(None))
+        self.assertFalse(atoc_fares.is_advance_ticket(""))
+        self.assertFalse(atoc_fares.is_advance_fare(None, None))
 
 
 if __name__ == "__main__":
