@@ -254,11 +254,28 @@ python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN 
 ```
 
 writes one self-contained page per priceable station under `_site/from/<slug>/`
-plus the chooser at `_site/index.html`. The picker's station list is built from the
-outputs the build actually wrote, so no option can point at a page that does not
-exist, and slug collisions between same-named stations are resolved with the CRS
-code at build time. The picker cannot offer "nearest station": the fare feed
-records no county, region, or coordinates for a station, only its name and code.
+plus the chooser at `_site/index.html`. For a real DTD fares feed, the faster
+publication mode is:
+
+```
+python build_demo_page.py --feed feeds/fares --fast-all-origins --out _site/index.html
+```
+
+`--fast-all-origins` is deliberately prices-only (it ignores `--timetable`),
+uses parallel workers by default, reports station discovery and page progress,
+and writes each page atomically. It keeps `.trainbudget-build.json` beside the
+output; rerunning the same command resumes from that checkpoint, while a feed,
+configuration, or station-index change starts a new build. The chooser's starting
+budget is carried into station-page URLs, so the page and its title use the same
+initial amount. The fast build also persists feed-fingerprinted per-origin fare
+indexes beside the output: workers load the shared location/ticket/restriction
+metadata once and apply only the fares relevant to each page, rather than
+reparsing the complete DTD feed in every worker. The picker's station
+list is built from the outputs the build actually wrote, so no option can point
+at a page that does not exist, and slug collisions between same-named stations
+are resolved with the CRS code at build time. The picker cannot offer "nearest
+station": the fare feed records no county, region, or coordinates for a station,
+only its name and code.
 
 ### Opening the pages yourself
 
@@ -409,10 +426,13 @@ python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
 
 `--all-origins` writes one page per priceable station plus the chooser; it also
 writes the privacy page the footers link to. `--workers 8` builds station pages
-in parallel processes (each origin is independent; the feed is loaded once per
-worker). On a host that does not serve the site at its domain root — a GitHub
+in parallel processes (each origin is independent). In `--fast-all-origins`
+mode, workers use the persisted per-origin fare indexes described above. On a
+host that does not serve the site at its domain root — a GitHub
 Pages project site, most shared hosting — add `--base-path <name>` so every
-internal link resolves.
+internal link resolves. Before a public deployment, set `PRIVACY_CONTACT` to the
+monitored contact route published with the site; builds refuse to render a
+privacy page without a contact.
 
 **What the page must never claim without the things behind it:** a publisher
 credit without `--notices` (or a custom `--attribution`) naming the licence

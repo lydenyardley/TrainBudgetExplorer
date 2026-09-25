@@ -12,6 +12,8 @@ object() sentinels that cannot cross a process boundary at all.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 
@@ -26,7 +28,15 @@ _WORKER: dict = {}
 def init_worker(feed: str, timetable: str | None, shared: dict) -> None:
     _WORKER.clear()
     _WORKER.update(shared)
-    _WORKER["fares"] = FaresDb().load_feed(feed)
+    # Fast builds load the shared fare metadata once, then each worker applies
+    # the persisted index for the origin it is about to render. The normal
+    # path deliberately retains its full-feed worker semantics for callers
+    # that use --all-origins without the fast/resumable mode.
+    if shared.get("fare_common_cache") and shared.get("fare_index_dir"):
+        _WORKER["fares_common"] = FaresDb.load_fare_common(shared["fare_common_cache"])
+        _WORKER["fares"] = None
+    else:
+        _WORKER["fares"] = FaresDb().load_feed(feed)
     _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
 
 
@@ -38,8 +48,13 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
     rendered HTML; the parent writes it.
     """
     origin_crs = job["crs"]
+    fares = _WORKER["fares"]
+    if fares is None:
+        fares = FaresDb.apply_fare_index(
+            _WORKER["fares_common"], Path(_WORKER["fare_index_dir"]) / f"{origin_crs}.pickle"
+        )
     payload = build_payload(
-        _WORKER["fares"],
+        fares,
         _WORKER.get("timetable"),
         origin_crs,
         max_changes=_WORKER["max_changes"],
