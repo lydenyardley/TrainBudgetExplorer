@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import time
+import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -248,6 +249,28 @@ def read_feed_metadata(folders: list[Path]) -> dict | None:
     return None
 
 
+def is_dtd_download(path: str | Path) -> bool:
+    """Say whether this feed is a real DTD download rather than a synthetic one.
+
+    The synthetic default price line is only honest for a synthetic feed, and a
+    build that cannot prove the feed is synthetic must not use it. A DTD
+    download is recognised two ways: a download manifest anywhere beside it
+    (the downloader's own record), or a zip whose members are the ``RJ`` series
+    the DTD publishes.
+    """
+    feed = Path(path)
+    for base in (feed, feed.parent, feed.parent.parent):
+        if (base / MANIFEST_NAME).is_file():
+            return True
+    if feed.suffix.lower() != ".zip" or not feed.is_file():
+        return False
+    try:
+        with zipfile.ZipFile(feed) as archive:
+            return any(name.upper().startswith("RJFAF") for name in archive.namelist())
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return False
+
+
 def price_source_from_metadata(metadata: dict) -> str | None:
     """The provenance sentence from the metadata, or None if it names nothing."""
     source = metadata.get("source")
@@ -263,15 +286,21 @@ def read_feed_manifest(folders: list[Path]) -> dict | None:
     """The first readable download-manifest.json found beside the feeds.
 
     The downloader writes the manifest at the output root (``feeds/``) while
-    the builds are pointed at the feed folders inside it (``feeds/fares``), so
-    each folder and its parent are both tried. Like read_feed_metadata, None
-    means no file was found and {} means one was found but could not be read --
-    a manifest that exists but is unusable is a real download whose provenance
-    is broken, and the caller must not quietly call that synthetic.
+    the builds are pointed at the feed zip inside ``feeds/fares/``, so a zip
+    feed is checked two levels up as well as one -- the same layout the station
+    classification lookup uses. Missing the grandparent is what let a real
+    fares build fall through to the synthetic price line. Like
+    read_feed_metadata, None means no file was found and {} means one was found
+    but could not be read -- a manifest that exists but is unusable is a real
+    download whose provenance is broken, and the caller must not quietly call
+    that synthetic.
     """
     seen: set[Path] = set()
     for folder in folders:
-        for candidate in (folder / MANIFEST_NAME, folder.parent / MANIFEST_NAME):
+        bases = (folder, folder.parent)
+        if folder.suffix.lower() == ".zip":
+            bases = bases + (folder.parent.parent,)
+        for candidate in tuple(base / MANIFEST_NAME for base in bases):
             if candidate in seen or not candidate.is_file():
                 continue
             seen.add(candidate)
@@ -1159,6 +1188,24 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
+        if is_dtd_download(args.feed):
+            # A real DTD download with no metadata and no manifest: the build
+            # cannot say where the prices came from, and calling them synthetic
+            # would be a false claim about real fares. Refuse rather than guess.
+            print(
+                f"error: {args.feed} is a DTD download, but no metadata.json or "
+                "download manifest beside it names its source, so the page would "
+                "claim synthetic demo prices for real fares. Write a metadata.json, "
+                "or pass --price-source explicitly.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            "warning: no metadata.json or download manifest found; the price "
+            "line falls back to the synthetic default, which is only true of a "
+            "synthetic feed",
+            file=sys.stderr,
+        )
         price_source = DEFAULT_PRICE_SOURCE
     # The footer note follows the provenance: the synthetic note is the
     # default only for a build whose prices say they are synthetic. A real
