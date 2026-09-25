@@ -114,7 +114,7 @@ async function main() {
     await page.check('input[name="destinationType"][value="city"]');
     const filtered = await rows();
     const expectedCityCount = await page.evaluate(() => DATA.destinations.filter(
-      (d) => d.destinationType === "city" && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
+      (d) => d.destinationTypes.includes("city") && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
     ).length);
     check("the city chip leaves the priced city destinations", filtered === expectedCityCount && filtered > 0, `${filtered} rows; expected ${expectedCityCount}`);
     check(
@@ -122,9 +122,34 @@ async function main() {
       (await page.textContent("#rows")).includes("NOTTINGHAM"),
       await page.textContent("#rows")
     );
-    await page.check('input[name="destinationType"][value="town"]');
-    const multi = await rows();
-    check("specific destination chips are multi-select", await page.locator('input[name="destinationType"][value="city"]').isChecked() && await page.locator('input[name="destinationType"][value="town"]').isChecked(), `${filtered} -> ${multi}`);
+    await page.check('input[name="destinationType"][value="seaside"]');
+    await page.uncheck('input[name="destinationType"][value="city"]');
+    const seaside = await rows();
+    const seasideText = await page.textContent("#rows");
+    check("the seaside facet finds a city that is also coastal", seaside === 1 && /LINCOLN/.test(seasideText), `${seaside} rows; ${seasideText}`);
+    await page.uncheck('input[name="destinationType"][value="seaside"]');
+    await page.check('input[name="destinationType"][value="university"]');
+    const universityText = await page.textContent("#rows");
+    const university = await rows();
+    check("the university facet finds the university town", university >= 1 && /NOTTINGHAM/.test(universityText), `${university} rows; ${universityText}`);
+    check("a facet with no destination here offers no chip", (await page.locator('input[name="destinationType"][value="island"]').count()) === 0, "island chip rendered");
+    await page.check('input[name="destinationType"][value="seaside"]');
+    const universityAndCoast = await rows();
+    // The two sets can overlap -- a station can be coastal and a university
+    // town -- so the union is worked out from the data rather than by adding
+    // the two counts.
+    const expectedUnion = await page.evaluate(() => DATA.destinations.filter(
+      (d) => d.destinationTypes.some((t) => t === "university" || t === "seaside")
+        && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
+    ).length);
+    check(
+      "specific destination chips are multi-select and union their matches",
+      (await page.locator('input[name="destinationType"][value="seaside"]').isChecked()) &&
+        (await page.locator('input[name="destinationType"][value="university"]').isChecked()) &&
+        universityAndCoast === expectedUnion,
+      `${university} + ${seaside} -> ${universityAndCoast}; expected ${expectedUnion}`
+    );
+    await page.uncheck('input[name="destinationType"][value="seaside"]');
     await page.check('input[name="destinationType"][value="all"]');
     check("All is checked exclusively", await page.locator('input[name="destinationType"][value="all"]').isChecked() && !(await page.locator('input[name="destinationType"][value="city"]').isChecked()), "all state");
     check("clearing the type filter restores the list", (await rows()) === initial);
@@ -258,6 +283,13 @@ async function main() {
     } else {
       check("the page offers a Change control", false, "#changeOrigin missing");
     }
+  } catch (error) {
+    // A step that throws is a failed run, not a short one. The finally block
+    // below reports whatever was checked, so this has to be carried out of the
+    // try as well: without it a broken selector ends the run early and the
+    // summary reads as a pass.
+    console.error("the browser test stopped early: " + error.message);
+    process.exitCode = 1;
   } finally {
     for (const { name, ok, detail } of checks) {
       console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
@@ -266,7 +298,7 @@ async function main() {
     console.log(`\n${checks.length - failed}/${checks.length} browser checks passed against ${PAGE}`);
     await browser.close();
     server.close();
-    process.exit(failed ? 1 : 0);
+    process.exit(process.exitCode || (failed ? 1 : 0));
   }
 }
 

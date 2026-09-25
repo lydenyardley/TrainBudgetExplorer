@@ -98,7 +98,15 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_page_carries_separate_ticket_modes(self) -> None:
         self.assertEqual(self.payload["destinations"][0]["destinationType"], "city")
+        self.assertEqual(
+            self.payload["destinations"][0]["destinationTypes"],
+            ["city", "seaside", "university"],
+        )
         self.assertIn('name="destinationType" value="city"', self.html)
+        self.assertIn('name="destinationType" value="seaside"', self.html)
+        self.assertIn('name="destinationType" value="university"', self.html)
+        self.assertIn("Coastal &amp; seaside", self.html)
+        self.assertIn("University towns", self.html)
         self.assertNotIn('<select id="q"', self.html)
         self.assertIn("selectedDestinationTypes", self.html)
         self.assertIn("singleDestinations", self.payload)
@@ -573,6 +581,27 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('link.href = station.href', self.html)
         self.assertIn('id="destinationTypes"', self.html.split("<script")[0])
         self.assertIn('name="destinationType" value="city"', self.html.split("<script")[0])
+        self.assertIn('name="destinationType" value="seaside"', self.html.split("<script")[0])
+
+    def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
+        # A chip that can only ever return nothing reads as a broken control,
+        # so the page offers only the types its destinations actually carry.
+        payload = dict(self.payload)
+        payload["destinations"] = [
+            dict(row, destinationTypes=["city"], destinationType="city")
+            for row in self.payload["destinations"]
+        ]
+        for mode in ("singleDestinations", "anytimeDestinations"):
+            payload[mode] = [
+                dict(row, destinationTypes=["city"], destinationType="city")
+                for row in self.payload.get(mode, [])
+            ]
+        html = render_page(payload, budget_pounds=50)
+        head = html.split("<script")[0]
+        self.assertIn('name="destinationType" value="city"', head)
+        self.assertNotIn('name="destinationType" value="seaside"', head)
+        self.assertNotIn('name="destinationType" value="university"', head)
+        self.assertNotIn('name="destinationType" value="island"', head)
 
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
         self.assertIn('event.key === "Escape"', self.html)

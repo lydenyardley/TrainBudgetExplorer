@@ -256,12 +256,7 @@ TEMPLATE = """<!doctype html>
   </fieldset>
   <fieldset class="destination-filter">
     <legend>Destination type</legend>
-    <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">
-      <label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>
-      <label class="choice-chip"><input type="checkbox" name="destinationType" value="city"> <span>Cities</span></label>
-      <label class="choice-chip"><input type="checkbox" name="destinationType" value="town"> <span>Towns &amp; villages</span></label>
-      <label class="choice-chip"><input type="checkbox" name="destinationType" value="other"> <span>Other</span></label>
-    </div>
+    <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
   </fieldset>
 </section>
 
@@ -383,7 +378,9 @@ function selectedDestinationTypes() {
     .map((input) => input.value));
 }
 function matchesType(destination, wantedTypes) {
-  return wantedTypes.size === 0 || wantedTypes.has(destination.destinationType);
+  if (wantedTypes.size === 0) return true;
+  const types = destination.destinationTypes || [destination.destinationType];
+  return types.some((type) => wantedTypes.has(type));
 }
 function typeLabel() {
   const labels = destinationTypeInputs

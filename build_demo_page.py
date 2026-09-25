@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -26,7 +27,12 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from atoc_fares import FaresDb, PLACEHOLDER_TICKET_CODES, format_pence
+from atoc_fares import (
+    DESTINATION_TYPE_FILTERS,
+    FaresDb,
+    PLACEHOLDER_TICKET_CODES,
+    format_pence,
+)
 from atoc_timetable import TimetableDb
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
@@ -733,6 +739,7 @@ def build_payload(
             "railcardPence": card["pricePence"],
             "railcard": card,
             "destinationType": fares.destination_type(crs),
+            "destinationTypes": fares.destination_types(crs),
             "ticket": one.ticket_code,
             "quality": quality,
             "offPeak": one.off_peak,
@@ -933,8 +940,24 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
     embedded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     initial_budget = max(1, min(int(budget_pounds), ceiling))
+    # A facet chip is only offered when this page has a destination carrying
+    # it. The taxonomy is shared, so a facet with no matches here is a filter
+    # that can only ever return nothing, which reads as a broken control rather
+    # than an empty result.
+    used = {
+        kind
+        for row in payload["destinations"] + payload.get("singleDestinations", []) + payload.get("anytimeDestinations", [])
+        for kind in row.get("destinationTypes") or [row.get("destinationType", "other")]
+    }
+    destination_filters = ['<label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>']
+    destination_filters.extend(
+        f'<label class="choice-chip"><input type="checkbox" name="destinationType" value="{html.escape(value)}"> <span>{html.escape(label)}</span></label>'
+        for value, label in DESTINATION_TYPE_FILTERS
+        if value in used
+    )
     return (
         TEMPLATE.replace("__DATA__", embedded)
+        .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
         .replace("__ORIGIN__", payload["origin"]["name"])
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(initial_budget))

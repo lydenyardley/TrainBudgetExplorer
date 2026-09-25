@@ -127,6 +127,12 @@ LOCATION_TYPES = {
     "XFD": "other",
     "SLP": "other",
 }
+LOCATION_FACETS = {
+    "LCN": ["seaside"],
+    "NOT": ["university"],
+    "PBO": ["university"],
+    "XFD": ["island"],
+}
 
 # Stations with a minimum interchange time. The 10 minutes at NOTT is what makes
 # the T10006 connection in the timetable illegal, and the tests rely on that.
@@ -255,7 +261,20 @@ def build_synthetic_feed(
     (path / "rjfaf.rlc").write_text("\n".join(railcard_lines) + "\n", encoding="utf-8")
     (path / "rjfaf.rcm").write_text("\n".join(minimum_lines) + "\n", encoding="utf-8")
     (path.parent / f"{path.name}.location-types.json").write_text(
-        json.dumps([{"crs": crs, "type": kind} for crs, kind in LOCATION_TYPES.items()]) + "\n",
+        json.dumps(
+            {
+                "schema": 2,
+                "source": "reviewed synthetic station classification",
+                "records": {
+                    crs: {
+                        "primary": kind,
+                        "facets": LOCATION_FACETS.get(crs, []),
+                    }
+                    for crs, kind in LOCATION_TYPES.items()
+                },
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     if include_restrictions:
