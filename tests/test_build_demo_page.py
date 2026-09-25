@@ -1289,6 +1289,74 @@ class PublicationGateTest(unittest.TestCase):
         self.assertFalse(out.parent.exists(), "a refused build must leave no folder behind")
 
 
+class UnsourcedDestinationTest(unittest.TestCase):
+    """The build names a priced destination it cannot classify.
+
+    The synthetic feed classifies every station, so a row is made unsourced
+    here: the point of the check is what the build does with one, not how a
+    feed comes to have one.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(self.root / "fares", include_restrictions=True)
+        (self.root / "metadata.json").write_text(
+            json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
+            encoding="utf-8",
+        )
+
+    def run_build(self, out: Path, *extra: str, unsourced: bool = True) -> tuple[int, str]:
+        """Build, with Lincoln left unclassified when ``unsourced``.
+
+        The gap is made at the source -- ``destination_type`` is the one answer
+        both the payload and the chooser's own query read -- so this exercises
+        the same path a real unnamed station takes rather than a faked row.
+        """
+        stderr = io.StringIO()
+        patches = []
+        if unsourced:
+            real = FaresDb.destination_type
+
+            def lossy(self, crs):
+                return "other" if crs.strip().upper() == "LCN" else real(self, crs)
+
+            patches.append(mock.patch.object(FaresDb, "destination_type", lossy))
+        with contextlib.ExitStack() as stack:
+            for patch in patches:
+                stack.enter_context(patch)
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = build_demo_page.main(["--feed", str(self.feed), "--out", str(out), *extra])
+        return code, stderr.getvalue()
+
+    def test_a_clean_page_is_not_warned_about(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, said = self.run_build(out, unsourced=False)
+        self.assertEqual(code, 0)
+        self.assertNotIn("no settlement class", said)
+
+    def test_an_unsourced_destination_is_named_in_a_warning(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, said = self.run_build(out)
+        self.assertEqual(code, 0)
+        self.assertIn("no settlement class from any source", said)
+        self.assertIn("LCN", said)
+
+    def test_the_strict_flag_refuses_and_writes_nothing(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, said = self.run_build(out, "--fail-on-unsourced")
+        self.assertEqual(code, 2)
+        self.assertFalse(out.exists(), "a refused build must write no page")
+        self.assertIn("refusing to publish", said)
+
+    def test_the_strict_flag_refuses_before_writing_any_page(self) -> None:
+        out = self.root / "site" / "index.html"
+        code, _ = self.run_build(out, "--all-origins", "--fail-on-unsourced")
+        self.assertEqual(code, 2)
+        self.assertFalse(out.parent.exists(), "a refused build must leave no folder behind")
+
+
 class FreshOutputFolderTest(unittest.TestCase):
     """The README tells the operator to delete a stale _site/, so the build must
     create a missing output folder rather than only working when one exists."""

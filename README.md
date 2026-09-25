@@ -56,6 +56,7 @@ sources against a real fares download. A facet whose source is temporarily
 unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
+
 Four limits worth stating plainly. `island` is a reviewed list, not an
 official one: no UK open dataset names island *settlements* at a size this page
 cares about, so the entry says so in its own `source` text. `transport` and
@@ -164,6 +165,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
+| `destination_coverage.py` | Names the priced destinations no source could classify; a build prints the summary and `--fail-on-unsourced` turns it into a refusal |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
@@ -187,6 +189,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tools/test_check_links.py` | Fourteen tests for the link checker's verdicts |
 | `tests/test_fuzzed_feed.py` | Accounting and fuzzer tests |
 | `tools/test_commit_message.py` | Commit-message checker tests |
+| `tests/test_destination_coverage.py` | Coverage-report tests: dedup, ranking, the summary, and the refusal |
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
@@ -503,6 +506,13 @@ Pages project site, most shared hosting — add `--base-path <name>` so every
 internal link resolves. Set `PRIVACY_CONTACT` to the deployment operator's
 monitored contact route before a public deployment; without it, the generated
 privacy page uses the deployment operator's public repository issue tracker.
+
+Every build also names the priced destinations no source could classify — the
+stations the page's settlement filters therefore cannot return. The list is a
+warning, because a full-network build legitimately meets stations nobody has
+reviewed; `--fail-on-unsourced` turns it into a refusal for a release build,
+checked before anything is written. Run the same check on its own, across the
+whole feed, with `python destination_coverage.py --feed feeds/fares`.
 
 **What the page must never claim without the things behind it:** a publisher
 credit without `--notices` (or a custom `--attribution`) naming the licence
