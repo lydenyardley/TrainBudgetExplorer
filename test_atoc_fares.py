@@ -5,12 +5,29 @@ Each test asserts a literal value, so a parser that returned nothing would fail.
 
 from __future__ import annotations
 
+import io
+import dataclasses
 import tempfile
 import unittest
+from unittest import mock
+
+import atoc_fares
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import FLOW_F, FLOW_T, Fare, FaresDb, Location, TicketType
+from atoc_fares import (
+    DESTINATION_FACET_SOURCES,
+    DESTINATION_FACETS_BY_KEY,
+    DESTINATION_FACET_READERS,
+    DESTINATION_TYPE_FILTERS,
+    SUPPORTED_DESTINATION_FACETS,
+    FLOW_F,
+    FLOW_T,
+    Fare,
+    FaresDb,
+    Location,
+    TicketType,
+)
 from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
 
 
@@ -35,6 +52,24 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.destination_type("NOT"), "city")
         self.assertEqual(self.db.destination_type("GRN"), "town")
         self.assertEqual(self.db.destination_type("XFD"), "other")
+        self.assertEqual(self.db.destination_types("NOT"), ["city", "university"])
+        self.assertEqual(self.db.destination_types("LCN"), ["city", "seaside", "university"])
+        self.assertEqual(self.db.destination_types("XFD"), ["other", "island"])
+        self.assertIn("synthetic", self.db.location_type_source or "")
+
+    def test_facets_from_several_files_are_merged_not_replaced(self) -> None:
+        # The checked-in reference data, a cache beside the feed and the feed's
+        # own lookup can all name the same station. Replacing made the answer
+        # depend on the order the files were read in, and let a stale cache
+        # drop a facet the checked-in file knew about.
+        db = FaresDb()
+        db._merge_location_facets("LCN", ["seaside"])
+        db._merge_location_facets("LCN", ["university"])
+        db._merge_location_facets("LCN", ["island", "nonsense"])
+        self.assertEqual(db.location_facets_by_crs["LCN"], {"island", "seaside", "university"})
+        db._merge_location_facets("  lcn ", "university")
+        self.assertEqual(db.location_facets_by_crs["LCN"], {"island", "seaside", "university"})
+        self.assertNotIn("lcn", db.location_facets_by_crs)
 
     def test_major_london_and_non_england_wales_stations_have_a_fallback(self) -> None:
         db = FaresDb()
@@ -48,6 +83,85 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.destination_type("GLC"), "city")
         self.assertEqual(db.destination_type("CDD"), "city")
         self.assertIn("London", db.location_type_source or "")
+
+    def test_every_facet_declares_a_readable_source_and_reaches_the_filter(self) -> None:
+        for facet in DESTINATION_FACET_SOURCES:
+            self.assertIn(facet.key, SUPPORTED_DESTINATION_FACETS)
+            self.assertIn((facet.key, facet.label), DESTINATION_TYPE_FILTERS)
+            self.assertTrue(facet.source.strip(), facet.key)
+            self.assertTrue(facet.coverage.strip(), facet.key)
+            if facet.reviewed_station_codes:
+                # A reviewed facet has to say so, or the page reads as if an
+                # official list produced it.
+                self.assertIn("reviewed", facet.source.lower())
+            else:
+                self.assertTrue(facet.url.startswith("http"), facet.key)
+                self.assertIn(facet.reader, DESTINATION_FACET_READERS)
+        # The primary classes come first, and the facets follow in registry
+        # order, so the filter reads settlements first and character last.
+        self.assertEqual(
+            [key for key, _ in DESTINATION_TYPE_FILTERS],
+            ["city", "town", "other"] + [facet.key for facet in DESTINATION_FACET_SOURCES],
+        )
+
+    def test_a_facet_with_no_registered_reader_is_reported_not_raised_as_keyerror(self) -> None:
+        db = FaresDb()
+        broken = dataclasses.replace(DESTINATION_FACETS_BY_KEY["seaside"], reader="not_a_reader")
+        with self.assertRaises(ValueError):
+            db._apply_destination_facet(broken)
+
+    def test_a_facet_source_with_no_readable_settlements_is_reported(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {"NOT": Location("1", "NOT", "NOTTINGHAM", "")}
+        db._read_ons_coastal_facet = lambda: set()  # type: ignore[method-assign]
+        with self.assertRaises(ValueError):
+            db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["seaside"])
+        self.assertEqual(db.location_facets_by_crs, {})
+
+    def test_learning_provider_reader_reads_the_town_column_by_name(self) -> None:
+        body = (
+            "UKPRN\tPROVIDER_NAME\tPOSTCODE\tTOWN\r\n"
+            "10007774\tUNIVERSITY OF OXFORD\tOX1 2JD\tOxford\r\n"
+            "10007775\tUNIVERSITY OF YORK\tYO1 9DD\tYork\r\n"
+            "10007776\tA COLLEGE WITH NO TOWN\t\t\r\n"
+        )
+        db = FaresDb()
+        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())):
+            names = db._read_learning_provider_facet()
+        self.assertEqual(names, {"OXFORD", "YORK"})
+        with mock.patch.object(
+            atoc_fares.urllib.request,
+            "urlopen",
+            return_value=io.BytesIO(b"UKPRN\tPROVIDER_NAME\r\n10007774\tOXFORD\r\n"),
+        ):
+            with self.assertRaises(ValueError):
+                db._read_learning_provider_facet()
+
+    def test_a_facet_source_applies_by_settlement_name(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "OXF": Location("1", "OXF", "OXFORD", ""),
+            "YRK": Location("2", "YRK", "YORK", ""),
+            "NWE": Location("3", "NWE", "NEWPORT", ""),
+        }
+        db._read_learning_provider_facet = lambda: {"OXFORD", "YORK"}  # type: ignore[method-assign]
+        db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["university"])
+        self.assertEqual(db.location_facets_by_crs["OXF"], {"university"})
+        self.assertEqual(db.location_facets_by_crs["YRK"], {"university"})
+        self.assertNotIn("NWE", db.location_facets_by_crs)
+
+    def test_reviewed_facets_only_tag_stations_the_feed_actually_has(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "HHD": Location("1", "HHD", "HOLYHEAD", ""),
+            "NOT": Location("2", "NOT", "NOTTINGHAM", ""),
+        }
+        island = DESTINATION_FACETS_BY_KEY["island"]
+        self.assertIn("HHD", island.reviewed_station_codes)
+        self.assertNotIn("NOT", island.reviewed_station_codes)
+        db._apply_reviewed_facets()
+        self.assertEqual(db.location_facets_by_crs["HHD"], {"island"})
+        self.assertNotIn("NOT", db.location_facets_by_crs)
 
     def test_codes_destinations_inside_the_budget_cheapest_first(self) -> None:
         results = self.db.destinations_within("GRN", 2000)

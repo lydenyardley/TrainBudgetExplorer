@@ -35,11 +35,10 @@ ROUNDING_STEP_PENCE = 5
 RAILCARD_DISCOUNT = Fraction(2, 3)
 
 # The station KB FareLocations feed describes fare locations; it does not carry
-# a settlement class. For real DTD builds, classify stations against the ONS
-# Census 2021 individual built-up-area table instead. Major/large BUAs are shown
-# as cities, medium/small as towns, and minor BUAs as other. The generated cache
-# lives beside the downloaded feed, so later builds remain deterministic and do
-# not need a network connection.
+# settlement metadata. Real DTD builds use ONS Census 2021 data instead: one
+# primary settlement class from BUA size bands, plus independent coastal facets.
+# The generated cache lives beside the downloaded feed, so later builds remain
+# deterministic and do not need a network connection.
 ONS_BUILT_UP_AREAS_DATASET_URL = (
     "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/datasets/"
     "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021"
@@ -49,8 +48,26 @@ ONS_BUILT_UP_AREAS_FILE_URL = (
     "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021/2021/"
     "townsandcitiescharacteristicsofbuiltupareasenglandandwalescensus2021.xlsx"
 )
+ONS_COASTAL_BUILT_UP_AREAS_DATASET_URL = (
+    "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/datasets/"
+    "coastalcommunitiescharacteristicsofbuiltupareasenglandandwalescensus2021"
+)
+ONS_COASTAL_BUILT_UP_AREAS_FILE_URL = (
+    "https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/housing/datasets/"
+    "coastalcommunitiescharacteristicsofbuiltupareasenglandandwalescensus2021/current/"
+    "coastalcommunitiescharacteristicsofbuiltupareasenglandandwalescensus2021.xlsx"
+)
+# UK Learning Providers publishes the UK's universities as linked open data
+# keyed by the official UKPRN, with the provider's town in the same record.
+# HESA and Office for Students both gate their provider files behind a login,
+# so this is the one university list that can be read and re-checked from a
+# script without an account.
+LEARNING_PROVIDERS_FILE_URL = (
+    "http://learning-provider.data.ac.uk/data/learning-providers-plus.tsv"
+)
 LOCATION_TYPE_SOURCE = (
-    "Office for National Statistics, Census 2021 built-up-area size bands"
+    "Office for National Statistics, Census 2021 built-up-area size bands and "
+    "coastal classification"
 )
 # The cited ONS workbook covers England (excluding London) and Wales. London
 # station names therefore cannot match its settlement rows, and the major
@@ -91,6 +108,107 @@ LOCATION_BAND_TYPES = {
     "small": "town",
     "minor": "other",
 }
+
+# Settlement class and destination facets are deliberately separate. A station
+# has exactly one primary settlement class, while independent tags such as
+# ``seaside`` may overlap it. The UI and payload both consume this catalogue so
+# adding a sourced type does not require another hard-coded HTML checkbox.
+#
+# A facet is added by writing one entry in DESTINATION_FACET_SOURCES: the label
+# the reader sees, the dataset it comes from, where that dataset lives, what
+# geography it covers, and which reader turns it into settlement names. The
+# filter chips, the payload, the generated cache's provenance, and the
+# reference-data file are all derived from that list, so there is no second
+# place to remember to update. ``reviewed_station_codes`` is the escape hatch
+# for a facet no published dataset names at station level; it is only
+# intersected with stations the feed actually contains, and the entry says so
+# in its ``source`` text rather than implying an official list.
+@dataclass(frozen=True)
+class DestinationFacet:
+    """One destination facet, its official source, and how to read it."""
+
+    key: str
+    label: str
+    source: str
+    url: str
+    coverage: str
+    reader: str
+    reviewed_station_codes: frozenset[str] = frozenset()
+
+
+# Island settlements are the one facet with no published settlement list this
+# project can read: Ordnance Survey Open Names and the Scottish islands layer
+# are either gated or carry no names, and UNESCO names whole sites rather than
+# the towns inside them. These station codes were reviewed against the DTD
+# feed's station names instead, and each is a settlement on Anglesey, the Isle
+# of Wight, the Isle of Sheppey, Bute, or a Scottish island the feed serves.
+# A new feed revision can add island stations without adding them here, so this
+# list is a floor, not a ceiling.
+ISLAND_STATION_CRS = frozenset({
+    # Anglesey
+    "HHD", "VAL",
+    # Isle of Wight
+    "BDN", "ECW", "FSB", "LKE", "RYD", "RYP", "RYR", "SAB", "SAN", "SHN", "WTW",
+    "XRD", "YMH",
+    # Isle of Sheppey
+    "KML", "SWL", "SSS",
+    # Scottish islands
+    "ADS", "CRU", "CTB", "KYL", "MLG", "PEE", "RTY", "SCB", "SOY", "SOS", "ULP",
+})
+
+DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
+    DestinationFacet(
+        key="seaside",
+        label="Coastal & seaside",
+        source=(
+            "Office for National Statistics, Census 2021 coastal communities "
+            "characteristics of built-up areas"
+        ),
+        url=ONS_COASTAL_BUILT_UP_AREAS_DATASET_URL,
+        coverage="England and Wales",
+        reader="ons_coastal_built_up_areas",
+    ),
+    DestinationFacet(
+        key="university",
+        label="University towns",
+        source=(
+            "UK Learning Providers, university providers keyed by UKPRN and "
+            "HESA provider id"
+        ),
+        url=LEARNING_PROVIDERS_FILE_URL,
+        coverage="United Kingdom",
+        reader="uk_learning_provider_towns",
+    ),
+    DestinationFacet(
+        key="island",
+        label="Islands",
+        source=(
+            "reviewed island station list (no official UK settlement-level "
+            "island list is published as open data)"
+        ),
+        url="",
+        coverage="England, Wales and Scotland, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_station_codes=ISLAND_STATION_CRS,
+    ),
+)
+SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACET_SOURCES)
+DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOURCES}
+# Reader id -> the FaresDb method that returns normalised settlement names for
+# it. Registering the reader here keeps a new facet to a registry entry plus a
+# method instead of another branch in the loading code.
+DESTINATION_FACET_READERS: dict[str, str] = {
+    "ons_coastal_built_up_areas": "_read_ons_coastal_facet",
+    "uk_learning_provider_towns": "_read_learning_provider_facet",
+}
+# The primary settlement classes come from ONS BUA size bands; the facets are
+# appended from the registry so a new sourced type shows up in the UI with no
+# other edit.
+DESTINATION_TYPE_FILTERS: tuple[tuple[str, str], ...] = (
+    ("city", "Cities"),
+    ("town", "Towns & villages"),
+    ("other", "Other"),
+) + tuple((facet.key, facet.label) for facet in DESTINATION_FACET_SOURCES)
 
 # The real feed's standard-return catalogue contains a family of ITX
 # placeholder records. They are not purchasable public fares: the current
@@ -367,6 +485,7 @@ class FaresDb:
         # A reviewed JSON cache beside the feed is preferred; a real DTD build
         # can populate it from the ONS Census built-up-area source.
         self.location_types_by_crs: dict[str, str] = {}
+        self.location_facets_by_crs: dict[str, set[str]] = {}
         self.location_type_source: str | None = None
         # One station code can hold several location codes, and a real feed does
         # this for most towns. Flows are keyed by location code, so a query has
@@ -427,6 +546,7 @@ class FaresDb:
         common.locations_by_nlc = self.locations_by_nlc
         common.locations_by_crs = self.locations_by_crs
         common.location_types_by_crs = self.location_types_by_crs
+        common.location_facets_by_crs = self.location_facets_by_crs
         common.location_type_source = self.location_type_source
         common.nlcs_by_crs = self.nlcs_by_crs
         common.ticket_types = self.ticket_types
@@ -600,23 +720,39 @@ class FaresDb:
         return self
 
     def _load_location_lookup(self, path: str | Path) -> None:
-        """Load a reviewed cache or derive one from official ONS BUA data.
+        """Load the checked-in reference data, or derive it from its sources.
 
         ``FareLocationsRefData`` is deliberately not treated as a settlement
         classification: it contains fare-location records, not CRS-to-type
         records. A real DTD download can be recognised by its sibling download
-        manifest; only then is a missing cache filled from ONS and written back.
+        manifest; only then is a missing cache filled from ONS and the other
+        named sources, and written back.
+
+        Several files can describe the same station -- the checked-in
+        reference data, a cache beside the feed, an XML lookup -- so facets are
+        merged rather than replaced. Overwriting let a stale cache silently
+        drop a facet the checked-in file had, and left the answer depending on
+        the order the directory happened to be listed in.
         """
         root = Path(path)
         candidates: list[Path] = []
+        candidates.extend(
+            (Path(__file__).parent / "reference-data").glob("*.json")
+        )
         if root.is_dir():
             candidates.extend(root.glob("*.xml"))
             candidates.extend(root.glob("*.json"))
             candidates.extend(root.parent.glob("FareLocationsRefData*.xml"))
             candidates.extend(root.parent.glob("*location*types*.json"))
+            candidates.extend(root.parent.glob("*destination*facets*.json"))
         elif root.suffix.lower() == ".zip":
-            candidates.extend(root.parent.glob("FareLocationsRefData*.xml"))
-            candidates.extend(root.parent.glob("*location*types*.json"))
+            # The checked-in download lives at feeds/fares/dtd-fares.zip while
+            # its reference files live one level up in feeds/. Accept both that
+            # layout and feeds/dtd-fares.zip beside its references.
+            for base in (root.parent, root.parent.parent):
+                candidates.extend(base.glob("FareLocationsRefData*.xml"))
+                candidates.extend(base.glob("*location*types*.json"))
+                candidates.extend(base.glob("*destination*facets*.json"))
         seen: set[Path] = set()
         for candidate in candidates:
             if candidate in seen or not candidate.is_file():
@@ -631,16 +767,49 @@ class FaresDb:
             except (OSError, ValueError, ET.ParseError) as error:
                 self.report.skip_file(f"{candidate.name}: station classification lookup unreadable: {error}")
             self._apply_major_station_fallbacks()
-            if self.location_types_by_crs:
-                return
 
-        if root.parent.joinpath("download-manifest.json").is_file():
+        # A reviewed facet needs no download, so it is applied whether the
+        # types came from a cache, from ONS, or from a synthetic feed.
+        self._apply_reviewed_facets()
+
+        if (
+            self.location_types_by_crs
+            and self.location_type_source != LOCATION_FALLBACK_SOURCE
+        ):
+            return
+
+        lookup_roots = (
+            (root.parent, root.parent.parent)
+            if root.suffix.lower() == ".zip"
+            else (root.parent,)
+        )
+        lookup_root = next(
+            (
+                base
+                for base in lookup_roots
+                if base.joinpath("download-manifest.json").is_file()
+                or any(base.glob("*location*types*.json"))
+            ),
+            root.parent,
+        )
+        if lookup_root.joinpath("download-manifest.json").is_file():
             try:
                 self._load_ons_location_types()
-                self._write_location_cache(root.parent / "location-types.json")
             except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
                 self.report.skip_file(f"ONS station classification unavailable: {error}")
+            for facet in DESTINATION_FACET_SOURCES:
+                if facet.reviewed_station_codes:
+                    continue
+                try:
+                    self._apply_destination_facet(facet)
+                except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
+                    self.report.skip_file(
+                        f"{facet.key} station classification unavailable: {error}"
+                    )
+            if self.location_types_by_crs:
+                self._write_location_cache(lookup_root / "location-types.json")
         self._apply_major_station_fallbacks()
+        self._apply_reviewed_facets()
 
     @staticmethod
     def _normalise_location_type(value: object) -> str | None:
@@ -650,6 +819,41 @@ class FaresDb:
         if "town" in text or text in {"t", "village", "rural"}:
             return "town"
         return "other" if text else None
+
+    def _apply_reviewed_facets(self) -> None:
+        """Tag the stations named by a reviewed facet that the feed contains.
+
+        These facets exist because no open settlement list covers them, so the
+        entry says so in its source text and the codes are intersected with the
+        feed's own stations: a stale code is dropped rather than inventing a
+        station.
+        """
+        for facet in DESTINATION_FACET_SOURCES:
+            if not facet.reviewed_station_codes:
+                continue
+            for crs in facet.reviewed_station_codes:
+                if crs in self.locations_by_crs:
+                    self._tag_station(crs, facet.key)
+
+    def _apply_destination_facet(self, facet: DestinationFacet) -> None:
+        """Tag every station whose settlement is named by the facet's source."""
+        if facet.reviewed_station_codes:
+            self._apply_reviewed_facets()
+            return
+        reader = DESTINATION_FACET_READERS.get(facet.reader)
+        method = getattr(self, reader, None) if reader else None
+        if method is None:
+            # A missing reader is a ValueError so the caller reports it as an
+            # unreadable source instead of the build dying on a KeyError.
+            raise ValueError(f"no reader {facet.reader!r} for facet {facet.key!r}")
+        names = method()
+        if not names:
+            raise ValueError(f"{facet.source} returned no settlement names")
+        for crs, location in self.locations_by_crs.items():
+            if self._normalise_settlement_name(location.name) in names:
+                self._tag_station(crs, facet.key)
+        if self.location_type_source:
+            self.location_type_source = LOCATION_TYPE_SOURCE
 
     def _apply_major_station_fallbacks(self) -> None:
         """Classify major stations outside the ONS workbook's national coverage."""
@@ -662,25 +866,46 @@ class FaresDb:
         for crs, kind in MAJOR_UK_STATION_FALLBACKS.items():
             if crs in self.locations_by_crs and crs not in self.location_types_by_crs:
                 self.location_types_by_crs[crs] = kind
-        if any(
-            crs in self.location_types_by_crs
-            for crs in set(LONDON_STATION_CRS) | set(MAJOR_UK_STATION_FALLBACKS)
+        if (
+            not self.location_type_source
+            and any(
+                crs in self.location_types_by_crs
+                for crs in set(LONDON_STATION_CRS) | set(MAJOR_UK_STATION_FALLBACKS)
+            )
         ):
             self.location_type_source = LOCATION_FALLBACK_SOURCE
 
     def _load_location_types_json(self, data: object) -> None:
         if isinstance(data, dict):
-            self.location_type_source = str(
-                data.get("source") or data.get("sourceName") or ""
-            ) or None
-            # Generated ONS caches use a compact CRS -> type object. Synthetic
-            # fixtures use the older list-of-records shape, retained below.
+            top_level_facets = data.get("facets")
+            if isinstance(top_level_facets, dict):
+                if self.location_types_by_crs:
+                    self.location_type_source = LOCATION_TYPE_SOURCE
+                for crs, value in top_level_facets.items():
+                    self._merge_location_facets(crs, value)
             nested = data.get("records")
             if isinstance(nested, dict):
+                self.location_type_source = str(
+                    data.get("source") or data.get("sourceName") or ""
+                ) or self.location_type_source
+                has_embedded_facets = any(
+                    isinstance(value, dict)
+                    and self._normalise_location_facets(value.get("facets", ()))
+                    for value in nested.values()
+                )
+                if self.location_facets_by_crs and not has_embedded_facets:
+                    self.location_type_source = LOCATION_TYPE_SOURCE
                 for crs, value in nested.items():
-                    kind = self._normalise_location_type(value)
-                    if crs and kind:
-                        self.location_types_by_crs[str(crs).strip().upper()] = kind
+                    code = str(crs).strip().upper()
+                    raw_facets: object = ()
+                    raw_kind: object = value
+                    if isinstance(value, dict):
+                        raw_kind = value.get("primary", value.get("type"))
+                        raw_facets = value.get("facets", ())
+                    kind = self._normalise_location_type(raw_kind)
+                    if code and kind:
+                        self.location_types_by_crs[code] = kind
+                    self._merge_location_facets(crs, raw_facets)
                 return
         records = data.get("records") if isinstance(data, dict) else data
         if not isinstance(records, (list, tuple)):
@@ -692,7 +917,36 @@ class FaresDb:
             kind = next((record.get(key) for key in ("type", "classification", "locationType", "LocationClassification") if record.get(key)), None)
             kind = self._normalise_location_type(kind)
             if crs and kind:
-                self.location_types_by_crs[str(crs).strip().upper()] = kind
+                code = str(crs).strip().upper()
+                self.location_types_by_crs[code] = kind
+                self._merge_location_facets(crs, record.get("facets"))
+
+    def _tag_station(self, crs: str, facet_key: str) -> None:
+        self.location_facets_by_crs.setdefault(crs, set()).add(facet_key)
+
+    def _merge_location_facets(self, crs: object, value: object) -> None:
+        """Add a station's facets to what is already known about it.
+
+        More than one file can describe the same station, and each may know a
+        facet the others do not. Merging keeps a stale cache beside the feed
+        from deleting a facet the checked-in reference data recorded.
+        """
+        code = str(crs).strip().upper()
+        facets = self._normalise_location_facets(value)
+        if code and facets:
+            self.location_facets_by_crs.setdefault(code, set()).update(facets)
+
+    @staticmethod
+    def _normalise_location_facets(value: object) -> set[str]:
+        if isinstance(value, str):
+            value = (value,)
+        if not isinstance(value, (list, tuple, set, frozenset)):
+            return set()
+        return {
+            facet
+            for item in value
+            if (facet := str(item).strip().lower()) in SUPPORTED_DESTINATION_FACETS
+        }
 
     def _load_location_types_xml(self, path: Path) -> None:
         root = ET.parse(path).getroot()
@@ -786,33 +1040,140 @@ class FaresDb:
             if area:
                 self.location_types_by_crs[crs] = area["type"]
         self._apply_major_station_fallbacks()
-        if self.location_type_source != LOCATION_FALLBACK_SOURCE:
+        if not self.location_type_source:
             self.location_type_source = LOCATION_TYPE_SOURCE
+
+    def _read_ons_coastal_areas(self, data: bytes) -> set[str]:
+        """Read the 568 ONS coastal BUA names from table 1d."""
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            shared: list[str] = []
+            if "xl/sharedStrings.xml" in archive.namelist():
+                root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+                shared = [
+                    "".join(node.text or "" for node in item.iter() if node.tag.endswith("}t"))
+                    for item in root
+                    if item.tag.endswith("}si")
+                ]
+            names: set[str] = set()
+            for name in archive.namelist():
+                if not re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name):
+                    continue
+                root = ET.fromstring(archive.read(name))
+                in_coastal_bua_table = False
+                for row in root.iter():
+                    if not row.tag.endswith("}row"):
+                        continue
+                    values = {
+                        cell.attrib.get("r", "").rstrip("0123456789"):
+                        self._xlsx_cell_value(cell, shared)
+                        for cell in row
+                        if cell.tag.endswith("}c")
+                    }
+                    if (
+                        values.get("D", "").strip() == "BUA size classification"
+                        and values.get("F", "").strip() == "BUA name"
+                    ):
+                        in_coastal_bua_table = True
+                        continue
+                    if not in_coastal_bua_table:
+                        continue
+                    if values.get("A", "").strip().lower() != "coastal":
+                        continue
+                    settlement = self._normalise_settlement_name(values.get("F", ""))
+                    if settlement:
+                        names.add(settlement)
+            if not names:
+                raise ValueError("ONS coastal workbook contains no coastal built-up areas")
+            return names
+
+    def _read_ons_coastal_facet(self) -> set[str]:
+        """Return the coastal built-up-area names the ONS workbook lists."""
+        request = urllib.request.Request(
+            ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
+            headers={"User-Agent": "TrainBudgetExplorer/1.0 (station classification build)"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            workbook = response.read()
+        return self._read_ons_coastal_areas(workbook)
+
+    def _read_learning_provider_facet(self) -> set[str]:
+        """Return the towns that have a university in the UKPRN provider list.
+
+        The file is a tab-separated table whose TOWN column is the settlement
+        the provider is in. Reading it by column name rather than position
+        keeps a re-ordered file from silently moving the wrong column into the
+        facet.
+        """
+        request = urllib.request.Request(
+            LEARNING_PROVIDERS_FILE_URL,
+            headers={"User-Agent": "TrainBudgetExplorer/1.0 (station classification build)"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            text = response.read().decode("utf-8-sig", errors="replace")
+        lines = [line for line in text.splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("learning provider list is empty")
+        header = [column.strip().upper() for column in lines[0].split("\t")]
+        if "TOWN" not in header:
+            raise ValueError("learning provider list has no TOWN column")
+        town = header.index("TOWN")
+        names: set[str] = set()
+        for line in lines[1:]:
+            columns = line.split("\t")
+            if len(columns) <= town:
+                continue
+            if (settle := self._normalise_settlement_name(columns[town])):
+                names.add(settle)
+        return names
 
     def _write_location_cache(self, path: Path) -> None:
         cache = {
-            "schema": 1,
+            "schema": 2,
             "source": LOCATION_TYPE_SOURCE,
-            "sourceUrl": ONS_BUILT_UP_AREAS_DATASET_URL,
+            "sources": {
+                "primary": {
+                    "name": "Office for National Statistics, Census 2021 built-up-area size bands",
+                    "url": ONS_BUILT_UP_AREAS_DATASET_URL,
+                },
+            },
+            "facetSources": {
+                facet.key: {
+                    "name": facet.source,
+                    "url": facet.url,
+                    "coverage": facet.coverage,
+                }
+                for facet in DESTINATION_FACET_SOURCES
+            },
             "mapping": {
                 "city": ["major", "large"],
                 "town": ["medium", "small"],
                 "other": ["minor"],
             },
+            "supportedFacets": sorted(SUPPORTED_DESTINATION_FACETS),
             "coverage": (
-                "ONS Census 2021 BUA matches, then reviewed major-station fallbacks "
-                "for London and UK areas outside the workbook"
+                "ONS Census 2021 BUA and coastal-classification matches, then reviewed "
+                "major-station fallbacks for London and UK areas outside the workbooks"
             ),
             "fallbackSource": LOCATION_FALLBACK_SOURCE,
             "fallbackLondonStations": sorted(LONDON_STATION_CRS),
             "fallbackOtherStations": dict(sorted(MAJOR_UK_STATION_FALLBACKS.items())),
             "records": dict(sorted(self.location_types_by_crs.items())),
+            "facets": {
+                crs: sorted(facets)
+                for crs, facets in sorted(self.location_facets_by_crs.items())
+                if facets
+            },
         }
         path.write_text(json.dumps(cache, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def destination_type(self, crs: str) -> str:
-        """Return ``city``, ``town``, or ``other`` for a station CRS."""
+        """Return the station's primary ``city``, ``town`` or ``other`` class."""
         return self.location_types_by_crs.get(crs.strip().upper(), "other")
+
+    def destination_types(self, crs: str) -> list[str]:
+        """Return the primary class followed by any independent destination facets."""
+        code = crs.strip().upper()
+        return [self.destination_type(code), *sorted(self.location_facets_by_crs.get(code, set()))]
 
     def _load_lines(self, name: str, lines) -> None:
         extension = Path(name).suffix.lower().lstrip(".")

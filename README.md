@@ -15,6 +15,40 @@ From any UK station, find every destination reachable for under a set budget
 changes. Prices are standard-class return fares; the page also shows a Two Together price
 where the current DTD railcard restriction records permit that fare.
 
+## Destination types
+
+Destination metadata has one primary settlement class per station (`city`,
+`town`, or `other`) from ONS Census 2021 built-up-area size bands, and any
+number of independent facets. A city can also be coastal, a university town or
+an island without either value replacing the other.
+
+Every facet is one entry in `DESTINATION_FACET_SOURCES` in `atoc_fares.py`:
+the label, the dataset it comes from, where that dataset lives, what geography
+it covers, and the reader that turns it into settlement names. The filter chips,
+the page payload, the generated cache's provenance and the checked-in reference
+data are all derived from that list, so adding a sourced type does not mean
+finding a second place to remember. The current facets:
+
+| Facet | Source | Coverage |
+| --- | --- | --- |
+| `seaside` | ONS Census 2021 coastal communities built-up areas | England and Wales |
+| `university` | UK Learning Providers, universities keyed by UKPRN and HESA provider id | United Kingdom |
+| `island` | reviewed station list (see below) | England, Wales and Scotland, as the DTD feed covers them |
+
+`reference-data/destination-facets.json` is the checked-in, source-backed
+mapping, and `tools/regenerate_destination_facets.py` rebuilds it from those
+sources against a real fares download. A facet whose source is temporarily
+unreachable can be carried forward with `--keep-unavailable`, which prints what
+it could not read rather than writing a file that quietly lost it.
+
+Two limits worth stating plainly. `island` is a reviewed list, not an official
+one: no UK open dataset names island *settlements* at a size this page cares
+about, so the entry says so in its own `source` text. And TfL is not a source
+for any of this — its data covers Greater London only, so it can describe
+London stations and nothing else in the network. A page only offers the types
+its own destinations carry, because a chip that can only ever return nothing
+reads as a broken control.
+
 ## Decided summary
 
 - **What:** Grantham-only demo. Every destination reachable from Grantham under

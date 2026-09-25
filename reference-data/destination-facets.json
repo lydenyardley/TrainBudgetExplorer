@@ -1,0 +1,672 @@
+{
+  "schema": 2,
+  "source": "Office for National Statistics, Census 2021 built-up-area size bands and coastal classification",
+  "feed": "feeds\\fares\\dtd-fares.zip",
+  "stations": 3436,
+  "facetSources": {
+    "seaside": {
+      "name": "Office for National Statistics, Census 2021 coastal communities characteristics of built-up areas",
+      "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/datasets/coastalcommunitiescharacteristicsofbuiltupareasenglandandwalescensus2021",
+      "coverage": "England and Wales"
+    },
+    "university": {
+      "name": "UK Learning Providers, university providers keyed by UKPRN and HESA provider id",
+      "url": "http://learning-provider.data.ac.uk/data/learning-providers-plus.tsv",
+      "coverage": "United Kingdom"
+    },
+    "island": {
+      "name": "reviewed island station list (no official UK settlement-level island list is published as open data)",
+      "url": "",
+      "coverage": "England, Wales and Scotland, as covered by the DTD feed"
+    }
+  },
+  "supportedFacets": [
+    "island",
+    "seaside",
+    "university"
+  ],
+  "facets": {
+    "ABD": [
+      "university"
+    ],
+    "ADS": [
+      "island"
+    ],
+    "ARN": [
+      "seaside"
+    ],
+    "AVN": [
+      "seaside"
+    ],
+    "AVY": [
+      "seaside"
+    ],
+    "AYW": [
+      "seaside",
+      "university"
+    ],
+    "BDM": [
+      "university"
+    ],
+    "BDN": [
+      "island"
+    ],
+    "BDT": [
+      "seaside"
+    ],
+    "BEB": [
+      "seaside"
+    ],
+    "BMH": [
+      "seaside"
+    ],
+    "BOG": [
+      "seaside"
+    ],
+    "BOH": [
+      "seaside"
+    ],
+    "BON": [
+      "university"
+    ],
+    "BRH": [
+      "seaside"
+    ],
+    "BRM": [
+      "seaside"
+    ],
+    "BSR": [
+      "seaside"
+    ],
+    "BTN": [
+      "university"
+    ],
+    "CAR": [
+      "university"
+    ],
+    "CBB": [
+      "seaside"
+    ],
+    "CBG": [
+      "university"
+    ],
+    "CCC": [
+      "seaside"
+    ],
+    "CCH": [
+      "university"
+    ],
+    "CDT": [
+      "seaside"
+    ],
+    "CFH": [
+      "seaside"
+    ],
+    "CFS": [
+      "seaside"
+    ],
+    "CLE": [
+      "seaside"
+    ],
+    "CLT": [
+      "seaside"
+    ],
+    "CMN": [
+      "university"
+    ],
+    "CMR": [
+      "seaside"
+    ],
+    "CNF": [
+      "seaside"
+    ],
+    "CNW": [
+      "seaside"
+    ],
+    "COL": [
+      "university"
+    ],
+    "COV": [
+      "university"
+    ],
+    "CRU": [
+      "island"
+    ],
+    "CTB": [
+      "island"
+    ],
+    "CTM": [
+      "seaside"
+    ],
+    "CTR": [
+      "university"
+    ],
+    "CWB": [
+      "seaside"
+    ],
+    "DBY": [
+      "university"
+    ],
+    "DEA": [
+      "seaside"
+    ],
+    "DEE": [
+      "university"
+    ],
+    "DFD": [
+      "seaside"
+    ],
+    "DHM": [
+      "university"
+    ],
+    "DWL": [
+      "seaside"
+    ],
+    "DWW": [
+      "seaside"
+    ],
+    "EBN": [
+      "seaside"
+    ],
+    "ECW": [
+      "island"
+    ],
+    "EDB": [
+      "university"
+    ],
+    "EGH": [
+      "university"
+    ],
+    "EMS": [
+      "seaside"
+    ],
+    "ETL": [
+      "seaside"
+    ],
+    "EXM": [
+      "seaside"
+    ],
+    "FBY": [
+      "seaside"
+    ],
+    "FIL": [
+      "seaside"
+    ],
+    "FLM": [
+      "seaside"
+    ],
+    "FLN": [
+      "seaside"
+    ],
+    "FLX": [
+      "seaside"
+    ],
+    "FNH": [
+      "university"
+    ],
+    "FRB": [
+      "seaside"
+    ],
+    "FRI": [
+      "seaside"
+    ],
+    "FSB": [
+      "island"
+    ],
+    "GLD": [
+      "university"
+    ],
+    "GRV": [
+      "seaside"
+    ],
+    "GRY": [
+      "seaside"
+    ],
+    "GYM": [
+      "seaside"
+    ],
+    "HAV": [
+      "seaside"
+    ],
+    "HES": [
+      "seaside"
+    ],
+    "HGS": [
+      "seaside"
+    ],
+    "HHD": [
+      "island",
+      "seaside"
+    ],
+    "HNB": [
+      "seaside"
+    ],
+    "HOL": [
+      "seaside"
+    ],
+    "HPL": [
+      "seaside"
+    ],
+    "HRE": [
+      "seaside"
+    ],
+    "HRL": [
+      "seaside"
+    ],
+    "HUD": [
+      "university"
+    ],
+    "HUL": [
+      "university"
+    ],
+    "HWY": [
+      "university"
+    ],
+    "HYK": [
+      "seaside"
+    ],
+    "HYL": [
+      "seaside"
+    ],
+    "INV": [
+      "university"
+    ],
+    "IPS": [
+      "university"
+    ],
+    "KBX": [
+      "seaside"
+    ],
+    "KLN": [
+      "seaside"
+    ],
+    "KML": [
+      "island"
+    ],
+    "KNT": [
+      "seaside"
+    ],
+    "KYL": [
+      "island"
+    ],
+    "LAN": [
+      "university"
+    ],
+    "LBO": [
+      "university"
+    ],
+    "LBR": [
+      "seaside"
+    ],
+    "LCN": [
+      "university"
+    ],
+    "LDS": [
+      "university"
+    ],
+    "LEI": [
+      "university"
+    ],
+    "LEL": [
+      "seaside"
+    ],
+    "LIT": [
+      "seaside"
+    ],
+    "LKE": [
+      "island"
+    ],
+    "LLD": [
+      "seaside"
+    ],
+    "LLE": [
+      "seaside"
+    ],
+    "LLF": [
+      "seaside"
+    ],
+    "LLW": [
+      "seaside"
+    ],
+    "LOO": [
+      "seaside"
+    ],
+    "LUT": [
+      "university"
+    ],
+    "LWM": [
+      "seaside"
+    ],
+    "LWT": [
+      "seaside"
+    ],
+    "MAR": [
+      "seaside"
+    ],
+    "MBR": [
+      "university"
+    ],
+    "MCM": [
+      "seaside"
+    ],
+    "MEO": [
+      "seaside"
+    ],
+    "MFH": [
+      "seaside"
+    ],
+    "MIS": [
+      "seaside"
+    ],
+    "MLG": [
+      "island"
+    ],
+    "MNG": [
+      "seaside"
+    ],
+    "MRB": [
+      "seaside"
+    ],
+    "MRY": [
+      "seaside"
+    ],
+    "MUB": [
+      "university"
+    ],
+    "NCL": [
+      "university"
+    ],
+    "NFL": [
+      "seaside"
+    ],
+    "NHL": [
+      "seaside"
+    ],
+    "NMP": [
+      "university"
+    ],
+    "NOT": [
+      "university"
+    ],
+    "NQY": [
+      "seaside"
+    ],
+    "NRW": [
+      "university"
+    ],
+    "NTL": [
+      "seaside"
+    ],
+    "OMS": [
+      "university"
+    ],
+    "OXF": [
+      "university"
+    ],
+    "PEB": [
+      "seaside"
+    ],
+    "PEE": [
+      "island"
+    ],
+    "PEN": [
+      "seaside"
+    ],
+    "PES": [
+      "seaside"
+    ],
+    "PGN": [
+      "seaside"
+    ],
+    "PIA": [
+      "seaside"
+    ],
+    "PLY": [
+      "seaside",
+      "university"
+    ],
+    "PMD": [
+      "seaside"
+    ],
+    "PMW": [
+      "seaside"
+    ],
+    "PNA": [
+      "seaside"
+    ],
+    "PNZ": [
+      "seaside"
+    ],
+    "POH": [
+      "seaside"
+    ],
+    "POO": [
+      "seaside",
+      "university"
+    ],
+    "PPD": [
+      "university"
+    ],
+    "PRH": [
+      "seaside"
+    ],
+    "PRN": [
+      "seaside"
+    ],
+    "PRT": [
+      "seaside"
+    ],
+    "PTM": [
+      "seaside"
+    ],
+    "PWL": [
+      "seaside"
+    ],
+    "QBR": [
+      "seaside"
+    ],
+    "RAM": [
+      "seaside"
+    ],
+    "RDG": [
+      "university"
+    ],
+    "RHL": [
+      "seaside"
+    ],
+    "RHO": [
+      "seaside"
+    ],
+    "RTR": [
+      "seaside"
+    ],
+    "RTY": [
+      "island"
+    ],
+    "RYD": [
+      "island"
+    ],
+    "RYP": [
+      "island"
+    ],
+    "RYR": [
+      "island"
+    ],
+    "SAB": [
+      "island"
+    ],
+    "SAN": [
+      "island",
+      "seaside"
+    ],
+    "SAU": [
+      "seaside"
+    ],
+    "SBS": [
+      "seaside"
+    ],
+    "SCA": [
+      "seaside"
+    ],
+    "SCB": [
+      "island"
+    ],
+    "SCS": [
+      "seaside"
+    ],
+    "SDD": [
+      "seaside"
+    ],
+    "SDF": [
+      "seaside"
+    ],
+    "SEA": [
+      "seaside"
+    ],
+    "SFO": [
+      "seaside"
+    ],
+    "SGE": [
+      "seaside"
+    ],
+    "SGM": [
+      "seaside"
+    ],
+    "SHF": [
+      "university"
+    ],
+    "SHM": [
+      "seaside"
+    ],
+    "SHN": [
+      "island",
+      "seaside"
+    ],
+    "SID": [
+      "university"
+    ],
+    "SIV": [
+      "seaside"
+    ],
+    "SKG": [
+      "seaside"
+    ],
+    "SOP": [
+      "seaside"
+    ],
+    "SOS": [
+      "island"
+    ],
+    "SOT": [
+      "university"
+    ],
+    "SOY": [
+      "island"
+    ],
+    "SSC": [
+      "seaside"
+    ],
+    "SSE": [
+      "seaside"
+    ],
+    "SSS": [
+      "island"
+    ],
+    "STG": [
+      "university"
+    ],
+    "STS": [
+      "seaside"
+    ],
+    "SUN": [
+      "seaside",
+      "university"
+    ],
+    "SVB": [
+      "seaside"
+    ],
+    "SVR": [
+      "seaside"
+    ],
+    "SWA": [
+      "seaside",
+      "university"
+    ],
+    "SWL": [
+      "island"
+    ],
+    "SWM": [
+      "seaside"
+    ],
+    "TEN": [
+      "seaside"
+    ],
+    "TGM": [
+      "seaside"
+    ],
+    "TQY": [
+      "seaside"
+    ],
+    "TTN": [
+      "seaside"
+    ],
+    "TWI": [
+      "university"
+    ],
+    "TYW": [
+      "seaside"
+    ],
+    "ULP": [
+      "island"
+    ],
+    "ULV": [
+      "seaside"
+    ],
+    "VAL": [
+      "island",
+      "seaside"
+    ],
+    "WEY": [
+      "seaside"
+    ],
+    "WHI": [
+      "seaside"
+    ],
+    "WIN": [
+      "university"
+    ],
+    "WKG": [
+      "seaside"
+    ],
+    "WKI": [
+      "seaside"
+    ],
+    "WRH": [
+      "seaside"
+    ],
+    "WTB": [
+      "seaside"
+    ],
+    "WTH": [
+      "seaside"
+    ],
+    "WTW": [
+      "island"
+    ],
+    "WVH": [
+      "university"
+    ],
+    "XMT": [
+      "seaside"
+    ],
+    "XRD": [
+      "island"
+    ],
+    "YMH": [
+      "island"
+    ],
+    "YRK": [
+      "university"
+    ]
+  }
+}
