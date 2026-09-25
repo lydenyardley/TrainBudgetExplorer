@@ -74,5 +74,5 @@ The checker accepts the Conventional Commits grammar plus `Merge `, `Revert `,
 ## Run the tests
 
 ```
-python -m unittest discover -p "test_*.py"
+python -m unittest discover -s tests -p "test_*.py"
 ```

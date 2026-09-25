@@ -27,6 +27,15 @@ _damaged*.zip
 # The per-station page set and the multi-origin build output (ADR-0019).
 _site/
 _cache/
+_browser_demo.html
+_browser_feed/
+
+# The station classification cache a build writes beside the feed it read.
+location-types.json
+*.location-types.json
+_grantham_fresh.html
+privacy/
+.ons/
 
 # Editor/agent local state and borrowed browser tooling.
 .freebuff/
