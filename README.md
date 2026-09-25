@@ -430,9 +430,9 @@ in parallel processes (each origin is independent). In `--fast-all-origins`
 mode, workers use the persisted per-origin fare indexes described above. On a
 host that does not serve the site at its domain root — a GitHub
 Pages project site, most shared hosting — add `--base-path <name>` so every
-internal link resolves. Before a public deployment, set `PRIVACY_CONTACT` to the
-monitored contact route published with the site; builds refuse to render a
-privacy page without a contact.
+internal link resolves. Set `PRIVACY_CONTACT` to the deployment operator's
+monitored contact route before a public deployment; without it, the generated
+privacy page uses the deployment operator's public repository issue tracker.
 
 **What the page must never claim without the things behind it:** a publisher
 credit without `--notices` (or a custom `--attribution`) naming the licence
