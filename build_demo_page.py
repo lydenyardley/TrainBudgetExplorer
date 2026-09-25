@@ -19,13 +19,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from atoc_fares import FaresDb, PLACEHOLDER_TICKET_CODES
+from atoc_fares import FaresDb, PLACEHOLDER_TICKET_CODES, format_pence
 from atoc_timetable import TimetableDb
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
@@ -89,7 +90,78 @@ METADATA_NAME = "metadata.json"
 # without a hand-written metadata.json still has that, so a real download can
 # never fall back to the synthetic default just because nobody typed a note.
 MANIFEST_NAME = "download-manifest.json"
+BUILD_STATE_NAME = ".trainbudget-build.json"
 CACHE_DIR = Path(__file__).parent / "_cache"
+
+
+def feed_fingerprint(path: str | Path) -> str:
+    """A cheap identity for resumable output: file names, sizes, and mtimes."""
+    root = Path(path)
+    files = [root] if root.is_file() else sorted(item for item in root.rglob("*") if item.is_file())
+    digest = hashlib.sha256()
+    for item in files:
+        try:
+            stat = item.stat()
+            identity = f"{item}:{stat.st_size}:{stat.st_mtime_ns}"
+        except OSError:
+            identity = f"{item}:missing"
+        digest.update(identity.encode("utf-8", "replace") + b"\n")
+    return digest.hexdigest()
+
+
+def resumable_signature(shared: dict, index: list[dict]) -> str:
+    """Identity of the inputs and decisions represented by a station build."""
+    stable = {
+        "feed": feed_fingerprint(shared["feed"]),
+        "timetable": feed_fingerprint(shared["timetable"]) if shared["timetable"] else None,
+        "config": {key: value for key, value in shared.items()
+                   if key not in {"feed", "timetable", "built_at", "analytics"}},
+        "stations": index,
+    }
+    return hashlib.sha256(
+        json.dumps(stable, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def read_resume_state(path: Path, signature: str) -> set[str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(data, dict) or data.get("schema") != 1 or data.get("signature") != signature:
+        return set()
+    completed = data.get("completed")
+    return {str(slug) for slug in completed} if isinstance(completed, list) else set()
+
+
+def write_resume_state(path: Path, signature: str, completed: set[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(
+            {"schema": 1, "signature": signature, "completed": sorted(completed)},
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def write_page_atomic(path: Path, html: str) -> None:
+    """Publish one complete page, never a half-written file after interruption."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(html, encoding="utf-8")
+    temporary.replace(path)
+
+
+def fares_index_cache_paths(
+    feed: str | Path, out_dir: Path, origins: list[str] | tuple[str, ...]
+) -> tuple[Path, Path]:
+    """Return the common fares cache and per-origin index directory."""
+    digest = feed_fingerprint(feed)[:20]
+    return out_dir / f".fares-cache-{digest}.pickle", out_dir / f".fares-indexes-{digest}"
 
 
 def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) -> Path:
@@ -185,10 +257,11 @@ def read_feed_manifest(folders: list[Path]) -> dict | None:
 def price_source_from_manifest(manifest: dict) -> str | None:
     """A provenance sentence from the downloader's manifest, or None.
 
-    The most recent DTD fares or timetable entry wins, because that is the
-    download whose data the page is built from. The timestamp is ISO with a Z;
-    it is read by hand (date-only, fixed month names) rather than through a
-    locale, so the sentence reads the same on every machine.
+    A fares entry wins over a timetable entry because this line describes the
+    prices, not the journey times. Within the same feed type the newest download
+    wins. The timestamp is ISO with a Z; it is read by hand (date-only, fixed
+    month names) rather than through a locale, so the sentence reads the same on
+    every machine.
     """
     entries = manifest.get("downloads") if isinstance(manifest, dict) else None
     best: dict | None = None
@@ -199,7 +272,14 @@ def price_source_from_manifest(manifest: dict) -> str | None:
             continue
         if not isinstance(entry.get("downloaded_at"), str):
             continue
-        if best is None or entry["downloaded_at"] > best["downloaded_at"]:
+        if best is None:
+            best = entry
+            continue
+        # Prices are built from fares. A newer timetable download must never
+        # change the provenance sentence for those fares.
+        if best.get("name") == "fares" and entry.get("name") != "fares":
+            continue
+        if entry["downloaded_at"] > best["downloaded_at"]:
             best = entry
     if best is None:
         return None
@@ -334,6 +414,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--all-origins",
         action="store_true",
         help="write one page per priceable station under out's folder, plus the chooser",
+    )
+    parser.add_argument(
+        "--fast-all-origins",
+        action="store_true",
+        help="build every station page in prices-only parallel mode, report live "
+        "progress, and resume pages already completed from the same feeds/config",
     )
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
@@ -490,7 +576,94 @@ def build_payload(
     # price is calculated from the feed's minimum-fare table and the current RR
     # restriction records; a matching RR row removes it for that destination.
     railcard_code = fares.railcard_code("Two Together")
-    railcard_available = railcard_code is not None
+    railcard_in_feed = railcard_code is not None
+
+    def railcard_details(one) -> dict:
+        """The exact DTD decision shown in a destination's eligibility drawer."""
+        if railcard_code is None:
+            return {
+                "state": "unavailable",
+                "title": "Two Together is not in this feed",
+                "pricePence": None,
+                "minimumFarePence": None,
+                "rule": None,
+                "reason": "No Two Together railcard record is present, so no discounted price can be calculated from this DTD download.",
+            }
+        restriction = fares.railcard_restriction(
+            railcard_code,
+            ticket_code=one.ticket_code,
+            route_code=one.route_code,
+            origin_crs=origin.crs,
+            destination_crs=one.crs,
+            origin_nlc=one.origin_nlc,
+            destination_nlc=one.destination_nlc,
+        )
+        minimum = fares.minimum_fares.get((railcard_code, one.ticket_code))
+        rule = None
+        if restriction is not None:
+            scope = []
+            if restriction.ticket_code:
+                scope.append(f"ticket {restriction.ticket_code}")
+            else:
+                scope.append("any ticket")
+            scope.append(f"route {restriction.route_code}" if restriction.route_code else "any route")
+            scope.append(f"location {restriction.location}" if restriction.location else "any location")
+            rule = {
+                "sequence": restriction.sequence_no,
+                "status": "current" if restriction.current_or_future.upper() == "C" else restriction.current_or_future,
+                "ticketCode": restriction.ticket_code or "any",
+                "routeCode": restriction.route_code or "any",
+                "location": restriction.location or "any",
+                "restrictionCode": restriction.restriction_code or "none",
+                "totalBan": restriction.total_ban,
+                "text": (
+                    f"Current RR {restriction.sequence_no}: {', '.join(scope)}; "
+                    f"total ban {'yes' if restriction.total_ban else 'no'}; "
+                    f"restriction {restriction.restriction_code or 'none'}."
+                ),
+            }
+        if restriction is not None:
+            reason = (
+                "This exact DTD RR rule matches the fare, so Two Together cannot be applied"
+                + (": the rule records a total ban." if restriction.total_ban
+                   else f": restriction code {restriction.restriction_code} is attached.")
+            )
+            price = None
+            state = "blocked"
+        else:
+            price = fares.railcard_price(railcard_code, one.ticket_code, one.standard_pence)
+            state = "eligible"
+            reason = (
+                "No current Two Together RR rule matches this ticket, route, or either endpoint. "
+                f"The feed's two-thirds discount gives {format_pence(price)} per adult"
+            )
+            if minimum is None:
+                reason += "; no minimum fare is listed for this ticket, so the discounted fare is used."
+            elif minimum >= price:
+                reason += f", but the DTD minimum fare of {format_pence(minimum)} is higher."
+            else:
+                reason += f"; the DTD minimum is {format_pence(minimum)} and does not raise it."
+            reason += "."
+        return {
+            "state": state,
+            "title": "Two Together is available for this fare" if state == "eligible" else "Two Together is not available for this fare",
+            "pricePence": price,
+            "minimumFarePence": minimum,
+            "rule": rule or {
+                "sequence": "none",
+                "status": "current",
+                "ticketCode": one.ticket_code,
+                "routeCode": one.route_code,
+                "location": f"{origin.crs}/{one.crs}",
+                "restrictionCode": "none",
+                "totalBan": False,
+                "text": (
+                    f"No matching current RR rule for Two Together: ticket {one.ticket_code}, "
+                    f"route {one.route_code}, endpoints {origin.crs}/{one.crs}."
+                ),
+            },
+            "reason": reason,
+        }
 
     def destination_row(
         crs: str,
@@ -524,25 +697,14 @@ def build_payload(
         nonlocal tracked, disclosure
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
+        card = railcard_details(one)
         return {
             "crs": crs,
             "name": one.station,
             "adultPence": one.best_pence,
             "partyPence": one.best_pence * 2,
-            "railcardPence": (
-                fares.railcard_price_for(
-                    railcard_code,
-                    ticket_code=one.ticket_code,
-                    route_code=one.route_code,
-                    origin_crs=origin.crs,
-                    destination_crs=crs,
-                    origin_nlc=one.origin_nlc,
-                    destination_nlc=one.destination_nlc,
-                    standard_pence=one.standard_pence,
-                )
-                if railcard_code
-                else None
-            ),
+            "railcardPence": card["pricePence"],
+            "railcard": card,
             "destinationType": fares.destination_type(crs),
             "ticket": one.ticket_code,
             "quality": quality,
@@ -590,6 +752,14 @@ def build_payload(
     # The picker's options (ADR-0019), from the one shared slug map, so a page
     # built on its own links to the same folders the --all-origins build writes.
     slugs = station_slugs_for(fares.locations_by_crs)
+    railcard_eligible_destinations = {
+        row["crs"]
+        for collection in (destinations, single_destinations, anytime_destinations)
+        for row in collection
+        if row["railcardPence"] is not None and row["railcardPence"] < row["adultPence"]
+    }
+    railcard_eligible_count = len(railcard_eligible_destinations)
+
     return {
         "origin": {"crs": origin_row.crs, "name": origin_row.name},
         "builtAt": built_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -621,13 +791,10 @@ def build_payload(
         "hasJourneys": timetable is not None,
         # Kept as a payload key because the template branches on it and the
         # page can explain when railcard pricing is available.
-        "hasTwoTogether": railcard_code is not None,
-        "railcardAvailable": any(
-            row["railcardPence"] is not None
-            and row["railcardPence"] < row["adultPence"]
-            for collection in (destinations, single_destinations, anytime_destinations)
-            for row in collection
-        ),
+        "hasTwoTogether": railcard_in_feed,
+        "railcardInFeed": railcard_in_feed,
+        "railcardEligibleCount": railcard_eligible_count,
+        "railcardAvailable": railcard_eligible_count > 0,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, and ITX placeholders are excluded",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
@@ -646,18 +813,27 @@ def build_payload(
     # carries it so tests can assert the page says what the times are.
     "pricingNote": PRICING_NOTE,
         "feed": fares.stats(),
+        "locationTypeSource": fares.location_type_source,
         "timetable": timetable.stats() if timetable else None,
         "adults": adults,
         "tracked": tracked,
         "disclosure": disclosure,
         "railcardNote": (
-            "Two Together prices use the feed's railcard minimum-fare table and a one-third "
-            "discount, rounded down to the nearest 5p like National Rail. The current DTD "
-            "RR route, ticket, location, and total-ban rules are checked for every destination; "
-            "a destination without a permitted railcard price keeps its standard fare."
-            if railcard_code
-            else "Two Together railcard pricing is unavailable in this feed. The price shown is "
-                 "the standard fare; confirm any railcard price with the seller."
+            (
+                f"Two Together is in this feed. {railcard_eligible_count} currently eligible "
+                "destination fares are discounted using its minimum-fare table and a one-third "
+                "discount, rounded down to the nearest 5p. Current DTD RR route, ticket, "
+                "location, and total-ban rules are checked for every destination; fares without "
+                "a permitted railcard price keep their standard fare."
+            )
+            if railcard_in_feed and railcard_eligible_count
+            else (
+                "Two Together is in this feed, but none of the displayed fares is currently "
+                "eligible under the DTD railcard rules. The control stays visible so the "
+                "catalogue support is clear, but the prices shown are standard fares."
+                if railcard_in_feed
+                else "Two Together is not present in this feed. The prices shown are standard fares."
+            )
         ),
         # Without a date every schedule in the feed is read, so a train that has
         # a change of plan appears as its permanent and its covering version.
@@ -729,19 +905,26 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
     prices += [row["adultPence"] for row in payload.get("anytimeDestinations", [])]
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
     embedded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    initial_budget = max(1, min(int(budget_pounds), ceiling))
     return (
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__ORIGIN__", payload["origin"]["name"])
         .replace("__MAXPOUNDS__", str(ceiling))
-        .replace("__BUDGET__", str(budget_pounds))
+        .replace("__BUDGET__", str(initial_budget))
         .replace("__NOTE__", payload["note"])
         .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
         .replace("__ANALYTICS__", analytics)
     )
 
 
-def render_privacy(note: str, base_path: str = "") -> str:
-    return PRIVACY.replace("__BASE__", base_path).replace("__NOTE__", note)
+def render_privacy(note: str, base_path: str = "", contact: str = "") -> str:
+    if not contact.strip():
+        raise ValueError("a privacy contact is required before publishing the privacy page")
+    return (
+        PRIVACY.replace("__BASE__", base_path)
+        .replace("__NOTE__", note)
+        .replace("__CONTACT__", contact)
+    )
 
 
 
@@ -781,6 +964,14 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args(argv)
+    if args.fast_all_origins:
+        args.all_origins = True
+        if args.timetable:
+            print("--fast-all-origins is prices-only; ignoring --timetable", file=sys.stderr)
+        args.timetable = None
+        args.with_single_timetable = False
+        if args.workers == 1:
+            args.workers = min(8, os.cpu_count() or 1)
 
     day: date | None = None
     if args.date:
@@ -920,12 +1111,19 @@ def main(argv: list[str] | None = None) -> int:
             f"(cache: {single_cache.name})",
             flush=True,
         )
+    # An all-origins build cannot depend on the single-origin default (GRN is
+    # synthetic and absent from the real feed). Sample the requested code when
+    # it exists, otherwise the first real station, so the per-origin tripwire
+    # still fires before a long full-network batch.
+    payload_origin = args.origin
+    if args.all_origins and payload_origin not in fares.locations_by_crs:
+        payload_origin = sorted(fares.locations_by_crs)[0]
     started = time.perf_counter()
     try:
         payload = build_payload(
             fares,
             timetable,
-            args.origin,
+            payload_origin,
             single_timetable=single_timetable,
             max_changes=args.max_changes,
             day=day,
@@ -942,7 +1140,7 @@ def main(argv: list[str] | None = None) -> int:
             departure_limit=args.departures,
             built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         )
-    except KeyError:
+    except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
         return 2
     origin_seconds = time.perf_counter() - started
@@ -973,10 +1171,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.all_origins:
         out_dir = out.parent
         origins = sorted(fares.locations_by_crs)
-        index = build_station_index(
-            {crs: _priced_destinations(fares, timetable, crs, day) for crs in origins},
-            fares.locations_by_crs,
-        )
+        if args.fast_all_origins:
+            print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
+        priced_counts: dict[str, int] = {}
+        for number, crs in enumerate(origins, 1):
+            priced_counts[crs] = _priced_destinations(fares, timetable, crs, day)
+            if args.fast_all_origins and (number == len(origins) or number % 100 == 0):
+                print(f"  priced {number:,}/{len(origins):,} stations", flush=True)
+        index = build_station_index(priced_counts, fares.locations_by_crs)
         by_crs = {entry["crs"]: entry for entry in index}
         # One shared config for every page, handed to workers once through the
         # pool initialiser; each job then carries only its own origin (audit
@@ -999,6 +1201,8 @@ def main(argv: list[str] | None = None) -> int:
             "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "analytics": analytics,
             "index": index,
+            "feed": args.feed,
+            "timetable": args.timetable,
         }
         jobs = []
         for crs in origins:
@@ -1011,7 +1215,50 @@ def main(argv: list[str] | None = None) -> int:
                     "origin_name": by_crs[crs]["name"],
                 }
             )
+        state_path = out_dir / BUILD_STATE_NAME
+        signature = resumable_signature(shared, index) if args.fast_all_origins else ""
+        completed = read_resume_state(state_path, signature) if args.fast_all_origins else set()
+        if completed:
+            jobs = [job for job in jobs if job["slug"] not in completed or not (out_dir / "from" / job["slug"] / "index.html").is_file()]
+            print(f"resume: {len(completed):,} recorded page(s) already complete", flush=True)
+        if args.fast_all_origins:
+            print(
+                f"Building {len(jobs):,} station page(s) with {max(1, args.workers)} worker(s); "
+                f"progress is saved after every page",
+                flush=True,
+            )
+
         workers = max(1, args.workers)
+        built_now = 0
+        if args.fast_all_origins and workers > 1:
+            common_cache, index_dir = fares_index_cache_paths(
+                args.feed, out_dir, [job["crs"] for job in jobs]
+            )
+            fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
+            shared["fare_common_cache"] = str(common_cache)
+            shared["fare_index_dir"] = str(index_dir)
+            print(
+                f"Persisted {len(jobs):,} per-origin fare indexes; workers load the shared metadata once.",
+                flush=True,
+            )
+
+        def publish_result(result: tuple[str, str, str]) -> None:
+            nonlocal built_now
+            slug, origin_name, html = result
+            page = out_dir / "from" / slug / "index.html"
+            write_page_atomic(page, html)
+            built_now += 1
+            completed.add(slug)
+            if args.fast_all_origins:
+                write_resume_state(state_path, signature, completed)
+                print(
+                    f"[{built_now}/{len(jobs)}] "
+                    f"wrote {slug} from {origin_name}",
+                    flush=True,
+                )
+            else:
+                print(f"wrote {page} from {origin_name}", flush=True)
+
         if workers == 1:
             # The in-process path builds through the same job function the
             # pool uses, with the live databases placed in the job dict, so
@@ -1022,29 +1269,27 @@ def main(argv: list[str] | None = None) -> int:
             _WORKER.update(shared)
             _WORKER["fares"] = fares
             _WORKER["timetable"] = timetable
-            results = map(build_page_job, jobs)
+            for job in jobs:
+                publish_result(build_page_job(job))
         else:
             # ProcessPoolExecutor rather than multiprocessing.Pool: a worker
             # that dies before answering turns into a BrokenProcessPool error
             # here, instead of an imap that waits forever on a dead queue.
-            # The workers module is imported here, not at the top: it imports
-            # this module's payload and render functions, and a top-level
-            # import would be a cycle. Under Windows spawn the child re-imports
-            # build_workers, which then imports this module straight through.
+            # Completion is consumed as each page finishes, not in submission
+            # order, so a slow early station cannot hide progress on the rest.
             from build_workers import build_page_job, init_worker
-            from concurrent.futures import ProcessPoolExecutor
+            from concurrent.futures import ProcessPoolExecutor, as_completed
 
             with ProcessPoolExecutor(
                 workers,
                 initializer=init_worker,
                 initargs=(args.feed, args.timetable, shared),
             ) as executor:
-                results = executor.map(build_page_job, jobs, chunksize=8)
-        for slug, origin_name, html in results:
-            page = out_dir / "from" / slug / "index.html"
-            page.parent.mkdir(parents=True, exist_ok=True)
-            page.write_text(html, encoding="utf-8")
-            print(f"wrote {page} from {origin_name}")
+                futures = [executor.submit(build_page_job, job) for job in jobs]
+                for future in as_completed(futures):
+                    publish_result(future.result())
+        if args.fast_all_origins:
+            print(f"station pages complete: {len(completed):,}/{len(index):,}", flush=True)
         chooser = render_chooser(
             index,
             budget_pounds=20,
@@ -1076,7 +1321,14 @@ def main(argv: list[str] | None = None) -> int:
         # station links use, so it resolves wherever the site is served from.
         privacy = out_dir / "privacy" / "index.html"
         privacy.parent.mkdir(parents=True, exist_ok=True)
-        privacy.write_text(render_privacy(note, base_path), encoding="utf-8")
+        privacy.write_text(
+            render_privacy(
+                note,
+                base_path,
+                os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
+            ),
+            encoding="utf-8",
+        )
         print(f"wrote {privacy}")
         # Say how to open it, because the pages are not in the repository (they
         # are build output) and their station links are root-absolute, so
@@ -1104,7 +1356,14 @@ def main(argv: list[str] | None = None) -> int:
     if out.parent.is_dir():
         privacy = out.parent / "privacy" / "index.html"
         privacy.parent.mkdir(parents=True, exist_ok=True)
-        privacy.write_text(render_privacy(note, base_path), encoding="utf-8")
+        privacy.write_text(
+            render_privacy(
+                note,
+                base_path,
+                os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
+            ),
+            encoding="utf-8",
+        )
         print(f"wrote {privacy}")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
     if args.link_mode == "fallback":
@@ -1123,9 +1382,12 @@ def main(argv: list[str] | None = None) -> int:
     if not payload["hasJourneys"]:
         print("no timetable given, so the page shows prices without times")
     if not payload["hasTwoTogether"]:
+        print("Two Together is not present in this feed; standard fares are shown")
+    elif not payload["railcardAvailable"]:
+        print("Two Together is present, but no displayed fare is currently eligible under its DTD rules")
+    else:
         print(
-            "railcard discounts are not shown: the .RST railcard rules are parsed "
-            "but not evaluated, so party prices are two Anytime Day Returns"
+            f"Two Together is present; {payload['railcardEligibleCount']} displayed fare rows are eligible"
         )
     return 0
 

@@ -21,6 +21,7 @@ from build_demo_page import (
     build_station_index,
     render_chooser,
     render_page,
+    render_privacy,
     station_slug,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
@@ -97,8 +98,9 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_page_carries_separate_ticket_modes(self) -> None:
         self.assertEqual(self.payload["destinations"][0]["destinationType"], "city")
-        self.assertIn('<option value="city">Cities</option>', self.html)
-        self.assertIn("matchesType", self.html)
+        self.assertIn('name="destinationType" value="city"', self.html)
+        self.assertNotIn('<select id="q"', self.html)
+        self.assertIn("selectedDestinationTypes", self.html)
         self.assertIn("singleDestinations", self.payload)
         self.assertTrue(self.payload["singleDestinations"])
         self.assertIn("anytimeDestinations", self.payload)
@@ -164,9 +166,11 @@ class DemoPageTest(unittest.TestCase):
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
         # The fixture's general R9 rule means no destination is eligible. The
         # page must say so rather than turning the old estimate back on.
+        self.assertTrue(self.payload["railcardInFeed"])
         self.assertFalse(self.payload["railcardAvailable"])
-        self.assertIn("one-third discount", self.payload["railcardNote"])
-        self.assertIn("RR route", self.payload["railcardNote"])
+        self.assertEqual(self.payload["railcardEligibleCount"], 0)
+        self.assertIn("Two Together is in this feed", self.payload["railcardNote"])
+        self.assertIn("none of the displayed fares", self.payload["railcardNote"])
         self.assertIn("DATA.railcardNote", self.html)
         self.assertIn("Math.min(base, cardTotal)", self.html)
 
@@ -181,6 +185,25 @@ class DemoPageTest(unittest.TestCase):
         rows = {row["crs"]: row for row in payload["destinations"]}
         self.assertEqual(rows["NOT"]["railcardPence"], 770)
         self.assertTrue(payload["railcardAvailable"])
+        self.assertTrue(payload["railcardInFeed"])
+        self.assertEqual(payload["railcardEligibleCount"], 4)
+        self.assertIn("one-third discount", payload["railcardNote"])
+
+    def test_each_destination_exposes_its_exact_railcard_decision(self) -> None:
+        row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
+        details = row["railcard"]
+        self.assertEqual(details["state"], "blocked")
+        self.assertIn("any ticket", details["rule"]["text"])
+        self.assertIn("RR", details["rule"]["text"])
+        self.assertIsNone(details["pricePence"])
+        self.assertEqual(
+            details["minimumFarePence"],
+            self.fares.minimum_fares.get(("TWO", row["ticket"])),
+        )
+        self.assertIn("cannot be applied", details["reason"])
+        self.assertIn('id="railcardDrawer"', self.html)
+        self.assertIn("showRailcardDetails(destination)", self.html)
+        self.assertIn("Exact DTD rule", self.html)
 
     def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
         # Three distinct obligations, three paragraphs: one run-on would let a
@@ -284,7 +307,7 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn("Synthetic demo data", page)
             self.assertIn("price line read from the download manifest", buffer.getvalue())
 
-    def test_the_manifest_entry_newest_wins_and_kb_feeds_do_not(self) -> None:
+    def test_the_manifest_prefers_fares_for_the_price_line(self) -> None:
         self.assertEqual(
             build_demo_page.price_source_from_manifest(
                 {
@@ -294,7 +317,7 @@ class DemoPageTest(unittest.TestCase):
                     ]
                 }
             ),
-            "the National Rail Data Portal DTD timetable feed, downloaded 24 September 2026",
+            "the National Rail Data Portal DTD fares feed, downloaded 23 September 2026",
         )
         # A knowledgebase entry is reference data, not what the page is built
         # from, so it cannot supply the price line.
@@ -391,7 +414,9 @@ class DemoPageTest(unittest.TestCase):
         # The card is never sent anywhere; it is named as something to tick, and
         # only when the price on screen is the one that needs it.
         self.assertIn('const together = unit() === "party";', self.html)
-        self.assertIn('if (together) lines.push("Railcard discount not included: tick the Two Together box', self.html)
+        self.assertIn('if (together && DATA.railcardAvailable && destination.railcardPence !== null)', self.html)
+        self.assertNotIn('if (together && DATA.railcardInFeed && destination.railcardPence !== null)', self.html)
+        self.assertIn('Two Together discount is not sent to the seller', self.html)
 
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
         # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
@@ -427,8 +452,10 @@ class DemoPageTest(unittest.TestCase):
     def test_the_page_names_the_origin_and_offers_a_slider_and_a_filter(self) -> None:
         self.assertIn("GRANTHAM", self.html)
         self.assertIn('id="budget"', self.html)
-        self.assertIn('id="q"', self.html)
+        self.assertIn('name="destinationType"', self.html)
+        self.assertIn('id="destinationTypes"', self.html)
         self.assertIn('value="party"', self.html)
+        self.assertIn("Where can we go for under", self.html)
 
     # -- the origin picker (ADR-0019) -------------------------------------
 
@@ -442,18 +469,26 @@ class DemoPageTest(unittest.TestCase):
 
     # -- the layout: budget leads, the rest refines ------------------------
 
-    def test_the_controls_grid_gives_the_budget_the_wider_column(self) -> None:
-        self.assertIn("grid-template-columns: minmax(16rem, 1.5fr) minmax(12rem, 1fr)", self.html)
-        # The party switch and the town filter share one secondary column.
-        self.assertIn('<div class="secondary">', self.html)
-        secondary = self.html.split('<div class="secondary">')[1].split("</div>\n</div>")[0]
-        self.assertIn('name="unit"', secondary)
-        self.assertIn('id="q"', secondary)
+    def test_the_filter_bar_uses_horizontal_space_without_a_duplicate_budget_field(self) -> None:
+        self.assertIn("grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr)", self.html)
+        self.assertIn('<section class="filter-bar"', self.html)
+        self.assertIn('id="budget" type="range"', self.html)
+        self.assertIn('id="budgetNumber" type="number"', self.html.split("<h1", 1)[1].split("</h1>", 1)[0])
+        self.assertNotIn('id="budgetNumber" type="number"', self.html.split('<section class="filter-bar"', 1)[1])
 
-    def test_the_budget_is_the_biggest_type_on_the_page(self) -> None:
-        budget_size = re.search(r"\.budget \{ font-size: ([\d.]+)rem", self.html).group(1)
-        h1_size = re.search(r"h1 \{ font-size: ([\d.]+)rem", self.html).group(1)
-        self.assertGreater(float(budget_size), float(h1_size))
+    def test_the_budget_is_inline_in_the_large_heading(self) -> None:
+        heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
+        self.assertIn("Where can we go for under", heading)
+        self.assertIn('id="budgetNumber"', heading)
+        self.assertIn('id="changeOrigin"', heading)
+        self.assertIn("font-size: clamp(2rem, 5vw, 5rem)", self.html)
+        self.assertNotIn("max-width: 32ch; margin: 0 0 1.5rem", self.html)
+
+    def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
+        self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
+        self.assertIn('cell.dataset.label = label', self.html)
+        self.assertIn('restriction.dataset.label = "Restriction"', self.html)
+        self.assertIn("Restricted fare — check seller conditions", self.html)
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
@@ -518,8 +553,8 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="originPicks"', self.html)
         # The options are real anchors, not a custom listbox.
         self.assertIn('link.href = station.href', self.html)
-        self.assertIn('<select id="q"', self.html.split("<script")[0])
-        self.assertIn('value="city"', self.html.split("<script")[0])
+        self.assertIn('id="destinationTypes"', self.html.split("<script")[0])
+        self.assertIn('name="destinationType" value="city"', self.html.split("<script")[0])
 
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
         self.assertIn('event.key === "Escape"', self.html)
@@ -552,6 +587,28 @@ class DemoPageTest(unittest.TestCase):
         script = self.html.split("<script>")[1].split("</script>")[0]
         self.assertIn("We don't have prices from '", script)
         self.assertNotIn('from \\"', script)
+
+    def test_privacy_requires_a_contact_and_uses_the_deployment_route(self) -> None:
+        with self.assertRaises(ValueError):
+            render_privacy("note")
+        html = render_privacy("note", contact="privacy@example.test")
+        self.assertIn("privacy@example.test", html)
+        self.assertNotIn("goes here before the site is published", html)
+
+    def test_the_chooser_budget_is_carried_into_station_links(self) -> None:
+        chooser = render_chooser(
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            budget_pounds=20,
+        )
+        self.assertIn('id="chooserBudget"', chooser)
+        self.assertIn('url.searchParams.set("budget"', chooser)
+        self.assertIn('min-height: 44px', chooser)
+        self.assertIn("Rail Budget", chooser)
+
+    def test_the_chooser_explains_a_truncated_match_list(self) -> None:
+        chooser = render_chooser([], budget_pounds=20)
+        self.assertIn("Showing \" + CHOOSER_LIMIT + \" of \" + wanted.length", chooser)
+        self.assertIn("Refine the search to see the rest", chooser)
 
     def test_the_chooser_counts_destinations_in_the_singular_when_there_is_one(self) -> None:
         # The chooser is read as a fact about the feed, and "1 destinations" is
@@ -621,7 +678,8 @@ class DemoPageTest(unittest.TestCase):
         reflow = self.html[self.html.index("@media (max-width: 44rem)"):].split("</style>")[0]
         self.assertIn("flex-wrap", reflow)
         self.assertNotIn("display: none", reflow.split("thead")[0])
-        self.assertIn("thead { display: none; }", reflow)
+        self.assertIn("thead { position:absolute; width:1px; height:1px;", reflow)
+        self.assertIn("td[data-label]::before { content: attr(data-label)", reflow)
         table_markup = self.html.split("<table>")[1].split("</table>")[0]
         self.assertNotIn("<div", table_markup)
 
@@ -772,6 +830,28 @@ class AllOriginsCliTest(unittest.TestCase):
 
     def test_a_fresh_folder_gets_no_stale_note(self) -> None:
         self.assertNotIn("earlier build", self.build())
+
+    def test_fast_all_origins_reports_progress_and_resumes_completed_pages(self) -> None:
+        first = io.StringIO()
+        with contextlib.redirect_stdout(first):
+            code = build_demo_page.main([
+                "--feed", str(self.feed), "--fast-all-origins",
+                "--out", str(self.out),
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("Finding priceable origins", first.getvalue())
+        self.assertIn("progress is saved after every page", first.getvalue())
+        self.assertTrue((self.out.parent / ".trainbudget-build.json").is_file())
+
+        second = io.StringIO()
+        with contextlib.redirect_stdout(second):
+            code = build_demo_page.main([
+                "--feed", str(self.feed), "--fast-all-origins",
+                "--out", str(self.out),
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn("Building 0 station page(s)", second.getvalue())
+        self.assertIn("station pages complete: 2/2", second.getvalue())
 
     def test_an_overrun_origin_trips_the_wire_and_writes_nothing(self) -> None:
         # ADR-0024's tripwire (audit B1): a superquadratic search must be
