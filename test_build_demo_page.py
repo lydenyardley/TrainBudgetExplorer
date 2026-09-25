@@ -482,7 +482,9 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
         self.assertIn("font-size: clamp(2rem, 5vw, 5rem)", self.html)
-        self.assertNotIn("max-width: 32ch; margin: 0 0 1.5rem", self.html)
+        self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.html)
+        self.assertNotIn("max-width: 32ch", self.html)
+        self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
 
     def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
