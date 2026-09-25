@@ -357,6 +357,55 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn("Synthetic demo data", page)
             self.assertIn("price line read from the download manifest", buffer.getvalue())
 
+    def test_a_zip_feed_reads_the_manifest_above_its_own_folder(self) -> None:
+        # The real layout: feeds/fares/dtd-fares.zip with the downloader's
+        # manifest at feeds/. Looking only at the zip's folder and its parent
+        # missed it, and the build fell through to "the synthetic demo feed" for
+        # real DTD prices.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "feeds"
+            source = build_synthetic_feed(root / "fares", include_restrictions=True)
+            archive = root / "fares" / "dtd-fares.zip"
+            with zipfile.ZipFile(archive, "w") as zipped:
+                for item in sorted(Path(source).iterdir()):
+                    zipped.write(item, arcname=item.name)
+            (root / "download-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "downloads": [
+                            {"name": "fares", "source": "dtd", "downloaded_at": "2026-09-24T09:47:35Z"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out = Path(tmp) / "site" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(["--feed", str(archive), "--out", str(out)])
+            self.assertEqual(code, 0)
+            page = out.read_text(encoding="utf-8")
+            self.assertIn("the National Rail Data Portal DTD fares feed", page)
+            self.assertNotIn("the synthetic demo feed", page)
+
+    def test_a_dtd_download_is_recognised_and_never_called_synthetic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "feeds"
+            root.mkdir(parents=True)
+            dtd = root / "dtd-fares.zip"
+            with zipfile.ZipFile(dtd, "w") as zipped:
+                zipped.writestr("RJFAF896.TTY", "not read by this test")
+            self.assertTrue(build_demo_page.is_dtd_download(dtd))
+            synthetic = root / "synthetic.zip"
+            with zipfile.ZipFile(synthetic, "w") as zipped:
+                zipped.writestr("SYNTHETIC.TTY", "invented")
+            self.assertFalse(build_demo_page.is_dtd_download(synthetic))
+            # A manifest above the feed is the other way a download is known.
+            (root / "download-manifest.json").write_text("{}", encoding="utf-8")
+            self.assertTrue(build_demo_page.is_dtd_download(synthetic))
+            self.assertFalse(build_demo_page.is_dtd_download(Path(tmp) / "nowhere"))
+
     def test_the_manifest_prefers_fares_for_the_price_line(self) -> None:
         self.assertEqual(
             build_demo_page.price_source_from_manifest(
