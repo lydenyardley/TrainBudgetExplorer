@@ -38,7 +38,7 @@ Smith's PHP feed parser), read this session from `raw.githubusercontent.com`.
 | `atoc_fares.py` | Fixed-width parser plus the budget query. Reads `ffl` (flows and fares), `loc` (stations), `tty` (ticket types), `rlc` (railcards), `rcm` (railcard minimum fares). Handles folders and zips, and honours `A`/`U`/`D` update markers. |
 | `grantham_sweep.py` | The go/no-go instrument. One origin, one budget, prints and optionally writes every destination inside it. |
 | `make_synthetic_feed.py` | Writes an invented feed folder in the real record layouts. |
-| `test_atoc_fares.py` | Ten tests, every assertion a literal value. |
+| `tests/test_atoc_fares.py` | Fares parser tests, every assertion a literal value. |
 
 Modelling choices worth knowing:
 

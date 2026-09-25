@@ -105,7 +105,7 @@ jobs:
 
       - name: Test the build
         run: |
-          python -m unittest discover -p "test_*.py"
+          python -m unittest discover -s tests -p "test_*.py"
           python -m unittest discover -s tools -p "test_*.py"
 
       - name: Test the page in a real browser
@@ -117,7 +117,7 @@ jobs:
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
           PAGE=_site/index.html
-          npx --yes --package playwright node browser_test.cjs "$PAGE"
+          npx --yes --package playwright node tests/browser_test.cjs "$PAGE"
 
       - name: Save the successful feed manifest and build fingerprint
         if: steps.feed_check.outputs.changed == 'true'

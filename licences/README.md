@@ -49,7 +49,7 @@ Differences worth knowing:
 - `publish-checklist.md` §1 — the four licence questions per product.
 - ADR-0020 — the Darwin reading, and the conflict inside it.
 - ADR-0021 — the finding that §5 varies by product, and what that means for the page.
-- `test_licences.py` — asserts every PDF in this folder has a row above and every row
+- `tests/test_licences.py` — asserts every PDF in this folder has a row above and every row
   names a file that exists, so a licence can never be downloaded, filed, and forgotten.
 
 ## DTD access (preferred zero-cost route)
