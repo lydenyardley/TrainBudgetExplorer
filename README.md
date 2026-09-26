@@ -348,7 +348,7 @@ output; rerunning the same command resumes from that checkpoint, while a feed,
 configuration, or station-index change starts a new build. The chooser's starting
 budget is carried into station-page URLs, so the page and its title use the same
 initial amount. The fast build also persists feed-fingerprinted per-origin fare
-indexes beside the output: workers load the shared location/ticket/restriction
+indexes in `_cache/`: workers load the shared location/ticket/restriction
 metadata once and apply only the fares relevant to each page, rather than
 reparsing the complete DTD feed in every worker. The picker's station
 list is built from the outputs the build actually wrote, so no option can point
@@ -356,6 +356,14 @@ at a page that does not exist, and slug collisions between same-named stations
 are resolved with the CRS code at build time. The picker cannot offer "nearest
 station": the fare feed records no county, region, or coordinates for a station,
 only its name and code.
+
+Build caches live in `_cache/` (git-ignored): the shared feed metadata and
+per-origin fare indexes the workers restore, and the timetable pickles a
+single-origin build keys by the feed's bytes and its focus stations. Every
+build that reads or writes a timetable pickle then keeps the newest two per
+origin — the caches it just used are protected — and deletes the older
+digests, so a feed refresh no longer strands the previous 100MB file for
+someone to remove by hand.
 
 ### Opening the pages yourself
 
@@ -390,9 +398,13 @@ invisible hit-area padding around each control.
 
 A station the build could not price gets a different page from one whose prices sit
 outside the budget: instead of a slider over an empty table, the page says *"We
-couldn't price any journeys from X (CODE) in this feed."*, links the chooser when
-other priced stations exist, and hides the controls, because a budget is not a
-question that can be answered there. The build prints a note in that case, so the
+couldn't price any journeys from X (CODE) in this feed."*, follows it with why —
+the feed reaches a number of standard-return destinations but the cheapest fare to
+every one of them is an ITX placeholder, or flows exist but none prices a
+publishable fare, naming the top rejection reasons — links the chooser when other
+priced stations exist, and hides the controls, because a budget is not a question
+that can be answered there. The footer only suggests raising the budget when there
+are destinations to raise it toward. The build prints a note in that case, so the
 operator sees it too.
 
 Affiliate tracking is **off by default**, and turning it on wraps the link in a
@@ -444,7 +456,10 @@ It drags the budget slider to the floor, filters to a town, follows a ticket lin
 **Copy** control puts on the clipboard. It exits 2 and says SKIPPED when playwright
 is missing rather than passing quietly. It earned its place immediately: the copy
 control shipped with a newline inside a JavaScript string literal, which took the
-whole page down while every Python test still passed.
+whole page down while every Python test still passed. It is also the only cover
+for what the generated JavaScript *does* — `page_templates.py` deliberately has
+no unit tests of its own, a decision recorded in
+`adr/ADR-0027-browser-suite-covers-the-template.md`.
 
 ## The real-data build, end to end
 
@@ -584,6 +599,15 @@ python -m unittest discover -s tests -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --date 2026-09-27
+```
+
+CI runs the same tests under a coverage floor, and you can run the chain locally:
+
+```
+python -m pip install coverage
+python -m coverage run -m unittest discover -s tests -p "test_*.py"
+python -m coverage run --append -m unittest discover -s tools -p "test_*.py"
+python -m coverage report --fail-under=79 --precision=1
 ```
 
 To measure the journey search, build an invented feed of the shape you want,

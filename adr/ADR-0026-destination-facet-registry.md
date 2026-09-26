@@ -106,3 +106,18 @@ remaining gap needs a per-station mapping — either a reviewed alias list, or a
 settlement-level source for Scotland and Northern Ireland, which the Rural Urban
 Classification would provide if it were published at built-up-area level. It
 is not, and it is not what this decision claims.
+
+The registry cannot classify what the feed does not locate, and that is a
+hard ceiling. On the 24 September 2026 download, flows reference 5,551
+distinct NLCs, 2,027 of which have no location record, and 1,902 of those
+are ever used as a destination. The selector counts every row it drops for
+want of a name as it goes. Summed over the origins the coverage report
+checks, it drops 41,034 rows for having no location record and 39,982 for
+having no station code — 81,016 rows in all, 1,001 of them on ECW's page
+alone. No reviewed list closes this gap, because a flow runs to an NLC the
+feed never locates. `python destination_coverage.py --feed feeds/fares`
+prints the count beside the unsourced stations, beginning "A further
+81,016 destination rows cannot be named at all". The CI gate's
+`--unsourced-ceiling` holds the classifiable half to its measured floor.
+The unnameable half is a fact about the feed, not a defect in the
+registry.
