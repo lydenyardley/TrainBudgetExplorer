@@ -72,6 +72,21 @@ class CommitMessageTest(unittest.TestCase):
 
     def test_rejects_an_empty_message(self) -> None:
         self.assertEqual(check(""), ["the message is empty"])
+        self.assertEqual(check("\n\n   \n"), ["the message is empty"])
+
+    def test_reads_a_message_that_opens_with_a_blank_line(self) -> None:
+        # Git strips the blank lines a message file may begin with, so the first
+        # content line is the subject. Reading line one as the subject called
+        # such a message empty, and a checker that refuses a good message for an
+        # invented reason sends its author to edit the wrong thing.
+        self.assertEqual(check("\nfix(sweep): name the feed that refused\n"), [])
+        self.assertEqual(check("\n\nfix(sweep): name the feed that refused\n\nBody.\n"), [])
+        # The blank line after the subject is still the subject's own, not the
+        # file's leading one: a body that starts on line two is still a problem.
+        self.assertIn(
+            "line 2 must be blank",
+            check("\ndocs: add the runbook\nbecause it helps.\n"),
+        )
 
 
 if __name__ == "__main__":

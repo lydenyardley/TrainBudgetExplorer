@@ -219,6 +219,14 @@ keep: 46 of 46 since it was adopted. The 41 older commits still fail and are
 left failing, because rewriting published history to satisfy a linter is a
 worse trade than a linter the older history is honestly outside of.
 
+A message file may open with a blank line: git's own cleanup strips those when
+it creates the commit, but the checker reads the file it is given. `check` read
+line one as the subject, called such a message empty and stopped there, so a
+message with a fine subject was refused for a reason that was not about it. It
+now skips the leading blank lines, as git's cleanup does, and the empty-message
+test covers a truly empty message, a line of spaces, and a message whose subject
+follows the blanks without its line-two rule being lost.
+
 The tool was in no hook and no workflow, which is how a tool could disagree
 with every commit in the repository for as long as it existed. It is now a step
 in `deploy.yml` that walks the commits the push added and fails the build on

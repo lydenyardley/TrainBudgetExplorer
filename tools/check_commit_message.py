@@ -48,7 +48,13 @@ SUBJECT = re.compile(
 def check(message: str) -> list[str]:
     """Return every problem with the message. Empty means it passes."""
     problems: list[str] = []
-    lines = message.rstrip("\n").split("\n")
+    # Git's own cleanup drops the blank lines a message file may open with, so
+    # the first *content* line is the subject. Reading line one as the subject
+    # instead called such a message empty and stopped there: a message with a
+    # fine subject was refused, and the tool said the wrong thing about why.
+    lines = message.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
     subject = lines[0].strip() if lines else ""
 
     if not subject:
