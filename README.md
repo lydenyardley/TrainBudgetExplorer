@@ -69,6 +69,37 @@ python tools/propose_nature_stations.py   --url https://www.wildlifetrusts.org/n
 ```
 
 
+## Fare-construction points are not places
+
+The feed prices fares *through* things that are not stations. `BOUNDARY ZONE 4`
+is where a fare changes from an inner to an outer London zone; `BRIGHTON
+UNIZONE` and `METRO T&W ZONE A` are the same idea; `KINGS LYNN COACH` and
+`DEREHAM (COACH)` are a coach stop standing in for the town it serves. No
+train calls at any of them, so the page must not offer one as a destination to
+be priced to or an origin to depart from, and the coverage report must not let
+them top the "most reached" table.
+
+They are a reviewed list, `FARE_CONSTRUCTION_CRS`, keyed by the feed's own CRS
+rather than matched on the station name. A substring test over names looks
+equivalent and is not: it would drop a real station the day anyone called one
+Coach House, and it would stop catching a zone the day the feed renamed it. The
+CRS is the feed's identity for a station, so a rename shows up as a dead code
+instead.
+
+The evidence that the list is current comes from
+`tools/propose_fare_construction_stations.py`, which applies the name markers to
+the feed's station records and prints every match with its code, marking which
+are already reviewed and which are not. It writes nothing, for the same reason
+the nature proposer does: a proposal is not a reviewed list. On the 24 September
+2026 download it matched the twelve reviewed codes and nothing else — eight
+zones, four coach stops — and it also reports the other direction, a reviewed
+code that no longer matches any name, which is what a withdrawn zone looks like.
+
+```
+python tools/propose_fare_construction_stations.py --feed feeds/fares
+```
+
+
 Four limits worth stating plainly. `island` is a reviewed list, not an
 official one: no UK open dataset names island *settlements* at a size this page
 cares about, so the entry says so in its own `source` text. `transport` and
@@ -177,7 +208,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
-| `destination_coverage.py` | Names the priced destinations no source could classify; a build prints the summary and `--fail-on-unsourced` turns it into a refusal |
+| `destination_coverage.py` | Names the priced destinations no source could classify; a build prints the summary, `--fail-on-unsourced` turns it into a refusal, and `--unsourced-ceiling` holds the count |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
@@ -186,6 +217,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tools/check_commit_message.py` | Checks a commit message against the convention |
 | `tools/test_propose_nature_stations.py` | Proposer tests: host guard, name matching, and never writing a file |
 | `tools/propose_nature_stations.py` | Reads Wildlife Trust and WWT reserve pages and proposes station codes, with the sentence each came from, for a person to review |
+| `tools/propose_fare_construction_stations.py` | Applies the fare-construction name markers to the feed's stations and proposes codes, with the name that caught each, for a person to review |
 | `tests/test_atoc_fares.py` | Fares parser and publishable-selector tests |
 | `tests/test_atoc_restrictions.py` | `.RST` field offsets, real sample records, and the gate |
 | `tests/test_atoc_timetable.py` | Timetable parser, TIPLOC normalisation, and journey tests |
@@ -542,6 +574,24 @@ warning, because a full-network build legitimately meets stations nobody has
 reviewed; `--fail-on-unsourced` turns it into a refusal for a release build,
 checked before anything is written. Run the same check on its own, across the
 whole feed, with `python destination_coverage.py --feed feeds/fares`.
+
+Beside it the report names the rows that can never become a destination at all:
+flows to an NLC the feed never locates, to a location with no station code, or
+to a fare-construction point. No reviewed list closes that gap, because a flow
+runs to an NLC the feed does not describe, so it is a fact about the feed
+rather than a defect in the registry — but it is counted, so the two halves of
+the coverage gap are never read as one.
+
+**Two reviewed lists can go stale, and the build says so.** A classification
+source that could not be read leaves the page with fewer filter chips than it
+claims: `--require-classification` refuses to publish rather than shipping
+them. A reviewed settlement-fallback code the feed does not carry is silent by
+construction — the code is intersected away before it is applied, so the page
+looks exactly as it did — which is why `--require-live-reviewed-codes` exists
+and why the deploy workflow passes it. Neither flag is on by default: a
+fuzzed, damaged or synthetic feed is *supposed* to be missing most of the
+network, and refusing to build one would make the tools untestable. Both print
+what they found either way.
 
 **What the page must never claim without the things behind it:** a publisher
 credit without `--notices` (or a custom `--attribution`) naming the licence
