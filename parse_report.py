@@ -39,6 +39,11 @@ class ParseReport:
     # A7), which is the point: a dead code costs nothing at runtime, so
     # nothing else would ever notice one arriving.
     reviewed_codes_absent: list[str] = field(default_factory=list)
+    # Reviewed settlement-fallback codes for a station the ONS workbook already
+    # names. The code resolves and the class never applies, so nothing looks
+    # wrong until the name match misses and the reviewed class lands.
+    # --require-live-reviewed-codes turns these into a refusal too.
+    reviewed_codes_redundant: list[str] = field(default_factory=list)
 
     def skip_file(self, message: str) -> None:
         """Record a whole file the loader chose not to read.

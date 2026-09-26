@@ -86,33 +86,77 @@ LOCATION_TYPE_SOURCE = (
 # seven entries had been written without it, so they named no station at all
 # (Blackfriars is ZBF, not BKF). A dead code costs nothing at runtime, which is
 # exactly why the reader below names it.
+#
+# Every entry must be a station the ONS workbook does not name, because that is
+# the whole point of a fallback: it is applied only where the workbook and the
+# name lookup miss. Seventeen entries broke that rule -- Ascot, Battle,
+# Knighton, Windermere, Wickford, Welshpool, Brockenhurst, Bramhall, Bangor,
+# Truro, York, Solihull, Swansea, Leicester, Bournemouth, Berkhamsted and
+# Lostock Gralam are all in the workbook -- and they were removed rather than
+# kept, because an entry that never applies is still a claim about a station
+# someone else already classified, and the day the name match misses it would
+# land: Knighton would become a city, Windermere a city, York a town. The
+# workbook names them correctly, so nothing is lost.
 LONDON_STATION_CRS = frozenset({
-    "ACT", "BAT", "BFN", "BWD", "CHC", "CHT", "CLJ", "CBR",
-    "CTK", "DLK", "ECR", "EUS", "FST", "GTN", "HAY", "HMY",
-    "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD",
-    "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
+    "BFN", "BWD", "CHC", "CLJ", "CTK", "DLK", "ECR", "EUS", "FST",
+    "GTN", "HAY", "HMY", "KGX", "LBG", "LES", "LST", "MYB", "PAD",
+    "STP", "SUR", "VIC", "WAT", "WOL", "WWC",
     "ZBF", "ZCD", "ZGR", "ZLP", "ZPD", "ZPI", "ZRY",
 })
 MAJOR_UK_STATION_FALLBACKS = {
-    # Scotland
-    "ABD": "city", "DEE": "city", "EDB": "city", "GLC": "city", "INV": "city",
-    "MAN": "city", "PER": "city", "QGS": "city", "SGL": "city",
-    # Wales outside the England-and-Wales BUA workbook's usual settlement names
-    "CDD": "city", "SWA": "city",
+    # Scotland. A reviewed list, because the workbook stops at the border and
+    # no Scottish equivalent of its built-up-area bands is published, so these
+    # are judgements rather than sources (ADR-0026). Where the old entry named
+    # a city and the feed's station for that code is a village or a hamlet, the
+    # class is impossible and was corrected: Banavie, Balloch, Ladybank and
+    # Cardenden are not cities, and Cardenden is a town. Tulloch is in the
+    # London list for no defensible reason and is now a village. Largs sits
+    # within ten people of the town/small-town boundary and was left as the
+    # Scottish "town" it is.
+    "ABD": "city", "BHC": "village", "BNV": "village", "CDD": "town",
+    "DEE": "city", "EDB": "city", "GLC": "city", "HGY": "village",
+    "INV": "city", "LDY": "village", "LAR": "town", "QGS": "city",
+    "SGL": "city",
+    # Wales outside the England-and-Wales BUA workbook's usual settlement names.
+    # Penrhwceiber was filed as a city; the code is right and the class was not,
+    # so it is the village the feed says it is. Swansea was here too, and is
+    # gone: the workbook covers Wales and names it.
+    "PER": "village",
     # Northern Ireland. Newry is the large town this group was missing: the code
     # was written as NIR, which names no station, and the feed's own code for
     # Newry is NWY. Three more Welsh and island codes (NPT, BFL, BQU) named no
     # station and no settlement could be recovered for them, so they were
     # dropped rather than left to classify a future feed's station from a guess.
-    "BNV": "city", "BHC": "city", "LBN": "town", "BNG": "town", "LAR": "town",
-    "NWY": "town", "PTN": "town", "LDY": "city", "BCH": "town",
-    "BHD": "town", "WRE": "town",
-    # England. A reviewed list, used only where the ONS built-up-area workbook
-    # has no row for the station, so a major city is not filed as "other".
-    "NCL": "city", "NCZ": "city", "NCX": "city", "BMG": "city", "BMH": "city",
-    "BML": "city", "BCU": "city", "BHM": "city", "SOL": "city", "LEI": "city",
-    "TRU": "city", "BRI": "city", "EXC": "city", "EXT": "city", "SOU": "city",
-    "STP": "city", "HGY": "city", "YRK": "town", "WKF": "town", "HUL": "town",
+    "LBN": "town", "NWY": "town", "PTN": "town",
+    # English villages outside the workbook. These were sitting in the
+    # Northern Ireland and Scotland groups above, which is how Birchington
+    # acquired a "town" class it is not: a group is a claim about where an
+    # entry comes from, and a wrong one hides a wrong class. Wrenbury and
+    # Britwhir are named in the workbook as Wrenbury-cum-Frith and Britwhir,
+    # which the name lookup cannot see; the reviewed entry is what applies.
+    "BCH": "village", "BHD": "village", "WRE": "village",
+    # England, outside the workbook. Cooksbridge and Chathill were in the
+    # London list and are hamlets in East Sussex and Northumberland, so they
+    # are villages here; the London Underground, DLR and Overground codes stay
+    # in the London list, where a station inside Greater London legitimately
+    # has no ONS row to match.
+    "CBR": "village", "CHT": "village", "TUL": "village",
+    # English cities. A reviewed list, used only where the ONS built-up-area
+    # workbook has no row for the station, so a major city is not filed as
+    # "other". Bromborough, Bramhall, Brockenhurst, Solihull, Leicester,
+    # Bournemouth, Swansea, Truro, York, Berkhamsted, Lostock Gralam, Newport
+    # and Bangor were removed because the workbook *does* name them all.
+    "NCL": "city", "NCZ": "city", "NCX": "city", "BHM": "city",
+    "BRI": "city", "EXC": "city", "EXT": "city", "SOU": "city", "STP": "city",
+    "HUL": "city", "MAN": "city",
+    # A station inside a conurbation takes the class of the settlement it
+    # belongs to, which is the same rule the London list uses. Barming is
+    # three miles from Maidstone, a town, and Wakefield Westgate is in
+    # Wakefield, a city: so Barming is the town and Wakefield the city. Both
+    # were the other way round, and Barming was filed as a city it is nowhere
+    # near. The workbook names Wakefield and puts it in a city band, so the
+    # entry agrees with the source rather than contradicting it.
+    "BMG": "town", "WKF": "city",
 }
 LOCATION_FALLBACK_SOURCE = (
     "ONS 2021 geography coverage with reviewed London, Scottish, Welsh, "
@@ -133,25 +177,35 @@ LOCATION_BAND_TYPES = {
 # lives beside the other reviewed lists and is only applied to stations the
 # feed contains.
 REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
-    # Grantham, Sheffield, Rotherham, Hyde and the Yorkshire settlements
+    # Grantham, Sheffield, Rotherham, Hyde and the Yorkshire settlements.
+    # Rotherham Central was filed as a city because it sat in this group
+    # beside Sheffield; Rotherham is a town of about 62,000 and the workbook
+    # puts it in a medium band, so the entry now says what the source says.
     "DOR": "town", "HOP": "village", "DAN": "town", "MHS": "town",
-    "RMC": "city", "CLN": "village", "EDL": "village", "KIV": "village",
+    "RMC": "town", "CLN": "village", "EDL": "village", "KIV": "village",
     "SWN": "town", "BTD": "village", "BYK": "village", "AWK": "village",
     "NMC": "small_town", "MRP": "village", "SRN": "village", "BDY": "village",
     "BNT": "village", "HYC": "town", "HYT": "town", "CGW": "village",
-    "CYB": "village", "HPE": "village", "BCJ": "village",
+    "CYB": "village", "HPE": "village",
+    # Fernhill was filed as a city in the Cardiff group, and it is a village in
+    # the Scottish Borders. Burscough Junction's settlement is in the workbook
+    # as a small built-up area, so the entry says so rather than understating
+    # it as a village.
+    "FER": "village", "BCJ": "small_town",
     # Attenborough is a village; the same page also earns the nature facet.
     "ATB": "village",
     # Settlements the workbook misses because the feed's station name carries a
-    # qualifier it omits ("Berwick on Tweed", "Newark Northgate"), or a name it
-    # does not hold at all. Each is the settlement the station is named for.
+    # qualifier it omits ("Berwick on Tweed", "Newark Northgate", "Newton
+    # le Will" for Newton-le-Willows), or a name it does not hold at all. Each
+    # is the settlement the station is named for, and the class is the one the
+    # workbook would give it: Newton-le-Willows is a town, not a village.
     "ALM": "village", "ARB": "town", "BDQ": "city", "BEE": "town",
     "BUH": "village", "BWK": "town", "CBG": "city", "CLM": "village",
     "DEE": "city", "DUN": "town", "ELO": "village", "FKG": "small_town",
     "GLE": "village", "HBB": "village", "HRS": "town", "HVN": "village",
     "HYM": "village", "INK": "village", "KDY": "town", "KIN": "village",
     "KTL": "village", "LAG": "village", "LEU": "village", "LGM": "small_town",
-    "LJL": "city", "LPY": "city", "MTS": "town", "NLW": "village",
+    "LJL": "city", "LPY": "city", "MTS": "town", "NLW": "town",
     "NNG": "town", "PIT": "village", "PTH": "city", "RAU": "village",
     "RDF": "village", "SHY": "town", "SPO": "village", "STG": "city",
     "STN": "town", "TPC": "village", "WFL": "village", "WWL": "village",
@@ -159,7 +213,7 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     # park-and-ride platforms named after the village they serve
     "EMD": "village", "PEA": "village", "PPR": "town",
     # Further settlements the workbook does not name, checked against the feed
-    "BKM": "town", "BLW": "town", "DVP": "town", "GBL": "town", "LTG": "village",
+    "BLW": "town", "DVP": "town", "GBL": "town",
     "MDL": "village", "MRD": "village", "SAF": "village", "SGB": "town",
     # Audit A2: the unsourced destinations ranked by how many origins reach
     # them, reviewed one entry at a time under the same rule as everything
@@ -189,7 +243,7 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "CYS": "city", "LLN": "city", "LLS": "city", "NNP": "city",
     "RHI": "city", "LVT": "city", "WHT": "city", "FRW": "city",
     "DCT": "city", "COY": "city", "TGS": "city", "RDR": "city",
-    "HHL": "city", "WNG": "city", "FER": "city", "CDF": "city",
+    "HHL": "city", "WNG": "city", "CDF": "city",
     "CDQ": "city", "CDB": "city",
     # Manchester, Liverpool, Newport and the West Midlands conurbation.
     "MCO": "city", "EDY": "city", "LIV": "city", "NWP": "city",
@@ -202,12 +256,14 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "COA": "town", "CBS": "town", "BAI": "town", "KWD": "town",
     "AIR": "town", "DRU": "town", "DMR": "town", "SIN": "town",
     "WRX": "town", "CWM": "town",
-    # Small towns: Maesteg (as MST), Ebbw Vale, Risca, Pontypool,
+    # Small towns: Maesteg (as MST), Ebbw Vale, Risca,
     # Llandrindod, Galashiels, Linlithgow, Abergele, Larbert, Shotts,
     # Armadale, Blantyre, Dinas Powys, Cobham, Claygate, Earlstown,
-    # Milngavie, Bearsden, Westerton, Stepps and Hengoed.
+    # Milngavie, Bearsden, Westerton, Stepps and Hengoed. Pontypool was
+    # here too and is a town: the workbook puts it in a medium band, and the
+    # feed's own name for the station is Pontypool and New Inn.
     "MEW": "small_town", "EBB": "small_town", "EBV": "small_town",
-    "RCA": "small_town", "PPL": "small_town", "LLO": "small_town",
+    "RCA": "small_town", "LLO": "small_town", "PPL": "town",
     "GAL": "small_town", "LIN": "small_town", "AGL": "small_town",
     "LBT": "small_town", "SHS": "small_town", "ARM": "small_town",
     "BLT": "small_town", "DNS": "small_town", "CSD": "small_town",
@@ -240,7 +296,7 @@ AIRPORT_SETTLEMENT_CLASSES: dict[str, str] = {
     "GGT": "city", "GTW": "city", "HAF": "city", "HLL": "city", "HWA": "city",
     "HWE": "city",    "HWV": "city", "HWX": "city", "HXX": "city", "IVA": "city",
     "LHR": "city", "LJL": "city", "LPD": "city", "LTN": "city", "LUA": "city",
-    "MIA": "city", "MNA": "city", "PRA": "town", "RHA": "city", "SIA": "city", "SOA": "city",
+    "MIA": "city", "MNA": "city", "PRA": "town", "RHA": "city", "SIA": "town", "SOA": "city",
     "SSD": "village", "TEA": "village", "XCF": "city", "XFI": "village",
     "XPB": "city", "XQB": "village", "XTH": "village", "ZHJ": "city",
 }
@@ -520,7 +576,16 @@ DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
 SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACET_SOURCES)
 # Bumped when the primary classes change shape, so a cache written before the
 # change is recognised rather than trusted.
-LOCATION_CACHE_SCHEMA = 3
+# Bumped to 4 when the reviewed settlement lists were corrected, and to 5 when a
+# second review corrected five more of them: Barming, Wakefield Westgate,
+# Rotherham Central, Newton-le-Willows and Southend Airport. The cache holds the
+# *final* classification, fallbacks included, and a reload only applies a
+# fallback where the loaded value is missing or "other" -- so a corrected
+# fallback could not reach any machine holding a cache written before the
+# correction, and the wrong class would have kept being served from it. A
+# schema bump is the existing mechanism for exactly this: the old primary
+# classes are discarded and re-derived, and the facets are kept.
+LOCATION_CACHE_SCHEMA = 5
 DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOURCES}
 # Reader id -> the FaresDb method that returns normalised settlement names for
 # it. Registering the reader here keeps a new facet to a registry entry plus a
@@ -941,6 +1006,15 @@ class FaresDb:
         # every Fare object makes the local app spend most of its time building
         # prices it will never query. This is None for the normal/full database.
         self._focus_origin_nlcs: set[str] | None = None
+        # Set when a station-classification cache was loaded under an older
+        # schema and its primary classes were dropped. The cache's own source
+        # label then describes classes this build does not have, so the
+        # classification pass must not treat the workbook as already applied.
+        self._location_classes_discarded = False
+        # The stations the ONS workbook itself named, kept so the reviewed
+        # fallbacks can be checked against the rule they exist to serve: each
+        # one must be a station no source could name.
+        self.ons_classified_crs: set[str] = set()
         # Focus caches are named by the feed and origin, but keep the identity
         # inside the object too so a hand-reused path cannot silently return a
         # different origin's fares.
@@ -1194,6 +1268,7 @@ class FaresDb:
             if candidate in seen or not candidate.is_file():
                 continue
             seen.add(candidate)
+            discarded_before = self._location_classes_discarded
             try:
                 if candidate.suffix.lower() == ".json":
                     data = json.loads(candidate.read_text(encoding="utf-8"))
@@ -1202,6 +1277,19 @@ class FaresDb:
                     self._load_location_types_xml(candidate)
             except (OSError, ValueError, ET.ParseError) as error:
                 self.report.skip_file(f"{candidate.name}: station classification lookup unreadable: {error}")
+            if self._location_classes_discarded and not discarded_before:
+                # The cache's own source label described the classes just
+                # dropped, and the loader re-reads it from the same data, so
+                # clearing it in the loader does not survive. Clear it here,
+                # before the fallbacks label the build honestly, so the early
+                # return below cannot mistake a discarded cache for a workbook
+                # that has already been applied.
+                #
+                # Only for the candidate that discarded: the flag is sticky, and
+                # clearing on every later candidate too threw away the label of
+                # a source that had just classified the feed properly, leaving
+                # the build claiming no source at all.
+                self.location_type_source = ""
             self._apply_major_station_fallbacks()
 
         # A reviewed facet needs no download, so it is applied whether the
@@ -1374,12 +1462,29 @@ class FaresDb:
             # that also hid it among the archive-inside-an-archive notes.
             # --require-live-reviewed-codes turns it into a refusal.
             self.report.reviewed_codes_absent = absent
+        # The other way a reviewed entry goes stale: the code names a real
+        # station, so nothing about it looks wrong, but the workbook already
+        # names that station, so the entry is a fallback for a station nothing
+        # was missing. It applies to nothing today and would apply the day the
+        # name match missed -- Knighton as a city, Windermere as a city, York
+        # as a town. The rule a fallback exists to serve is that it covers a
+        # station no source could name, so it is checked against the workbook
+        # rather than left to a reader to notice.
+        redundant = sorted(
+            crs
+            for crs in set(LONDON_STATION_CRS)
+            | set(MAJOR_UK_STATION_FALLBACKS)
+            | set(REVIEWED_SETTLEMENT_FALLBACKS)
+            if crs in self.ons_classified_crs
+        )
+        if redundant and not self.report.reviewed_codes_redundant:
+            self.report.reviewed_codes_redundant = redundant
 
     def _load_location_types_json(self, data: object) -> None:
         # A cache written under an older schema still holds valid facets, but
-        # its primary classes were collapsed into three values and would call
-        # every village and small town "other" forever. Drop those records and
-        # say so; keeping the facets costs nothing because they are additive.
+        # its primary classes were written by a different set of rules and would
+        # be served forever. Drop those records and say so; keeping the facets
+        # costs nothing because they are additive.
         if isinstance(data, dict) and isinstance(data.get("schema"), int):
             if data["schema"] < LOCATION_CACHE_SCHEMA and isinstance(data.get("records"), dict):
                 self.report.skip_file(
@@ -1395,6 +1500,16 @@ class FaresDb:
                         for crs, value in data["records"].items()
                     },
                 }
+                # The source label described the classes just discarded. Left
+                # standing it would tell the pass above that the workbook had
+                # already been applied, so the workbook would not be read and
+                # every station the cache had classified would fall through to
+                # the reviewed fallbacks: on the 24 September 2026 download,
+                # 3,119 of 3,436 stations lost their class that way. The pass
+                # clears the label in response to this flag, because the loader
+                # reads the label back out of the same discarded data.
+                self._location_classes_discarded = True
+                self.location_type_source = ""
         if isinstance(data, dict):
             top_level_facets = data.get("facets")
             if isinstance(top_level_facets, dict):
@@ -1584,6 +1699,11 @@ class FaresDb:
                 area = areas.get(candidate)
                 if area:
                     self.location_types_by_crs[crs] = area["type"]
+                    # Which stations the workbook names, kept because it is the
+                    # only way to tell a reviewed *fallback* from a reviewed
+                    # entry that can never apply: a fallback exists for the
+                    # stations no source could name.
+                    self.ons_classified_crs.add(crs)
                     break
         self._apply_major_station_fallbacks()
         if not self.location_type_source:
@@ -1715,10 +1835,20 @@ class FaresDb:
 
     def _write_location_cache(self, path: Path) -> None:
         cache = {
+            # The schema number is the constant, not a second copy of it: when
+            # it was written here as a literal, the reader moved to 4 and the
+            # writer kept saying 3, so every build wrote a cache whose classes
+            # the next build was required to discard and re-derive from the
+            # workbook. The cache was a cache that never once did its job.
+            #
             # 3: the primary classes split into city/town/small_town/village,
             # so a cache written under 2 would call every village and small
             # town "other" forever.
-            "schema": 3,
+            # 4: the reviewed settlement classes were corrected against the
+            # feed's own station names, so a cache written under 3 holds
+            # classes the current lists would not produce and is discarded
+            # rather than served.
+            "schema": LOCATION_CACHE_SCHEMA,
             "source": LOCATION_TYPE_SOURCE,
             "sources": {
                 "primary": {
