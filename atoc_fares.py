@@ -586,6 +586,31 @@ SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACE
 # schema bump is the existing mechanism for exactly this: the old primary
 # classes are discarded and re-derived, and the facets are kept.
 LOCATION_CACHE_SCHEMA = 5
+# The two file names the classification pass may read from beside a feed, and
+# the only ones it trusts. A build writes the bare name beside the feed; a
+# fixture or a download writes the same name behind its own feed's name
+# (``fares.location-types.json``), so those two shapes are accepted and nothing
+# else is. A looser ``*location*types*.json`` matched any name that spelled
+# those words in order -- a backup, a staging probe, a copy left behind by
+# hand -- and loaded it as a source.
+LOCATION_TYPES_FILE = "location-types.json"
+DESTINATION_FACETS_FILE = "destination-facets.json"
+
+
+def classification_files(directory: Path) -> list[Path]:
+    """List the classification files this project may have written in a directory.
+
+    The name is the contract: the bare name, or the bare name behind a feed's
+    own (``fares.location-types.json``). Any other prefix is a name this project
+    never writes, whatever it looks like.
+    """
+    return sorted(
+        path
+        for name in (LOCATION_TYPES_FILE, DESTINATION_FACETS_FILE)
+        for pattern in (name, f"*.{name}")
+        for path in directory.glob(pattern)
+        if path.is_file()
+    )
 DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOURCES}
 # Reader id -> the FaresDb method that returns normalised settlement names for
 # it. Registering the reader here keeps a new facet to a registry entry plus a
@@ -979,7 +1004,12 @@ class FaresDb:
         # can populate it from the ONS Census built-up-area source.
         self.location_types_by_crs: dict[str, str] = {}
         self.location_facets_by_crs: dict[str, set[str]] = {}
-        self.location_type_source: str | None = None
+        # Every source whose classes this database carries, in load order. One
+        # slot made the provenance line the last writer's: a cache beside the
+        # feed described classes the ONS workbook had supplied, and the reviewed
+        # London, Scottish, Welsh and Northern Irish fallbacks were published as
+        # the workbook's own work. Read through the property below.
+        self.location_type_sources: list[str] = []
         # One station code can hold several location codes, and a real feed does
         # this for most towns. Flows are keyed by location code, so a query has
         # to consider all of them or it misses fares that are right there.
@@ -1006,11 +1036,6 @@ class FaresDb:
         # every Fare object makes the local app spend most of its time building
         # prices it will never query. This is None for the normal/full database.
         self._focus_origin_nlcs: set[str] | None = None
-        # Set when a station-classification cache was loaded under an older
-        # schema and its primary classes were dropped. The cache's own source
-        # label then describes classes this build does not have, so the
-        # classification pass must not treat the workbook as already applied.
-        self._location_classes_discarded = False
         # The stations the ONS workbook itself named, kept so the reviewed
         # fallbacks can be checked against the rule they exist to serve: each
         # one must be a station no source could name.
@@ -1025,6 +1050,47 @@ class FaresDb:
         # (audit B1): every page built through the indexes answers with the
         # same national numbers the full load would have given.
         self.feed_stats: dict[str, int] | None = None
+
+    @property
+    def location_type_source(self) -> str | None:
+        """Name every source whose classes this database carries, in load order.
+
+        A source is recorded when it classified part of this feed, and the page
+        joins them: with a cache beside the feed, the reviewed fallbacks are a
+        source in their own right rather than the workbook's unwritten work.
+        """
+        recorded = getattr(self, "location_type_sources", ())
+        if recorded:
+            # The reviewed fallback label is the floor under the sourced classes,
+            # so it is named last: "the workbook, plus the reviewed fallbacks for
+            # the areas it does not cover" is how the coverage reads. The stable
+            # sort keeps every other label in the order it was loaded.
+            return " + ".join(
+                sorted(recorded, key=lambda label: label == LOCATION_FALLBACK_SOURCE)
+            )
+        # A database unpickled from a fare-index cache written before the labels
+        # were accumulated keeps its one label in the instance dictionary, where
+        # this property shadows it. Read that back rather than report no source
+        # for classes that have one.
+        return str(self.__dict__.get("location_type_source") or "") or None
+
+    def _record_location_source(self, label: object) -> None:
+        """Note a source that classified part of this feed, keeping every one."""
+        text = str(label or "").strip()
+        if text and text not in self.location_type_sources:
+            self.location_type_sources.append(text)
+
+    def _has_sourced_classes(self) -> bool:
+        """Say whether anything but the reviewed lists classified this feed.
+
+        The reviewed fallbacks are the floor under the real sources, not one of
+        them: a build whose only classes are theirs still has to read the
+        workbook. The answer is read through the same accessor the page reads,
+        so a database unpickled from an index written before the labels were
+        accumulated answers it too, instead of dying on a missing attribute.
+        """
+        recorded = self.location_type_source
+        return bool(recorded) and recorded != LOCATION_FALLBACK_SOURCE
 
     # -- loading ---------------------------------------------------------
 
@@ -1056,7 +1122,10 @@ class FaresDb:
         common.locations_by_crs = self.locations_by_crs
         common.location_types_by_crs = self.location_types_by_crs
         common.location_facets_by_crs = self.location_facets_by_crs
-        common.location_type_source = self.location_type_source
+        # A database unpickled from an index written before the labels were
+        # accumulated has no list; its one label rides on the property instead,
+        # and this copy keeps a later build from dying on the missing attribute.
+        common.location_type_sources = list(getattr(self, "location_type_sources", []))
         common.nlcs_by_crs = self.nlcs_by_crs
         common.ticket_types = self.ticket_types
         common.railcards = self.railcards
@@ -1243,6 +1312,10 @@ class FaresDb:
         merged rather than replaced. Overwriting let a stale cache silently
         drop a facet the checked-in file had, and left the answer depending on
         the order the directory happened to be listed in.
+
+        The classification files beside a feed are the two this project writes,
+        matched by their exact names. A name that merely mentions locations and
+        types is not a source, however plausible it looks sitting beside a feed.
         """
         root = Path(path)
         candidates: list[Path] = []
@@ -1253,22 +1326,19 @@ class FaresDb:
             candidates.extend(root.glob("*.xml"))
             candidates.extend(root.glob("*.json"))
             candidates.extend(root.parent.glob("FareLocationsRefData*.xml"))
-            candidates.extend(root.parent.glob("*location*types*.json"))
-            candidates.extend(root.parent.glob("*destination*facets*.json"))
+            candidates.extend(classification_files(root.parent))
         elif root.suffix.lower() == ".zip":
             # The checked-in download lives at feeds/fares/dtd-fares.zip while
             # its reference files live one level up in feeds/. Accept both that
             # layout and feeds/dtd-fares.zip beside its references.
             for base in (root.parent, root.parent.parent):
                 candidates.extend(base.glob("FareLocationsRefData*.xml"))
-                candidates.extend(base.glob("*location*types*.json"))
-                candidates.extend(base.glob("*destination*facets*.json"))
+                candidates.extend(classification_files(base))
         seen: set[Path] = set()
         for candidate in candidates:
             if candidate in seen or not candidate.is_file():
                 continue
             seen.add(candidate)
-            discarded_before = self._location_classes_discarded
             try:
                 if candidate.suffix.lower() == ".json":
                     data = json.loads(candidate.read_text(encoding="utf-8"))
@@ -1277,29 +1347,13 @@ class FaresDb:
                     self._load_location_types_xml(candidate)
             except (OSError, ValueError, ET.ParseError) as error:
                 self.report.skip_file(f"{candidate.name}: station classification lookup unreadable: {error}")
-            if self._location_classes_discarded and not discarded_before:
-                # The cache's own source label described the classes just
-                # dropped, and the loader re-reads it from the same data, so
-                # clearing it in the loader does not survive. Clear it here,
-                # before the fallbacks label the build honestly, so the early
-                # return below cannot mistake a discarded cache for a workbook
-                # that has already been applied.
-                #
-                # Only for the candidate that discarded: the flag is sticky, and
-                # clearing on every later candidate too threw away the label of
-                # a source that had just classified the feed properly, leaving
-                # the build claiming no source at all.
-                self.location_type_source = ""
             self._apply_major_station_fallbacks()
 
         # A reviewed facet needs no download, so it is applied whether the
         # types came from a cache, from ONS, or from a synthetic feed.
         self._apply_reviewed_facets()
 
-        if (
-            self.location_types_by_crs
-            and self.location_type_source != LOCATION_FALLBACK_SOURCE
-        ):
+        if self.location_types_by_crs and self._has_sourced_classes():
             return
 
         lookup_roots = (
@@ -1312,7 +1366,7 @@ class FaresDb:
                 base
                 for base in lookup_roots
                 if base.joinpath("download-manifest.json").is_file()
-                or any(base.glob("*location*types*.json"))
+                or classification_files(base)
             ),
             root.parent,
         )
@@ -1333,7 +1387,7 @@ class FaresDb:
         # One cache write for the whole pass: the facets above have all landed
         # by now, so a per-facet write would publish a partial classification.
         if self.location_types_by_crs:
-            self._write_location_cache(lookup_root / "location-types.json")
+            self._write_location_cache(lookup_root / LOCATION_TYPES_FILE)
         self._apply_major_station_fallbacks()
         self._apply_reviewed_facets()
 
@@ -1412,8 +1466,6 @@ class FaresDb:
                 )
         for crs in matched:
             self._tag_station(crs, facet.key)
-        if self.location_type_source:
-            self.location_type_source = LOCATION_TYPE_SOURCE
 
     def _apply_major_station_fallbacks(self) -> None:
         """Classify major stations outside the ONS workbook's national coverage."""
@@ -1429,16 +1481,18 @@ class FaresDb:
         for crs, kind in REVIEWED_SETTLEMENT_FALLBACKS.items():
             if crs in self.locations_by_crs and self.location_types_by_crs.get(crs) in (None, "other"):
                 self.location_types_by_crs[crs] = kind
-        if (
-            not self.location_type_source
-            and any(
-                crs in self.location_types_by_crs
-                for crs in set(LONDON_STATION_CRS)
+        if any(
+            crs in self.location_types_by_crs
+            for crs in set(LONDON_STATION_CRS)
             | set(MAJOR_UK_STATION_FALLBACKS)
             | set(REVIEWED_SETTLEMENT_FALLBACKS)
-            )
         ):
-            self.location_type_source = LOCATION_FALLBACK_SOURCE
+            # The reviewed lists are a source in their own right, and a build
+            # that used them says so even when the workbook classified most of
+            # the country: on the real feed the London, Scottish, Welsh and
+            # Northern Irish classes are theirs, and the page used to publish
+            # them as the workbook's own work.
+            self._record_location_source(LOCATION_FALLBACK_SOURCE)
         # A reviewed code the feed does not carry is a dead tail on the list.
         # Every entry here is intersected before it is applied, so a stale code
         # costs nothing at runtime; silence is what lets the list grow one
@@ -1484,7 +1538,10 @@ class FaresDb:
         # A cache written under an older schema still holds valid facets, but
         # its primary classes were written by a different set of rules and would
         # be served forever. Drop those records and say so; keeping the facets
-        # costs nothing because they are additive.
+        # costs nothing because they are additive. A file whose classes were
+        # dropped speaks for no provenance either: its facets are still true,
+        # its labels are not.
+        discarded = False
         if isinstance(data, dict) and isinstance(data.get("schema"), int):
             if data["schema"] < LOCATION_CACHE_SCHEMA and isinstance(data.get("records"), dict):
                 self.report.skip_file(
@@ -1500,35 +1557,35 @@ class FaresDb:
                         for crs, value in data["records"].items()
                     },
                 }
-                # The source label described the classes just discarded. Left
-                # standing it would tell the pass above that the workbook had
-                # already been applied, so the workbook would not be read and
-                # every station the cache had classified would fall through to
-                # the reviewed fallbacks: on the 24 September 2026 download,
-                # 3,119 of 3,436 stations lost their class that way. The pass
-                # clears the label in response to this flag, because the loader
-                # reads the label back out of the same discarded data.
-                self._location_classes_discarded = True
-                self.location_type_source = ""
+                # The file's own label described the classes just dropped, so
+                # the label is dropped with them. Recording it would publish a
+                # provenance for classes this build does not have, and -- while
+                # the label was a single slot the pass cleared itself -- it also
+                # told the pass above that the workbook had already been
+                # applied, so the workbook was not read and every station the
+                # cache had classified fell through to the reviewed fallbacks:
+                # on the 24 September 2026 download, 3,119 of 3,436 stations
+                # lost their class that way.
+                discarded = True
         if isinstance(data, dict):
             top_level_facets = data.get("facets")
             if isinstance(top_level_facets, dict):
-                if self.location_types_by_crs:
-                    self.location_type_source = LOCATION_TYPE_SOURCE
                 for crs, value in top_level_facets.items():
                     self._merge_location_facets(crs, value)
             nested = data.get("records")
             if isinstance(nested, dict):
-                self.location_type_source = str(
-                    data.get("source") or data.get("sourceName") or ""
-                ) or self.location_type_source
-                has_embedded_facets = any(
-                    isinstance(value, dict)
-                    and self._normalise_location_facets(value.get("facets", ()))
-                    for value in nested.values()
-                )
-                if self.location_facets_by_crs and not has_embedded_facets:
-                    self.location_type_source = LOCATION_TYPE_SOURCE
+                if not discarded:
+                    # A cache this build wrote names every source its classes
+                    # came from; a file from elsewhere names the one it claims,
+                    # and a file that names none records none. The list is read
+                    # rather than the joined string, so a label that contains
+                    # the joiner cannot be split back wrongly.
+                    recorded = data.get("provenance")
+                    if isinstance(recorded, (list, tuple)) and recorded:
+                        for label in recorded:
+                            self._record_location_source(label)
+                    else:
+                        self._record_location_source(data.get("source") or data.get("sourceName"))
                 for crs, value in nested.items():
                     code = str(crs).strip().upper()
                     raw_facets: object = ()
@@ -1706,8 +1763,11 @@ class FaresDb:
                     self.ons_classified_crs.add(crs)
                     break
         self._apply_major_station_fallbacks()
-        if not self.location_type_source:
-            self.location_type_source = LOCATION_TYPE_SOURCE
+        if self.ons_classified_crs:
+            # The workbook classified at least one station of this feed, so it
+            # is named as a source. A workbook that matched nothing is not: its
+            # label would describe classes it never supplied.
+            self._record_location_source(LOCATION_TYPE_SOURCE)
 
     def _read_ons_coastal_areas(self, data: bytes) -> set[str]:
         """Read the 568 ONS coastal BUA names from table 1d."""
@@ -1849,7 +1909,11 @@ class FaresDb:
             # classes the current lists would not produce and is discarded
             # rather than served.
             "schema": LOCATION_CACHE_SCHEMA,
-            "source": LOCATION_TYPE_SOURCE,
+            # Every source the classes came from, in the order they were read,
+            # and the joined form beside it for a reader from before the list
+            # existed. Both are read back through the loader's own recorder.
+            "source": self.location_type_source or "",
+            "provenance": list(self.location_type_sources),
             "sources": {
                 "primary": {
                     "name": "Office for National Statistics, Census 2021 built-up-area size bands",
