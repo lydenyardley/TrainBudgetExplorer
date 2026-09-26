@@ -411,6 +411,33 @@ function stationInFeedMessage(station) {
   return station.name + " (" + station.crs + ") is in the feed, but this origin has no qualifying " +
     "return or single fare flow to it in this download.";
 }
+// A chip is offered when a destination in the list the reader is looking at
+// carries it. The build offers one from the union of the three ticket modes,
+// because it cannot know which a reader will pick, and a chip that can only
+// ever return nothing reads as a broken control: on the real Grantham page every
+// heritage destination was an outbound single, so return mode offered a
+// heritage chip that filtered to no rows at all. So the chips are narrowed to
+// the active list, and a chip that disappears takes its selection with it --
+// a hidden chip left checked keeps filtering with nothing to show for it.
+function syncDestinationTypeChips() {
+  const offered = new Set();
+  for (const destination of activeDestinations()) {
+    for (const type of destination.destinationTypes || [destination.destinationType || "other"]) {
+      offered.add(type);
+    }
+  }
+  const all = destinationTypeInputs.find((input) => input.value === "all");
+  for (const input of destinationTypeInputs) {
+    if (input.value === "all") continue;
+    const present = offered.has(input.value);
+    const chip = input.closest("label");
+    if (chip) chip.hidden = !present;
+    if (!present && input.checked) {
+      input.checked = false;
+      if (all) all.checked = true;
+    }
+  }
+}
 
 function render() {
   // An unpriced page has no budget conversation: provenance() has already
@@ -418,6 +445,9 @@ function render() {
   // ("Nothing inside this budget") would contradict the page's own first
   // sentence. So it does nothing at all.
   const available = activeDestinations();
+  // Before the filter is read, not after: a chip the active list cannot support
+  // must not be part of what the filter is asked to match.
+  syncDestinationTypeChips();
   const ceiling = budgetCeiling();
   budget.max = String(ceiling);
   budgetNumber.max = String(ceiling);

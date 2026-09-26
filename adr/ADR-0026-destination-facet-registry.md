@@ -72,8 +72,16 @@ Government's islands layer carries polygons with blank names.
    dropped, because a cache that predates the band split would otherwise keep
    calling every village "other" for as long as anyone kept the file. Its
    facets are kept, because those are still true.
-7. A page offers only the types its own destinations carry. A chip that can only
-   ever return nothing reads as a broken control.
+7. A page offers only the types the list on screen carries, narrowed per ticket
+   mode. A chip that can only ever return nothing reads as a broken control, and
+   on a real feed that is not hypothetical: from King's Cross every heritage
+   destination is an outbound single, so the returns page offered a heritage
+   chip that could not return a row, and the same is true in the other
+   direction on other stations. The build cannot decide this -- it offers the
+   union of the three modes, because it does not know which one a reader will
+   pick -- so the page narrows the chips again at render time, from the list it
+   is about to filter, and unticks a chip that goes away so the filter is never
+   matching a selection the reader can no longer see.
 8. `tools/regenerate_destination_facets.py` rebuilds the checked-in reference
    data from the named sources, and can carry a facet forward
    (`--keep-unavailable`) when a source is temporarily unreachable, printing
