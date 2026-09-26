@@ -116,8 +116,15 @@ class DamagedFaresFeedTest(unittest.TestCase):
     def test_an_archive_inside_the_archive_is_named_not_decoded(self) -> None:
         db = self.load("nested_archive")
         self.assertEqual(fare_shape(db), self.clean_shape)
-        self.assertEqual(len(db.report.skipped_files), 1)
-        self.assertIn("extra.zip", db.report.skipped_files[0])
+        # Exactly one file went unopened. The loader also notes the reviewed
+        # fallback codes this six-station feed does not carry; that is a
+        # maintenance note about the code, not a file it declined to open, so
+        # it is filtered out rather than allowed to absorb the count.
+        unopened = [
+            note for note in db.report.skipped_files if "reviewed fallback codes" not in note
+        ]
+        self.assertEqual(len(unopened), 1, db.report.skipped_files)
+        self.assertIn("extra.zip", unopened[0])
 
     def test_a_path_that_does_not_exist_fails_loudly(self) -> None:
         # The policy is report or fail, never a quiet empty feed, because an

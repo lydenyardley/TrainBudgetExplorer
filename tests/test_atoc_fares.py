@@ -22,6 +22,7 @@ from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
     LOCATION_BAND_TYPES,
     LOCATION_CACHE_SCHEMA,
+    LONDON_STATION_CRS,
     SUPPORTED_DESTINATION_FACETS,
     FLOW_F,
     FLOW_T,
@@ -29,8 +30,38 @@ from atoc_fares import (
     FaresDb,
     Location,
     TicketType,
+    is_pseudo_station,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
+
+
+class PseudoStationTest(unittest.TestCase):
+    """Zone boundaries and named coach stops are not places (audit A6)."""
+
+    def test_zone_and_coach_names_are_pseudo(self) -> None:
+        for name in (
+            "BOUNDARY ZONE 2",
+            "BOUNDARY ZONE 4",
+            "BOUNDARY ZONE 6",
+            "BRIGHTON UNIZONE",
+            "WORTHING UNIZONE",
+            "METRO T&W ZONE A",
+            "KINGS LYNN COACH",
+            "DEREHAM (COACH)",
+        ):
+            self.assertTrue(is_pseudo_station(name), name)
+
+    def test_a_real_station_is_not_pseudo(self) -> None:
+        for name in (
+            "GRANTHAM",
+            "EAST KILBRIDE",
+            "WORCESTER PARK",
+            "FINSBURY PARK",
+            "BATTERSEA PARK",
+            "HACKNEY DOWNS",
+            "ST HELENS CENTRAL",
+        ):
+            self.assertFalse(is_pseudo_station(name), name)
 
 
 class FaresParserTest(unittest.TestCase):
@@ -210,6 +241,23 @@ class FaresParserTest(unittest.TestCase):
         # The facets in an older file are still good, and they are additive.
         self.assertEqual(db.location_facets_by_crs["ANC"], {"seaside"})
         self.assertTrue(any("schema" in note for note in db.report.skipped_files))
+
+    def test_a_reviewed_code_the_feed_does_not_carry_is_named(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "GRN": Location("1", "GRN", "GRINDELFORD", ""),
+            "GRA": Location("2", "GRA", "GRANTHAM", ""),
+        }
+        db._apply_major_station_fallbacks()
+        note = next(
+            (n for n in db.report.skipped_files if "reviewed fallback codes" in n),
+            None,
+        )
+        self.assertIsNotNone(note, f"absent reviewed codes are named, got {db.report.skipped_files!r}")
+        # The lists are still intersected before they are applied, so the note
+        # is the only effect a dead code has.
+        self.assertNotIn("BKF", db.location_types_by_crs)
+        self.assertIn(sorted(LONDON_STATION_CRS)[0], note)
 
     def test_the_heritage_reader_only_uses_current_uk_properties(self) -> None:
         body = (
@@ -401,7 +449,11 @@ class FaresParserTest(unittest.TestCase):
                 [row.crs for row in lincoln.destinations_within("LCN", 2000)],
                 [],
             )
-            self.assertLess(grantham.stats()["fares"], self.db.stats()["fares"])
+            self.assertEqual(
+                grantham.stats(),
+                self.db.stats(),
+                "a restored index reports the whole feed's stats, not its slice",
+            )
 
             # The persisted index is usable without reopening the source feed.
             source_backup = root / "feed-copy"
