@@ -62,6 +62,10 @@ def audit(
         "timetable_files": sorted(timetable.report.files_read),
         "rejected_examples": fares.report.skipped_examples + timetable.report.skipped_examples,
         "unopened_files": fares.report.skipped_files + timetable.report.skipped_files,
+        # A reviewed settlement-fallback code the feed does not carry: a list
+        # going stale, not a file left unread, so it is reported beside the
+        # unopened files rather than inside them.
+        "reviewed_codes_absent": fares.report.reviewed_codes_absent,
         "stations_with_a_fare_and_no_timetable_entry": len(fare_crs - timetable_crs),
         "stations_with_a_train_and_no_fare_entry": len(timetable_crs - fare_crs),
         "sample_fare_only_stations": sorted(fare_crs - timetable_crs)[:SAMPLE_LIMIT],
@@ -185,6 +189,17 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
         print("Files not opened")
         for entry in unopened:
             print(f"  {entry}")
+
+    dead_codes = report["reviewed_codes_absent"]
+    if dead_codes:
+        print(
+            f"Reviewed settlement codes matching no station ({len(dead_codes)}); "
+            "each is a class that will not be applied to anything:"
+        )
+        for crs in dead_codes[:limit]:
+            print(f"  {crs}")
+        if len(dead_codes) > limit:
+            print(f"  ... and {len(dead_codes) - limit} more")
 
     print("Read the rejected count and the unopened files before the totals: a record")
     print("that never loaded is a destination that never appears.")

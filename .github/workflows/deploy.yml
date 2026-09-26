@@ -108,6 +108,7 @@ jobs:
             --origin GRA \
             --out _site/index.html \
             --notices rdg,ogl,accuracy \
+            --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
 
       - name: Test the build
