@@ -176,13 +176,29 @@ jobs:
       - name: Test the page in a real browser
         # The page's claims -- notices, provenance, the picker -- execute in
         # browser JS that the Python suite cannot see (audit C2). Playwright
-        # needs a browser; chromium is the lightest. The suite drives a fare
-        # page -- a station page from the built set, whichever origin exists;
-        # the chooser is a different page and would fail the fare assertions.
+        # needs a browser; chromium is the lightest.
+        #
+        # The page under test is built here, from the synthetic demo feed,
+        # because the suite tests the template rather than a station: it is
+        # written against the payload the page carries, so it holds for any
+        # origin, and a day's fares cannot fail it. It also means the step has
+        # a page on every run. Pointed at _site/index.html it had none when the
+        # feed was unchanged and the site was not rebuilt -- the step below this
+        # one only builds on a change -- so it tested a file that was not there
+        # and failed, or tested a real station page whose fares the suite had
+        # no business asserting against.
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
-          PAGE=_site/index.html
-          npx --yes --package playwright node tests/browser_test.cjs "$PAGE"
+          python make_synthetic_feed.py _demo_feed --unserved-station
+          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
+          # A build that produced no page must fail the run here, with the
+          # reason attached to this step. Otherwise the suite is one skipped
+          # step away from passing having tested nothing at all.
+          if [ ! -s demo.html ]; then
+            echo "::error title=browser test::no page was built at demo.html, so the page in a real browser was not tested"
+            exit 1
+          fi
+          npx --yes --package playwright node tests/browser_test.cjs demo.html
 
       - name: Save the successful feed manifest and build fingerprint
         if: steps.feed_check.outputs.changed == 'true'
