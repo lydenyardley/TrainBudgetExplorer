@@ -28,7 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from atoc_fares import FaresDb  # noqa: E402
+from atoc_fares import FaresDb, is_pseudo_station  # noqa: E402
+from feeds_cli import add_feed_args  # noqa: E402
 
 # The primary class a station keeps when no source names its settlement. The
 # name is the old filter label; the value is what the payload carries.
@@ -39,10 +40,33 @@ UNSOURCED = "other"
 # the output is a report rather than a wall.
 NAMED_LIMIT = 20
 
+# The share audit A2 asked for: this page's destinations with no settlement
+# class, as a percentage. It is reported for the worst origins only, and only
+# when the origin has priced enough destinations for a percentage to mean
+# something: below ten, one unsourced station moves the share by ten points
+# and tiny pages would fill the ranking with noise rather than the gaps worth
+# closing.
+SHARE_MIN_DESTINATIONS = 10
+SHARE_LIMIT = 3
+
 # The sentinel budget used everywhere a build asks "everything this origin can
 # reach". It is repeated here rather than imported so this module does not
 # import the page builder, which imports this module.
 EVERYTHING_PENCE = 1_000_000
+
+# The selector's reasons for dropping a row it cannot name: the destination's
+# NLC has no location record, or its location carries no station code. These
+# rows are a hard ceiling on coverage -- a destination that cannot be named can
+# have no settlement class either, and no reviewed list reaches it (audit A3).
+UNNAMEABLE_REASONS = (
+    "destination_has_no_location_record",
+    "destination_has_no_station_code",
+)
+
+
+def unnameable_from_tally(tally: dict[str, int]) -> int:
+    """How many destination rows the feed could not name at all."""
+    return sum(tally.get(reason, 0) for reason in UNNAMEABLE_REASONS)
 
 
 class UnsourcedReport:
@@ -56,6 +80,19 @@ class UnsourcedReport:
     def __init__(self) -> None:
         self._origins: dict[str, set[str]] = {}
         self._names: dict[str, str] = {}
+        self._origin_totals: dict[str, set[str]] = {}
+        self._origin_unnameable: dict[str, int] = {}
+
+    def _note_total(self, crs: str, origin: str | None) -> None:
+        """Record one destination of ``origin``, sourced or not.
+
+        The denominator of the share is every destination the origin would
+        publish, so it is counted for every row the callers pass, not only the
+        unsourced ones they return.
+        """
+        code = str(crs or "").strip().upper()
+        if code and origin:
+            self._origin_totals.setdefault(origin.strip().upper(), set()).add(code)
 
     def note(self, crs: str, name: str, origin: str | None = None) -> None:
         """Record one unsourced station. A blank code is ignored, not invented."""
@@ -66,23 +103,50 @@ class UnsourcedReport:
         if origin:
             self._origins.setdefault(code, set()).add(origin.strip().upper())
 
+    def note_unnameable(self, origin: str | None, count: int) -> None:
+        """Record destination rows one origin lost to a missing name (audit A3).
+
+        These rows never reach the unsourced set -- they are dropped before a
+        station exists to classify -- so they are counted apart, per origin,
+        beside the unsourced count they cap.
+        """
+        if origin and count:
+            key = origin.strip().upper()
+            self._origin_unnameable[key] = self._origin_unnameable.get(key, 0) + count
+
+    def unnameable_by_origin(self) -> dict[str, int]:
+        """The per-origin counts of destination rows no source could ever name."""
+        return dict(self._origin_unnameable)
+
     def from_payload(self, payload: dict, origin: str | None = None) -> int:
         """Record the unsourced rows in one page's payload; return how many.
 
-        A station unsourced in any ticket mode is unsourced on the page, and the
-        page offers the same filters for all three, so all three are read.
+        A station unsourced in any ticket mode is unsourced on the page, and
+        the page offers the same filters for all three, so all three are read.
+        The destination counts behind the share are the union of the three
+        modes, which is what the page publishes.
         """
         found = 0
         origin_row = payload.get("origin")
         where = origin or (
             origin_row.get("crs") if isinstance(origin_row, dict) else None
         )
+        unnameable = payload.get("unnameableFareCount")
+        if isinstance(unnameable, int):
+            self.note_unnameable(where, unnameable)
         for key in ("destinations", "singleDestinations", "anytimeDestinations"):
             rows = payload.get(key)
             if not isinstance(rows, list):
                 continue
             for row in rows:
-                if isinstance(row, dict) and row.get("destinationType") == UNSOURCED:
+                if not isinstance(row, dict):
+                    continue
+                # A zone or coach pseudo-station is not a place a reader goes,
+                # so it is neither named nor counted in the share (audit A6).
+                if is_pseudo_station(row.get("name", "")):
+                    continue
+                self._note_total(row.get("crs", ""), where)
+                if row.get("destinationType") == UNSOURCED:
                     self.note(row.get("crs", ""), row.get("name", ""), where)
                     found += 1
         return found
@@ -90,28 +154,38 @@ class UnsourcedReport:
     def note_fares_rows(self, fares: FaresDb, rows, origin: str | None = None) -> int:
         """Record the unsourced stations among a query's feed rows.
 
-        The rows come from the same published selector the pages are built from,
-        so the report describes what would be published rather than a broader
-        question.
+        The rows come from the same published selector the pages are built from
+        (``FaresDb.priced_destinations_within``), so the report describes what
+        would be published rather than a broader question.
         """
         found = 0
         for row in rows:
+            if is_pseudo_station(row.station):
+                continue
+            self._note_total(row.crs, origin)
             if fares.destination_type(row.crs) == UNSOURCED:
                 self.note(row.crs, row.station, origin)
                 found += 1
         return found
 
     def from_feed(self, fares: FaresDb, origins, day=None) -> int:
-        """Record the unsourced priced destinations for each origin in the feed."""
+        """Record the unsourced priced destinations for each origin in the feed.
+
+        Zone and coach pseudo-stations are skipped as origins as well: their
+        pages are not written (audit A6), so the reach measured from them
+        describes no reader's journey.
+        """
         found = 0
         for crs in origins:
-            found += self.note_fares_rows(
-                fares,
-                fares.publishable_destinations_within(
-                    crs, EVERYTHING_PENCE, adults=1, day=day
-                ),
-                crs,
+            location = fares.locations_by_crs.get(crs)
+            if location is not None and is_pseudo_station(location.name):
+                continue
+            tally: dict[str, int] = {}
+            rows = fares.priced_destinations_within(
+                crs, EVERYTHING_PENCE, adults=1, day=day, tally=tally
             )
+            self.note_unnameable(crs, unnameable_from_tally(tally))
+            found += self.note_fares_rows(fares, rows, crs)
         return found
 
     def __len__(self) -> int:
@@ -127,49 +201,107 @@ class UnsourcedReport:
             key=lambda item: (-len(self._origins.get(item[0], ())), item[0]),
         )
 
+    def worst_shares(self, limit: int = SHARE_LIMIT) -> list[tuple[str, int, int]]:
+        """The (origin, unsourced, total) shares, highest first.
+
+        Only origins with a gap and enough destinations for the percentage to
+        mean anything are ranked; a 0% share is the report's success state, not
+        a finding. The ranking is what makes the number actionable: one page
+        publishing mostly unclassified stations is a different defect from a
+        single oddity appearing on every page.
+        """
+        unsourced_by_origin: dict[str, int] = {}
+        for origins in self._origins.values():
+            for origin in origins:
+                unsourced_by_origin[origin] = unsourced_by_origin.get(origin, 0) + 1
+        ranked = []
+        for origin, total in self._origin_totals.items():
+            hits = unsourced_by_origin.get(origin, 0)
+            if hits and len(total) >= SHARE_MIN_DESTINATIONS:
+                ranked.append((origin, hits, len(total)))
+        ranked.sort(key=lambda item: (-item[1] / item[2], item[0]))
+        return ranked[:limit]
+
     def message(self) -> str:
-        """A bounded, human-readable summary. Empty when nothing is unsourced."""
-        if not self:
-            return ""
-        rows = self.stations()
-        named = []
-        for code, name in rows[:NAMED_LIMIT]:
-            origins = len(self._origins.get(code, ()))
-            named.append(f"{code} {name}" + (f" (from {origins} origins)" if origins > 1 else ""))
-        if len(rows) > NAMED_LIMIT:
-            named.append(f"... and {len(rows) - NAMED_LIMIT} more")
-        plural = "station has" if len(rows) == 1 else "stations have"
-        return (
-            f"{len(rows)} priced {plural} no settlement class from any source: "
-            + "; ".join(named)
-        )
+        """A bounded, human-readable summary. Empty when there is nothing to say."""
+        parts: list[str] = []
+        if self:
+            rows = self.stations()
+            named = []
+            for code, name in rows[:NAMED_LIMIT]:
+                origins = len(self._origins.get(code, ()))
+                named.append(f"{code} {name}" + (f" (from {origins} origins)" if origins > 1 else ""))
+            if len(rows) > NAMED_LIMIT:
+                named.append(f"... and {len(rows) - NAMED_LIMIT} more")
+            plural = "station has" if len(rows) == 1 else "stations have"
+            summary = (
+                f"{len(rows)} priced {plural} no settlement class from any source: "
+                + "; ".join(named)
+            )
+            shares = self.worst_shares()
+            if shares:
+                summary += ". Worst shares: " + "; ".join(
+                    f"{round(100 * hits / total)}% of {origin}'s {total} destinations"
+                    for origin, hits, total in shares
+                )
+            parts.append(summary)
+        # The feed's own ceiling on coverage, reported whether or not the
+        # classifiable gap is still open. It is a fact about the feed, so a
+        # reviewed pass that closes the list below must not silence the number
+        # that says what is left: the two halves are counted apart precisely so
+        # that one cannot be read as the other (audit A3).
+        unnameable = sum(self._origin_unnameable.values())
+        if unnameable:
+            parts.append(
+                f"A further {unnameable:,} destination rows cannot be named at "
+                "all (no location record or station code), counted per origin"
+            )
+        return ". ".join(parts)
 
     def report(self) -> None:
         """Print the summary to stderr when there is something to say."""
         if message := self.message():
             print(f"warning: {message}", file=sys.stderr)
 
-    def exit_code(self, strict: bool) -> int:
-        """0 to continue, or 2 to refuse the build under ``--fail-on-unsourced``."""
-        if not strict or not self:
-            return 0
-        plural = "" if len(self) == 1 else "s"
-        print(
-            f"error: refusing to publish with {len(self)} unsourced priced "
-            f"destination{plural} (--fail-on-unsourced). Add a reviewed class in "
-            "atoc_fares.REVIEWED_SETTLEMENT_FALLBACKS, or drop the flag to publish anyway.",
-            file=sys.stderr,
-        )
-        return 2
+    def exit_code(self, strict: bool, ceiling: int | None = None) -> int:
+        """0 to continue, or 2 to refuse the build.
+
+        ``strict`` is ``--fail-on-unsourced``: any gap refuses.
+        ``ceiling`` is ``--unsourced-ceiling``: a count above it refuses, so a
+        CI run can hold today's measured number and stop the gap regrowing
+        between deliberate review passes (audit D2). The two are independent, so
+        both are evaluated however they were given: passing both flags must not
+        quietly drop the ceiling.
+        """
+        count = len(self)
+        if ceiling is not None and count > ceiling:
+            print(
+                f"error: {count} unsourced priced destination"
+                f"{'' if count == 1 else 's'} {'exceeds' if count == 1 else 'exceed'} "
+                f"the ceiling of {ceiling} (--unsourced-ceiling). Add a reviewed "
+                "class in atoc_fares.REVIEWED_SETTLEMENT_FALLBACKS to lower "
+                "the count, or raise the ceiling deliberately with a reason.",
+                file=sys.stderr,
+            )
+            return 2
+        if strict and count:
+            plural = "" if count == 1 else "s"
+            print(
+                f"error: refusing to publish with {count} unsourced priced "
+                f"destination{plural} (--fail-on-unsourced). Add a reviewed class in "
+                "atoc_fares.REVIEWED_SETTLEMENT_FALLBACKS, or drop the flag to publish anyway.",
+                file=sys.stderr,
+            )
+            return 2
+        return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--feed",
-        type=Path,
-        default=Path("feeds") / "fares" / "dtd-fares.zip",
-        help="fares .zip or a directory of feed files",
+    add_feed_args(
+        parser,
+        feed_default=Path("feeds") / "fares" / "dtd-fares.zip",
+        fares_only=True,
     )
     parser.add_argument(
         "--origin",
@@ -181,6 +313,15 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-unsourced",
         action="store_true",
         help="exit non-zero when any priced destination is unsourced",
+    )
+    parser.add_argument(
+        "--unsourced-ceiling",
+        type=int,
+        default=None,
+        metavar="N",
+        help="exit non-zero when more than N priced destinations are unsourced; "
+        "the recorded value for the current feed lives in the CI workflow, so "
+        "the count cannot regrow silently between review passes",
     )
     args = parser.parse_args(argv)
 
@@ -200,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     report = UnsourcedReport()
     report.from_feed(fares, origins)
     report.report()
-    return report.exit_code(args.fail_on_unsourced)
+    return report.exit_code(args.fail_on_unsourced, ceiling=args.unsourced_ceiling)
 
 
 if __name__ == "__main__":
