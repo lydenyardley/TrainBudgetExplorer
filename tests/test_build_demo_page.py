@@ -1715,6 +1715,44 @@ class ReviewedCodeGateTest(unittest.TestCase):
             f"a dead reviewed code is not a skipped file: {db.report.skipped_files!r}",
         )
 
+    def test_a_code_the_workbook_already_names_refuses_too(self) -> None:
+        # The other half of the same staleness, and the harder half to notice.
+        # The code resolves, so the absent list is not the one that catches it,
+        # and nothing about the page looks wrong: the entry applies to nothing
+        # at all until a name match misses and then lands its class on a
+        # station the workbook had already classified correctly. BHC is stood in
+        # for a reviewed Welsh entry, because the synthetic feed has no
+        # workbook to read and this gate is about what the build does with what
+        # the loader found.
+        def workbook(self: FaresDb) -> None:
+            self.ons_classified_crs.add("BHC")
+            self._apply_major_station_fallbacks()
+
+        (self.root / "download-manifest.json").write_text("{}", encoding="utf-8")
+        # The synthetic feed ships its own classification cache, and a cache
+        # that classifies the feed ends the pass before the workbook is read
+        # -- so the gate under test would never run with it in place.
+        (self.root / "fares.location-types.json").unlink()
+        out = self.root / "site" / "index.html"
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(FaresDb, "_load_ons_location_types", workbook):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = build_demo_page.main(
+                    ["--feed", str(self.feed), "--out", str(out), "--require-live-reviewed-codes"]
+                )
+        self.assertEqual(code, 2)
+        # The note is where the code is legible: the refusal below it carries
+        # the count, because the synthetic feed's 305 absent codes would
+        # otherwise push BHC out of a truncated list, and a test that found
+        # BHC in the *absent* list would pass without this half ever working.
+        self.assertIn(
+            "name a station the ONS workbook already classifies, so the entry "
+            "applies to nothing: BHC",
+            stdout.getvalue(),
+        )
+        self.assertIn("1 name a station the workbook already classifies", stderr.getvalue())
+        self.assertFalse(out.exists(), "a refused build must write no page")
+
 
 class PseudoStationTest(unittest.TestCase):
     """Zone boundaries are priceable in the feed but are not places (audit A6)."""

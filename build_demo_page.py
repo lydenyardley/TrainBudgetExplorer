@@ -568,7 +568,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--require-live-reviewed-codes",
         action="store_true",
         help="refuse to write pages when a reviewed settlement-fallback code "
-        "names no station in this feed. A dead code costs nothing at runtime, "
+        "names no station in this feed, or names one the ONS workbook already "
+        "classifies. Both are silent at runtime -- a stale code is intersected "
+        "away before it is applied, and a redundant one never applies at all -- "
         "so without this flag a reviewed list can go stale unnoticed",
     )
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
@@ -1358,23 +1360,48 @@ def main(argv: list[str] | None = None) -> int:
     # stale, and it is silent by construction: the code is intersected away
     # before it is applied, so a page looks exactly as it did. The names are
     # printed either way, and the flag is what turns them into a refusal.
-    if fares.report.reviewed_codes_absent:
-        codes = fares.report.reviewed_codes_absent
+    stale_codes = fares.report.reviewed_codes_absent
+    if stale_codes:
         print(
-            f"reviewed codes: {len(codes)} match no station in this feed: "
-            + ", ".join(codes[:12])
-            + (" ..." if len(codes) > 12 else "")
+            f"reviewed codes: {len(stale_codes)} match no station in this feed: "
+            + ", ".join(stale_codes[:12])
+            + (" ..." if len(stale_codes) > 12 else "")
         )
-        if args.require_live_reviewed_codes:
-            print(
-                f"error: refusing to publish: {len(codes)} reviewed settlement "
-                f"fallback code(s) name no station in this feed: {', '.join(codes)}. "
-                "A station was renamed, merged or withdrawn. Correct the code in "
-                "atoc_fares, or drop the entry and add a reviewed class for the "
-                "station that replaced it.",
-                file=sys.stderr,
-            )
-            return 2
+    # The other way the same list goes stale: the code resolves, so nothing
+    # looks wrong, but the workbook already names the station, so the entry is
+    # a fallback for a station nothing was missing.
+    redundant_codes = fares.report.reviewed_codes_redundant
+    if redundant_codes:
+        print(
+            f"reviewed codes: {len(redundant_codes)} name a station the ONS "
+            "workbook already classifies, so the entry applies to nothing: "
+            + ", ".join(redundant_codes[:12])
+            + (" ..." if len(redundant_codes) > 12 else "")
+        )
+    if args.require_live_reviewed_codes and (stale_codes or redundant_codes):
+        # Both lists are truncated the way the notes above truncate them. A
+        # synthetic feed is missing most of the network, so the full list runs
+        # to hundreds of codes and the tail of it is the part a reader cannot
+        # act on anyway; the count beside it is the number to correct.
+        def _named(codes: list[str]) -> str:
+            if not codes:
+                return "none"
+            shown = ", ".join(codes[:12]) + (" ..." if len(codes) > 12 else "")
+            return shown
+
+        print(
+            "error: refusing to publish: "
+            f"{len(stale_codes)} reviewed settlement fallback code(s) name no "
+            f"station in this feed ({_named(stale_codes)}) and "
+            f"{len(redundant_codes)} name a station the workbook already "
+            f"classifies ({_named(redundant_codes)}). A reviewed "
+            "fallback covers a station no source could name: a code that names "
+            "nothing means a station was renamed, merged or withdrawn, and one "
+            "the workbook already names has nothing left to cover. Correct or "
+            "drop them in atoc_fares.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Where the prices came from is read from the feed's metadata.json, not
     # retyped per build; --price-source overrides it. A synthetic build with

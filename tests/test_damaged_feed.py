@@ -116,8 +116,15 @@ class DamagedFaresFeedTest(unittest.TestCase):
     def test_an_archive_inside_the_archive_is_named_not_decoded(self) -> None:
         db = self.load("nested_archive")
         self.assertEqual(fare_shape(db), self.clean_shape)
-        self.assertEqual(len(db.report.skipped_files), 1)
-        self.assertIn("extra.zip", db.report.skipped_files[0])
+        # skipped_files is one channel for every whole-source decision the load
+        # made, so its length is not what this test is about: a classification
+        # cache under an older schema, or a curated name list this synthetic
+        # feed cannot match, lands there too and would change the count for
+        # reasons that have nothing to do with the damage. What matters is that
+        # the archive inside the archive is named, and named once.
+        named = [note for note in db.report.skipped_files if "extra.zip" in note]
+        self.assertEqual(len(named), 1)
+        self.assertIn("not opened", named[0])
 
     def test_a_path_that_does_not_exist_fails_loudly(self) -> None:
         # The policy is report or fail, never a quiet empty feed, because an

@@ -66,6 +66,7 @@ def audit(
         # going stale, not a file left unread, so it is reported beside the
         # unopened files rather than inside them.
         "reviewed_codes_absent": fares.report.reviewed_codes_absent,
+        "reviewed_codes_redundant": fares.report.reviewed_codes_redundant,
         "stations_with_a_fare_and_no_timetable_entry": len(fare_crs - timetable_crs),
         "stations_with_a_train_and_no_fare_entry": len(timetable_crs - fare_crs),
         "sample_fare_only_stations": sorted(fare_crs - timetable_crs)[:SAMPLE_LIMIT],
@@ -200,6 +201,18 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
             print(f"  {crs}")
         if len(dead_codes) > limit:
             print(f"  ... and {len(dead_codes) - limit} more")
+
+    redundant_codes = report["reviewed_codes_redundant"]
+    if redundant_codes:
+        print(
+            f"Reviewed settlement codes the workbook already covers "
+            f"({len(redundant_codes)}); each is a fallback for a station nothing "
+            "was missing, and would apply only if the name match ever missed:"
+        )
+        for crs in redundant_codes[:limit]:
+            print(f"  {crs}")
+        if len(redundant_codes) > limit:
+            print(f"  ... and {len(redundant_codes) - limit} more")
 
     print("Read the rejected count and the unopened files before the totals: a record")
     print("that never loaded is a destination that never appears.")
