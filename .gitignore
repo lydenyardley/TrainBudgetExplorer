@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.coverage
 _demo_feed/
 _bench_feed/
 

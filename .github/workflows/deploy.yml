@@ -82,6 +82,13 @@ jobs:
         if: steps.feed_check.outputs.changed == 'true'
         run: python dtd_audit.py --feed feeds/fares --timetable feeds/timetable
 
+      # Audit D2: hold today's measured unsourced count so the gap cannot
+      # regrow silently between deliberate review passes. The ceiling falls
+      # when a reviewed settlement class lands (update it in the same commit);
+      # raising it needs a reason in that commit.
+      - name: Gate the unsourced-destination count
+        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1575
+
       - name: Build the site from audited fares
         if: steps.feed_check.outputs.changed == 'true'
         env:
@@ -104,9 +111,17 @@ jobs:
             "${BASE_ARGS[@]}"
 
       - name: Test the build
+        # Coverage runs with a floor, not a target (audit C5): unreachable
+        # code and untested branches show up in the printed report, and a
+        # drop below 79% of the product fails the step. A point and a half
+        # of slack over today's 80.6% covers platform variance; the floor
+        # lives here next to the number it holds, and lowering it needs a
+        # reason.
         run: |
-          python -m unittest discover -s tests -p "test_*.py"
-          python -m unittest discover -s tools -p "test_*.py"
+          python -m pip install coverage
+          python -m coverage run -m unittest discover -s tests -p "test_*.py"
+          python -m coverage run --append -m unittest discover -s tools -p "test_*.py"
+          python -m coverage report --fail-under=79 --precision=1
 
       - name: Test the page in a real browser
         # The page's claims -- notices, provenance, the picker -- execute in
