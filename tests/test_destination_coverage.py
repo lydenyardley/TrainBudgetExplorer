@@ -332,6 +332,11 @@ class ExitCodeTest(unittest.TestCase):
 
 
 class MainTest(unittest.TestCase):
+    # Every run names a feed that exists. The default is the licensed download
+    # under feeds/, which is git-ignored, so relying on it would make these
+    # tests pass on a machine that has the feed and fail on a fresh clone.
+    FEED = ["--feed", "."]
+
     def test_an_origin_the_feed_does_not_carry_is_named(self) -> None:
         fares = mock.Mock()
         location = mock.Mock()
@@ -341,7 +346,7 @@ class MainTest(unittest.TestCase):
             db.return_value.load_feed.return_value = fares
             stderr = io.StringIO()
             with redirect_stderr(stderr):
-                code = destination_coverage.main(["--origin", "NOPE"])
+                code = destination_coverage.main([*self.FEED, "--origin", "NOPE"])
         self.assertEqual(code, 2)
         self.assertIn("NOPE is not in this feed", stderr.getvalue())
 
@@ -356,7 +361,7 @@ class MainTest(unittest.TestCase):
             db.return_value.load_feed.return_value = fares
             stderr = io.StringIO()
             with redirect_stderr(stderr):
-                code = destination_coverage.main(["--fail-on-unsourced"])
+                code = destination_coverage.main([*self.FEED, "--fail-on-unsourced"])
         self.assertEqual(code, 0)
         self.assertEqual(stderr.getvalue(), "")
 
@@ -373,7 +378,7 @@ class MainTest(unittest.TestCase):
             db.return_value.load_feed.return_value = fares
             stderr = io.StringIO()
             with redirect_stderr(stderr):
-                code = destination_coverage.main(["--unsourced-ceiling", "0"])
+                code = destination_coverage.main([*self.FEED, "--unsourced-ceiling", "0"])
         self.assertEqual(code, 2)
         self.assertIn("ceiling of 0", stderr.getvalue())
 
