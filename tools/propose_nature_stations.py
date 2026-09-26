@@ -43,6 +43,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from atoc_fares import NATURE_SITE_STATION_CRS  # noqa: E402
+from feeds_cli import add_feed_args  # noqa: E402
 from tools.regenerate_destination_facets import load_stations  # noqa: E402
 
 # The hosts this tool will read without being told otherwise: the network's own
@@ -419,17 +420,16 @@ def read_urls(args) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    add_feed_args(
+        parser,
+        feed_default=Path("feeds") / "fares" / "dtd-fares.zip",
+        fares_only=True,
+    )
     parser.add_argument(
         "--url", action="append", default=[], help="a reserve page to read (repeatable)"
     )
     parser.add_argument(
         "--reserve-pages", type=Path, default=None, help="a file of reserve page URLs, one per line"
-    )
-    parser.add_argument(
-        "--feed",
-        type=Path,
-        default=Path("feeds") / "fares" / "dtd-fares.zip",
-        help="fares .zip or a directory of feed files, for the station names",
     )
     parser.add_argument(
         "--allow-host",

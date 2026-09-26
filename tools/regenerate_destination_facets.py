@@ -37,6 +37,7 @@ from atoc_fares import (  # noqa: E402
     SUPPORTED_DESTINATION_FACETS,
     FaresDb,
 )
+from feeds_cli import add_feed_args  # noqa: E402
 
 DEFAULT_FEED = Path("feeds") / "fares" / "dtd-fares.zip"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "reference-data" / "destination-facets.json"
@@ -134,7 +135,7 @@ def build(feed: Path, out: Path, keep_unavailable: set[str]) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--feed", type=Path, default=DEFAULT_FEED, help="fares .zip or a directory of feed files")
+    add_feed_args(parser, feed_default=DEFAULT_FEED, fares_only=True)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="where to write the facet reference data")
     parser.add_argument(
         "--keep-unavailable",

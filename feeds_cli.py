@@ -1,12 +1,15 @@
 """Shared plumbing for the feed-driven CLI tools.
 
-Six tools (grantham_sweep, sanity_report, feed_audit, benchmark, fuzz_feed,
-damage_feed) each began with the same two lines of argument parsing and the
-same load-and-check preamble (audit C3). This module gathers exactly that
-shared shape -- the feed arguments and the load pair -- and nothing else.
+Six tools (feed_audit, grantham_sweep, sanity_report, destination_coverage,
+tools/propose_nature_stations, tools/regenerate_destination_facets) each began
+with the same argument parsing and the same load preamble (audit C3). This
+module gathers exactly that shared shape -- the feed arguments and the load
+pair -- and nothing else.
 
 A tool adds its own arguments on top with add_feed_args(parser) and then calls
 load_feeds(args) once; the origin/budget flags stay in the tools that own them.
+A tool that runs without arguments passes feed_default, and a tool that never
+reads a timetable passes fares_only.
 """
 
 from __future__ import annotations
@@ -18,15 +21,33 @@ from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 
 
-def add_feed_args(parser: argparse.ArgumentParser, *, timetable_required: bool = False) -> None:
-    """The two feed-location arguments every feed tool takes."""
-    parser.add_argument("--feed", required=True, help="fares feed folder or zip")
+def add_feed_args(
+    parser: argparse.ArgumentParser,
+    *,
+    timetable_required: bool = False,
+    feed_default: str | Path | None = None,
+    fares_only: bool = False,
+) -> None:
+    """The feed-location arguments every feed tool takes.
+
+    ``feed_default`` gives a tool that runs with no arguments its own default;
+    without it ``--feed`` is required. ``fares_only`` omits the timetable flag
+    for tools that never read one.
+    """
     parser.add_argument(
-        "--timetable",
-        required=timetable_required,
-        default=None,
-        help="CIF timetable feed folder or zip",
+        "--feed",
+        type=Path,
+        required=feed_default is None,
+        default=feed_default,
+        help="fares feed folder or zip",
     )
+    if not fares_only:
+        parser.add_argument(
+            "--timetable",
+            required=timetable_required,
+            default=None,
+            help="CIF timetable feed folder or zip",
+        )
 
 
 def load_feeds(args: argparse.Namespace) -> tuple[FaresDb, TimetableDb | None]:
@@ -36,7 +57,11 @@ def load_feeds(args: argparse.Namespace) -> tuple[FaresDb, TimetableDb | None]:
     this only loads.
     """
     fares = FaresDb().load_feed(args.feed)
-    timetable = TimetableDb().load_feed(args.timetable) if args.timetable else None
+    # A tool that passed fares_only never declared --timetable, so the
+    # attribute is read rather than assumed: the load pair has to work for
+    # every shape add_feed_args can leave behind.
+    timetable_path = getattr(args, "timetable", None)
+    timetable = TimetableDb().load_feed(timetable_path) if timetable_path else None
     return fares, timetable
 
 
