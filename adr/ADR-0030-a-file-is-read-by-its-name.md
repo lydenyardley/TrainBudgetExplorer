@@ -93,9 +93,10 @@ next build re-derives from the real sources: slower, and honest.
 
 ## Verified
 
-`_cache/probe_provenance.py` runs the classification pass against the real
-download's `RJFAF896.LOC` in the real `feeds/` layout, with the cache write
-intercepted. On the 24 September 2026 download: 3,436 stations with a CRS, 1,210
+The classification pass was run against the real download's `RJFAF896.LOC` in
+the real `feeds/` layout, with the cache write intercepted, so the 224 MB flow
+file is not parsed and the probe cannot rewrite the cache it reads. On the 24
+September 2026 download: 3,436 stations with a CRS, 1,210
 classified (208 cities, 239 towns, 289 small towns, 474 villages, 0 `other`),
 434 stations with facets, 0 reviewed codes absent, 0 redundant, 0 classification
 failures, no cache write, and `feeds/location-types.json` byte-identical
