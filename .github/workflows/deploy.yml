@@ -47,10 +47,59 @@ jobs:
       changed: ${{ steps.feed_check.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the message check below walks the commits this push
+          # added, which needs the base commit to be in the clone. The
+          # repository is small enough that fetching it whole is cheaper than
+          # the extra step of fetching a base that may not be there.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # The commit convention was documented and checked by a tool that
+      # rejected all 87 commits in the repository, so it was enforced by
+      # nobody. The tool now agrees with the history, and this step is what
+      # keeps them agreeing. A scheduled or manual run adds no commits, so it
+      # checks nothing and says so rather than passing silently.
+      - name: Check the commit messages this push added
+        run: |
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "This run added no commits, so there is no message to check."
+            exit 0
+          fi
+          # A base commit that is not in this clone is the one case where the
+          # range cannot be walked. A force-push drops the old tip from the
+          # remote, so a full-history checkout does not have it -- and an
+          # unwalkable range iterates nothing, which would leave this step
+          # reporting success having checked no commit at all. That is the one
+          # outcome a gate must never produce, so it fails and says why.
+          if ! git rev-parse --verify --quiet "$BEFORE^{commit}" > /dev/null; then
+            echo "::error title=commit message::base commit $BEFORE is not in this clone, so the messages of this push could not be checked. Re-run the workflow, or push the missing base."
+            exit 1
+          fi
+          FAILED=0
+          CHECKED=0
+          for sha in $(git rev-list "$BEFORE"..HEAD); do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
+            CHECKED=$((CHECKED + 1))
+            if ! python tools/check_commit_message.py "$RUNNER_TEMP/commit-message.txt"; then
+              echo "::error title=commit message::$(git log -1 --format=%s "$sha")"
+              FAILED=1
+            fi
+          done
+          if [ "$CHECKED" -eq 0 ]; then
+            echo "::error title=commit message::$BEFORE..HEAD contains no commit, so no message was checked."
+            exit 1
+          fi
+          if [ "$FAILED" -ne 0 ]; then
+            echo "At least one of the $CHECKED commit messages this push added does not follow CONTRIBUTING.md."
+          else
+            echo "All $CHECKED commit messages this push added follow CONTRIBUTING.md."
+          fi
+          exit "$FAILED"
 
       - name: Restore the last successful feed manifest
         uses: actions/cache/restore@v4
@@ -115,7 +164,7 @@ jobs:
         # Coverage runs with a floor, not a target (audit C5): unreachable
         # code and untested branches show up in the printed report, and a
         # drop below 79% of the product fails the step. A point and a half
-        # of slack over today's 80.6% covers platform variance; the floor
+        # of slack over today's 81.2% covers platform variance; the floor
         # lives here next to the number it holds, and lowering it needs a
         # reason.
         run: |

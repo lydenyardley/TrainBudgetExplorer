@@ -39,13 +39,22 @@ change spans several.
 - Imperative mood, as in "add the audit command", not "added" or "adds".
 - Lowercase first letter.
 - No trailing period.
-- 72 characters or fewer including the type and scope.
+- 80 characters or fewer including the type and scope.
 
 ### Body
 
 Leave one blank line after the subject. Say why the change is needed and what it
-costs, not what each line does. Wrap body lines at 72 characters. Skip the body
-when the subject already says everything.
+costs, not what each line does. Skip the body when the subject already says
+everything.
+
+Wrap body prose at about 80 characters, but that is a habit and not a rule the
+checker enforces. The closing recap paragraph is a single long line in most of
+this repository's commits, and it is meant to be read as one. A limit the
+history breaks on nearly every commit is a limit nobody keeps, and an unenforced
+limit in this document is worse than none: this checker used to reject all 87
+commits in the repository for exceeding a 72-character body line. The subject is
+capped because it is a display surface -- it is what `git log --oneline` and a
+pull request list show. The body is not.
 
 ### Footers
 
@@ -69,7 +78,11 @@ python -m unittest test_commit_message
 ```
 
 The checker accepts the Conventional Commits grammar plus `Merge `, `Revert `,
-`fixup! `, and `squash! ` prefixes, which Git generates.
+`fixup! `, and `squash! ` prefixes, which Git generates. The deploy workflow
+runs it over every commit the push adds, so the convention is checked rather
+than described. The 41 commits that predate the grammar still fail it; they are
+left as they are, because rewriting published history to satisfy a linter is a
+worse trade than a linter the older history is honestly outside of.
 
 ## Run the tests
 
