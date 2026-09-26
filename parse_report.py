@@ -26,6 +26,12 @@ class ParseReport:
     encoding_fallback_lines: int = 0
     skipped_examples: list[str] = field(default_factory=list)
     skipped_files: list[str] = field(default_factory=list)
+    # A classification source that could not be read: the ONS types workbook or
+    # a sourced destination facet. Counted apart from skipped feed files
+    # because their loss is silent on the page -- the filters keep working with
+    # fewer chips and only the source label hints at it (audit A5).
+    # --require-classification turns these into a refusal.
+    classification_failures: list[str] = field(default_factory=list)
 
     def skip_file(self, message: str) -> None:
         """Record a whole file the loader chose not to read.
@@ -36,6 +42,16 @@ class ParseReport:
         nonsense records that look like data.
         """
         self.skipped_files.append(message)
+
+    def skip_classification(self, message: str) -> None:
+        """Record a classification source that could not be read.
+
+        It is still a skipped file, so feed_audit keeps seeing it; the second
+        list is what a build reads when it must decide whether the page can
+        claim sourced classification.
+        """
+        self.skipped_files.append(message)
+        self.classification_failures.append(message)
 
     def summary(self) -> dict[str, int]:
         return {

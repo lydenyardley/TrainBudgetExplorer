@@ -106,7 +106,7 @@ MAJOR_UK_STATION_FALLBACKS = {
 }
 LOCATION_FALLBACK_SOURCE = (
     "ONS 2021 geography coverage with reviewed London, Scottish, Welsh, "
-    "Northern Ireland, and major English city fallbacks"
+    "Northern Ireland, major-city, and reach-ranked settlement fallbacks"
 )
 LOCATION_BAND_TYPES = {
     "major": "city",
@@ -151,6 +151,74 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     # Further settlements the workbook does not name, checked against the feed
     "BKM": "town", "BLW": "town", "DVP": "town", "GBL": "town", "LTG": "village",
     "MDL": "village", "MRD": "village", "SAF": "village", "SGB": "town",
+    # Audit A2: the unsourced destinations ranked by how many origins reach
+    # them, reviewed one entry at a time under the same rule as everything
+    # above -- the class of the settlement the station serves. A station in
+    # Greater London, Glasgow, Cardiff, Manchester, Liverpool, Newport or the
+    # West Midlands conurbation sits inside that city's built-up area and
+    # inherits its class, because the workbook would have matched the same
+    # settlement if the feed's name had lined up. A station outside the
+    # workbook's nations or its name gets its town's size band. Where the size
+    # sat on a band boundary the entry was left out rather than guessed, and
+    # the coverage report keeps naming the station instead.
+    #
+    # London localities: city (the capital's built-up area, as with every
+    # LONDON_STATION_CRS entry).
+    "ZFD": "city", "SFA": "city", "QRP": "city", "PMR": "city",
+    "EDW": "city", "NDL": "city", "NXG": "city", "SBM": "city",
+    "WBP": "city", "KPA": "city", "SPB": "city", "RMD": "city",
+    # Glasgow localities: city (GLC, GLR and QGS already carry that class).
+    "AND": "city", "ANL": "city", "AXP": "city", "BCG": "city", "CAY": "city",
+    "CML": "city", "DST": "city", "DMC": "city", "DMY": "city",
+    "EST": "city", "EXG": "city", "GAR": "city", "GRS": "city",
+    "HST": "city", "HYN": "city", "JOR": "city", "MTV": "city",
+    "PTK": "city", "RRN": "city", "SCH": "city", "SLS": "city",
+    "SPR": "city", "AGS": "city", "BIO": "city",
+    # Cardiff localities, and the three Cardiff stations whose qualifier kept
+    # them out of the workbook's "Cardiff" row: city (as XCF Cardiff Airport).
+    "CYS": "city", "LLN": "city", "LLS": "city", "NNP": "city",
+    "RHI": "city", "LVT": "city", "WHT": "city", "FRW": "city",
+    "DCT": "city", "COY": "city", "TGS": "city", "RDR": "city",
+    "HHL": "city", "WNG": "city", "FER": "city", "CDF": "city",
+    "CDQ": "city", "CDB": "city",
+    # Manchester, Liverpool, Newport and the West Midlands conurbation.
+    "MCO": "city", "EDY": "city", "LIV": "city", "NWP": "city",
+    "SAD": "city",
+    # Towns outside the workbook's reach or its names: Runcorn, Preston,
+    # Motherwell, Hamilton, Airdrie, Clydebank, Falkirk, Coatbridge,
+    # Airbles, Wrexham and Cwmbran.
+    "RUE": "town", "PRE": "town", "MTH": "town", "HNC": "town",
+    "HNW": "town", "ADR": "town", "CYK": "town", "CMO": "town",
+    "COA": "town", "CBS": "town", "BAI": "town", "KWD": "town",
+    "AIR": "town", "DRU": "town", "DMR": "town", "SIN": "town",
+    "WRX": "town", "CWM": "town",
+    # Small towns: Maesteg (as MST), Ebbw Vale, Risca, Pontypool,
+    # Llandrindod, Galashiels, Linlithgow, Abergele, Larbert, Shotts,
+    # Armadale, Blantyre, Dinas Powys, Cobham, Claygate, Earlstown,
+    # Milngavie, Bearsden, Westerton, Stepps and Hengoed.
+    "MEW": "small_town", "EBB": "small_town", "EBV": "small_town",
+    "RCA": "small_town", "PPL": "small_town", "LLO": "small_town",
+    "GAL": "small_town", "LIN": "small_town", "AGL": "small_town",
+    "LBT": "small_town", "SHS": "small_town", "ARM": "small_town",
+    "BLT": "small_town", "DNS": "small_town", "CSD": "small_town",
+    "CLG": "small_town", "ERL": "small_town", "MLN": "small_town",
+    "BRN": "small_town", "WES": "small_town", "SPS": "small_town",
+    "HNG": "small_town",
+    # Villages: Sunningdale, Clandon, Horsley, Hinchley Wood, Oxshott,
+    # Effingham, Llanfairpwll, Bodorgan, Llanbister, Pantyffynnon, Llangadog,
+    # Llangammarch, Llanwrda, Llanwrtyd, Cilmeri, Dolau, Builth Road, Stow,
+    # Bynea, Glan Conwy, Gorebridge, Carstairs, Bowling, Carfin, Holytown,
+    # Deganwy, Llwynypia, Ton Pentre, Troed y Rhiw, Trehafod, Ynyswen,
+    # Gilfach Fargoed, Pengam, Quakers Yard, Tondu and Tir Phil.
+    "SNG": "village", "CLA": "village", "HSY": "village", "HYW": "village",
+    "OXS": "village", "EFF": "village", "LPG": "village", "BOR": "village",
+    "LLT": "village", "PTF": "village", "LLG": "village", "LLM": "village",
+    "LNR": "village", "LNW": "village", "CIM": "village", "DOL": "village",
+    "BHR": "village", "SOI": "village", "BYE": "village", "GCW": "village",
+    "GBG": "village", "CRS": "village", "BWG": "village", "CRF": "village",
+    "HLY": "village", "DGY": "village", "LLY": "village", "TPN": "village",
+    "TRD": "village", "TRH": "village", "YNW": "village", "GFF": "village",
+    "PGM": "village", "QYD": "village", "TDU": "village", "TIR": "village",
 }
 
 # An airport station is a destination in its own right, and the settlement it
@@ -467,6 +535,20 @@ DESTINATION_TYPE_FILTERS: tuple[tuple[str, str], ...] = (
     ("village", "Villages"),
 ) + tuple((facet.key, facet.label) for facet in DESTINATION_FACET_SOURCES)
 
+
+def is_pseudo_station(name: str) -> bool:
+    """A name the fare system draws rather than a place a reader can stand.
+
+    Zone boundaries and zoned-area labels (BOUNDARY ZONE 4, BRIGHTON UNIZONE,
+    METRO T&W ZONE A) and named coach stops are fare-construction points: the
+    DTD feed prices flows through them, so they arrive in the chooser as
+    origins you could depart from and at the top of the coverage report as the
+    most-reached destinations -- with no train stopping there (audit A6).
+    One predicate, wherever a station list is offered.
+    """
+    upper = name.upper()
+    return "ZONE" in upper or "COACH" in upper
+
 # The real feed's standard-return catalogue contains a family of ITX
 # placeholder records. They are not purchasable public fares: the current
 # audit found EIS/EIF/IF1/IF3/IS0/IS1/IS3 and LIS/LIF at the £0.05/£0.10
@@ -605,6 +687,11 @@ FLOW_T_WIDTH = _read_width(FLOW_T, "restriction_code")
 
 FLOW_F_OFFSETS = _offsets(FLOW_F)
 FLOW_T_OFFSETS = _offsets(FLOW_T)
+# The same spans as slice objects, for the FFL reader: a _text call per field
+# cost a Python call and a dict lookup for each of the 53.8M fields it reads,
+# and the reader keeps only these (audit B2).
+FLOW_F_SLICES = {name: slice(start, end) for name, (start, end) in FLOW_F_OFFSETS.items()}
+FLOW_T_SLICES = {name: slice(start, end) for name, (start, end) in FLOW_T_OFFSETS.items()}
 LOCATION_OFFSETS = _offsets(LOCATION)
 TICKET_TYPE_OFFSETS = _offsets(TICKET_TYPE)
 RAILCARD_OFFSETS = _offsets(RAILCARD)
@@ -687,7 +774,7 @@ class TicketType:
         return is_advance_ticket(self.name)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Flow:
     flow_id: str
     origin_nlc: str
@@ -698,7 +785,7 @@ class Flow:
     end_date: date | None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fare:
     ticket_code: str
     pence: int
@@ -782,13 +869,14 @@ class FaresDb:
         self.railcards: dict[str, Railcard] = {}
         self.flows: dict[str, Flow] = {}
         self.fares_by_flow: dict[str, dict[str, Fare]] = {}
-        # Flows grouped by every location code from which they can be queried.
-        # Most flows are usable only from their recorded origin. A reversible
-        # (``direction == "R"``) flow is also usable with its endpoints swapped,
-        # so it is indexed under both locations. destinations_within asks the
+        # Flows grouped by every NLC that touches them: most are usable only
+        # from their recorded origin, but a reversible (``direction == "R"``)
+        # flow is indexed under both endpoints, so a bucket can hold inbound
+        # flows too. The query loop swaps the recorded destination when it
+        # entered via the far side (audit A4). destinations_within asks the
         # same question per origin; scanning every flow for each origin would
         # turn a full-network build into 2,500 full scans.
-        self.flows_by_origin_nlc: dict[str, list[Flow]] = {}
+        self.flows_touching_nlc: dict[str, list[Flow]] = {}
         self.minimum_fares: dict[tuple[str, str], int] = {}
         self.restrictions = RestrictionIndex()
         self.report = ParseReport()
@@ -803,6 +891,12 @@ class FaresDb:
         # inside the object too so a hand-reused path cannot silently return a
         # different origin's fares.
         self._cache_origin: str | None = None
+        # The whole feed's stats(), recorded when the shared half of a fare
+        # index is written. An index database holds only one origin's flows,
+        # so recomputing stats() from it would report a slice as the feed
+        # (audit B1): every page built through the indexes answers with the
+        # same national numbers the full load would have given.
+        self.feed_stats: dict[str, int] | None = None
 
     # -- loading ---------------------------------------------------------
 
@@ -842,6 +936,7 @@ class FaresDb:
         common.restrictions = self.restrictions
         common.report = self.report
         common.files_read = common.report.files_read
+        common.feed_stats = self.stats()
         self._write_cache(Path(base_path), common)
 
         directory = Path(index_dir)
@@ -853,15 +948,15 @@ class FaresDb:
                 continue
             origin_nlcs = self.nlcs_by_crs.get(origin, {location.nlc})
             flow_ids: set[str] = set()
-            flows_by_origin_nlc: dict[str, list[Flow]] = {}
+            flows_touching_nlc: dict[str, list[Flow]] = {}
             for nlc in origin_nlcs:
                 selected = [
                     flow
-                    for flow in self.flows_by_origin_nlc.get(nlc, ())
+                    for flow in self.flows_touching_nlc.get(nlc, ())
                     if flow.flow_id not in flow_ids
                 ]
                 if selected:
-                    flows_by_origin_nlc[nlc] = selected
+                    flows_touching_nlc[nlc] = selected
                     flow_ids.update(flow.flow_id for flow in selected)
             self._write_cache(
                 directory / f"{origin}.pickle",
@@ -878,7 +973,7 @@ class FaresDb:
                         flow_id: self.fares_by_flow.get(flow_id, {})
                         for flow_id in flow_ids
                     },
-                    "flows_by_origin_nlc": flows_by_origin_nlc,
+                    "flows_touching_nlc": flows_touching_nlc,
                 },
             )
 
@@ -912,7 +1007,7 @@ class FaresDb:
             raise ValueError("fares index has no origin")
         db.flows = index["flows"]
         db.fares_by_flow = index["fares"]
-        db.flows_by_origin_nlc = index["flows_by_origin_nlc"]
+        db.flows_touching_nlc = index["flows_touching_nlc"]
         db._focus_origin_nlcs = set(index["origin_nlcs"])
         db._cache_origin = origin
         return db
@@ -1083,14 +1178,14 @@ class FaresDb:
             try:
                 self._load_ons_location_types()
             except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
-                self.report.skip_file(f"ONS station classification unavailable: {error}")
+                self.report.skip_classification(f"ONS station classification unavailable: {error}")
         for facet in DESTINATION_FACET_SOURCES:
             if facet.is_reviewed:
                 continue
             try:
                 self._apply_destination_facet(facet)
             except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
-                self.report.skip_file(
+                self.report.skip_classification(
                     f"{facet.key} station classification unavailable: {error}"
                 )
         # One cache write for the whole pass: the facets above have all landed
@@ -1202,6 +1297,24 @@ class FaresDb:
             )
         ):
             self.location_type_source = LOCATION_FALLBACK_SOURCE
+        # A reviewed code the feed does not carry is a dead tail on the list.
+        # Every entry here is intersected before it is applied, so a stale code
+        # costs nothing at runtime; silence is what lets the list grow one
+        # unnoticed (audit A7), the way the heritage reader names an unmatched
+        # curated station.
+        absent = sorted(
+            crs
+            for crs in set(LONDON_STATION_CRS)
+            | set(MAJOR_UK_STATION_FALLBACKS)
+            | set(REVIEWED_SETTLEMENT_FALLBACKS)
+            if crs not in self.locations_by_crs
+        )
+        if absent:
+            self.report.skip_file(
+                f"{len(absent)} reviewed fallback codes match no station in this "
+                f"feed: " + ", ".join(absent[:12])
+                + (" ..." if len(absent) > 12 else "")
+            )
 
     def _load_location_types_json(self, data: object) -> None:
         # A cache written under an older schema still holds valid facets, but
@@ -1650,22 +1763,27 @@ class FaresDb:
 
     def _index_flow(self, flow: Flow) -> None:
         for nlc in self._flow_index_nlcs(flow):
-            self.flows_by_origin_nlc.setdefault(nlc, []).append(flow)
+            self.flows_touching_nlc.setdefault(nlc, []).append(flow)
 
     def _unindex_flow(self, flow: Flow) -> None:
         for nlc in self._flow_index_nlcs(flow):
-            flows = self.flows_by_origin_nlc.get(nlc)
+            flows = self.flows_touching_nlc.get(nlc)
             if flows is not None and flow in flows:
                 flows.remove(flow)
                 if not flows:
-                    self.flows_by_origin_nlc.pop(nlc, None)
+                    self.flows_touching_nlc.pop(nlc, None)
 
     def _load_flows(self, line: str) -> None:
-        record_type = _text(line, FLOW_F_OFFSETS, "record_type").upper()
+        # Direct slices rather than _text per field: this reader sees every FFL
+        # line in the feed, so its per-field call overhead is the parse's cost
+        # centre (audit B2).
+        f = FLOW_F_SLICES
+        t = FLOW_T_SLICES
+        record_type = line[f["record_type"]].strip().upper()
         if record_type == "F":
             _require_width(line, FLOW_F_WIDTH, "flow")
-            marker = _text(line, FLOW_F_OFFSETS, "update_marker").upper()
-            flow_id = _text(line, FLOW_F_OFFSETS, "flow_id")
+            marker = line[f["update_marker"]].strip().upper()
+            flow_id = line[f["flow_id"]].strip()
             previous = self.flows.get(flow_id)
             if previous is not None:
                 self._unindex_flow(previous)
@@ -1675,20 +1793,20 @@ class FaresDb:
                 return
             flow = Flow(
                 flow_id=flow_id,
-                origin_nlc=_text(line, FLOW_F_OFFSETS, "origin_nlc"),
-                destination_nlc=_text(line, FLOW_F_OFFSETS, "destination_nlc"),
-                route_code=_text(line, FLOW_F_OFFSETS, "route_code"),
-                direction=_text(line, FLOW_F_OFFSETS, "direction").upper(),
-                start_date=_parse_dtd_date(_text(line, FLOW_F_OFFSETS, "start_date")),
-                end_date=_parse_dtd_date(_text(line, FLOW_F_OFFSETS, "end_date")),
+                origin_nlc=line[f["origin_nlc"]].strip(),
+                destination_nlc=line[f["destination_nlc"]].strip(),
+                route_code=line[f["route_code"]].strip(),
+                direction=line[f["direction"]].strip().upper(),
+                start_date=_parse_dtd_date(line[f["start_date"]].strip()),
+                end_date=_parse_dtd_date(line[f["end_date"]].strip()),
             )
             self.flows[flow_id] = flow
             self._index_flow(flow)
         elif record_type == "T":
             _require_width(line, FLOW_T_WIDTH, "fare")
-            marker = _text(line, FLOW_T_OFFSETS, "update_marker").upper()
-            flow_id = _text(line, FLOW_T_OFFSETS, "flow_id")
-            ticket_code = _text(line, FLOW_T_OFFSETS, "ticket_code")
+            marker = line[t["update_marker"]].strip().upper()
+            flow_id = line[t["flow_id"]].strip()
+            ticket_code = line[t["ticket_code"]].strip()
             if self._focus_origin_nlcs is not None:
                 flow = self.flows.get(flow_id)
                 if flow is None or self._focus_origin_nlcs.isdisjoint(
@@ -1699,7 +1817,7 @@ class FaresDb:
             if marker == "D":
                 bucket.pop(ticket_code, None)
                 return
-            fare_text = _text(line, FLOW_T_OFFSETS, "fare_pence")
+            fare_text = line[t["fare_pence"]].strip()
             if not fare_text.isdigit():
                 # Raise rather than count here: the line counter decides once
                 # whether a line was parsed or rejected, and counting it in both
@@ -1708,7 +1826,7 @@ class FaresDb:
             bucket[ticket_code] = Fare(
                 ticket_code=ticket_code,
                 pence=int(fare_text),
-                restriction_code=_text(line, FLOW_T_OFFSETS, "restriction_code"),
+                restriction_code=line[t["restriction_code"]].strip(),
             )
 
     def _load_locations(self, line: str) -> None:
@@ -1814,7 +1932,7 @@ class FaresDb:
             if any(
                 flow.flow_id in active_fare_flows
                 for nlc in nlcs
-                for flow in self.flows_by_origin_nlc.get(nlc, ())
+                for flow in self.flows_touching_nlc.get(nlc, ())
             ):
                 direct_stations.add(crs)
 
@@ -1897,6 +2015,8 @@ class FaresDb:
         }
 
     def stats(self) -> dict[str, int]:
+        if self.feed_stats is not None:
+            return dict(self.feed_stats)
         return {
             "stations": len(self.locations_by_crs),
             "flows": len(self.flows),
@@ -2181,6 +2301,52 @@ class FaresDb:
             day=day,
         )
 
+    def priced_destinations_within(
+        self,
+        origin_crs: str,
+        budget_pence: int,
+        *,
+        adults: int = 1,
+        railcard: str | None = None,
+        party_budget: bool = False,
+        tally: dict[str, int] | None = None,
+        day: date | None = None,
+    ) -> list[Reachable]:
+        """Every destination the origin's page can price, in any ticket mode.
+
+        The page publishes restricted standard returns, displayable singles and
+        reviewed anytime returns, so a station priced in any one of them has a
+        page a reader can use (ADR-0019 decision 3). The chooser's priceable
+        test and the unsourced-destination report share this one selector so
+        they cannot drift: audit A1 caught the chooser measuring the anytime
+        mode alone while King's Cross published 171 returns from the other two.
+        A destination priced in several modes appears once, so a coverage check
+        over the rows names it exactly once.
+
+        A ``tally`` counts each flow's rejection once: all three modes drop an
+        unnameable destination in the shared loop before mode-specific
+        filtering, so the tally rides on one mode only, where passing it to
+        all three would triple-count (audit A3).
+        """
+        rows: dict[str, Reachable] = {}
+        queries = (
+            (self.page_destinations_within, tally),
+            (self.page_single_destinations_within, None),
+            (self.publishable_destinations_within, None),
+        )
+        for query, mode_tally in queries:
+            for row in query(
+                origin_crs,
+                budget_pence,
+                adults=adults,
+                railcard=railcard,
+                party_budget=party_budget,
+                tally=mode_tally,
+                day=day,
+            ):
+                rows.setdefault(row.crs, row)
+        return list(rows.values())
+
     def _publishable_rejection(
         self, *, strict: bool
     ) -> Callable[[Fare, TicketType], str | None]:
@@ -2230,9 +2396,9 @@ class FaresDb:
         # Only flows queryable from this origin: one grouped list per origin NLC
         # replaces a scan of every flow in the database per call. The index also
         # contains reversible flows under their recorded destination, so a query
-        # for the opposite direction reaches the same fare without swapping data.
+        # for the opposite direction reaches the same fare without duplicating it.
         for origin_nlc in origin_nlcs:
-            for flow in self.flows_by_origin_nlc.get(origin_nlc, ()):
+            for flow in self.flows_touching_nlc.get(origin_nlc, ()):
                 if not self._flow_valid_on(flow, query_day):
                     _tally(
                         tally,

@@ -71,6 +71,23 @@ class RealShapeFareTest(unittest.TestCase):
         self.db.destinations_within("GRN", 1_000_000, tally=tally)
         self.assertEqual(tally["destination_has_no_location_record"], 1)
 
+    def test_the_union_selector_counts_the_unnameable_rows_once(self) -> None:
+        # The three modes share the flow loop, so a tally riding on all three
+        # would triple-count the rows the feed cannot name (audit A3). The
+        # union also runs the publishable leg, which wants the .RST file.
+        with tempfile.TemporaryDirectory() as tmp:
+            db = FaresDb().load_feed(
+                build_synthetic_feed(
+                    Path(tmp) / "shapes",
+                    include_real_shapes=True,
+                    include_restrictions=True,
+                )
+            )
+        tally: dict[str, int] = {}
+        db.priced_destinations_within("GRN", 1_000_000, tally=tally)
+        self.assertEqual(tally["destination_has_no_station_code"], 1)
+        self.assertEqual(tally["destination_has_no_location_record"], 1)
+
     def test_a_flow_with_no_fare_is_counted(self) -> None:
         tally: dict[str, int] = {}
         results = self.db.destinations_within("GRN", 1_000_000, tally=tally)
