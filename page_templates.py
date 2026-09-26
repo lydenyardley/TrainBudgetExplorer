@@ -580,8 +580,12 @@ function showRailcardDetails(destination) {
     details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
   document.getElementById("railcardMinimum").textContent =
     details.minimumFarePence === null ? "Not listed for " + destination.ticket : money(details.minimumFarePence);
-  document.getElementById("railcardRule").textContent = details.rule
-    ? details.rule.text
+  // The rule record lives once in DATA.railcardRules; the row carries its
+  // key, because repeating the record per row cost 388KB on the heaviest
+  // real page (audit B3).
+  const rule = details.rule ? DATA.railcardRules[details.rule] : null;
+  document.getElementById("railcardRule").textContent = rule
+    ? rule.text
     : "No Two Together railcard rule applies because the railcard is not in this feed.";
   railcardDrawer.showModal();
 }
@@ -622,13 +626,14 @@ function provenance() {
     const unpriced = document.getElementById("unpriced");
     const intro = "We couldn't price any journeys from " + DATA.origin.name +
       " (" + DATA.origin.crs + ") in this feed.";
+    const why = DATA.unpricedNote ? " " + DATA.unpricedNote : "";
     if (DATA.stations && DATA.stations.length) {
       const link = document.createElement("a");
       link.href = DATA.baseHref;
       link.textContent = "Start from a station we do price";
-      unpriced.append(intro + " ", link, ".");
+      unpriced.append(intro + why + " ", link, ".");
     } else {
-      unpriced.textContent = intro + " Nothing was priced from any station, so there is nothing to explore yet.";
+      unpriced.textContent = intro + why + " Nothing was priced from any station, so there is nothing to explore yet.";
     }
     unpriced.hidden = false;
     const controls = document.querySelector(".filter-bar");
@@ -679,8 +684,10 @@ function provenance() {
   if (DATA.rawFareDestinationCount !== undefined) {
     document.getElementById("feedCoverage").textContent =
       DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
-      DATA.excludedItxCount + " had only ITX placeholder fares and are not shown. " +
-      "Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations.";
+      DATA.excludedItxCount + " had only ITX placeholder fares and are not shown." +
+      (DATA.destinations.length
+        ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
+        : "");
   }
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.

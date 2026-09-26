@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import tempfile
 import unittest
@@ -16,17 +17,20 @@ from pathlib import Path
 import build_demo_page
 from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 import argparse
-from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
+from atoc_fares import LOCATION, FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import (
     build_payload,
     build_station_index,
+    explain_unpriced,
     render_chooser,
     render_page,
     render_privacy,
     station_slug,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from destination_coverage import UnsourcedReport
+from parse_report import ParseReport
 from retailer import DISCLOSURE
 
 
@@ -227,10 +231,11 @@ class DemoPageTest(unittest.TestCase):
         row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
         details = row["railcard"]
         self.assertEqual(details["state"], "eligible")
-        self.assertIn("any ticket", details["rule"]["text"])
-        self.assertIn("RR", details["rule"]["text"])
-        self.assertEqual(details["rule"]["restrictionCode"], "R9")
-        self.assertFalse(details["rule"]["totalBan"])
+        rule = self.payload["railcardRules"][details["rule"]]
+        self.assertIn("any ticket", rule["text"])
+        self.assertIn("RR", rule["text"])
+        self.assertEqual(rule["restrictionCode"], "R9")
+        self.assertFalse(rule["totalBan"])
         self.assertEqual(details["pricePence"], 770)
         self.assertEqual(
             details["minimumFarePence"],
@@ -239,8 +244,22 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("travel condition rather than a card ban", details["reason"])
         self.assertIn('id="railcardDrawer"', self.html)
         self.assertIn("showRailcardDetails(destination)", self.html)
-        self.assertIn("? details.rule.text", self.html)
+        self.assertIn("DATA.railcardRules[details.rule]", self.html)
         self.assertIn("Exact DTD rule", self.html)
+
+    def test_rule_records_are_hoisted_out_of_the_rows(self) -> None:
+        rows = [
+            row
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in self.payload[key]
+        ]
+        self.assertTrue(rows)
+        for row in rows:
+            rule = row["railcard"]["rule"]
+            self.assertIsInstance(rule, str, "rows hold a key, never the record")
+            self.assertIn(rule, self.payload["railcardRules"])
+        rules = self.payload["railcardRules"]
+        self.assertTrue(rules, "a page with rows publishes the shared records")
 
     def test_unavailable_railcard_hides_its_own_help(self) -> None:
         payload = dict(
@@ -639,6 +658,20 @@ class DemoPageTest(unittest.TestCase):
         # No chooser exists, so no way-forward link is offered either.
         self.assertIn('if (DATA.stations && DATA.stations.length)', script)
 
+    def test_the_empty_state_carries_the_payloads_note_after_the_intro(self) -> None:
+        payload = dict(
+            self.payload,
+            destinations=[],
+            singleDestinations=[],
+            anytimeDestinations=[],
+            unpricedNote="The feed reaches 2 destinations, cheapest fare an ITX placeholder.",
+        )
+        html = render_page(payload, budget_pounds=20)
+        script = html.split("<script>")[1].split("</script>")[0]
+        self.assertIn('unpriced.append(intro + why + " ", link, ".");', script)
+        self.assertIn('unpriced.textContent = intro + why + " Nothing was priced', script)
+        self.assertEqual(embedded_payload(html)["unpricedNote"], payload["unpricedNote"])
+
     def test_slugs_are_readable_and_collision_free(self) -> None:
         taken: set[str] = set()
         first = station_slug("NOTTINGHAM", "NOT", taken)
@@ -897,6 +930,168 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("no timetable loaded", render_page(payload, budget_pounds=20))
 
 
+class ExplainUnpricedTest(unittest.TestCase):
+    """The empty state's own sentence, in each shape it can take."""
+
+    def test_a_placeholder_only_origin_names_the_count_and_the_codes(self) -> None:
+        self.assertEqual(
+            explain_unpriced(3, ["EIF", "EIS"], {}),
+            "The feed reaches 3 standard-return destinations, and the cheapest fare "
+            "to every one of them is an ITX placeholder (EIF, EIS), which this page "
+            "does not publish.",
+        )
+
+    def test_a_single_destination_is_written_in_the_singular(self) -> None:
+        note = explain_unpriced(1, ["EIS"], {})
+        self.assertIn("reaches 1 standard-return destination, and its cheapest fare", note)
+
+    def test_rejections_are_named_largest_first_and_capped(self) -> None:
+        tally = {
+            # Held-cheaper fares are normal traffic, never a reason a
+            # destination is missing, so the 99 must not surface.
+            "cheaper_index_already_held": 99,
+            "ticket_is_not_a_standard_return": 9,
+            "flow_expired": 5,
+            "flow_with_no_fare": 2,
+        }
+        self.assertEqual(
+            explain_unpriced(0, [], tally),
+            "The feed holds flows from this origin, but none prices a publishable fare: "
+            "9 fares that are not standard returns; 5 flows past their last valid day; "
+            "2 flows carrying no fare.",
+        )
+
+    def test_an_origin_the_feed_never_reaches_says_so(self) -> None:
+        self.assertEqual(
+            explain_unpriced(0, [], {}), "The feed holds no fare from this origin at all."
+        )
+
+
+class UnpricedOriginNoteTest(unittest.TestCase):
+    """The note the payload actually carries, built from a real query."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        feed = build_synthetic_feed(Path(cls._tmp.name) / "fares", include_restrictions=True)
+        # PBO has no outbound flow in the base fixture. One flow priced only
+        # with the ITX placeholder family gives it King's Cross's shape: the
+        # feed reaches a destination and its cheapest fare is withheld.
+        # KGX gets a CDR-only flow: displayable on the page's default mode,
+        # invisible to the reviewed-anytime selector.
+        with (feed / "rjfaf.ffl").open("a", encoding="utf-8") as handle:
+            handle.write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "F",
+                        "origin_nlc": "4000",
+                        "destination_nlc": "1000",
+                        "route_code": "00000",
+                        "flow_id": "0000008",
+                    },
+                    FLOW_F,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "flow_id": "0000008",
+                        "ticket_code": "EIS",
+                        "fare_pence": "5",
+                        "restriction_code": "GA",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "F",
+                        "origin_nlc": "5000",
+                        "destination_nlc": "1000",
+                        "route_code": "00000",
+                        "flow_id": "0000009",
+                    },
+                    FLOW_F,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "flow_id": "0000009",
+                        "ticket_code": "CDR",
+                        "fare_pence": "1160",
+                        "restriction_code": "1A",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+            )
+        with (feed / "rjfaf.tty").open("a", encoding="utf-8") as handle:
+            handle.write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "ticket_code": "EIS",
+                        "description": "ADVANCE ITX R",
+                        "tkt_class": "2",
+                        "tkt_type": "R",
+                        "restricted_by_train": "0",
+                    },
+                    TICKET_TYPE,
+                )
+                + "\n"
+            )
+        cls.fares = FaresDb().load_feed(feed)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def test_an_origin_with_no_flows_says_the_feed_holds_nothing(self) -> None:
+        payload = build_payload(self.fares, None, "LCN")
+        self.assertEqual(payload["rawFareDestinationCount"], 0)
+        self.assertEqual(payload["unpricedNote"], "The feed holds no fare from this origin at all.")
+
+    def test_an_origin_priced_only_by_a_non_reviewed_fare_still_counts(self) -> None:
+        # CDR is a restricted off-peak return: the page's default mode shows
+        # it, the reviewed-anytime selector cannot see it. Audit A1 is this
+        # shape on the real feed -- King's Cross's 171 returns kept it out of
+        # the chooser while its page answered just fine.
+        self.assertEqual(
+            build_demo_page._priced_destinations(self.fares, None, "KGX"),
+            1,
+        )
+        self.assertEqual(
+            self.fares.publishable_destinations_within(
+                "KGX", build_demo_page.EVERYTHING_PENCE, adults=1
+            ),
+            [],
+        )
+        # And an ITX-only origin still counts as unpriceable: its page is the
+        # empty state, which decision 3 keeps out of the index.
+        self.assertEqual(
+            build_demo_page._priced_destinations(self.fares, None, "PBO"), 0
+        )
+
+    def test_a_placeholder_only_origin_counts_destinations_and_names_the_codes(self) -> None:
+        payload = build_payload(self.fares, None, "PBO")
+        self.assertEqual(payload["destinations"], [])
+        self.assertEqual(payload["singleDestinations"], [])
+        self.assertEqual(payload["anytimeDestinations"], [])
+        self.assertEqual(payload["rawFareDestinationCount"], 1)
+        self.assertEqual(payload["excludedItxCodes"], ["EIS"])
+        self.assertEqual(
+            payload["unpricedNote"],
+            "The feed reaches 1 standard-return destination, and its cheapest fare "
+            "is an ITX placeholder (EIS), which this page does not publish.",
+        )
+
+
 class AllOriginsCliTest(unittest.TestCase):
     """The whole `--all-origins` run, because the output folder is the product.
 
@@ -1016,6 +1211,30 @@ class AllOriginsCliTest(unittest.TestCase):
         # Build timestamp is deliberately shared between the in-process and
         # worker paths so their generated pages are byte-for-byte comparable.
         self.assertEqual(single.replace(single.split('"builtAt":"')[1][:20], "TIMESTAMP"), pooled.replace(pooled.split('"builtAt":"')[1][:20], "TIMESTAMP"))
+
+    def test_a_pool_build_restores_fare_indexes_instead_of_re_parsing(self) -> None:
+        # Audit B1: without persisted indexes, every worker re-parsed all 8.5M
+        # flow lines on top of the parent's parse -- nine parses for eight
+        # workers. The pool must find the shared metadata and per-origin
+        # slices in CACHE_DIR before it starts.
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--all-origins", "--out", str(self.out),
+                    "--workers", "2",
+                ]
+            )
+        self.assertEqual(code, 0)
+        common_cache, index_dir = build_demo_page.fares_index_cache_paths(self.feed)
+        self.assertTrue(common_cache.is_file(), "the shared metadata is persisted before the pool starts")
+        self.assertTrue(index_dir.is_dir())
+        self.assertTrue(
+            list(index_dir.glob("*.pickle")),
+            "one index per priceable origin is written for the workers",
+        )
+        restored = FaresDb.load_fare_common(common_cache)
+        self.assertIsNotNone(restored.feed_stats, "the shared half carries the whole feed's stats")
 
     def test_the_build_says_how_to_open_what_it_wrote(self) -> None:
         # The pages are build output and their links are root-absolute, so
@@ -1158,8 +1377,8 @@ class SlugAgreementTest(unittest.TestCase):
         payload = build_payload(fares, self.timetable, "GRN")
         hrefs = {station["crs"]: station["href"] for station in payload["stations"]}
         # The all-origins build's folder names: the index's slugs.
-        # Counted with the same reviewed selector main() uses, so this test
-        # cannot pass on a station set the --all-origins build would not write.
+        # Counted the same way main() counts, so this test cannot pass on a
+        # station set the --all-origins build would not write.
         index = build_station_index(
             {
                 crs: build_demo_page._priced_destinations(fares, self.timetable, crs)
@@ -1355,6 +1574,204 @@ class UnsourcedDestinationTest(unittest.TestCase):
         code, _ = self.run_build(out, "--all-origins", "--fail-on-unsourced")
         self.assertEqual(code, 2)
         self.assertFalse(out.parent.exists(), "a refused build must leave no folder behind")
+
+
+class ClassificationGateTest(unittest.TestCase):
+    """A lost classification source is a visible build event (audit A5).
+
+    The synthetic feed's classification sources are all local, so the failure
+    is injected where the loader would record it: the point is what the build
+    does with a recorded failure, not how one comes to exist.
+    """
+
+    FAILURE = "seaside station classification unavailable: no network in this sandbox"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(self.root / "fares", include_restrictions=True)
+        (self.root / "metadata.json").write_text(
+            json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
+            encoding="utf-8",
+        )
+
+    def build(self, *extra: str) -> tuple[int, str, str, Path]:
+        out = self.root / "site" / "index.html"
+        original = FaresDb.load_feed
+
+        def with_failure(db_self, *args, **kwargs):
+            loaded = original(db_self, *args, **kwargs)
+            loaded.report.classification_failures.append(self.FAILURE)
+            return loaded
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(FaresDb, "load_feed", with_failure):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = build_demo_page.main(
+                    ["--feed", str(self.feed), "--out", str(out), *extra]
+                )
+        return code, stdout.getvalue(), stderr.getvalue(), out
+
+    def test_a_lost_classification_source_is_printed_and_the_build_publishes(self) -> None:
+        code, said, _, out = self.build()
+        self.assertEqual(code, 0, "without the flag the page still builds on the fallbacks")
+        self.assertIn(f"classification: {self.FAILURE}", said)
+        self.assertTrue(out.exists())
+
+    def test_the_require_flag_refuses_and_writes_nothing(self) -> None:
+        code, _, said, out = self.build("--require-classification")
+        self.assertEqual(code, 2)
+        self.assertIn("refusing to publish", said)
+        self.assertIn("seaside station classification unavailable", said)
+        self.assertFalse(out.exists(), "a refused build must write no page")
+
+    def test_a_classification_skip_is_also_a_skipped_file(self) -> None:
+        # feed_audit still sees it as an unopened source; the second list is
+        # only what the build's gate reads.
+        report = ParseReport()
+        report.skip_classification(self.FAILURE)
+        self.assertEqual(report.classification_failures, [self.FAILURE])
+        self.assertEqual(report.skipped_files, [self.FAILURE])
+
+
+class PseudoStationTest(unittest.TestCase):
+    """Zone boundaries are priceable in the feed but are not places (audit A6)."""
+
+    class Station:
+        def __init__(self, crs: str, name: str) -> None:
+            self.crs = crs
+            self.name = name
+
+    def test_the_chooser_omits_a_priced_zone_boundary(self) -> None:
+        locations = {
+            "GRA": self.Station("GRA", "GRANTHAM"),
+            "QAH": self.Station("QAH", "BOUNDARY ZONE 4"),
+        }
+        index = build_station_index({"GRA": 5, "QAH": 611}, locations)
+        self.assertEqual([entry["crs"] for entry in index], ["GRA"])
+
+    def test_the_jump_list_omits_pseudo_stations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+            fares.locations_by_crs = dict(
+                fares.locations_by_crs,
+                QZZ=self.Station("QZZ", "BOUNDARY ZONE 9"),
+            )
+            payload = build_payload(fares, None, "GRN")
+        names = {station["name"] for station in payload["stations"]}
+        self.assertNotIn("BOUNDARY ZONE 9", names)
+        self.assertTrue(names, "the jump list still carries the real stations")
+        self.assertTrue(any("NOTTINGHAM" in name for name in names))
+
+
+class UnnameableCeilingTest(unittest.TestCase):
+    """The payload carries the priced rows the feed could not name (audit A3)."""
+
+    @staticmethod
+    def shapes_feed(root: Path) -> FaresDb:
+        return FaresDb().load_feed(
+            build_synthetic_feed(
+                root / "shapes", include_real_shapes=True, include_restrictions=True
+            )
+        )
+
+    def test_the_payload_counts_the_rows_with_no_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = self.shapes_feed(Path(tmp))
+            payload = build_payload(fares, None, "GRN")
+        self.assertEqual(payload["unnameableFareCount"], 2)
+
+    def test_the_index_pass_records_them_for_the_coverage_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = self.shapes_feed(Path(tmp))
+            coverage = UnsourcedReport()
+            count = build_demo_page._priced_destinations(
+                fares, None, "GRN", None, coverage
+            )
+        self.assertGreater(count, 0)
+        self.assertEqual(coverage.unnameable_by_origin(), {"GRN": 2})
+
+
+class TimetableCachePruneTest(unittest.TestCase):
+    """Each origin keeps its newest timetable caches; stale digests go (audit B4)."""
+
+    @staticmethod
+    def cache(root: Path, name: str, mtime: float) -> Path:
+        path = root / name
+        path.write_bytes(b"stale")
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def test_the_caches_in_use_survive_and_the_origin_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+                main = self.cache(
+                    root, "timetable-GRA-11111111111111111111.pickle", 1000.0
+                )
+                single = self.cache(
+                    root, "timetable-GRA-22222222222222222222.pickle", 2000.0
+                )
+                self.cache(root, "timetable-GRA-33333333333333333333.pickle", 3000.0)
+                old = self.cache(
+                    root, "timetable-GRA-44444444444444444444.pickle", 500.0
+                )
+                other = self.cache(
+                    root, "timetable-SFA-55555555555555555555.pickle", 400.0
+                )
+                pruned = build_demo_page.prune_timetable_caches(main, single)
+            self.assertEqual(pruned, 2, "the two stale GRA digests are deleted")
+            self.assertTrue(main.exists() and single.exists(), "caches in use survive")
+            self.assertFalse(
+                (root / "timetable-GRA-33333333333333333333.pickle").exists()
+            )
+            self.assertFalse(old.exists())
+            self.assertTrue(other.exists(), "another origin's cache is untouched")
+
+    def test_a_single_cache_keeps_one_newest_stale_sibling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+                main = self.cache(
+                    root, "timetable-GRA-aaaaaaaaaaaaaaaaaaaa.pickle", 1000.0
+                )
+                newest = self.cache(
+                    root, "timetable-GRA-bbbbbbbbbbbbbbbbbbbb.pickle", 3000.0
+                )
+                stale = self.cache(
+                    root, "timetable-GRA-cccccccccccccccccccc.pickle", 500.0
+                )
+                pruned = build_demo_page.prune_timetable_caches(main)
+            self.assertEqual(pruned, 1)
+            self.assertTrue(main.exists())
+            self.assertTrue(
+                newest.exists(), "the keep line retains the newest stale sibling"
+            )
+            self.assertFalse(stale.exists())
+
+    def test_a_cache_hit_that_is_the_oldest_file_still_survives(self) -> None:
+        # A hit does not touch mtime, so the file this build just read can be
+        # the oldest on disk. It must not evict itself.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+                hit = self.cache(
+                    root, "timetable-GRA-dddddddddddddddddddd.pickle", 100.0
+                )
+                newer = self.cache(
+                    root, "timetable-GRA-eeeeeeeeeeeeeeeeeeee.pickle", 9000.0
+                )
+                newest = self.cache(
+                    root, "timetable-GRA-ffffffffffffffffffff.pickle", 8000.0
+                )
+                pruned = build_demo_page.prune_timetable_caches(hit, keep=1)
+            self.assertEqual(pruned, 2)
+            self.assertTrue(hit.exists(), "the used cache survives even at keep=1")
+            self.assertFalse(newer.exists())
+            self.assertFalse(newest.exists())
 
 
 class FreshOutputFolderTest(unittest.TestCase):
