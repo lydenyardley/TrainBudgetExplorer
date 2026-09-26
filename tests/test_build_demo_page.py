@@ -716,6 +716,70 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn('name="destinationType" value="university"', head)
         self.assertNotIn('name="destinationType" value="island"', head)
 
+    def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
+        # A chip that can only ever return nothing reads as a broken control,
+        # so the page offers only the types its destinations actually carry.
+        payload = dict(self.payload)
+        payload["destinations"] = [
+            dict(row, destinationTypes=["city"], destinationType="city")
+            for row in self.payload["destinations"]
+        ]
+        for mode in ("singleDestinations", "anytimeDestinations"):
+            payload[mode] = [
+                dict(row, destinationTypes=["city"], destinationType="city")
+                for row in self.payload.get(mode, [])
+            ]
+        html = render_page(payload, budget_pounds=50)
+        head = html.split("<script>")[0]
+        self.assertIn('name="destinationType" value="city"', head)
+        self.assertNotIn('name="destinationType" value="seaside"', head)
+        self.assertNotIn('name="destinationType" value="university"', head)
+        self.assertNotIn('name="destinationType" value="island"', head)
+
+    def test_a_type_only_the_singles_carry_still_reaches_the_page(self) -> None:
+        # The build narrows chips by the union of the three modes, because it
+        # does not know which mode a reader will pick. The page then narrows
+        # them again per mode at render time, so a type only the singles carry
+        # is still in the HTML and simply hidden on the returns list. If the
+        # build decided this, switching to Singles would show a chip that
+        # filters nothing.
+        payload = dict(self.payload)
+        payload["destinations"] = [
+            dict(row, destinationTypes=["city"], destinationType="city")
+            for row in self.payload["destinations"]
+        ]
+        payload["anytimeDestinations"] = [
+            dict(row, destinationTypes=["city"], destinationType="city")
+            for row in self.payload["anytimeDestinations"]
+        ]
+        payload["singleDestinations"] = [
+            dict(row, destinationTypes=["city", "heritage"], destinationType="city")
+            for row in self.payload["singleDestinations"]
+        ]
+        head = render_page(payload, budget_pounds=50).split("<script>")[0]
+        self.assertIn('name="destinationType" value="heritage"', head)
+
+    def test_the_chips_are_narrowed_for_the_mode_on_screen(self) -> None:
+        # The narrowing reads the active list rather than all three, and runs
+        # before the filter is asked what is checked: a chip the list cannot
+        # support must not be part of what matchesType is matching.
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        self.assertIn("function syncDestinationTypeChips()", script)
+        sync = script.split("function syncDestinationTypeChips()")[1].split("\n}")[0]
+        self.assertIn("activeDestinations()", sync)
+        for other_mode in ("DATA.destinations", "singleDestinations", "anytimeDestinations"):
+            self.assertNotIn(other_mode, sync)
+        # A chip that goes away cannot stay ticked, or the filter would match a
+        # type the reader can no longer see selected.
+        self.assertIn("chip.hidden = !present", sync)
+        self.assertIn("input.checked = false", sync)
+        self.assertIn("all.checked = true", sync)
+        render = script.split("function render(")[1].split("\nfunction ")[0]
+        self.assertLess(
+            render.index("syncDestinationTypeChips()"),
+            render.index("selectedDestinationTypes()"),
+        )
+
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
         self.assertIn('event.key === "Escape"', self.html)
         self.assertIn("changeOrigin.focus()", self.html)
