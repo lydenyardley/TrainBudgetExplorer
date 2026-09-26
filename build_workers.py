@@ -28,10 +28,11 @@ _WORKER: dict = {}
 def init_worker(feed: str, timetable: str | None, shared: dict) -> None:
     _WORKER.clear()
     _WORKER.update(shared)
-    # Fast builds load the shared fare metadata once, then each worker applies
-    # the persisted index for the origin it is about to render. The normal
-    # path deliberately retains its full-feed worker semantics for callers
-    # that use --all-origins without the fast/resumable mode.
+    # Parallel builds persist the shared fare metadata and one index per
+    # origin first (audit B1), so a worker restores the slice it is about to
+    # render instead of re-parsing all 8.5M flow lines. Without those keys the
+    # worker falls back to a full load: the in-process path never calls this,
+    # and a direct caller that shares no cache still gets a working feed.
     if shared.get("fare_common_cache") and shared.get("fare_index_dir"):
         _WORKER["fares_common"] = FaresDb.load_fare_common(shared["fare_common_cache"])
         _WORKER["fares"] = None

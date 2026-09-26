@@ -35,9 +35,10 @@ from atoc_fares import (
     PLACEHOLDER_TICKET_CODES,
     format_pence,
     is_advance_fare,
+    is_pseudo_station,
 )
 from atoc_timetable import TimetableDb
-from destination_coverage import UnsourcedReport
+from destination_coverage import UnsourcedReport, unnameable_from_tally
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
 
@@ -195,12 +196,25 @@ def write_page_atomic(path: Path, html: str) -> None:
     temporary.replace(path)
 
 
-def fares_index_cache_paths(
-    feed: str | Path, out_dir: Path, origins: list[str] | tuple[str, ...]
-) -> tuple[Path, Path]:
-    """Return the common fares cache and per-origin index directory."""
+# Bumped when the fare-index pickle layout changes: a worker restoring an
+# index written under an older code version would rebuild the wrong structure,
+# so the version segment names a fresh file and directory instead (audit B1).
+# Version 2: Flow and Fare became slotted dataclasses (audit B2).
+FARE_INDEX_CACHE_VERSION = 2
+
+
+def fares_index_cache_paths(feed: str | Path) -> tuple[Path, Path]:
+    """The shared fares metadata cache and the per-origin index directory.
+
+    Both live in CACHE_DIR beside the timetable caches rather than inside the
+    published site, and the format version sits in the name so a schema change
+    writes new files instead of reading old ones. The path is keyed by the
+    feed's fingerprint only: one build per feed is assumed, and the indexes
+    are rewritten before every pool run that reads them.
+    """
     digest = feed_fingerprint(feed)[:20]
-    return out_dir / f".fares-cache-{digest}.pickle", out_dir / f".fares-indexes-{digest}"
+    stem = f"fare-index-v{FARE_INDEX_CACHE_VERSION}-{digest}"
+    return CACHE_DIR / f"{stem}.pickle", CACHE_DIR / f"{stem}-origins"
 
 
 def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) -> Path:
@@ -216,6 +230,52 @@ def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) 
             digest.update(item.name.encode())
     digest.update((origin + ":" + ",".join(sorted(destinations))).encode())
     return CACHE_DIR / f"timetable-{origin.strip().upper()}-{digest.hexdigest()[:20]}.pickle"
+
+
+# The newest timetable caches kept per origin. One origin holds at most two
+# live caches -- the common and the outbound-single focus -- and every older
+# digest belongs to a feed revision that no build can hit again (audit B4).
+TIMETABLE_CACHE_KEEP = 2
+
+
+def prune_timetable_caches(*used: Path, keep: int = TIMETABLE_CACHE_KEEP) -> int:
+    """Bound each origin's timetable caches to the newest ``keep`` files.
+
+    The caches this build read or wrote are never deleted, even when an older
+    sibling has a newer timestamp, so a cache hit cannot evict itself. Every
+    other file past the keep line is a stale digest: the feed bytes or the
+    focus set changed, the name can never be hit again, and it sat on disk
+    until the next build rewrote the pair (audit B4). Returns how many files
+    were deleted.
+    """
+    protected = {Path(path).resolve() for path in used}
+    groups: dict[str, list[Path]] = {}
+    for path in CACHE_DIR.glob("timetable-*.pickle"):
+        parts = path.name.split("-")
+        if len(parts) >= 3:
+            groups.setdefault(parts[1], []).append(path)
+    deleted = 0
+    for paths in groups.values():
+        in_use = sum(1 for path in paths if path.resolve() in protected)
+        ranked: list[tuple[float, Path]] = []
+        for path in paths:
+            if path.resolve() in protected:
+                continue
+            try:
+                ranked.append((path.stat().st_mtime, path))
+            except OSError:
+                # Gone already, or held by a scanner. A file that cannot be
+                # read cannot be ranked, and tidying must never be the reason
+                # an otherwise good build fails.
+                continue
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        for _, path in ranked[max(keep - in_use, 0) :]:
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError:
+                pass
+    return deleted
 
 
 def read_feed_metadata(folders: list[Path]) -> dict | None:
@@ -496,6 +556,14 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "class from any source. Off by default, because a full-network build "
         "meets stations no filter can name; the warning is printed either way",
     )
+    parser.add_argument(
+        "--require-classification",
+        action="store_true",
+        help="refuse to write pages when a sourced classification source (the "
+        "ONS types workbook or a sourced facet) could not be read, rather than "
+        "publishing with the reviewed fallbacks only. The skips are printed "
+        "either way",
+    )
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument(
         "--note",
@@ -516,7 +584,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=1,
         help="processes to build station pages with. Each origin's page is "
         "independent, so N workers cut the wall time roughly N-fold on a "
-        "full-network build (the feed is re-loaded once per worker)",
+        "full-network build (workers share one parsed feed through persisted "
+        "per-origin fare indexes rather than re-parsing it each)",
     )
     parser.add_argument(
         "--max-origin-seconds",
@@ -582,6 +651,51 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+# Why a fare the feed holds did not become a price, in the words an empty page
+# needs. Cheaper fares already held and fares to the origin itself are normal
+# traffic, not reasons a destination is missing, so they are never listed.
+UNPRICED_REASONS = {
+    "ticket_is_not_a_standard_return": "fares that are not standard returns",
+    "flow_not_yet_valid": "flows not yet valid",
+    "flow_expired": "flows past their last valid day",
+    "flow_with_no_fare": "flows carrying no fare",
+    "fare_with_no_ticket_type": "fares with no ticket type",
+    "destination_has_no_location_record": "flows to destinations with no location record",
+    "destination_has_no_station_code": "flows to destinations with no station code",
+    "fare_above_the_budget": "fares above the price this page can show",
+}
+
+
+def explain_unpriced(raw_count: int, excluded_codes: list[str], tally: dict[str, int]) -> str:
+    """Why an origin priced nothing, for the payload's unpricedNote.
+
+    Called only when every fare set on the page is empty. The count answers
+    "how much does the feed even hold from here" and the reasons answer "so
+    why is none of it on this page". The origin's name is already in the
+    sentence this appends to, so it is not repeated here.
+    """
+    if raw_count:
+        codes = ", ".join(excluded_codes)
+        if raw_count == 1:
+            return (
+                "The feed reaches 1 standard-return destination, and its cheapest fare is an "
+                f"ITX placeholder ({codes}), which this page does not publish."
+            )
+        return (
+            f"The feed reaches {raw_count} standard-return destinations, and the cheapest fare "
+            f"to every one of them is an ITX placeholder ({codes}), which this page does not publish."
+        )
+    reasons = [
+        (count, UNPRICED_REASONS[key])
+        for key, count in sorted(tally.items(), key=lambda item: (-item[1], item[0]))
+        if key in UNPRICED_REASONS
+    ]
+    if not reasons:
+        return "The feed holds no fare from this origin at all."
+    parts = "; ".join(f"{count} {label}" for count, label in reasons[:3])
+    return f"The feed holds flows from this origin, but none prices a publishable fare: {parts}."
+
+
 def build_payload(
     fares: FaresDb,
     timetable: TimetableDb | None,
@@ -618,8 +732,11 @@ def build_payload(
     # which rows are within the reader's budget. The fare shown is the cheapest
     # displayable standard-class return found in the feed; ITX placeholder fares
     # are excluded, while legitimate restrictions remain visible with their code.
+    # The tally survives on the payload's unpricedNote: without it the rejected
+    # fares vanish before any message could count them (audit A1).
+    raw_tally: dict[str, int] = {}
     raw_destinations = fares.destinations_within(
-        origin.crs, EVERYTHING_PENCE, adults=1, day=day
+        origin.crs, EVERYTHING_PENCE, adults=1, day=day, tally=raw_tally
     )
     single = {
         row.crs: row
@@ -651,6 +768,24 @@ def build_payload(
     # restriction records; only a matching total ban removes it.
     railcard_code = fares.railcard_code("Two Together")
     railcard_in_feed = railcard_code is not None
+
+    # The full rule record repeats on nearly every row: on the heaviest real
+    # page one record served all 1,678 rows and the block was 388KB (audit B3,
+    # measured). Rows keep a key into one payload map; only the drawer reads
+    # the record, and the table reads pricePence straight off the row.
+    rule_ids: dict[str, str] = {}
+    railcard_rules: dict[str, dict] = {}
+
+    def share_rule(rule: dict | None) -> str | None:
+        if rule is None:
+            return None
+        marker = json.dumps(rule, sort_keys=True)
+        rule_id = rule_ids.get(marker)
+        if rule_id is None:
+            rule_id = str(len(railcard_rules))
+            rule_ids[marker] = rule_id
+            railcard_rules[rule_id] = rule
+        return rule_id
 
     def railcard_details(one) -> dict:
         """The exact DTD decision shown in a destination's eligibility drawer."""
@@ -798,6 +933,7 @@ def build_payload(
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
         card = railcard_details(one)
+        card["rule"] = share_rule(card["rule"])
         return {
             "crs": crs,
             "name": one.station,
@@ -851,6 +987,13 @@ def build_payload(
         for crs, one in sorted(anytime_tickets.items(), key=lambda item: item[1].best_pence)
     ]
 
+    excluded_codes = sorted({row.ticket_code for row in excluded_itx})
+    unpriced_note = (
+        explain_unpriced(len(raw_destinations), excluded_codes, raw_tally)
+        if not destinations and not single_destinations and not anytime_destinations
+        else None
+    )
+
     origin_row = fares.locations_by_crs[origin.crs]
     # The picker's options (ADR-0019), from the one shared slug map, so a page
     # built on its own links to the same folders the --all-origins build writes.
@@ -878,7 +1021,12 @@ def build_payload(
         "rawFareDestinationCount": len(raw_destinations),
         "singleFareDestinationCount": len(single_ticket_rows),
         "excludedItxCount": len(excluded_itx),
-        "excludedItxCodes": sorted({row.ticket_code for row in excluded_itx}),
+        "excludedItxCodes": excluded_codes,
+        # Destination rows this origin lost to a missing name: the feed's own
+        # ceiling on coverage, carried so the report can count it beside the
+        # unsourced stations (audit A3).
+        "unnameableFareCount": unnameable_from_tally(raw_tally),
+        "unpricedNote": unpriced_note,
         "stations": [
             {
                 "name": loc.name,
@@ -886,7 +1034,7 @@ def build_payload(
                 "href": with_base(base_path, f"/from/{slugs[crs]}/"),
             }
             for crs, loc in sorted(fares.locations_by_crs.items())
-            if crs != origin.crs
+            if crs != origin.crs and not is_pseudo_station(loc.name)
         ],
         # Said by the page when this origin priced nothing, so the difference
         # between "nothing inside your budget" and "nothing priced from here at
@@ -899,6 +1047,7 @@ def build_payload(
         "railcardInFeed": railcard_in_feed,
         "railcardEligibleCount": railcard_eligible_count,
         "railcardAvailable": railcard_eligible_count > 0,
+        "railcardRules": railcard_rules,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
@@ -950,8 +1099,6 @@ def build_payload(
     }
 
 
-
-
 def _priced_destinations(
     fares: FaresDb,
     timetable,
@@ -961,17 +1108,25 @@ def _priced_destinations(
 ) -> int:
     """How many destinations an origin's page would carry, for the index.
 
-    Uses the same reviewed selector as the page itself, so the chooser never
-    offers a station whose page would be empty under the publication rule. When
-    a coverage report is passed, the same rows are checked for a station no
-    source could classify -- the query has already been run, so naming the gap
-    costs nothing extra on a 2,500-origin build.
+    The page offers three ticket modes, so "priceable" is the union of all
+    three: a station whose only fares are restricted returns or singles still
+    has a page a reader can use, and ADR-0019 decision 3 asks whether that
+    page can answer, not whether one mode of it can. Audit A1 caught the
+    previous test using the reviewed-anytime selector alone, which kept King's
+    Cross out of the chooser while its page carried 171 returns; the union now
+    lives in ``FaresDb.priced_destinations_within`` so this test, the chooser
+    and the coverage report cannot ask three different questions. When a
+    coverage report is passed, the same rows are checked for a station no
+    source could classify -- the queries have already been run, so naming the
+    gap costs nothing extra on a 2,500-origin build.
     """
-    rows = fares.publishable_destinations_within(
-        origin_crs, EVERYTHING_PENCE, adults=1, day=day
+    tally: dict[str, int] = {}
+    rows = fares.priced_destinations_within(
+        origin_crs, EVERYTHING_PENCE, adults=1, day=day, tally=tally
     )
     if coverage is not None:
         coverage.note_fares_rows(fares, rows, origin_crs)
+        coverage.note_unnameable(origin_crs, unnameable_from_tally(tally))
     return len(rows)
 
 
@@ -991,9 +1146,12 @@ def build_station_index(
     index = []
     slugs = station_slugs_for(all_locations)
     for crs, count in sorted(priced_by_origin.items(), key=lambda item: (-item[1], item[0])):
-        if count <= 0:
-            continue
         location = all_locations[crs]
+        # Priced is not enough: a zone boundary prices fares through it but no
+        # train stops there, so it is absent rather than offered and then
+        # refused (audit A6, same rule as the priced-nothing station).
+        if count <= 0 or is_pseudo_station(location.name):
+            continue
         index.append(
             {
                 "crs": crs,
@@ -1115,6 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
         focus_origin=None if args.all_origins else args.origin,
     )
     print(f"Loaded fares: {fares.stats()['flows']:,} flows, {fares.stats()['fares']:,} fares", flush=True)
+    cache_path: Path | None = None
     if args.timetable:
         focus_destinations: set[str] = set()
         if not args.all_origins and args.origin in fares.locations_by_crs:
@@ -1155,6 +1314,23 @@ def main(argv: list[str] | None = None) -> int:
             f"error: refusing to build a public price page: {gate_problem}. "
             "Download the fares feed with its .RST file, or use the broad query "
             "for analysis only.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # A classification source that could not be read leaves the page with
+    # fewer filter chips and a fallback-only source label. Say which source
+    # failed alongside the rest of the provenance lines, and let the flag
+    # refuse before anything is written (audit A5).
+    for failure in fares.report.classification_failures:
+        print(f"classification: {failure}")
+    if args.require_classification and fares.report.classification_failures:
+        print(
+            f"error: refusing to publish: {len(fares.report.classification_failures)} "
+            "classification source(s) could not be read: "
+            + "; ".join(fares.report.classification_failures)
+            + ". Restore the source, or drop --require-classification to "
+            "publish on the reviewed fallbacks.",
             file=sys.stderr,
         )
         return 2
@@ -1233,6 +1409,7 @@ def main(argv: list[str] | None = None) -> int:
         note = DEFAULT_NOTE if price_source == DEFAULT_PRICE_SOURCE else ""
 
     single_timetable = None
+    single_cache: Path | None = None
     if args.with_single_timetable:
         if not args.timetable:
             print("--with-single-timetable requires --timetable", file=sys.stderr)
@@ -1257,6 +1434,14 @@ def main(argv: list[str] | None = None) -> int:
             f"(cache: {single_cache.name})",
             flush=True,
         )
+    used_caches = [path for path in (cache_path, single_cache) if path is not None]
+    if used_caches:
+        pruned = prune_timetable_caches(*used_caches)
+        if pruned:
+            print(
+                f"pruned {pruned} stale timetable cache file(s) from {CACHE_DIR}",
+                flush=True,
+            )
     # An all-origins build cannot depend on the single-origin default (GRN is
     # synthetic and absent from the real feed). Sample the requested code when
     # it exists, otherwise the first real station, so the per-origin tripwire
@@ -1316,7 +1501,15 @@ def main(argv: list[str] | None = None) -> int:
     # build writes only itself; --all-origins writes the whole set (ADR-0019).
     if args.all_origins:
         out_dir = out.parent
-        origins = sorted(fares.locations_by_crs)
+        # Zone and coach pseudo-stations are priceable in the feed but are not
+        # places a reader departs from, so they leave here -- with the chooser,
+        # the write set and the coverage report's origin list all following
+        # (audit A6).
+        origins = [
+            crs
+            for crs in sorted(fares.locations_by_crs)
+            if not is_pseudo_station(fares.locations_by_crs[crs].name)
+        ]
         if args.fast_all_origins:
             print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
         priced_counts: dict[str, int] = {}
@@ -1384,10 +1577,13 @@ def main(argv: list[str] | None = None) -> int:
 
         workers = max(1, args.workers)
         built_now = 0
-        if args.fast_all_origins and workers > 1:
-            common_cache, index_dir = fares_index_cache_paths(
-                args.feed, out_dir, [job["crs"] for job in jobs]
-            )
+        if workers > 1:
+            # Audit B1: without this, every pool worker re-parsed all 8.5M
+            # flow lines on top of the parent's parse -- nine parses for eight
+            # workers. Every parallel build now writes the shared metadata and
+            # one small index per origin first, so a worker restores its own
+            # slice instead of parsing the national feed.
+            common_cache, index_dir = fares_index_cache_paths(args.feed)
             fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
             shared["fare_common_cache"] = str(common_cache)
             shared["fare_index_dir"] = str(index_dir)
@@ -1499,6 +1695,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
             "the page says so and points at the chooser"
+            + (f". {payload['unpricedNote']}" if payload.get("unpricedNote") else "")
         )
     # A destination with no settlement class is a destination the page's own
     # settlement filters cannot return, so the build names it rather than
