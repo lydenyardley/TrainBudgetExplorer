@@ -81,22 +81,32 @@ LOCATION_TYPE_SOURCE = (
 # built-up area is a major BUA; the remaining codes are reviewed classifications
 # for the largest destinations outside the workbook's coverage. They are applied
 # only after the ONS/name lookup misses, so a future ONS match always wins.
+# The London list is written in the feed's own CRS. The London Underground,
+# DLR and Overground codes carry a leading Z the National Rail ones do not, and
+# seven entries had been written without it, so they named no station at all
+# (Blackfriars is ZBF, not BKF). A dead code costs nothing at runtime, which is
+# exactly why the reader below names it.
 LONDON_STATION_CRS = frozenset({
-    "ACT", "BAT", "BFN", "BKF", "BWD", "CDL", "CHC", "CHT", "CLJ", "CBR",
-    "CTK", "DLK", "DLP", "ECR", "EUS", "FST", "GLR", "GTN", "HAY", "HMY",
-    "IPD", "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD", "PIM",
-    "RGY", "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
+    "ACT", "BAT", "BFN", "BWD", "CHC", "CHT", "CLJ", "CBR",
+    "CTK", "DLK", "ECR", "EUS", "FST", "GTN", "HAY", "HMY",
+    "KGX", "KNI", "LBG", "LDY", "LES", "LST", "MYB", "PAD",
+    "STP", "SUR", "TUL", "VIC", "WAT", "WDM", "WIC", "WLP", "WOL", "WWC",
+    "ZBF", "ZCD", "ZGR", "ZLP", "ZPD", "ZPI", "ZRY",
 })
 MAJOR_UK_STATION_FALLBACKS = {
     # Scotland
-    "ABD": "city", "DEQ": "city", "EDB": "city", "GLC": "city", "INV": "city",
+    "ABD": "city", "DEE": "city", "EDB": "city", "GLC": "city", "INV": "city",
     "MAN": "city", "PER": "city", "QGS": "city", "SGL": "city",
     # Wales outside the England-and-Wales BUA workbook's usual settlement names
-    "CDD": "city", "SWA": "city", "NPT": "town",
-    # Northern Ireland
+    "CDD": "city", "SWA": "city",
+    # Northern Ireland. Newry is the large town this group was missing: the code
+    # was written as NIR, which names no station, and the feed's own code for
+    # Newry is NWY. Three more Welsh and island codes (NPT, BFL, BQU) named no
+    # station and no settlement could be recovered for them, so they were
+    # dropped rather than left to classify a future feed's station from a guess.
     "BNV": "city", "BHC": "city", "LBN": "town", "BNG": "town", "LAR": "town",
-    "NIR": "town", "PTN": "town", "LDY": "city", "BCH": "town", "BFL": "town",
-    "BQU": "town", "BHD": "town", "WRE": "town",
+    "NWY": "town", "PTN": "town", "LDY": "city", "BCH": "town",
+    "BHD": "town", "WRE": "town",
     # England. A reviewed list, used only where the ONS built-up-area workbook
     # has no row for the station, so a major city is not filed as "other".
     "NCL": "city", "NCZ": "city", "NCX": "city", "BMG": "city", "BMH": "city",
@@ -536,18 +546,62 @@ DESTINATION_TYPE_FILTERS: tuple[tuple[str, str], ...] = (
 ) + tuple((facet.key, facet.label) for facet in DESTINATION_FACET_SOURCES)
 
 
-def is_pseudo_station(name: str) -> bool:
-    """A name the fare system draws rather than a place a reader can stand.
+# The fare-construction points the 24 September 2026 download carries, read
+# off its own station names. A reviewed list rather than a name test: the codes
+# are the feed's identity for a station, so a rename surfaces as a dead code
+# the build names, instead of a new name that quietly stops matching. Tools
+# propose additions to this list with the evidence; only a person adds one.
+FARE_CONSTRUCTION_CRS = frozenset({
+    "QAG",  # BOUNDARY ZONE 3
+    "QAH",  # BOUNDARY ZONE 4
+    "QAI",  # BOUNDARY ZONE 5
+    "QAJ",  # BOUNDARY ZONE 6
+    "QAK",  # BOUNDARY ZONE 2
+    "QBU",  # BRIGHTON UNIZONE
+    "QWU",  # WORTHING UNIZONE
+    "QMZ",  # METRO T&W ZONE A
+    "KLB",  # KINGS LYNN COACH
+    "QDM",  # DEREHAM (COACH)
+    "SWB",  # SWAFFHAM (COACH)
+    "WIS",  # WISBECH (COACH)
+})
 
-    Zone boundaries and zoned-area labels (BOUNDARY ZONE 4, BRIGHTON UNIZONE,
-    METRO T&W ZONE A) and named coach stops are fare-construction points: the
-    DTD feed prices flows through them, so they arrive in the chooser as
-    origins you could depart from and at the top of the coverage report as the
-    most-reached destinations -- with no train stopping there (audit A6).
-    One predicate, wherever a station list is offered.
+# The name shape that proposes a code for review. It proposes; it never
+# decides. On the 24 September 2026 download it matched exactly the twelve
+# codes above and nothing else, which is why the split is worth keeping: the
+# evidence is cheap to gather, the judgement is not.
+FARE_CONSTRUCTION_NAME_MARKERS = ("ZONE", "COACH")
+
+
+def looks_like_fare_construction(name: str) -> bool:
+    """Whether a station's *name* looks like a fare-construction point.
+
+    The evidence ``tools/propose_fare_construction_stations.py`` prints with
+    each proposal, and nothing more. On the current feed it is exact, but a
+    future station called COACH HOUSE would match it, so a person decides
+    whether the code joins FARE_CONSTRUCTION_CRS.
     """
-    upper = name.upper()
-    return "ZONE" in upper or "COACH" in upper
+    upper = name.strip().upper()
+    return any(marker in upper for marker in FARE_CONSTRUCTION_NAME_MARKERS)
+
+
+def is_pseudo_station(crs: str) -> bool:
+    """A fare-construction point rather than a place a reader can stand.
+
+    Zone boundaries and zoned-area labels, and named coach stops, are where the
+    DTD feed records a fare change rather than a journey. A flow through one is
+    real and priced, but no train calls there, so the page must not offer the
+    reader a destination or an origin it cannot serve (audit A6).
+
+    The list is reviewed and keyed by CRS rather than matched on the name. A
+    substring test over station names is a guess about every future station:
+    a real station called Coach House or Hazleton would be silently dropped
+    from the chooser, and a renamed zone would start being offered. The CRS is
+    the feed's own identity for a station and changes with a rename, so the
+    twelve codes below were read off the 24 September 2026 download and the
+    names are recorded so a person can check them.
+    """
+    return crs.strip().upper() in FARE_CONSTRUCTION_CRS
 
 # The real feed's standard-return catalogue contains a family of ITX
 # placeholder records. They are not purchasable public fares: the current
@@ -1309,12 +1363,17 @@ class FaresDb:
             | set(REVIEWED_SETTLEMENT_FALLBACKS)
             if crs not in self.locations_by_crs
         )
-        if absent:
-            self.report.skip_file(
-                f"{len(absent)} reviewed fallback codes match no station in this "
-                f"feed: " + ", ".join(absent[:12])
-                + (" ..." if len(absent) > 12 else "")
-            )
+        if absent and not self.report.reviewed_codes_absent:
+            # Recorded once, and in its own channel. This pass runs again as
+            # each classification source lands, and the set of absent codes
+            # cannot change between runs -- the stations were all read with
+            # the feed -- so a note per pass would print the same thing three
+            # times. It is not a skipped file either: nothing was left unread
+            # here, a reviewed list is naming a station the feed does not
+            # carry, and reporting it as an unopened source would be a lie
+            # that also hid it among the archive-inside-an-archive notes.
+            # --require-live-reviewed-codes turns it into a refusal.
+            self.report.reviewed_codes_absent = absent
 
     def _load_location_types_json(self, data: object) -> None:
         # A cache written under an older schema still holds valid facets, but
@@ -2421,6 +2480,14 @@ class FaresDb:
                     continue
                 if not destination.crs:
                     _tally(tally, "destination_has_no_station_code")
+                    continue
+                # A zone boundary or a coach stop is where the feed records a
+                # fare change, not a place. Dropping it here rather than in
+                # each caller is what makes the chooser, the page rows, the
+                # write set and the coverage report agree: there is one rule
+                # and one place it is applied (audit A6).
+                if is_pseudo_station(destination.crs):
+                    _tally(tally, "destination_is_a_fare_construction_point")
                     continue
                 if destination.crs == origin.crs:
                     _tally(tally, "fare_to_the_origin_itself")

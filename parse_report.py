@@ -32,6 +32,13 @@ class ParseReport:
     # fewer chips and only the source label hints at it (audit A5).
     # --require-classification turns these into a refusal.
     classification_failures: list[str] = field(default_factory=list)
+    # Reviewed settlement-fallback codes the feed does not carry: a list going
+    # stale, not a file left unread, so it has its own channel rather than
+    # riding in skipped_files where an audit would report it as an unopened
+    # source. --require-live-reviewed-codes turns these into a refusal (audit
+    # A7), which is the point: a dead code costs nothing at runtime, so
+    # nothing else would ever notice one arriving.
+    reviewed_codes_absent: list[str] = field(default_factory=list)
 
     def skip_file(self, message: str) -> None:
         """Record a whole file the loader chose not to read.

@@ -22,7 +22,9 @@ from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
     LOCATION_BAND_TYPES,
     LOCATION_CACHE_SCHEMA,
+    FARE_CONSTRUCTION_CRS,
     LONDON_STATION_CRS,
+    looks_like_fare_construction,
     SUPPORTED_DESTINATION_FACETS,
     FLOW_F,
     FLOW_T,
@@ -36,32 +38,50 @@ from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
 
 
 class PseudoStationTest(unittest.TestCase):
-    """Zone boundaries and named coach stops are not places (audit A6)."""
+    """Zone boundaries and named coach stops are not places (audit A6).
 
-    def test_zone_and_coach_names_are_pseudo(self) -> None:
-        for name in (
-            "BOUNDARY ZONE 2",
-            "BOUNDARY ZONE 4",
-            "BOUNDARY ZONE 6",
-            "BRIGHTON UNIZONE",
-            "WORTHING UNIZONE",
-            "METRO T&W ZONE A",
-            "KINGS LYNN COACH",
-            "DEREHAM (COACH)",
-        ):
-            self.assertTrue(is_pseudo_station(name), name)
+    The list is reviewed and keyed by CRS, not matched on the name, so these
+    tests are about the codes the 24 September 2026 download actually
+    carried and the names recorded beside them.
+    """
+
+    def test_every_reviewed_code_is_a_fare_construction_point(self) -> None:
+        self.assertEqual(len(FARE_CONSTRUCTION_CRS), 12)
+        for crs in sorted(FARE_CONSTRUCTION_CRS):
+            self.assertTrue(is_pseudo_station(crs), crs)
+
+    def test_the_list_is_the_name_markers_exactly_on_this_feed(self) -> None:
+        # The proposer prints what the markers catch; on the stations the 24
+        # September 2026 download carried, that is the whole list, which is
+        # why splitting the evidence from the judgement has cost nothing yet.
+        feed = {
+            "QAG": "BOUNDARY ZONE 3", "QAH": "BOUNDARY ZONE 4",
+            "QAI": "BOUNDARY ZONE 5", "QAJ": "BOUNDARY ZONE 6",
+            "QAK": "BOUNDARY ZONE 2", "QBU": "BRIGHTON UNIZONE",
+            "QWU": "WORTHING UNIZONE", "QMZ": "METRO T&W ZONE A",
+            "KLB": "KINGS LYNN COACH", "QDM": "DEREHAM (COACH)",
+            "SWB": "SWAFFHAM (COACH)", "WIS": "WISBECH (COACH)",
+            "GRN": "GRANTHAM", "KGX": "LONDON KINGS X", "ZBF": "BLACKFRIARS UND",
+            "WKF": "WAKEFIELD WESTGT", "BCH": "BIRCHINGTON",
+        }
+        self.assertEqual(
+            sorted(crs for crs, name in feed.items() if looks_like_fare_construction(name)),
+            sorted(FARE_CONSTRUCTION_CRS),
+        )
 
     def test_a_real_station_is_not_pseudo(self) -> None:
-        for name in (
-            "GRANTHAM",
-            "EAST KILBRIDE",
-            "WORCESTER PARK",
-            "FINSBURY PARK",
-            "BATTERSEA PARK",
-            "HACKNEY DOWNS",
-            "ST HELENS CENTRAL",
-        ):
-            self.assertFalse(is_pseudo_station(name), name)
+        for crs in ("GRN", "KGX", "ZBF", "NOT", "LCN", "EDE", "ABD", "WKF", "BCH"):
+            self.assertFalse(is_pseudo_station(crs), crs)
+
+    def test_the_predicate_ignores_a_station_that_merely_sounds_like_one(self) -> None:
+        # The point of a CRS list over a substring test: a future station
+        # called Coach House cannot be dropped from the chooser by accident.
+        self.assertTrue(looks_like_fare_construction("COACH HOUSE HALT"))
+        self.assertFalse(is_pseudo_station("BCH"), "Birchington is a place")
+
+    def test_the_predicate_normalises_what_it_is_given(self) -> None:
+        self.assertTrue(is_pseudo_station(" qah "))
+        self.assertFalse(is_pseudo_station(""))
 
 
 class FaresParserTest(unittest.TestCase):
@@ -249,15 +269,28 @@ class FaresParserTest(unittest.TestCase):
             "GRA": Location("2", "GRA", "GRANTHAM", ""),
         }
         db._apply_major_station_fallbacks()
-        note = next(
-            (n for n in db.report.skipped_files if "reviewed fallback codes" in n),
-            None,
-        )
-        self.assertIsNotNone(note, f"absent reviewed codes are named, got {db.report.skipped_files!r}")
-        # The lists are still intersected before they are applied, so the note
-        # is the only effect a dead code has.
-        self.assertNotIn("BKF", db.location_types_by_crs)
-        self.assertIn(sorted(LONDON_STATION_CRS)[0], note)
+        absent = db.report.reviewed_codes_absent
+        self.assertTrue(absent, "the dead codes are named")
+        # The lists are still intersected before they are applied, so the
+        # record is the only effect a dead code has. It is not a skipped file:
+        # nothing went unread, a reviewed list is naming a station the feed
+        # does not carry.
+        self.assertNotIn("ACT", db.location_types_by_crs)
+        self.assertEqual(db.report.skipped_files, [])
+        self.assertNotIn("GRN", absent)
+        self.assertIn("ACT", absent)
+        # Re-running the pass must not restate it: the classification pass runs
+        # again as each source lands.
+        db._apply_major_station_fallbacks()
+        self.assertEqual(db.report.reviewed_codes_absent, absent)
+
+    def test_every_london_code_is_one_the_feed_carries(self) -> None:
+        # The seven Underground codes that had lost their leading Z, which made
+        # them name no station at all. A reviewed list is only as good as this.
+        for crs in ("ZBF", "ZCD", "ZGR", "ZLP", "ZPD", "ZPI", "ZRY"):
+            self.assertIn(crs, LONDON_STATION_CRS)
+        for dropped in ("BKF", "CDL", "DLP", "GLR", "IPD", "PIM", "RGY"):
+            self.assertNotIn(dropped, LONDON_STATION_CRS)
 
     def test_the_heritage_reader_only_uses_current_uk_properties(self) -> None:
         body = (

@@ -935,15 +935,39 @@ class ExplainUnpricedTest(unittest.TestCase):
 
     def test_a_placeholder_only_origin_names_the_count_and_the_codes(self) -> None:
         self.assertEqual(
-            explain_unpriced(3, ["EIF", "EIS"], {}),
+            explain_unpriced(3, 3, ["EIF", "EIS"], {}),
             "The feed reaches 3 standard-return destinations, and the cheapest fare "
             "to every one of them is an ITX placeholder (EIF, EIS), which this page "
             "does not publish.",
         )
 
     def test_a_single_destination_is_written_in_the_singular(self) -> None:
-        note = explain_unpriced(1, ["EIS"], {})
+        note = explain_unpriced(1, 1, ["EIS"], {})
         self.assertIn("reaches 1 standard-return destination, and its cheapest fare", note)
+
+    def test_a_partly_withheld_origin_is_not_told_every_destination_is(self) -> None:
+        # The placeholder sentence claims *every* destination is withheld, so
+        # it is only said when every excluded row is. An origin priced half
+        # into ITX and half into a zone boundary has one of each, and the
+        # honest answer is the reason list rather than a false "all of them".
+        note = explain_unpriced(
+            2,
+            1,
+            ["EIS"],
+            {"destination_is_a_fare_construction_point": 1},
+        )
+        self.assertIn(
+            "none prices a publishable fare: 1 flows priced only to zone boundaries",
+            note,
+        )
+        self.assertNotIn("ITX placeholder", note)
+
+    def test_an_origin_priced_only_into_a_zone_says_that(self) -> None:
+        note = explain_unpriced(
+            1, 0, [], {"destination_is_a_fare_construction_point": 1}
+        )
+        self.assertIn("flows priced only to zone boundaries or coach stops", note)
+        self.assertNotIn("ITX", note)
 
     def test_rejections_are_named_largest_first_and_capped(self) -> None:
         tally = {
@@ -955,7 +979,7 @@ class ExplainUnpricedTest(unittest.TestCase):
             "flow_with_no_fare": 2,
         }
         self.assertEqual(
-            explain_unpriced(0, [], tally),
+            explain_unpriced(0, 0, [], tally),
             "The feed holds flows from this origin, but none prices a publishable fare: "
             "9 fares that are not standard returns; 5 flows past their last valid day; "
             "2 flows carrying no fare.",
@@ -963,7 +987,7 @@ class ExplainUnpricedTest(unittest.TestCase):
 
     def test_an_origin_the_feed_never_reaches_says_so(self) -> None:
         self.assertEqual(
-            explain_unpriced(0, [], {}), "The feed holds no fare from this origin at all."
+            explain_unpriced(0, 0, [], {}), "The feed holds no fare from this origin at all."
         )
 
 
@@ -1635,6 +1659,63 @@ class ClassificationGateTest(unittest.TestCase):
         self.assertEqual(report.skipped_files, [self.FAILURE])
 
 
+class ReviewedCodeGateTest(unittest.TestCase):
+    """A dead reviewed code is a visible build event (audit A7).
+
+    The synthetic feed carries six stations, so almost every reviewed
+    settlement-fallback code is absent from it -- which is exactly the state
+    this gate exists to catch, and why the test needs no injection.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(self.root / "fares", include_restrictions=True)
+        (self.root / "metadata.json").write_text(
+            json.dumps({"source": "RSP fares feed", "downloaded": "3 October 2026"}),
+            encoding="utf-8",
+        )
+
+    def build(self, *extra: str) -> tuple[int, str, str, Path]:
+        out = self.root / "site" / "index.html"
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = build_demo_page.main(
+                ["--feed", str(self.feed), "--out", str(out), *extra]
+            )
+        return code, stdout.getvalue(), stderr.getvalue(), out
+
+    def test_the_dead_codes_are_named_and_the_build_publishes(self) -> None:
+        code, said, _, out = self.build()
+        self.assertEqual(code, 0, "without the flag the page still builds")
+        self.assertIn("reviewed codes:", said)
+        self.assertIn("match no station in this feed", said)
+        self.assertTrue(out.exists())
+
+    def test_the_require_flag_refuses_and_names_the_codes(self) -> None:
+        code, _, said, out = self.build("--require-live-reviewed-codes")
+        self.assertEqual(code, 2)
+        self.assertIn("refusing to publish", said)
+        self.assertIn("reviewed settlement fallback code", said)
+        self.assertFalse(out.exists(), "a refused build must write no page")
+
+    def test_a_dead_code_is_named_once_and_is_not_an_unopened_file(self) -> None:
+        # It is a list going stale, not a file left unread, so it gets its own
+        # channel: reporting it as an unopened source would be a lie that also
+        # hid it among the archive-inside-an-archive notes.
+        with tempfile.TemporaryDirectory() as tmp:
+            db = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+        self.assertTrue(db.report.reviewed_codes_absent)
+        self.assertEqual(
+            db.report.skipped_files,
+            [],
+            f"a dead reviewed code is not a skipped file: {db.report.skipped_files!r}",
+        )
+
+
 class PseudoStationTest(unittest.TestCase):
     """Zone boundaries are priceable in the feed but are not places (audit A6)."""
 
@@ -1658,13 +1739,81 @@ class PseudoStationTest(unittest.TestCase):
             )
             fares.locations_by_crs = dict(
                 fares.locations_by_crs,
-                QZZ=self.Station("QZZ", "BOUNDARY ZONE 9"),
+                QAH=self.Station("QAH", "BOUNDARY ZONE 4"),
             )
             payload = build_payload(fares, None, "GRN")
         names = {station["name"] for station in payload["stations"]}
-        self.assertNotIn("BOUNDARY ZONE 9", names)
+        self.assertNotIn("BOUNDARY ZONE 4", names)
         self.assertTrue(names, "the jump list still carries the real stations")
         self.assertTrue(any("NOTTINGHAM" in name for name in names))
+
+    def test_a_pseudo_destination_is_not_published_as_a_place(self) -> None:
+        # A zone boundary records a fare change, not a journey, so it must not
+        # become a row a reader could buy a ticket to. The rule lives in the
+        # shared query loop, so the page, the chooser and the coverage report
+        # cannot disagree about it.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            (feed / "rjfaf.loc").open("a", encoding="utf-8").write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "L",
+                        "nlc": "9999",
+                        "description": "BOUNDARY ZONE 4",
+                        "crs": "QAH",
+                        "group_nlc": "9999",
+                    },
+                    LOCATION,
+                )
+                + "\n"
+            )
+            (feed / "rjfaf.ffl").open("a", encoding="utf-8").write(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "F",
+                        "origin_nlc": "1000",
+                        "destination_nlc": "9999",
+                        "route_code": "00000",
+                        "flow_id": "0000099",
+                    },
+                    FLOW_F,
+                )
+                + "\n"
+                + _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "T",
+                        "flow_id": "0000099",
+                        "ticket_code": "CDR",
+                        "fare_pence": "1500",
+                        "restriction_code": "1A",
+                    },
+                    FLOW_T,
+                )
+                + "\n"
+            )
+            fares = FaresDb().load_feed(feed)
+            # The feed does reach the zone and does price a fare to it, and the
+            # query says where that fare went rather than dropping it silently.
+            tally: dict[str, int] = {}
+            reachable = fares.destinations_within("GRN", 10_000_000, adults=1, tally=tally)
+            self.assertEqual(tally["destination_is_a_fare_construction_point"], 1)
+            self.assertNotIn(
+                "QAH", [row.crs for row in reachable], "the zone is not a destination"
+            )
+            payload = build_payload(fares, None, "GRN")
+            rows = (
+                payload["destinations"]
+                + payload["singleDestinations"]
+                + payload["anytimeDestinations"]
+            )
+        self.assertTrue(
+            all(row["crs"] != "QAH" for row in rows),
+            f"a zone boundary was published as a destination: {rows!r}",
+        )
+        self.assertTrue(rows, "the page's real destinations are untouched")
 
 
 class UnnameableCeilingTest(unittest.TestCase):
