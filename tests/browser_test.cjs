@@ -83,25 +83,125 @@ async function main() {
   const page = await context.newPage();
   const rows = () => page.locator("#rows a.buy").count();
 
+  // Every expectation below is read out of the page's own payload. The suite
+  // used to name Nottingham, Lincoln, Peterborough and the Tower of London,
+  // which made it a test of the synthetic demo feed whatever page it was
+  // pointed at -- and the deploy workflow pointed it at a real Grantham page,
+  // where none of those is a priced destination, so three checks could not
+  // pass there for that reason alone. A gate that cannot pass is a gate nobody
+  // reads, and the facts it wanted were all in the page it was already reading.
+  // One page-side reader of the payload, installed on every load, so the three
+  // facts every expectation needs -- the list the current ticket mode shows,
+  // the types a destination carries, the budget on screen -- are read the same
+  // way everywhere and cannot drift apart between checks. TYPES.cheapest and
+  // TYPES.dearest reduce rather than spread, because a station with thousands
+  // of destinations would spill the argument list.
+  const installReader = () => page.evaluate(() => {
+    window.TYPES = {
+      list: () => {
+        const mode = document.querySelector('input[name="ticketMode"]:checked').value;
+        return mode === "single" ? DATA.singleDestinations
+          : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
+      },
+      types: (destination) => destination.destinationTypes || [destination.destinationType],
+      cap: () => Number(document.getElementById("budgetNumber").value) * 100,
+      price: (destination) =>
+        document.querySelector('input[name="unit"]:checked').value === "party"
+          ? destination.partyPence : destination.adultPence,
+      cheapest: (pick) => TYPES.list().reduce((low, d) => Math.min(low, pick(d)), Infinity),
+      dearest: (pick) => TYPES.list().reduce((high, d) => Math.max(high, pick(d)), 0),
+    };
+  });
+  let pageSize = 20;
+  // Every page is opened through here: a navigation throws away the reader,
+  // so one way to load means no step can forget to reinstall it. The budget
+  // under test is the page's own affordable one unless a step wants another.
+  const open = async (budget) => {
+    await page.goto(url);
+    await installReader();
+    pageSize = await page.evaluate(() => PAGE_SIZE);
+    if (budget !== undefined) await page.fill("#budgetNumber", String(budget));
+  };
+  // What a type means on this page, in the mode and at the budget on screen:
+  // which rows it leaves, and whether it is worth offering at all.
+  const expectedFor = (type) =>
+    page.evaluate((wanted) => ({
+      carried: TYPES.list().some((d) => TYPES.types(d).includes(wanted)),
+      rows: TYPES.list().filter((d) => TYPES.types(d).includes(wanted) && d.adultPence <= TYPES.cap()),
+    }), type);
+  // One type per call, checked in both directions: the rows it leaves come
+  // from the payload, and a type no destination in this mode carries must not
+  // be offered, because a chip that can only ever return nothing reads as a
+  // broken control rather than an empty result.
+  const checkChip = async (type, offered, matched) => {
+    const expected = await expectedFor(type);
+    const chip = `input[name="destinationType"][value="${type}"]`;
+    if (!expected.carried) {
+      check(offered, !(await page.locator(chip).isVisible()), `${type} chip on a page with no ${type} destination in this mode`);
+      return expected;
+    }
+    if (!(await page.locator(chip).isVisible())) {
+      check(offered, false, `${type} chip hidden although a destination carries it in this mode`);
+      return expected;
+    }
+    await page.check(chip);
+    const shown = await rows();
+    const text = await page.textContent("#rows");
+    const wanted = expected.rows.slice(0, pageSize);
+    check(
+      matched,
+      shown === wanted.length && wanted.every((destination) => text.includes(destination.name)),
+      `${shown} rows; expected ${wanted.length} of ${expected.rows.length}`
+    );
+    await page.uncheck(chip);
+    return expected;
+  };
+  // The budget that puts every row of one type on screen, worked out from the
+  // dearest of them. Null when this mode carries no destination of that type,
+  // which is a fact about the feed rather than a reason to skip the check.
+  const budgetFor = (type) =>
+    page.evaluate((wanted) => {
+      const dearest = TYPES.dearest((d) => (TYPES.types(d).includes(wanted) ? d.adultPence : 0));
+      return dearest ? Math.max(1, Math.ceil(dearest / 100)) : null;
+    }, type);
+
   try {
     // 1. It renders, with rows and a heading that names the origin.
-    await page.goto(url);
+    await open();
+    const facts = await page.evaluate(() => ({
+      origin: DATA.origin.name,
+      destinations: DATA.destinations.length,
+      // The cheapest return on the page, so the budget under test is one the
+      // page's own data can fill rather than a number the fixture happened to
+      // have. A real feed's opening budget is often too low for its own
+      // cheapest fare, and a hardcoded £20 then measured an empty list.
+      affordable: Math.max(1, Math.ceil(TYPES.cheapest((d) => d.adultPence) / 100)),
+    }));
     const heading = (await page.textContent("h1")) || "";
-    check("renders the continuous budget-and-origin heading", /Where can we go for under/.test(heading) && /GRANTHAM/.test(heading), heading.trim());
+    check(
+      "renders the continuous budget-and-origin heading",
+      /Where can we go for under/.test(heading) && heading.includes(facts.origin.toUpperCase()),
+      heading.trim()
+    );
     check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");
-    const budgetWidthAt20 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
-    await page.fill("#budgetNumber", "9");
-    const budgetWidthAt9 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
-    await page.fill("#budgetNumber", "126");
-    const budgetWidthAt126 = await page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
-    check("the heading budget width follows its character count", budgetWidthAt9 < budgetWidthAt20 && budgetWidthAt126 > budgetWidthAt20, `${budgetWidthAt9} / ${budgetWidthAt20} / ${budgetWidthAt126}`);
+    // Measured between a one-digit and a three-digit amount, because the field
+    // is sized to the value: a page whose opening budget is already two digits
+    // sits at its widest, so comparing against the opening value tested the
+    // fixture's number rather than the field.
+    const widthAt = async (amount) => {
+      await page.fill("#budgetNumber", amount);
+      return page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
+    };
+    const budgetWidthAt9 = await widthAt("9");
+    const budgetWidthAt126 = await widthAt("126");
+    check("the heading budget width follows its character count", budgetWidthAt9 < budgetWidthAt126, `${budgetWidthAt9} / ${budgetWidthAt126}`);
     await page.locator(".budget-prefix").click();
     await page.keyboard.type("7");
     const replacedAmount = (await page.inputValue("#budgetNumber")).trim();
     check("clicking the £ selects the whole editable amount", replacedAmount === "7", replacedAmount);
-    await page.fill("#budgetNumber", "20");
+    await page.fill("#budgetNumber", String(facts.affordable));
     const initial = await rows();
-    check("renders priced rows", initial > 0, `${initial} rows`);
+    check("renders priced rows", initial > 0, `${initial} rows; ${facts.destinations} destinations in the feed`);
 
     // 2. Dragging the budget slider to the floor empties the list.
     const startBudget = (await page.inputValue("#budgetNumber")).trim();
@@ -120,70 +220,166 @@ async function main() {
     check("the summary counts what is left", /No destinations within/.test(await page.textContent("#summary")));
 
     // 3. The destination-type chips narrow the result set and support both
-    // exclusive All and multi-select specific types.
-    await page.goto(url);
-    await page.check('input[name="destinationType"][value="city"]');
-    const filtered = await rows();
-    const expectedCityCount = await page.evaluate(() => DATA.destinations.filter(
-      (d) => d.destinationTypes.includes("city") && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
-    ).length);
-    check("the city chip leaves the priced city destinations", filtered === expectedCityCount && filtered > 0, `${filtered} rows; expected ${expectedCityCount}`);
-    check(
-      "and the rows are the city destinations",
-      (await page.textContent("#rows")).includes("NOTTINGHAM"),
-      await page.textContent("#rows")
+    // exclusive All and multi-select specific types. Every chip is judged
+    // against the page's own data in both directions, and the ticket mode is
+    // part of that data: a chip belongs to the list the reader is looking at.
+    // The budget is the page's own cheapest, because a chip that leaves no
+    // rows would pass without proving anything about the filter.
+    await open(facts.affordable);
+    await checkChip("city", "a type this page offers is offered", "the city chip leaves the priced city destinations");
+    await checkChip(
+      "seaside",
+      "a type this page offers is offered",
+      "a coastal destination is reachable without also asking for a city"
     );
-    await page.check('input[name="destinationType"][value="seaside"]');
-    await page.uncheck('input[name="destinationType"][value="city"]');
-    const seaside = await rows();
-    const seasideText = await page.textContent("#rows");
-    check("the seaside facet finds a city that is also coastal", seaside === 1 && /LINCOLN/.test(seasideText), `${seaside} rows; ${seasideText}`);
-    await page.uncheck('input[name="destinationType"][value="seaside"]');
-    await page.check('input[name="destinationType"][value="university"]');
-    const universityText = await page.textContent("#rows");
-    const university = await rows();
-    check("the university facet finds the university town", university >= 1 && /NOTTINGHAM/.test(universityText), `${university} rows; ${universityText}`);
-    check("a facet with no destination here offers no chip", (await page.locator('input[name="destinationType"][value="island"]').count()) === 0, "island chip rendered");
+    await checkChip("university", "a type this page offers is offered", "a university town is findable by the university facet");
+    await checkChip("island", "a facet with no destination here offers no chip", "an island destination is findable by the island facet");
+    // A chip the payload says the page carries must be on screen, and one it
+    // does not must not be: the two directions are separate checks because
+    // they failed separately.
+    const carriedTypes = await page.evaluate(() => {
+      const types = new Set();
+      for (const d of TYPES.list()) for (const type of TYPES.types(d)) types.add(type);
+      const chips = Array.from(document.querySelectorAll('input[name="destinationType"]'))
+        .map((input) => input.value)
+        .filter((value) => value !== "all");
+      return {
+        carried: [...types].sort(),
+        offered: chips.filter((value) => !document.querySelector(`input[name="destinationType"][value="${value}"]`).closest("label").hidden).sort(),
+        rendered: chips.sort(),
+      };
+    });
+    // Both directions, because they are different promises: nothing is offered
+    // that no destination in this mode carries, and nothing carried is hidden.
+    // A type the template never renders is neither offered nor hidden, so it
+    // cannot fail the second half.
+    check(
+      "the offered chips are the ones this mode's destinations carry",
+      carriedTypes.offered.every((type) => carriedTypes.carried.includes(type)) &&
+        carriedTypes.rendered
+          .filter((type) => carriedTypes.carried.includes(type))
+          .every((type) => carriedTypes.offered.includes(type)),
+      `offered ${carriedTypes.offered.join(", ")}; carried ${carriedTypes.carried.join(", ")}`
+    );
     await page.locator('.ticket-filter label').filter({ hasText: "Single" }).click();
-    const singleText = await page.textContent("#rows");
-    check("an advance single is labelled as train-specific", /Advance single/.test(singleText), singleText.slice(0, 240));
-    await page.locator('input[name="ticketMode"][value="return"]').check({ force: true });
-    await page.goto(url);
-    await page.check('input[name="destinationType"][value="heritage"]');
-    const heritageText = await page.textContent("#rows");
-    const heritageHref = await page.locator("#rows .heritage-proof a").getAttribute("href");
-    check("a heritage row names and links its UNESCO property", heritageText.includes("World heritage: Tower of London") && heritageHref === "https://whc.unesco.org/en/list/488/", heritageText);
-    await page.uncheck('input[name="destinationType"][value="heritage"]');
-    // Peterborough costs more than the page's opening budget, so the class is
-    // only worth looking at with the budget raised.
-    await page.uncheck('input[name="destinationType"][value="university"]');
-    await page.fill("#budgetNumber", "30");
-    await page.check('input[name="destinationType"][value="small_town"]');
-    const smallTown = await rows();
-    const smallTownText = await page.textContent("#rows");
-    check("a small town is its own class, not a town", smallTown === 1 && /PETERBOROUGH/.test(smallTownText), `${smallTown} rows; ${smallTownText}`);
-    await page.fill("#budgetNumber", "20");
-    await page.uncheck('input[name="destinationType"][value="small_town"]');
-    await page.check('input[name="destinationType"][value="university"]');
-    await page.check('input[name="destinationType"][value="seaside"]');
-    const universityAndCoast = await rows();
-    // The two sets can overlap -- a station can be coastal and a university
-    // town -- so the union is worked out from the data rather than by adding
-    // the two counts.
-    const expectedUnion = await page.evaluate(() => DATA.destinations.filter(
-      (d) => d.destinationTypes.some((t) => t === "university" || t === "seaside")
-        && d.adultPence <= Number(document.getElementById("budgetNumber").value) * 100
-    ).length);
-    check(
-      "specific destination chips are multi-select and union their matches",
-      (await page.locator('input[name="destinationType"][value="seaside"]').isChecked()) &&
-        (await page.locator('input[name="destinationType"][value="university"]').isChecked()) &&
-        universityAndCoast === expectedUnion,
-      `${university} + ${seaside} -> ${universityAndCoast}; expected ${expectedUnion}`
+    // An advance single is train-specific whatever the feed calls it, so the
+    // label is asserted against the rows the payload says are advance singles
+    // in this mode, at this budget -- and against their absence when there are
+    // none, so a page cannot pass by never showing one.
+    const advance = await page.evaluate(() =>
+      TYPES.list().filter((d) => d.isAdvance && d.adultPence <= TYPES.cap()).length
     );
-    await page.uncheck('input[name="destinationType"][value="seaside"]');
+    const singleText = await page.textContent("#rows");
+    check(
+      "an advance single is labelled as train-specific, and only when one is shown",
+      advance === 0 ? !/Advance single/.test(singleText) : /Advance single/.test(singleText),
+      `${advance} advance singles in this mode at this budget; ${singleText.slice(0, 160)}`
+    );
+    // The chips follow the mode, so the heritage destinations this page has
+    // must now be offered, and a page whose only heritage destination was the
+    // single just selected must offer it here and not in return mode.
+    await checkChip("heritage", "a type this page offers is offered", "the heritage chip leaves the heritage destinations");
+    // Which mode a UNESCO property appears in, and what it costs, are facts
+    // about the feed: on one of these pages the heritage destinations are
+    // returns, on the other they are outbound singles, and a check pinned to
+    // either mode can only ever be right about one of them. The check goes to
+    // the mode that carries one, raises the budget to reach it, and only
+    // accepts a property that the page shows on its first page of results.
+    const heritage = await page.evaluate((limit) => {
+      for (const mode of ["return", "single", "anytime"]) {
+        const list = mode === "single" ? DATA.singleDestinations
+          : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
+        for (const d of list) {
+          if (!TYPES.types(d).includes("heritage") || !(d.heritageSites || []).length) continue;
+          const shown = list.filter((x) => x.adultPence <= d.adultPence).slice(0, limit);
+          if (shown.some((x) => x.name === d.name)) {
+            return { mode, name: d.name, site: d.heritageSites[0], pounds: Math.ceil(d.adultPence / 100) };
+          }
+        }
+      }
+      return null;
+    }, pageSize);
+    if (heritage) {
+      await page.check('input[name="destinationType"][value="all"]');
+      await page.locator(`input[name="ticketMode"][value="${heritage.mode}"]`).check({ force: true });
+      await page.fill("#budgetNumber", String(heritage.pounds));
+      const heritageText = await page.textContent("#rows");
+      const heritageHref = await page.locator("#rows .heritage-proof a").first().getAttribute("href");
+      check(
+        "a heritage row links the UNESCO property the payload names",
+        heritageText.includes("World heritage: " + heritage.site.name) && heritageHref === heritage.site.url,
+        `${heritage.name} in ${heritage.mode} mode: ${heritage.site.name} ${heritage.site.url}; ${heritageText.slice(0, 160)}`
+      );
+    } else {
+      check("a heritage row links the UNESCO property the payload names", false, "no destination on this page carries a UNESCO property");
+    }
+    // Back to returns for the rest of the step, on a page that has not been
+    // left holding the previous step's mode, budget and filters.
+    await open(facts.affordable);
+    // A class that costs more than the page's opening budget is only worth
+    // looking at with the budget raised, and the budget that shows every row of
+    // the class is worked out from the payload rather than written down.
+    const smallTownBudget = await budgetFor("small_town");
+    if (smallTownBudget) {
+      await page.fill("#budgetNumber", String(smallTownBudget));
+      const smallTown = await checkChip(
+        "small_town",
+        "a type this page offers is offered",
+        "a small town is its own class, not a town"
+      );
+      const smallTownText = await page.textContent("#rows");
+      check(
+        "and it is not folded into the towns",
+        smallTown.rows.every((d) => !(d.destinationTypes || []).includes("town")) && smallTown.rows.length > 0,
+        `${smallTown.rows.length} small towns, ${smallTownText.slice(0, 160)}`
+      );
+    } else {
+      check("a small town is its own class, not a town", false, "this page has no small town in return mode");
+    }
+    await page.fill("#budgetNumber", String(facts.affordable));
+    // Multi-select, on whichever two types the page carries: the two sets can
+    // overlap -- a station can be coastal and a university town -- so the union
+    // is worked out from the data rather than by adding the two counts.
+    const pair = carriedTypes.offered.slice(0, 2);
+    if (pair.length === 2) {
+      await page.check(`input[name="destinationType"][value="${pair[0]}"]`);
+      await page.check(`input[name="destinationType"][value="${pair[1]}"]`);
+      const unionRows = await rows();
+      const expectedUnion = await page.evaluate((types) =>
+        TYPES.list().filter(
+          (d) => TYPES.types(d).some((t) => types.includes(t)) && d.adultPence <= TYPES.cap()
+        ).length
+      , pair);
+      check(
+        "specific destination chips are multi-select and union their matches",
+        (await page.locator(`input[name="destinationType"][value="${pair[0]}"]`).isChecked()) &&
+          (await page.locator(`input[name="destinationType"][value="${pair[1]}"]`).isChecked()) &&
+          unionRows === Math.min(expectedUnion, pageSize),
+        `${pair.join(" + ")} -> ${unionRows}; expected ${Math.min(expectedUnion, pageSize)}`
+      );
+      await page.uncheck(`input[name="destinationType"][value="${pair[1]}"]`);
+      await page.uncheck(`input[name="destinationType"][value="${pair[0]}"]`);
+    } else {
+      check(
+        "specific destination chips are multi-select and union their matches",
+        false,
+        `this page offers ${pair.length} specific chip(s), so multi-select cannot be exercised`
+      );
+    }
     await page.check('input[name="destinationType"][value="all"]');
-    check("All is checked exclusively", await page.locator('input[name="destinationType"][value="all"]').isChecked() && !(await page.locator('input[name="destinationType"][value="city"]').isChecked()), "all state");
+    // Judged over every chip the page rendered, not one of them by name: a
+    // check that watched the city chip alone passed on a page with no city.
+    const exclusivity = await page.evaluate(() => ({
+      all: document.querySelector('input[name="destinationType"][value="all"]').checked,
+      also: Array.from(document.querySelectorAll('input[name="destinationType"]'))
+        .filter((input) => input.value !== "all" && input.checked)
+        .map((input) => input.value),
+    }));
+    check(
+      "All is checked exclusively",
+      exclusivity.all && exclusivity.also.length === 0,
+      `all ${exclusivity.all}; also checked: ${exclusivity.also.join(", ") || "none"}`
+    );
     check("clearing the type filter restores the list", (await rows()) === initial);
 
     // 4. A ticket link goes where it says it goes, in a new tab.
@@ -198,27 +394,63 @@ async function main() {
     await popup.close();
 
     // 5. A row can hand the reader the four things the seller will ask for.
+    // What the copy must say is read from the payload rather than matched
+    // against a pattern: a real station's name has spaces in it
+    // (LONDON KINGS X, NOTTINGHAM), and a one-word pattern rejected the
+    // correct answer while accepting a wrong one on the demo feed.
     const rowText = (await page.textContent("#rows tr")).trim();
-    await page.locator("#rows button[aria-label^='Copy the journey details']").first().click();
+    const adultButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
+    const journey = await page.evaluate((label) => {
+      const name = label.replace("Copy the journey details for ", "");
+      const destination = TYPES.list().find((d) => d.name === name) || {};
+      return {
+        origin: DATA.origin.name + " (" + DATA.origin.crs + ")",
+        destination: destination.name + " (" + destination.crs + ")",
+      };
+    }, await adultButton.getAttribute("aria-label"));
+    await adultButton.click();
     await page.waitForFunction(
       () => /copied/i.test((document.getElementById("copyStatus") || {}).textContent || ""),
       null,
       { timeout: 3000 }
     ).catch(() => {});
     const adultCopy = await page.evaluate(() => navigator.clipboard.readText());
-    check("the copy names the origin", /^From: \S+ \(\w+\)$/m.test(adultCopy), adultCopy);
-    check("the copy names the destination", /^To: \S+ \(\w+\)$/m.test(adultCopy), adultCopy);
+    check("the copy names the origin", adultCopy.includes("From: " + journey.origin), adultCopy);
+    check("the copy names the destination", adultCopy.includes("To: " + journey.destination), adultCopy);
     check("the copy names the party size", /^Passengers: 1 adult$/m.test(adultCopy), adultCopy);
     check("one adult's copy does not mention a railcard", !/Railcard/.test(adultCopy), adultCopy);
-    check("the row it copied is the row it sits on", adultCopy.includes(rowText.split(" ")[0]), `${rowText} vs ${adultCopy}`);
+    // The copy belongs to the row it was copied from, judged on the whole
+    // station name rather than its first word, which two stations can share.
+    check(
+      "the row it copied is the row it sits on",
+      adultCopy.includes("To: " + journey.destination) && rowText.includes(journey.destination),
+      `${rowText} vs ${adultCopy}`
+    );
     check(
       "and the copy is announced, not just performed",
       /copied/i.test(await page.textContent("#copyStatus"))
     );
 
     // 6. The party price carries the railcard, because that price needs it.
+    // The budget is the cheapest party price in the payload, not the adult one
+    // used above: two adults never cost less than one, so a budget that shows
+    // a return row shows no party row at all, and a check written against one
+    // was measuring the fixture's numbers rather than the page.
+    const partyBudget = await page.evaluate(() =>
+      Math.max(1, Math.ceil(DATA.destinations.reduce((low, d) => Math.min(low, d.partyPence), Infinity) / 100))
+    );
+    await page.fill("#budgetNumber", String(partyBudget));
     await page.check('input[name="unit"][value="party"]');
-    await page.locator("#rows button[aria-label^='Copy the journey details']").first().click();
+    const copyButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
+    const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy the journey details for ", "");
+    // The railcard note is owed only where the feed prices one, so what the
+    // copy should say is read off the row it is about to copy: a page with no
+    // eligible fare must stay quiet rather than name a discount that is not there.
+    const railcardNamed = await page.evaluate((name) => {
+      const row = DATA.destinations.find((d) => d.name === name);
+      return Boolean(DATA.railcardAvailable && row && row.railcardPence !== null);
+    }, copiedName);
+    await copyButton.click();
     await page.waitForFunction(
       () => /2 adults/.test((document.getElementById("copyStatus") || {}).textContent || ""),
       null,
@@ -227,9 +459,9 @@ async function main() {
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(
-      "and names the railcard when the fare is eligible",
-      /Two Together discount/.test(partyCopy),
-      partyCopy
+      "and names the railcard when the fare is eligible, and stays quiet when it is not",
+      railcardNamed ? /Two Together discount/.test(partyCopy) : !/Two Together discount/.test(partyCopy),
+      `${copiedName} ${railcardNamed ? "is" : "is not"} railcard-eligible: ${partyCopy}`
     );
 
     // 7. At a phone width the ticket action is on-screen, without horizontal
@@ -248,7 +480,7 @@ async function main() {
     // (ADR-0019). Choosing a station is navigation, so the link must go to
     // another page, and there must never be an empty picker.
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(url);
+    await open(facts.affordable);
 
     // The layout's thesis: the budget leads, and row actions carry real touch
     // targets. Measured, not assumed.
@@ -287,10 +519,15 @@ async function main() {
       check("the picker lists stations without typing", pickCount > 0, `${pickCount} options`);
       const href = await page.locator("#originPicks a").first().getAttribute("href");
       check("options are links to station pages", /^\/from\/.+\/$/.test(href), href);
-      await page.fill("#originSearch", "notting");
+      // The query comes from the picker's own first option, so the check is
+      // about narrowing rather than about a station name the fixture happened
+      // to carry.
+      const firstWord = (((await page.locator("#originPicks a").first().textContent()) || "").trim().split(/[\s(]+/)[0] || "");
+      const query = firstWord.slice(0, 4);
+      await page.fill("#originSearch", query);
       const narrowed = await page.locator("#originPicks a").count();
       const narrowedText = await page.locator("#originPicks").textContent();
-      check("typing narrows the picker", narrowed > 0 && /NOTTINGHAM/.test(narrowedText), `${narrowed} options`);
+      check("typing narrows the picker", narrowed > 0 && narrowed < pickCount && narrowedText.includes(firstWord), `${query} -> ${narrowed} of ${pickCount} options`);
       await page.fill("#originSearch", "zzzz");
       check(
         "a no-match says so and names the code route",
@@ -299,7 +536,7 @@ async function main() {
       const emptyOptions = await page.locator("#originPicks a").count();
       check("and the list itself is empty rather than stale", emptyOptions === 0, `${emptyOptions} left`);
       // Keyboard exit: Escape closes and focus returns to the control that opened it.
-      await page.fill("#originSearch", "lin");
+      await page.fill("#originSearch", query);
       await page.keyboard.press("Escape");
       check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
       check("and focus returns to the heading station control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
