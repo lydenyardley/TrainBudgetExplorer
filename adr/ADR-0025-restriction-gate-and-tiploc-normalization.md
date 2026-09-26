@@ -99,3 +99,27 @@ rather than "no record".
 - A restriction condition still has to be honoured when buying (for R9, that
   includes its day/time rules). The page identifies the condition; it does not
   turn a conditional railcard fare into an unconditional one.
+
+## The `EIS` question (26 September 2026)
+
+The 25 September audit found King's Cross excluded from every publishable set
+and asked whether `EIS` at 5p is really the ITX placeholder family, or a
+placeholder record standing in for a genuine non-placeholder operator's offer
+at the busiest origin in the country. If the second, the honest answer would
+have been to admit the fare and list King's Cross with it.
+
+Measured on the real feed: the origin's 9,212 rejected rows are all
+`ticket_is_not_a_reviewed_anytime_day_return`; of its 213 raw tickets, 128 are
+`SOR`, 42 `EIS`, 27 `SVR`. `EIS` sits in `PLACEHOLDER_TICKET_CODES` with the
+rest of the family at the 5p minimum, restriction `GA` and never blank, so it
+fails this ADR's selector on ticket name, class, restriction and placeholder
+grounds at once. **The verdict is no change**: `EIS` stays excluded.
+
+The premise of the question dissolved with it. King's Cross was never empty
+because of `EIS` — the chooser counted destinations with the anytime-return
+selector alone while the page publishes three modes. `priced_destinations_within`
+(ADR-0019, 26 September) counts all three, and King's Cross publishes 171
+returns and 305 singles and is listed in the chooser with them. The audit's
+other option — list King's Cross with a note that the feed has no fares — is
+now unnecessary, and admitting a placeholder to get there would have replaced
+a real page with a fake one.

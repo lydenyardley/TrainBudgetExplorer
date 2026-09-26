@@ -212,3 +212,34 @@ what a reader actually receives:
 **Verified:** 211 Python tests (5 new, exercising `--all-origins` end to end rather
 than its pieces) and 38/38 real-browser checks; no overflow at any width from
 320 px to 1280 px.
+
+## What the 25 September audit corrected (26 September 2026)
+
+That audit measured "empty" with `publishable_destinations_within` and reported
+757 of 3,436 origins yielding zero rows, King's Cross among them, with the
+selector behaving as ADR-0025 says and nobody having looked at the
+consequence. Two of its three numbers were wrong, and the third hid the defect:
+
+- **King's Cross was never without fares.** It has 171 restricted returns and
+  305 singles; what it had none of is the reviewed-anytime mode the chooser
+  happened to count with. The real empties are 714, not 757, and priceable
+  origins are 2,722, not 2,679, once the fix below is in.
+- **The chooser, the index and the coverage report asked three different
+  questions.** `_priced_destinations` used the anytime-return selector alone
+  while the page publishes three modes, so ADR-0019 decision 3 ("can the page
+  answer?") was being judged by one mode of the answer. `FaresDb.priced_destinations_within`
+  now unions all three — restricted standard returns, displayable singles,
+  reviewed anytime returns, a destination priced in several modes counted once —
+  and the chooser, the write set and the coverage report share it.
+- **The empty page now says why.** The payload carries `unpricedNote`, built by
+  `explain_unpriced`: a station the feed reaches whose cheapest fare to every
+  destination is an ITX placeholder is named with the codes, flows that never
+  price a publishable fare are counted by rejection reason, and an origin the
+  feed never reaches says so plainly. The footer drops its "raise the budget"
+  suggestion whenever the destination list is empty: a hint at "more of the 0
+  displayable destinations" would be nonsense, and on a fully unpriced page it
+  would contradict the page's own first sentence.
+
+The selector itself did not move: ADR-0025's six reviewed codes remain the
+publishable set, and `EIS` at 5p stays excluded — see ADR-0025's own note for
+the review that asked whether it was hiding a real King's Cross fare.
