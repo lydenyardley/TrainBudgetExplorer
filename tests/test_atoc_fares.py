@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import dataclasses
 import json
+import pickle
 import tempfile
 import unittest
 from unittest import mock
@@ -25,6 +26,9 @@ from atoc_fares import (
     LOCATION_CACHE_SCHEMA,
     LOCATION_FALLBACK_SOURCE,
     LOCATION_TYPE_SOURCE,
+    LOCATION_TYPES_FILE,
+    DESTINATION_FACETS_FILE,
+    classification_files,
     FARE_CONSTRUCTION_CRS,
     LONDON_STATION_CRS,
     looks_like_fare_construction,
@@ -285,6 +289,7 @@ class FaresParserTest(unittest.TestCase):
             db.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
             db.location_types_by_crs = {"ANC": "village"}
             db.location_facets_by_crs = {"ANC": {"seaside"}}
+            db.location_type_sources = [LOCATION_TYPE_SOURCE, LOCATION_FALLBACK_SOURCE]
             db._write_location_cache(path)
 
             reloaded = FaresDb()
@@ -293,6 +298,17 @@ class FaresParserTest(unittest.TestCase):
 
         self.assertEqual(reloaded.destination_type("ANC"), "village")
         self.assertEqual(reloaded.location_facets_by_crs["ANC"], {"seaside"})
+        # The labels are written as a list and read back as one, in the order
+        # they were loaded: a joined string would have to be split at the
+        # joiner, and a source's own text may contain it.
+        self.assertEqual(
+            reloaded.location_type_sources,
+            [LOCATION_TYPE_SOURCE, LOCATION_FALLBACK_SOURCE],
+        )
+        self.assertEqual(
+            reloaded.location_type_source,
+            LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE,
+        )
         self.assertEqual(
             [note for note in reloaded.report.skipped_files if "schema" in note],
             [],
@@ -319,7 +335,7 @@ class FaresParserTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (Path(tmp) / "cachedestination-facets.json").write_text(
+            (Path(tmp) / f"sourced.{DESTINATION_FACETS_FILE}").write_text(
                 json.dumps(
                     {
                         "schema": LOCATION_CACHE_SCHEMA,
@@ -340,22 +356,24 @@ class FaresParserTest(unittest.TestCase):
             db._load_location_lookup(feed)
         self.assertEqual(db.destination_type("ANC"), "village")
         self.assertEqual(db.destination_type("RET"), "town")
-        # A source label, and specifically not the two wrong answers: empty,
-        # which claims nothing classified the feed, and the fallback label,
-        # which claims the reviewed lists did it. Which source label wins when
-        # several files are loaded is a pre-existing question this test does
-        # not settle; what it settles is that a discard does not erase one.
-        self.assertNotEqual(db.location_type_source, "")
-        self.assertNotEqual(db.location_type_source, LOCATION_FALLBACK_SOURCE)
+        # The label names the file that classified the feed, and the discarded
+        # cache's own claim is not in it: a label is recorded when a file's
+        # classes are kept, and dropped with the classes when they are not. The
+        # two wrong answers this replaces were an empty label, which claims
+        # nothing classified the feed, and the fallback label, which claims the
+        # reviewed lists did it when ANC and RET are in no reviewed list.
+        self.assertEqual(db.location_type_source, "a sourced workbook")
+        self.assertNotIn("an older build", db.location_type_sources)
 
     def test_a_discarded_cache_does_not_stop_the_workbook_being_read(self) -> None:
-        # The whole classification pass, because the label above is read back
-        # out of the same data: it is the pass that has to notice. When it did
-        # not, the pass believed the workbook had already been applied, returned
-        # early, and every station the cache had classified fell through to the
-        # reviewed fallbacks -- 3,119 of 3,436 on the 24 September 2026
-        # download. ANC is in no reviewed list, so "village" below can only have
-        # come from the workbook.
+        # The whole classification pass, because a discarded file must not leave
+        # the build looking as though it already has a source: the classes are
+        # gone and the file's label is gone with them, so the workbook is what
+        # fills the gap. When the label stood, the pass returned early and every
+        # station the cache had classified fell through to the reviewed
+        # fallbacks -- 3,119 of 3,436 on the 24 September 2026 download. ANC is
+        # in no reviewed list, so "village" below can only have come from the
+        # workbook.
         with tempfile.TemporaryDirectory() as tmp:
             feeds = Path(tmp) / "feeds"
             (feeds / "fares").mkdir(parents=True)
@@ -384,6 +402,145 @@ class FaresParserTest(unittest.TestCase):
         # The build names the workbook, not the cache whose classes it threw
         # away: that label is what the page's provenance line claims.
         self.assertEqual(db.location_type_source, LOCATION_TYPE_SOURCE)
+
+    def test_a_label_from_an_older_fare_index_cache_is_still_reported(self) -> None:
+        # A fare-index pickle written before the labels were accumulated holds
+        # one label and no list, and unpickling sets the instance dictionary
+        # without running __init__. The property shadows that stored label, so
+        # it has to read it back explicitly: the alternative is a page built
+        # from an existing index losing its provenance line, and a build that
+        # dies on an attribute the pickle was never written with.
+        db = FaresDb()
+        db.__dict__.pop("location_type_sources")
+        db.__dict__["location_type_source"] = LOCATION_TYPE_SOURCE
+        restored = pickle.loads(pickle.dumps(db))
+        self.assertEqual(restored.location_type_source, LOCATION_TYPE_SOURCE)
+        self.assertTrue(restored._has_sourced_classes())
+
+    def test_the_classification_file_names_are_the_two_this_project_writes(self) -> None:
+        # The name is the contract, so the accepted shapes are worth stating on
+        # their own: the bare name this build writes and the same name behind a
+        # feed's own. A name that merely mentions the same words is not one.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in (
+                LOCATION_TYPES_FILE,
+                f"fares.{LOCATION_TYPES_FILE}",
+                DESTINATION_FACETS_FILE,
+                f"fares.{DESTINATION_FACETS_FILE}",
+            ):
+                (root / name).write_text("{}", encoding="utf-8")
+            for name in (
+                "location-types-notes.json",
+                "noteslocation-types.json",
+                "location_types.json",
+                "cachedestination-facets.json",
+                "fares.destination-facets.txt",
+            ):
+                (root / name).write_text("{}", encoding="utf-8")
+            self.assertEqual(
+                [path.name for path in classification_files(root)],
+                [
+                    DESTINATION_FACETS_FILE,
+                    f"fares.{DESTINATION_FACETS_FILE}",
+                    f"fares.{LOCATION_TYPES_FILE}",
+                    LOCATION_TYPES_FILE,
+                ],
+            )
+
+    def test_only_the_classification_files_this_project_writes_are_read(self) -> None:
+        # A file beside a feed whose name merely mentioned locations and types
+        # used to be loaded as a source, so a backup, a scratch probe or a
+        # staging copy of the cache was trusted exactly as much as the cache.
+        # The same bytes are read under a name this project writes and ignored
+        # under one it does not.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = Path(tmp) / "fares"
+            feed.mkdir()
+            lookalike = Path(tmp) / "location-types-notes.json"
+            lookalike.write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a scratch probe",
+                        "records": {"ANC": {"primary": "town"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            db = FaresDb()
+            db.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
+            with mock.patch.object(
+                atoc_fares.urllib.request, "urlopen", side_effect=OSError("offline")
+            ):
+                db._load_location_lookup(feed)
+                self.assertNotIn("ANC", db.location_types_by_crs)
+                self.assertIsNone(db.location_type_source)
+
+                (Path(tmp) / f"notes{LOCATION_TYPES_FILE}").write_text(
+                    lookalike.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+                fresh = FaresDb()
+                fresh.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
+                fresh._load_location_lookup(feed)
+                self.assertNotIn(
+                    "ANC",
+                    fresh.location_types_by_crs,
+                    "a name glued onto the prefix is not a name this project writes",
+                )
+
+                lookalike.rename(Path(tmp) / f"probe.{LOCATION_TYPES_FILE}")
+                fresh = FaresDb()
+                fresh.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
+                fresh._load_location_lookup(feed)
+        self.assertEqual(fresh.destination_type("ANC"), "town")
+        self.assertEqual(fresh.location_type_source, "a scratch probe")
+
+    def test_a_build_names_every_source_that_classified_the_feed(self) -> None:
+        # The page's provenance line is where a reader learns where a
+        # destination's type comes from. London is classified by the reviewed
+        # list before the workbook is read at all, and the build used to publish
+        # that class as the workbook's own work -- so a build with both names
+        # both, and the reviewed floor is named last.
+        with tempfile.TemporaryDirectory() as tmp:
+            feeds = Path(tmp) / "feeds"
+            (feeds / "fares").mkdir(parents=True)
+            (feeds / "download-manifest.json").write_text("{}", encoding="utf-8")
+            db = FaresDb()
+            db._read_ons_built_up_areas = lambda data: {  # type: ignore[method-assign]
+                "ANCASTER": {"name": "Ancaster", "type": "village", "band": "minor"},
+            }
+            db.locations_by_crs = {
+                "KGX": Location("1", "KGX", "LONDON KINGS X", ""),
+                "ANC": Location("2", "ANC", "ANCASTER", ""),
+            }
+            with mock.patch.object(
+                atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")
+            ):
+                db._load_location_lookup(feeds / "fares")
+            written = json.loads((feeds / LOCATION_TYPES_FILE).read_text(encoding="utf-8"))
+        # The reviewed list classified London on its own, and the workbook was
+        # still read for the rest of the country: a build whose only classes are
+        # the reviewed fallbacks has to read it, or a first build would never
+        # classify anything outside them.
+        self.assertEqual(db.destination_type("KGX"), "city")
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(
+            db.location_type_sources, [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
+        )
+        self.assertEqual(
+            db.location_type_source,
+            LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE,
+        )
+        # Written back with both, so the next build names both without reading
+        # the workbook again. The list keeps the order the labels were loaded
+        # in; the string beside it is the page's reading order.
+        self.assertEqual(
+            written["provenance"], [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
+        )
+        self.assertEqual(
+            written["source"], LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE
+        )
 
     def test_a_reviewed_fallback_the_workbook_already_names_is_reported(self) -> None:
         # A reviewed entry for a station the workbook names is not an error

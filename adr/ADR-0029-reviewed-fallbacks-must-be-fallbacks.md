@@ -172,12 +172,11 @@ the classification pass that the ONS workbook had already been applied, so the
 pass returned without reading it and every station the cache had classified
 fell through to the reviewed fallbacks. On the 24 September 2026 download that
 was **3,119 of 3,436 stations** losing their class in a build whose whole point
-was to fix classes. The loader now clears the label, and because the loader
-reads the label back out of the same discarded data, the pass clears it again
-on the flag — for the candidate that discarded, and only for that one. A flag
-that is consulted for every later candidate erases the label of a file that had
-just classified the feed properly, which leaves the build claiming no source at
-all, or claiming the reviewed fallbacks did the work a source did.
+was to fix classes. The label was cleared in the loader and cleared again in the
+pass, on the flag that recorded the discard, because the loader read the label
+back out of the same discarded data. **ADR-0030 replaced both clears with the
+rule they were reaching for** — a file whose classes are dropped contributes no
+label at all, so no file's label has to be erased, and the flag is gone.
 
 **The writer named its own schema as a literal.** `_write_location_cache`
 wrote `"schema": 3` while the reader had moved to 4, so every build wrote a
