@@ -564,6 +564,13 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "publishing with the reviewed fallbacks only. The skips are printed "
         "either way",
     )
+    parser.add_argument(
+        "--require-live-reviewed-codes",
+        action="store_true",
+        help="refuse to write pages when a reviewed settlement-fallback code "
+        "names no station in this feed. A dead code costs nothing at runtime, "
+        "so without this flag a reviewed list can go stale unnoticed",
+    )
     parser.add_argument("--date", default=None, help="service date as YYYY-MM-DD")
     parser.add_argument(
         "--note",
@@ -662,19 +669,30 @@ UNPRICED_REASONS = {
     "fare_with_no_ticket_type": "fares with no ticket type",
     "destination_has_no_location_record": "flows to destinations with no location record",
     "destination_has_no_station_code": "flows to destinations with no station code",
+    "destination_is_a_fare_construction_point": "flows priced only to zone boundaries or coach stops",
     "fare_above_the_budget": "fares above the price this page can show",
 }
 
 
-def explain_unpriced(raw_count: int, excluded_codes: list[str], tally: dict[str, int]) -> str:
+def explain_unpriced(
+    raw_count: int,
+    excluded_itx_count: int,
+    excluded_codes: list[str],
+    tally: dict[str, int],
+) -> str:
     """Why an origin priced nothing, for the payload's unpricedNote.
 
     Called only when every fare set on the page is empty. The count answers
     "how much does the feed even hold from here" and the reasons answer "so
     why is none of it on this page". The origin's name is already in the
     sentence this appends to, so it is not repeated here.
+
+    The placeholder sentence claims every one of those destinations is
+    withheld, so it is only said when every excluded row really is: an origin
+    priced only into a zone boundary has nothing to withhold and would be told
+    it had an ITX problem it does not have (audit A6).
     """
-    if raw_count:
+    if raw_count and excluded_itx_count == raw_count:
         codes = ", ".join(excluded_codes)
         if raw_count == 1:
             return (
@@ -989,7 +1007,9 @@ def build_payload(
 
     excluded_codes = sorted({row.ticket_code for row in excluded_itx})
     unpriced_note = (
-        explain_unpriced(len(raw_destinations), excluded_codes, raw_tally)
+        explain_unpriced(
+            len(raw_destinations), len(excluded_itx), excluded_codes, raw_tally
+        )
         if not destinations and not single_destinations and not anytime_destinations
         else None
     )
@@ -1034,7 +1054,7 @@ def build_payload(
                 "href": with_base(base_path, f"/from/{slugs[crs]}/"),
             }
             for crs, loc in sorted(fares.locations_by_crs.items())
-            if crs != origin.crs and not is_pseudo_station(loc.name)
+            if crs != origin.crs and not is_pseudo_station(crs)
         ],
         # Said by the page when this origin priced nothing, so the difference
         # between "nothing inside your budget" and "nothing priced from here at
@@ -1150,7 +1170,7 @@ def build_station_index(
         # Priced is not enough: a zone boundary prices fares through it but no
         # train stops there, so it is absent rather than offered and then
         # refused (audit A6, same rule as the priced-nothing station).
-        if count <= 0 or is_pseudo_station(location.name):
+        if count <= 0 or is_pseudo_station(crs):
             continue
         index.append(
             {
@@ -1334,6 +1354,27 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    # A reviewed fallback code the feed does not carry is a list quietly going
+    # stale, and it is silent by construction: the code is intersected away
+    # before it is applied, so a page looks exactly as it did. The names are
+    # printed either way, and the flag is what turns them into a refusal.
+    if fares.report.reviewed_codes_absent:
+        codes = fares.report.reviewed_codes_absent
+        print(
+            f"reviewed codes: {len(codes)} match no station in this feed: "
+            + ", ".join(codes[:12])
+            + (" ..." if len(codes) > 12 else "")
+        )
+        if args.require_live_reviewed_codes:
+            print(
+                f"error: refusing to publish: {len(codes)} reviewed settlement "
+                f"fallback code(s) name no station in this feed: {', '.join(codes)}. "
+                "A station was renamed, merged or withdrawn. Correct the code in "
+                "atoc_fares, or drop the entry and add a reviewed class for the "
+                "station that replaced it.",
+                file=sys.stderr,
+            )
+            return 2
 
     # Where the prices came from is read from the feed's metadata.json, not
     # retyped per build; --price-source overrides it. A synthetic build with
@@ -1508,7 +1549,7 @@ def main(argv: list[str] | None = None) -> int:
         origins = [
             crs
             for crs in sorted(fares.locations_by_crs)
-            if not is_pseudo_station(fares.locations_by_crs[crs].name)
+            if not is_pseudo_station(crs)
         ]
         if args.fast_all_origins:
             print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)

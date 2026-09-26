@@ -200,7 +200,8 @@ class UnnameableRowTest(unittest.TestCase):
         )
         self.assertEqual(report.unnameable_by_origin(), {"GRA": 7})
         self.assertIn(
-            "A further 7 destination rows cannot be named at all", report.message()
+            "A further 7 destination rows can never be named as a destination at all",
+            report.message(),
         )
 
     def test_the_feed_path_records_the_tally_per_origin(self) -> None:
@@ -236,7 +237,7 @@ class UnnameableRowTest(unittest.TestCase):
         )
         self.assertFalse(report, "nothing is unsourced")
         message = report.message()
-        self.assertIn("A further 9 destination rows cannot be named at all", message)
+        self.assertIn("A further 9 destination rows can never be named as a destination at all", message)
         self.assertNotIn("no settlement class", message)
 
     def test_a_report_with_nothing_to_say_is_still_silent(self) -> None:
@@ -245,13 +246,14 @@ class UnnameableRowTest(unittest.TestCase):
         self.assertEqual(report.message(), "")
         self.assertEqual(report.exit_code(False, ceiling=0), 0)
 
-    def test_the_tally_helper_sums_both_reasons(self) -> None:
+    def test_the_tally_helper_sums_every_row_that_cannot_be_a_destination(self) -> None:
         tally = {
             "destination_has_no_location_record": 2,
             "destination_has_no_station_code": 5,
+            "destination_is_a_fare_construction_point": 4,
             "fare_above_the_budget": 99,
         }
-        self.assertEqual(destination_coverage.unnameable_from_tally(tally), 7)
+        self.assertEqual(destination_coverage.unnameable_from_tally(tally), 11)
 
 
 class ExitCodeTest(unittest.TestCase):

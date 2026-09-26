@@ -54,18 +54,21 @@ SHARE_LIMIT = 3
 # import the page builder, which imports this module.
 EVERYTHING_PENCE = 1_000_000
 
-# The selector's reasons for dropping a row it cannot name: the destination's
-# NLC has no location record, or its location carries no station code. These
-# rows are a hard ceiling on coverage -- a destination that cannot be named can
-# have no settlement class either, and no reviewed list reaches it (audit A3).
+# The selector's reasons for dropping a row that can never become a published
+# destination: the NLC has no location record, the location carries no station
+# code, or the station is a fare-construction point with no train behind it.
+# These rows are a hard ceiling on coverage -- a destination that cannot be
+# named has no settlement class either, and no reviewed list reaches it
+# (audit A3).
 UNNAMEABLE_REASONS = (
     "destination_has_no_location_record",
     "destination_has_no_station_code",
+    "destination_is_a_fare_construction_point",
 )
 
 
 def unnameable_from_tally(tally: dict[str, int]) -> int:
-    """How many destination rows the feed could not name at all."""
+    """How many destination rows can never become a published destination."""
     return sum(tally.get(reason, 0) for reason in UNNAMEABLE_REASONS)
 
 
@@ -143,7 +146,7 @@ class UnsourcedReport:
                     continue
                 # A zone or coach pseudo-station is not a place a reader goes,
                 # so it is neither named nor counted in the share (audit A6).
-                if is_pseudo_station(row.get("name", "")):
+                if is_pseudo_station(row.get("crs", "")):
                     continue
                 self._note_total(row.get("crs", ""), where)
                 if row.get("destinationType") == UNSOURCED:
@@ -160,7 +163,7 @@ class UnsourcedReport:
         """
         found = 0
         for row in rows:
-            if is_pseudo_station(row.station):
+            if is_pseudo_station(row.crs):
                 continue
             self._note_total(row.crs, origin)
             if fares.destination_type(row.crs) == UNSOURCED:
@@ -178,7 +181,7 @@ class UnsourcedReport:
         found = 0
         for crs in origins:
             location = fares.locations_by_crs.get(crs)
-            if location is not None and is_pseudo_station(location.name):
+            if location is not None and is_pseudo_station(crs):
                 continue
             tally: dict[str, int] = {}
             rows = fares.priced_destinations_within(
@@ -253,8 +256,9 @@ class UnsourcedReport:
         unnameable = sum(self._origin_unnameable.values())
         if unnameable:
             parts.append(
-                f"A further {unnameable:,} destination rows cannot be named at "
-                "all (no location record or station code), counted per origin"
+                f"A further {unnameable:,} destination rows can never be named as "
+                "a destination at all (no location record, no station code, or a "
+                "fare-construction point with no train behind it), counted per origin"
             )
         return ". ".join(parts)
 
