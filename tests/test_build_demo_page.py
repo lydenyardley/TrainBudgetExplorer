@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
 import unittest
 import zipfile
@@ -39,6 +40,30 @@ def embedded_payload(html: str) -> dict:
     if match is None:
         raise AssertionError("the page carries no embedded payload")
     return json.loads(match.group(1))
+
+
+# Every build writes a parsed-fares cache named by the feed's content, so a
+# suite that built in the repository's own cache directory would leave one
+# pair of files per fixture behind, and would read whichever pair an earlier
+# run happened to leave -- which is how a test that should have parsed the
+# feed ends up passing on a cache it did not write. The tests that care where
+# the cache lives patch the directory themselves.
+_CACHE_DIR_PATCH: mock._patch | None = None
+
+
+def setUpModule() -> None:
+    global _CACHE_DIR_PATCH
+    _CACHE_DIR_PATCH = mock.patch.object(
+        build_demo_page, "CACHE_DIR", Path(tempfile.mkdtemp(prefix="page-cache-"))
+    )
+    _CACHE_DIR_PATCH.start()
+
+
+def tearDownModule() -> None:
+    if _CACHE_DIR_PATCH is not None:
+        cache = build_demo_page.CACHE_DIR
+        _CACHE_DIR_PATCH.stop()
+        shutil.rmtree(cache, ignore_errors=True)
 
 
 class DemoPageTest(unittest.TestCase):
@@ -2083,6 +2108,247 @@ class TimetableCachePruneTest(unittest.TestCase):
             self.assertTrue(hit.exists(), "the used cache survives even at keep=1")
             self.assertFalse(newer.exists())
             self.assertFalse(newest.exists())
+
+
+class FaresCacheTest(unittest.TestCase):
+    """A page build parses the national feed once, then reads it off the disk.
+
+    A focused parse of the real DTD download reads 727,315 flow records to
+    keep the ones reachable from one station, and took 32.5s of a real build;
+    restoring the split the pool build already persists takes about a second.
+    The risk in any such cache is not that it misses, it is that it hits when
+    it should not, so most of what is checked here is what must NOT be served.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.cache = root / "cache"
+        self.feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+        self.out = root / "site" / "index.html"
+
+    def build(self) -> str:
+        buffer = io.StringIO()
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    ["--feed", str(self.feed), "--origin", "GRN", "--out", str(self.out)]
+                )
+        self.assertEqual(code, 0)
+        return buffer.getvalue()
+
+    def cache_paths(self):
+        # The cache lives where the build puts it, so it is asked for from
+        # there: a test that named the repository's own _cache would be reading
+        # and writing the caches of whichever test ran before it.
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            return build_demo_page.fares_index_cache_paths(self.feed)
+
+    def load_fares(self, origin: str):
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            return build_demo_page.load_page_fares(self.feed, origin)
+
+    def prune(self, *used) -> int:
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            return build_demo_page.prune_fare_index_caches(*used)
+    def page(self) -> str:
+        return self.out.read_text(encoding="utf-8")
+
+    def without_timestamp(self, html: str) -> str:
+        return html.replace(html.split('"builtAt":"')[1][:20], "TIMESTAMP")
+
+    def test_the_second_build_reads_the_cache_and_writes_the_same_page(self) -> None:
+        first = self.build()
+        self.assertIn("wrote ", first, "the first build parses the feed and fills the cache")
+        common, index_dir = self.cache_paths()
+        self.assertTrue(common.is_file(), "the shared half is written for the next build")
+        self.assertTrue((index_dir / "GRN.pickle").is_file(), "one index per origin")
+        written = self.page()
+
+        second = self.build()
+        self.assertIn("restored from GRN.pickle", second)
+        # The whole point of the cache: the same page, from a different route.
+        # A restored database is the one the pool workers already build pages
+        # from, and if the two ever disagreed the cache would be quietly
+        # changing prices rather than saving time.
+        self.assertEqual(self.without_timestamp(written), self.without_timestamp(self.page()))
+
+    def test_a_feed_replaced_by_other_bytes_of_the_same_size_and_time_is_not_served(self) -> None:
+        # The stale-cache case a fingerprint cannot catch. A copy that
+        # preserves timestamps, or an archive extracted with the dates stored
+        # in it, replaces a feed with different fares and no visible change to
+        # its name, size or mtime. A cache keyed on any of those would go on
+        # serving yesterday's prices, and the page would look entirely normal.
+        self.build()
+        before = self.page()
+        self.assertIn("1160", before, "the fixture's Nottingham return is on the page")
+        cheap_fingerprint = build_demo_page.feed_fingerprint(self.feed)
+        cache_before = self.cache_paths()
+
+        target = next(item for item in sorted(self.feed.glob("*.ffl")))
+        original = target.read_text(encoding="utf-8")
+        stamp = target.stat().st_mtime_ns
+        # Same length, same timestamp, different fare.
+        target.write_text(original.replace("1160", "1260", 1), encoding="utf-8")
+        os.utime(target, ns=(stamp, stamp))
+        self.assertEqual(len(target.read_text(encoding="utf-8")), len(original))
+        self.assertEqual(
+            build_demo_page.feed_fingerprint(self.feed),
+            cheap_fingerprint,
+            "the cheap fingerprint cannot tell these two feeds apart, which is the point",
+        )
+
+        said = self.build()
+        self.assertIn("wrote GRN.pickle", said, "different bytes are a different cache, so the feed is parsed again")
+        self.assertNotEqual(cache_before, self.cache_paths())
+        self.assertNotEqual(before, self.page())
+        self.assertIn("1260", self.page(), "the page quotes the fare the feed now holds")
+
+    def test_a_classification_corrected_beside_the_feed_misses_the_cache(self) -> None:
+        # The station types a parse carries come from files beside the feed and
+        # from the code that reads them, not from the feed's own bytes. A key on
+        # the feed alone would serve a database whose types came from a source
+        # that has since been corrected: current prices, stale classes, and a
+        # page that looks entirely normal.
+        self.build()
+        before_cache = self.cache_paths()
+        self.assertEqual(self.destination_type("LCN"), "city")
+
+        types = self.feed.parent / "fares.location-types.json"
+        records = json.loads(types.read_text(encoding="utf-8"))
+        records["records"]["LCN"] = {"primary": "village", "facets": []}
+        types.write_text(json.dumps(records), encoding="utf-8")
+        self.assertNotEqual(
+            before_cache, self.cache_paths(), "the corrected classification is a different cache"
+        )
+
+        said = self.build()
+        self.assertIn("wrote GRN.pickle", said, "the feed is parsed again rather than served from before")
+        self.assertEqual(self.destination_type("LCN"), "village")
+
+    def destination_type(self, crs: str) -> str:
+        rows = {
+            row["crs"]: row
+            for row in embedded_payload(self.page())["destinations"]
+        }
+        return rows[crs]["destinationType"]
+
+    def test_an_index_filed_under_another_origin_is_not_served(self) -> None:
+        # The path a build asks for is built from the origin it was asked for,
+        # so a file under the wrong name is a hand-mixed cache. Serving it would
+        # put one station's fares on another station's page.
+        self.build()
+        _, index_dir = self.cache_paths()
+        self.load_fares("NOT")
+        nottingham = index_dir / "NOT.pickle"
+        self.assertTrue(nottingham.is_file())
+        shutil.copy(nottingham, index_dir / "GRN.pickle")
+
+        served_fares = self.load_fares("GRN")
+        self.assertFalse(served_fares.restored, "another origin's index is not this origin's fares")
+        self.assertNotEqual(
+            served_fares.index.read_bytes(),
+            nottingham.read_bytes(),
+            "the wrong index is rewritten rather than left in place",
+        )
+        # And what was written back is this origin's: the flows an index keeps
+        # are the ones reachable from the station it names, so an index that
+        # had been another station's would answer with another station's NLCs.
+        restored = FaresDb.load_fare_index(served_fares.common, served_fares.index)
+        self.assertEqual(restored._cache_origin, "GRN")
+        carried = {restored.locations_by_nlc[nlc].crs for nlc in restored.flows_touching_nlc}
+        self.assertEqual(carried, {"GRN"})
+        self.assertEqual(
+            served_fares.fares.stats()["fares"], restored.stats()["fares"]
+        )
+
+    def test_a_half_written_cache_is_parsed_over_rather_than_trusted(self) -> None:
+        # A build interrupted while writing leaves a truncated pickle. A cache
+        # is an optimisation, so the worst it may do is be slow.
+        self.build()
+        common, index_dir = self.cache_paths()
+        common.write_bytes(b"\x80\x04 truncated")
+        loaded = self.load_fares("GRN")
+        self.assertFalse(loaded.restored)
+        self.assertTrue(loaded.fares.destinations_within("GRN", 100000, adults=1))
+        self.assertTrue(loaded.index.is_file())
+
+    def test_a_corrupt_index_is_parsed_over_rather_than_trusted(self) -> None:
+        self.build()
+        _, index_dir = self.cache_paths()
+        (index_dir / "GRN.pickle").write_bytes(b"not a pickle")
+        loaded = self.load_fares("GRN")
+        self.assertFalse(loaded.restored)
+        self.assertTrue(loaded.fares.destinations_within("GRN", 100000, adults=1))
+        self.assertTrue(loaded.index.is_file())
+
+    def cache_pair(self, digest: str, mtime: float) -> tuple[Path, Path]:
+        """A cache pair as an earlier revision of the feed would have left it."""
+        common = self.cache / f"fare-index-v2-{digest}.pickle"
+        common.write_bytes(b"an earlier revision")
+        origins = self.cache / f"fare-index-v2-{digest}-origins"
+        origins.mkdir()
+        (origins / "GRN.pickle").write_bytes(b"an earlier revision")
+        os.utime(common, (mtime, mtime))
+        os.utime(origins, (mtime, mtime))
+        return common, origins
+
+    def test_the_caches_of_older_feeds_are_tidied_and_this_one_is_kept(self) -> None:
+        # A fares cache is named by the feed's content, so a new download means
+        # a new name and an old pair can never be read again: 37MB of shared
+        # metadata per revision, kept for ever otherwise. One revision back is
+        # still worth having -- a build that is interrupted and re-run is
+        # looking at it -- and anything older than that is deleted whole.
+        self.build()
+        previous = self.cache_pair("00000000000000000001", 5000.0)
+        older = self.cache_pair("00000000000000000002", 1000.0)
+
+        loaded = self.load_fares("GRN")
+        removed = self.prune(loaded.common, loaded.index.parent)
+        self.assertEqual(removed, 2, "the oldest pair is two files: shared half and index")
+        self.assertFalse(older[0].exists() and older[1].exists(), "two revisions back goes")
+        self.assertTrue(previous[0].exists() and previous[1].exists(), "one revision back stays")
+        self.assertTrue(loaded.common.is_file(), "the pair in use survives")
+        self.assertTrue(loaded.index.is_file())
+
+    def test_a_cache_hit_is_never_the_file_the_tidy_would_delete(self) -> None:
+        # The hit can be the oldest file on disk, because reading it does not
+        # touch its timestamp. Deleting it would make the next build re-parse
+        # for no reason, on the one run that had already paid to parse.
+        self.build()
+        loaded = self.load_fares("GRN")
+        os.utime(loaded.common, (1000.0, 1000.0))
+        os.utime(loaded.index, (1000.0, 1000.0))
+        removed = self.prune(loaded.common, loaded.index.parent)
+        self.assertEqual(removed, 0)
+        self.assertTrue(loaded.common.is_file() and loaded.index.is_file())
+
+    def test_the_cache_key_names_the_format_so_a_schema_change_misses(self) -> None:
+        # The pickled layout is versioned in the file name: a database written
+        # by older code must be left alone, not read and rebuilt into a
+        # different structure.
+        common, origins = self.cache_paths()
+        self.assertIn(f"-v{build_demo_page.FARE_INDEX_CACHE_VERSION}-", common.name)
+        self.assertIn(f"-v{build_demo_page.FARE_INDEX_CACHE_VERSION}-", origins.name)
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            with mock.patch.object(build_demo_page, "FARE_INDEX_CACHE_VERSION", 99):
+                moved_common, moved_origins = build_demo_page.fares_index_cache_paths(self.feed)
+        self.assertNotEqual(common, moved_common)
+        self.assertNotEqual(origins, moved_origins)
+        self.assertIn("-v99-", moved_common.name)
+
+    def test_two_different_feeds_never_share_a_cache(self) -> None:
+        first, _ = self.cache_paths()
+        # The same feed twice is the same cache, or nothing would ever be read
+        # back -- and a feed that differs by one file is a different one.
+        self.assertEqual(first, self.cache_paths()[0])
+        other = build_synthetic_feed(
+            Path(self._tmp.name) / "other", include_restrictions=False
+        )
+        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+            second, _ = build_demo_page.fares_index_cache_paths(other)
+        self.assertNotEqual(first, second)
 
 
 class FreshOutputFolderTest(unittest.TestCase):

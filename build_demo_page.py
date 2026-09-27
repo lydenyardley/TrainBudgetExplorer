@@ -22,12 +22,15 @@ import html
 import json
 import functools
 import os
+import pickle
 import re
+import shutil
 import sys
 import time
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
@@ -36,6 +39,7 @@ from atoc_fares import (
     format_pence,
     is_advance_fare,
     is_pseudo_station,
+    location_lookup_candidates,
 )
 from atoc_timetable import TimetableDb
 from destination_coverage import UnsourcedReport, unnameable_from_tally
@@ -148,6 +152,37 @@ def feed_fingerprint(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def feed_content_digest(path: str | Path) -> str:
+    """An identity for a feed that cannot outlive the bytes it names.
+
+    ``feed_fingerprint`` reads names, sizes and mtimes, which separates two
+    downloads on any ordinary day and costs nothing. It cannot separate two
+    downloads when the replacement holds different bytes of the same length
+    under the same timestamp: a copy that preserves mtimes, an archive
+    extracted with the dates stored in it, a feed directory restored from
+    somewhere else. A cache keyed that way would go on serving prices parsed
+    from bytes the feed no longer holds, and the page would look entirely
+    normal while quoting fares from a download that had been replaced -- the
+    one kind of cache failure nobody notices. So a cache that holds parsed
+    data is keyed by the content itself, at a cost of about a fifth of a
+    second over 48MB, against the half-minute parse it exists to avoid.
+    """
+    root = Path(path)
+    a_directory = root.is_dir()
+    files = [root] if not a_directory else sorted(item for item in root.rglob("*") if item.is_file())
+    digest = hashlib.sha256()
+    for item in files:
+        name = item.relative_to(root) if a_directory else item.name
+        digest.update(str(name).encode("utf-8", "replace") + b"\n")
+        try:
+            with item.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(chunk)
+        except OSError:
+            digest.update(b"missing")
+    return digest.hexdigest()
+
+
 def resumable_signature(shared: dict, index: list[dict]) -> str:
     """Identity of the inputs and decisions represented by a station build."""
     stable = {
@@ -203,18 +238,104 @@ def write_page_atomic(path: Path, html: str) -> None:
 FARE_INDEX_CACHE_VERSION = 2
 
 
+def fares_cache_identity(feed: str | Path) -> str:
+    """Everything a parsed fares database depends on, as one digest.
+
+    The feed's bytes are the obvious part and not the whole of it. A parsed
+    database also carries the classification of every station, and that is read
+    from files *beside* the feed -- the checked-in reference data, a corrected
+    cache, a revised facet -- and from the code that reads them. Keying the
+    cache on the feed alone would serve a database classified from sources that
+    have since changed, with the same silent wrongness as a stale feed and one
+    step further from the thing being cached: a page whose prices are current
+    and whose station types are not. So the key covers all three, and each is
+    cheap next to the parse it saves: the feed's bytes, a few megabytes of
+    reference data, and a hash of the source files.
+    """
+    digest = hashlib.sha256()
+    digest.update(feed_content_digest(feed).encode())
+    digest.update(source_fingerprint().encode())
+    for candidate in location_lookup_candidates(feed):
+        digest.update(str(candidate.name).encode("utf-8", "replace"))
+        try:
+            digest.update(candidate.read_bytes())
+        except OSError:
+            digest.update(b"missing")
+    return digest.hexdigest()
+
+
 def fares_index_cache_paths(feed: str | Path) -> tuple[Path, Path]:
     """The shared fares metadata cache and the per-origin index directory.
 
     Both live in CACHE_DIR beside the timetable caches rather than inside the
     published site, and the format version sits in the name so a schema change
-    writes new files instead of reading old ones. The path is keyed by the
-    feed's fingerprint only: one build per feed is assumed, and the indexes
-    are rewritten before every pool run that reads them.
+    writes new files instead of reading old ones. The path is keyed by
+    ``fares_cache_identity``: a parsed cache is only worth reading while the
+    feed, the classification sources, and the code reading them are what they
+    were, and nothing weaker than their content can promise that. Two inputs
+    that differ by a single byte get two sets of files rather than one, and the
+    old set is simply never read again.
     """
-    digest = feed_fingerprint(feed)[:20]
+    digest = fares_cache_identity(feed)[:20]
     stem = f"fare-index-v{FARE_INDEX_CACHE_VERSION}-{digest}"
     return CACHE_DIR / f"{stem}.pickle", CACHE_DIR / f"{stem}-origins"
+
+
+class PageFares(NamedTuple):
+    """What a one-origin build ended up with, and where it came from.
+
+    ``index`` and ``common`` are the two files a build reads or writes, kept
+    together because pruning has to protect both and a caller that only knew
+    one of them could delete the other.
+    """
+
+    fares: FaresDb
+    common: Path
+    index: Path
+    restored: bool
+
+
+def load_page_fares(feed: str | Path, origin: str) -> PageFares:
+    """The fares one origin's page needs, from disk when they are already there.
+
+    A focused parse of the national feed reads every flow line in the download
+    -- 727,315 of them, and half a minute of it -- to keep the ones reachable
+    from one station, and a real station's page used to pay that on every
+    build. The parallel build already splits a parsed feed into the metadata
+    every page shares and a small slice per origin, and restores a slice in
+    about a second, so the one-origin build writes the same two files and
+    reads them back the same way. Measured on the real DTD download: 32.5s to
+    parse and write, 1.0s to restore, and 38MB shared plus half a megabyte per
+    origin on disk rather than 107MB of whole-database pickle per origin.
+
+    The restored database is the one the pool workers already build pages from,
+    and the pages are byte-for-byte the same either way, so a cache hit cannot
+    quietly change a price. Anything the cache cannot answer -- a missing file,
+    a half-written pickle, a schema this code no longer writes, an index filed
+    under another origin's name -- falls back to parsing the feed and rewrites
+    the index. A cache is an optimisation, so the worst it may do is be slow.
+
+    Returns the database, the two cache files it came from or went to, and
+    whether they were read or written, because a build that parsed the feed
+    and a build that restored it are the same page and very different waits.
+    """
+    code = origin.strip().upper()
+    common_cache, index_dir = fares_index_cache_paths(feed)
+    index = index_dir / f"{code}.pickle"
+    if common_cache.is_file() and index.is_file():
+        try:
+            fares = FaresDb.load_fare_index(common_cache, index)
+        except (OSError, EOFError, ValueError, KeyError, AttributeError, TypeError, pickle.PickleError):
+            pass
+        else:
+            # The index names the origin whose fares it holds. A file under
+            # another station's name is not this station's fares, whatever the
+            # path it was asked for, so it is not served.
+            if fares._cache_origin == code:
+                return PageFares(fares, common_cache, index, True)
+    fares = FaresDb().load_feed(feed, focus_origin=code)
+    fares.write_fare_indexes(common_cache, index_dir, [code])
+    return PageFares(fares, common_cache, index, False)
 
 
 def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) -> Path:
@@ -273,6 +394,64 @@ def prune_timetable_caches(*used: Path, keep: int = TIMETABLE_CACHE_KEEP) -> int
             try:
                 path.unlink()
                 deleted += 1
+            except OSError:
+                pass
+    return deleted
+
+
+# The fares caches kept per feed digest. One digest is the feed being built
+# and the one before it; every older one belongs to a revision of the feed that
+# no build can name again, and the shared half of each is 37MB of the national
+# feed, so they are tidied on the same rule as the timetable caches.
+FARE_INDEX_CACHE_KEEP = 2
+
+
+def prune_fare_index_caches(*used: Path, keep: int = FARE_INDEX_CACHE_KEEP) -> int:
+    """Bound the persisted fares caches to the newest ``keep`` feed digests.
+
+    A fares cache is keyed by the feed's content, so every new revision of the
+    download writes a new pair of names and the previous pair can never be read
+    again. Left alone that is 37MB of shared metadata per revision, for as long
+    as the feed is refreshed. A digest is dropped whole -- the shared half and
+    the directory of per-origin indexes are one cache, and half of one serves
+    nothing -- and the digest this build just read or wrote is never a
+    candidate, however old its timestamp, so a hit cannot evict itself.
+    Returns how many files were deleted.
+    """
+    protected = {Path(path).resolve() for path in used}
+    groups: dict[str, list[Path]] = {}
+    for path in CACHE_DIR.glob("fare-index-v*-*"):
+        # fare-index-v2-<digest>.pickle and fare-index-v2-<digest>-origins
+        parts = path.name.split("-")
+        if len(parts) >= 4:
+            groups.setdefault(parts[3].split(".")[0], []).append(path)
+    ranked: list[tuple[float, str]] = []
+    in_use = 0
+    for digest, paths in groups.items():
+        stamps: list[float] = []
+        for path in paths:
+            try:
+                stamps.append(path.stat().st_mtime)
+            except OSError:
+                # Gone already, or held by a scanner. A file that cannot be
+                # read cannot be ranked, and tidying must never be the reason
+                # an otherwise good build fails.
+                continue
+        if any(path.resolve() in protected for path in paths):
+            in_use += 1
+        elif stamps:
+            ranked.append((max(stamps), digest))
+    ranked.sort(reverse=True)
+    deleted = 0
+    for _, digest in ranked[max(keep - in_use, 0) :]:
+        for path in groups[digest]:
+            try:
+                if path.is_dir():
+                    deleted += sum(1 for _ in path.iterdir())
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                    deleted += 1
             except OSError:
                 pass
     return deleted
@@ -1290,11 +1469,37 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     print(f"Loading fares feed from {args.feed} ...", flush=True)
-    fares = FaresDb().load_feed(
-        args.feed,
-        focus_origin=None if args.all_origins else args.origin,
+    if args.all_origins:
+        # A whole-network build needs every origin's flows at once, so there is
+        # no single slice to restore; it writes the indexes the workers read
+        # below, once the station list is known.
+        fares = FaresDb().load_feed(args.feed)
+        fare_note = ""
+    else:
+        page_fares = load_page_fares(args.feed, args.origin)
+        fares = page_fares.fares
+        fare_note = (
+            f" (restored from {page_fares.index.name})"
+            if page_fares.restored
+            else f" (parsed; wrote {page_fares.index.name})"
+        )
+    print(
+        f"Loaded fares: {fares.stats()['flows']:,} flows, "
+        f"{fares.stats()['fares']:,} fares{fare_note}",
+        flush=True,
     )
-    print(f"Loaded fares: {fares.stats()['flows']:,} flows, {fares.stats()['fares']:,} fares", flush=True)
+    if not args.all_origins:
+        # Every revision of the feed writes a new pair of cache names, and the
+        # old pair can never be read again, so the digests before this build's
+        # own are tidied here rather than left for the next one to overwrite.
+        stale_fares = prune_fare_index_caches(
+            page_fares.common, page_fares.index.parent
+        )
+        if stale_fares:
+            print(
+                f"Removed {stale_fares} file(s) from the fares caches of older feeds.",
+                flush=True,
+            )
     cache_path: Path | None = None
     if args.timetable:
         focus_destinations: set[str] = set()
@@ -1659,6 +1864,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"Persisted {len(jobs):,} per-origin fare indexes; workers load the shared metadata once.",
                 flush=True,
             )
+            prune_fare_index_caches(common_cache, index_dir)
 
         def publish_result(result: tuple[str, str, str]) -> None:
             nonlocal built_now
