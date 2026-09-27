@@ -101,10 +101,16 @@ every schedule was read when it is not.
   (ADR-0010). No webfonts, no CDN imagery, no framework, nothing fetched at
   runtime. There are currently **no images, logos, icons, or font files in the
   repository at all**, and designing one in means inlining it.
-- **Fares are reviewed Anytime Day Returns.** The public page uses only exact
-  standard-class ANYTIME DAY R ticket codes with a blank restriction code, and
-  refuses to build without a clean `.RST` file (ADR-0025). Advance fares can be
-  cheaper and the page must never imply them. A return is assumed.
+- **Fares are reviewed Anytime Day Returns.** The public page opens in the
+  reviewed set: exact standard-class ANYTIME DAY R ticket codes with a blank
+  restriction code, and the build refuses to run without a clean `.RST` file
+  (ADR-0025). Advance fares can be cheaper and the page must never imply them.
+  A return is assumed. A broader "any return" set — every standard-class return
+  the feed prices, restricted ones included — is offered as a second, named
+  mode rather than as the default, because a restricted off-peak fare is a real
+  price a reader can buy but is not interchangeable with an unrestricted one.
+  Whichever mode is open, the page states above the table what that set
+  contains.
 - **Two Together is the only railcard in v1**, but its discount is not priced yet:
   the `.RST` railcard rules are parsed and not evaluated, so the page says the
   party total is two Anytime Day Returns (ADR-0025). The railcard is never sent to

@@ -320,11 +320,15 @@ from an origin, with a budget slider, a settlement and character destination-typ
 and a choice of whether the budget covers one adult or two. The page is generated from
 
 a feed rather than hand-written, so the real feeds replace the synthetic ones
-with no change to the page. Prices come only from the reviewed Anytime Day
-Return selector; the builder refuses to run without a clean `.RST` file.
+with no change to the page. The page opens in the reviewed Anytime Day Return
+selector and the builder refuses to run without a clean `.RST` file. A second,
+named "any return" mode carries the broader standard-return set the feed prices,
+restricted off-peak fares included; whichever mode is open, a line above the
+table says what that set contains, because a restricted fare is not
+interchangeable with an unrestricted one.
 
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station --third-origin
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
 ```
@@ -617,7 +621,7 @@ itself).
 **A phone gets the journey, not the table.** Below 44rem the budget slider
 stays open, the results stay beneath it, and the three refinements — ticket
 type, party, destination type — fold behind one control whose label states what
-is currently narrowed ("Return · Two adults · all types"), so a reader who has
+is currently narrowed ("Anytime Day Return · One adult · all types"), so a reader who has
 not opened it can still see that a filter is on. Above that width the wrapper
 and its panel are `display: contents`, so the filter bar's layout is the same
 three columns it has always been and depends on no JavaScript at all. The
@@ -712,8 +716,13 @@ python run.py
 ```
 
 That builds the site from the current feed, serves it at
-http://localhost:8741, and opens your browser. Close the window (or Ctrl+C) to
-stop. Useful variants: `--port 9000`, `--no-build` (serve what's there),
+http://localhost:8741, and opens your browser. A single-origin build is a whole
+site — the chooser at the root, that one station under `/from/<slug>/`, and the
+privacy page — and the runner removes any station page folder a *previous*
+all-origins build left behind, reading the release manifest to tell which
+folders this build wrote. Close the window (or Ctrl+C) to stop.
+
+Useful variants: `--port 9000`, `--no-build` (serve what's there),
 `--timetable` with no value for a prices-only build, `--feed feeds/fares
 --timetable feeds/timetable` for the real licensed feeds, and `--all-origins`
 for every priced station (slow at network scale — ADR-0024). The demo feed is
@@ -722,7 +731,7 @@ _demo_feed --unserved-station --third-origin`.
 
 The individual commands behind it, if you want them separately:
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station --third-origin
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 python -m http.server 8000 --directory _demo_site   # then open http://localhost:8000/
 python -m unittest discover -s tests -p "test_*.py"
