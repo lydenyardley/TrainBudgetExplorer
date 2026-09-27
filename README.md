@@ -644,7 +644,8 @@ in both directions. The output folder is not cleared first: `--fast-all-origins`
 resumes from it, and the project does not delete a page it did not write (it
 names those folders instead), so a local preview can hold an earlier build's
 pages that nothing links to. Audit suggestion S07 asked for a staged swap; that
-would have broken both, so the manifest is what this build does instead.
+would have broken both, so the manifest is what this build does instead
+(`adr/ADR-0034-the-release-is-the-routes-its-manifest-names.md`).
 
 Every build also names the priced destinations no source could classify — the
 stations the page's settlement filters therefore cannot return. The list is a
