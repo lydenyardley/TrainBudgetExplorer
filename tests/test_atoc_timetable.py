@@ -52,6 +52,7 @@ class TimetableParserTest(unittest.TestCase):
         )
         self.assertLess(focused.stats()["schedules"], self.timetable.stats()["schedules"])
         self.assertIsNotNone(focused.best_journey("GRN", "NOT"))
+        self.assertTrue(cache.is_file(), "a focused load leaves a cache for the next one")
         cached = TimetableDb().load_feed(
             self.feed,
             focus_origin="GRN",

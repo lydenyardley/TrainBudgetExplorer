@@ -2068,6 +2068,62 @@ class TimetableCachePruneTest(unittest.TestCase):
             )
             self.assertFalse(stale.exists())
 
+    def test_the_timetable_cache_key_cannot_serve_a_replaced_download(self) -> None:
+        # The timetable cache was keyed on names, sizes and mtimes, which cannot
+        # tell two downloads apart when a copy preserves timestamps or an archive
+        # is extracted with the dates stored in it. A stale hit puts one
+        # download's services on a page built from another: a reader is shown a
+        # timetable that is not the one in force.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_timetable(root / "timetable")
+            before = build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"})
+            target = next(item for item in sorted(feed.iterdir()) if item.is_file())
+            original = target.read_text(encoding="utf-8")
+            stamp = target.stat().st_mtime_ns
+            target.write_text(original.replace("NOT", "NT1", 1), encoding="utf-8")
+            os.utime(target, ns=(stamp, stamp))
+            self.assertEqual(len(target.read_text(encoding="utf-8")), len(original))
+            after = build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"})
+        self.assertNotEqual(before, after, "different bytes are a different cache")
+        # The focus is part of the name too: a cache for one station's set of
+        # destinations is not an answer for another's.
+        self.assertNotEqual(
+            build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"}),
+            build_demo_page.timetable_cache_path(feed, "GRN", {"LCN"}),
+        )
+        self.assertEqual(
+            build_demo_page.timetable_cache_path(feed, "GRN", {"NOT", "LCN"}),
+            build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"}),
+            "the focus set is a set, so its order is not part of the key",
+        )
+
+    def test_a_build_says_whether_it_parsed_or_restored_the_timetable(self) -> None:
+        # On the real feed those are 55.6s and 2.6s, so the line that reports
+        # the load is the line an operator reads to find out which they paid.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            timetable = build_synthetic_timetable(root / "timetable")
+            cache = root / "cache"
+            with mock.patch.object(build_demo_page, "CACHE_DIR", cache):
+                said = []
+                for _ in range(2):
+                    buffer = io.StringIO()
+                    with contextlib.redirect_stdout(buffer):
+                        code = build_demo_page.main(
+                            [
+                                "--feed", str(feed),
+                                "--timetable", str(timetable),
+                                "--origin", "GRN",
+                                "--out", str(root / "site" / "index.html"),
+                            ]
+                        )
+                    self.assertEqual(code, 0)
+                    said.append(buffer.getvalue())
+        self.assertIn("(parsed; wrote timetable-GRN-", said[0])
+        self.assertIn("(restored from timetable-GRN-", said[1])
+
     def test_a_cache_hit_that_is_the_oldest_file_still_survives(self) -> None:
         # A hit does not touch mtime, so the file this build just read can be
         # the oldest on disk. It must not evict itself.
