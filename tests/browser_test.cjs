@@ -1024,6 +1024,231 @@ async function runPage(browser, index, given, file, body, base) {
     await open(3);
     check("the tab title follows the budget", /£3\?$/.test(await page.title()), await page.title());
 
+    // 7c. The party, the fare's conditions, the facets, and what an empty
+    // list offers. Every fact is read out of this page's own payload and
+    // controls, so one run of this section is a test of the page rather than
+    // of the station it was pointed at.
+    await open(facts.affordable);
+
+    // S15: a railcard for two adults is a constraint on the party, so the
+    // cheapest number on screen is a fare the party could actually buy.
+    const cardChoice = await page.locator("#railcardChoice").isVisible();
+    const solo = cardChoice
+      ? await page.evaluate(() => {
+        document.querySelector('input[name="unit"][value="adult"]').checked = true;
+        render();
+        return {
+          disabled: document.getElementById("railcard").disabled,
+          checked: document.getElementById("railcard").checked,
+          help: document.getElementById("railcardHelp").textContent,
+          party: DATA.railcardParty,
+        };
+      })
+      : null;
+    check(
+      "one adult cannot price a journey with a two-adult railcard",
+      cardChoice ? solo.disabled && !solo.checked : notExercised("no destination on this page is railcard-eligible"),
+      cardChoice ? `disabled=${solo.disabled} checked=${solo.checked}` : ""
+    );
+    check(
+      "and the page says the card belongs to a party, not to a discount",
+      cardChoice
+        ? /covers \d+ to \d+ adults/.test(solo.help) && /Two adults/.test(solo.help)
+        : notExercised("no destination on this page is railcard-eligible"),
+      cardChoice ? solo.help : ""
+    );
+    const cardPair = cardChoice
+      ? await page.evaluate(() => {
+        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        render();
+        return {
+          disabled: document.getElementById("railcard").disabled,
+          help: document.getElementById("railcardHelp").textContent,
+          min: DATA.railcardParty ? DATA.railcardParty.minAdults : null,
+        };
+      })
+      : null;
+    check(
+      "two adults can use it",
+      cardChoice ? !cardPair.disabled : notExercised("no destination on this page is railcard-eligible"),
+      cardChoice ? `disabled=${cardPair.disabled}` : ""
+    );
+    check(
+      "and the help then names what it would discount",
+      cardChoice
+        ? new RegExp(String(cardPair.min || 0)).test(cardPair.help) && /Card details/.test(cardPair.help)
+        : notExercised("no destination on this page is railcard-eligible"),
+      cardChoice ? cardPair.help : ""
+    );
+    if (cardChoice) {
+      await page.evaluate(() => {
+        document.querySelector('input[name="unit"][value="adult"]').checked = true;
+        render();
+      });
+    }
+
+    // S19: the condition is a sentence beside the price, and the feed's own
+    // vocabulary is one disclosure away rather than in the way.
+    const conditions = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#rows td.restriction")).map((cell) => ({
+        readable: (cell.querySelector(".condition") || {}).textContent || "",
+        record: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
+        summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
+      }))
+    );
+    check(
+      "every row states its fare conditions in a sentence",
+      conditions.length > 0 &&
+        conditions.every((cell) => cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)),
+      JSON.stringify(conditions[0] || null)
+    );
+    check(
+      "and the codes sit in a disclosure beside it, not in the sentence",
+      conditions.every((cell) => cell.summary && cell.record.length >= 2),
+      JSON.stringify(conditions[0] || null)
+    );
+
+    // S23: an absence the feed can name is not a dash.
+    const typed = await page.evaluate(() => {
+      // Every priced row, not just the ones this budget happens to show: a
+      // destination with a fare and no service is the case under test, and it
+      // is usually outside a budget set to the cheapest affordable fare.
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      const row = Array.from(document.querySelectorAll("#rows tr")).find((candidate) => {
+        const cell = candidate.querySelector("td.missing");
+        return cell && cell.dataset.label === "Time";
+      });
+      if (!row) return null;
+      return {
+        cells: Array.from(row.querySelectorAll("td.missing")).map((cell) => cell.textContent),
+        record: Array.from(row.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
+      };
+    });
+    check(
+      "a row with no journey says so, and says it is unknown rather than zero",
+      typed
+        ? typed.cells.includes("No service") && typed.cells.includes("Unknown") &&
+          typed.record.some((value) => /no service|timetable/i.test(value))
+        : notExercised("every destination on this page has a journey"),
+      JSON.stringify(typed)
+    );
+
+    // S20: counts on the chips, the union stated, and a way back to All.
+    const facets = await page.evaluate(() => {
+      const cap = Number(document.getElementById("budgetNumber").value) * 100;
+      const mode = document.querySelector('input[name="ticketMode"]:checked').value;
+      const available = mode === "single" ? DATA.singleDestinations
+        : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
+      return Array.from(document.querySelectorAll(".chipcount")).map((slot) => {
+        const value = slot.dataset.countFor;
+        return {
+          value,
+          shown: slot.textContent,
+          count: available.filter(
+            (destination) => destination.adultPence <= cap &&
+              (destination.destinationTypes || [destination.destinationType]).includes(value)
+          ).length,
+        };
+      });
+    });
+    check(
+      "every offered chip counts what it would show",
+      facets.length > 0 && facets.every((facet) => facet.shown === `(${facet.count})`),
+      JSON.stringify(facets)
+    );
+    check(
+      "the chips say that more than one means any of them",
+      /any of them/.test((await page.textContent("#typeRule")) || "")
+    );
+    const cleared = await page.evaluate(() => {
+      const all = document.querySelector('input[name="destinationType"][value="all"]');
+      const first = Array.from(document.querySelectorAll('input[name="destinationType"]')).find(
+        (candidate) => candidate.value !== "all" && !candidate.closest("label").hidden
+      );
+      if (!first) return null;
+      first.checked = true;
+      all.checked = false;
+      render();
+      const offered = !document.getElementById("clearTypes").hidden;
+      document.getElementById("clearTypes").click();
+      return { offered, back: all.checked, specific: first.checked };
+    });
+    check(
+      "a selected chip offers a clear-all that returns to All",
+      cleared
+        ? cleared.offered && cleared.back && !cleared.specific
+        : notExercised("this page offers no specific chip"),
+      JSON.stringify(cleared)
+    );
+
+    // S22: a narrowed search starts again at its first page. This page's own
+    // result set is too short to paginate, so the page number is put where a
+    // reader with a longer list would have left it and the control is judged on
+    // what it does with it.
+    const reset = await page.evaluate(() => {
+      currentPage = 3;
+      const before = currentPage;
+      const field = document.getElementById("budgetNumber");
+      field.value = String(Math.max(1, Number(field.value) - 1));
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      return { before, after: currentPage, status: document.getElementById("pageStatus").textContent };
+    });
+    check(
+      "a narrowed search returns to the first page",
+      reset.before === 3 && reset.after === 1,
+      JSON.stringify(reset)
+    );
+    check(
+      "and the status re-announces the page and the count",
+      /Page 1 of \d+ of \d+ results?/.test(reset.status),
+      reset.status
+    );
+
+    // S28: an empty list offers the moves that would fill it, and the first
+    // move works when it is taken.
+    const recovery = await page.evaluate(() => {
+      setBudget(1);
+      currentPage = 1;
+      render();
+      if (document.getElementById("empty").hidden) return { actions: [] };
+      const actions = Array.from(document.querySelectorAll("#empty .toggle")).map((button) => button.textContent);
+      const first = document.querySelector("#empty .toggle");
+      if (first) first.click();
+      return {
+        actions,
+        rows: document.querySelectorAll("#rows tr").length,
+        budget: document.getElementById("budgetNumber").value,
+      };
+    });
+    check("an empty list says what would fill it", recovery.actions.length > 0, JSON.stringify(recovery));
+    check(
+      "and the first move it offers changes the answer",
+      recovery.actions.length > 0 && (recovery.rows > 0 || Number(recovery.budget) > 1),
+      JSON.stringify(recovery)
+    );
+    await open(facts.affordable);
+
+    // S29: the coverage claim is counted, and the count is on the page.
+    const coverage = (await page.textContent("#feedCoverage")) || "";
+    check(
+      "the page states what it could not show",
+      /standard-return destinations were found in the feed/.test(coverage),
+      coverage
+    );
+    check(
+      "including the destinations no type chip can select",
+      await page.evaluate(() => {
+        const text = document.getElementById("feedCoverage").textContent;
+        return DATA.unclassifiedDestinationCount
+          ? text.includes(String(DATA.unclassifiedDestinationCount)) &&
+            /no reviewed destination type/.test(text)
+          : /carries a reviewed type|carries no reviewed destination type/.test(text);
+      }),
+      coverage
+    );
+
     // 8. The origin picker: search, navigate, and the no-match wording
     // (ADR-0019). Choosing a station is navigation, so the link must go to
     // another page, and there must never be an empty picker.

@@ -108,8 +108,8 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('window.addEventListener("popstate"', self.html)
         # Every control that changes the result writes it, and the budget is
         # the one that does so while it is being dragged.
-        self.assertIn("budget.addEventListener(\"input\", () => { setBudget(budget.value); render(); writeUrl({ budget: true }); })", self.html)
-        self.assertIn("railcard.addEventListener(\"change\", () => { render(); writeUrl(); })", self.html)
+        self.assertIn("budget.addEventListener(\"input\", () => { setBudget(budget.value); currentPage = 1; render(); writeUrl({ budget: true }); })", self.html)
+        self.assertIn("railcard.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
         self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
         # The title is the heading's sentence, so a reader with two tabs open
         # can tell the two searches apart.
@@ -286,8 +286,113 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(rows["SLP"]["restrictionCode"], "")
         self.assertIn("restrictionCode", self.html)
         self.assertIn("restrictionDescription", self.html)
-        self.assertIn('destination.restrictionCode + (destination.restrictionDescription', self.html)
+        self.assertIn('(destination.restrictionDescription || "This fare carries a restriction code', self.html)
+        self.assertIn('add("Restriction", destination.restrictionCode || "none")', self.html)
         self.assertIn("ITX placeholder fares", self.html)
+
+    def test_a_railcard_is_a_constraint_on_the_party_not_a_discount(self) -> None:
+        # S15: the cheapest number on screen has to be a fare the party could
+        # buy, so the box is disabled for a party of one and the sentence beside
+        # it says why, in the feed's own terms rather than this project's.
+        # The name is the feed's own, truncated by its fixed-width field; the
+        # party size is what the page's sentence is built from.
+        self.assertEqual(self.payload["railcardParty"]["minAdults"], 2)
+        self.assertEqual(self.payload["railcardParty"]["maxAdults"], 2)
+        self.assertIn("function syncRailcardParty()", self.html)
+        self.assertIn('railcard.disabled = !applies;', self.html)
+        self.assertIn("if (!applies && railcard.checked) railcard.checked = false;", self.html)
+        self.assertIn('"The railcard in this feed covers " + party.minAdults', self.html)
+        # A card=1 that arrives on a link must not tick a box the party of one
+        # cannot use.
+        self.assertIn("railcard.checked = state.railcard && unit() === \"party\";", self.html)
+
+    def test_a_row_states_its_condition_and_folds_the_feed_record_away(self) -> None:
+        # S19: the condition a reader can act on sits beside the price; the
+        # ticket, restriction and route codes are one disclosure away.
+        self.assertIn("function feedRecord(destination)", self.html)
+        self.assertIn('readable.className = "condition"', self.html)
+        self.assertIn("No travel conditions on this fare in the feed.", self.html)
+        row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
+        self.assertEqual(row["routeCode"], "00000")
+        self.assertEqual(row["restrictionCode"], "1A")
+
+    def test_a_missing_journey_is_typed_rather_than_a_dash(self) -> None:
+        # S23: three different absences, three different sentences.
+        rows = {row["crs"]: row for row in self.payload["destinations"]}
+        self.assertEqual(rows["NOT"]["journeyState"], "found")
+        self.assertEqual(rows["SLP"]["journeyState"], "no service in this timetable")
+        self.assertIn('missing ? "No service" : duration(destination.minutes)', self.html)
+        self.assertIn('missing ? "Unknown" : String(destination.changes)', self.html)
+        prices_only = build_payload(self.fares, None, "GRN")
+        self.assertEqual(
+            next(row for row in prices_only["destinations"] if row["crs"] == "LCN")["journeyState"],
+            "no timetable in this build",
+        )
+        dated = build_payload(self.fares, self.timetable, "GRN", day=date(2026, 9, 28))
+        self.assertEqual(
+            next(row for row in dated["destinations"] if row["crs"] == "SLP")["journeyState"],
+            "no service on 2026-09-28",
+        )
+
+    def test_the_page_counts_what_it_could_not_classify(self) -> None:
+        # S29: an unreviewed destination is still listed, so the count of the
+        # ones no chip can select is the difference between "every type" and
+        # "every type we have reviewed".
+        self.assertEqual(self.payload["unclassifiedDestinationCount"], 0)
+        self.assertTrue(self.payload["locationTypeReviewed"])
+        self.assertIn("function classifiedNote()", self.html)
+        self.assertIn("carry no reviewed", self.html)
+        self.assertIn("Every destination on this page carries a reviewed type.", self.html)
+        # And the count is a count: a destination with no reviewed type is
+        # counted rather than quietly filtered away.
+        fares = FaresDb().load_feed(
+            build_synthetic_feed(
+                Path(self._tmp.name) / "unreviewed",
+                include_restrictions=True,
+            )
+        )
+        # A download with no reviewed classification at all: every destination
+        # is still priced and still listed, and every one of them is a row no
+        # type chip can select.
+        fares.location_types_by_crs = {}
+        fares.location_facets_by_crs = {}
+        fares.location_type_sources = []
+        payload = build_payload(fares, self.timetable, "GRN")
+        self.assertEqual(payload["unclassifiedDestinationCount"], len(payload["destinations"]))
+        self.assertFalse(payload["locationTypeReviewed"])
+
+    def test_an_empty_list_offers_the_moves_that_would_fill_it(self) -> None:
+        # S28: advice a reader cannot act on is a dead end, so each move is a
+        # control and each is offered only when it is true for this page.
+        self.assertIn("function renderEmpty(available, wanted, cap, what)", self.html)
+        self.assertIn("function renderEmptyMode()", self.html)
+        self.assertIn('button.className = "toggle"', self.html)
+        self.assertIn('offer("Show everything up to " + money(enough * 100)', self.html)
+        self.assertIn('offer("Clear the destination type", clearDestinationTypes)', self.html)
+        self.assertIn('offer(label + " has " + modeCount(mode)', self.html)
+
+    def test_the_facets_count_what_they_would_show_and_can_be_cleared(self) -> None:
+        # S20: a count on the chip, the union stated, and a way back to All.
+        self.assertIn('class="chipcount"', self.html)
+        self.assertIn("function updateChipCounts(available, cap)", self.html)
+        self.assertIn("function clearDestinationTypes()", self.html)
+        self.assertIn('id="clearTypes"', self.html)
+        self.assertIn("More than one type shows destinations of any of them", self.html)
+        self.assertIn('return labels.length > 1 ? " in " + labels.join(" or ")', self.html)
+
+    def test_a_narrowed_search_returns_to_the_first_page(self) -> None:
+        # S22: the cheapest rows are what a narrowed search wants first, and the
+        # page position is re-announced with the count.
+        for control in (
+            "budget.addEventListener",
+            "budgetNumber.addEventListener",
+            "railcard.addEventListener",
+            "previousPage",
+            "nextPage",
+        ):
+            self.assertIn(control, self.html)
+        self.assertIn("currentPage = 1; render(); writeUrl();", self.html)
+        self.assertIn('"Page " + currentPage + " of " + pageCount + " of " + wanted.length', self.html)
 
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
         # R9 is the railcard's travel condition, not a total ban, so the
@@ -700,7 +805,7 @@ class DemoPageTest(unittest.TestCase):
     def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
         self.assertIn('cell.dataset.label = label', self.html)
-        self.assertIn('restriction.dataset.label = "Restriction"', self.html)
+        self.assertIn('restriction.dataset.label = "Conditions"', self.html)
         self.assertIn("Restricted fare — check seller conditions", self.html)
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
@@ -897,7 +1002,7 @@ class DemoPageTest(unittest.TestCase):
         branch = render.split("if (!available.length) {")[1].split("\n  }")[0]
         self.assertIn("rows.replaceChildren()", branch)
         self.assertIn("empty.hidden = false", branch)
-        self.assertIn("empty.textContent = emptyModeMessage()", branch)
+        self.assertIn("renderEmptyMode()", branch)
         self.assertIn("pagination.hidden = true", branch)
         # The budget is clamped after the branch, not before it: an empty list
         # has no prices to bound, and its £1 ceiling would otherwise reset the
@@ -930,9 +1035,11 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("changeOrigin.focus()", self.html)
 
     def test_table_headers_name_their_columns_and_scope(self) -> None:
-        # "Ticket" and "Tickets" as adjacent headers read as one column twice;
-        # the first holds the fare code, so it says so.
-        self.assertIn('<th scope="col">Fare code</th>', self.html)
+        # "Ticket" and "Tickets" as adjacent headers read as one column twice,
+        # and "Fare code" described a column that now reads in sentences, so
+        # the headers name what the cells hold.
+        self.assertIn('<th scope="col">Fare</th>', self.html)
+        self.assertIn('<th scope="col">Conditions</th>', self.html)
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
         self.assertEqual(self.html.count('<th scope="col"'), 7)
 
