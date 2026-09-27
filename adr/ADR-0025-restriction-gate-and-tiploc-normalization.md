@@ -123,3 +123,48 @@ returns and 305 singles and is listed in the chooser with them. The audit's
 other option — list King's Cross with a note that the feed has no fares — is
 now unnecessary, and admitting a placeholder to get there would have replaced
 a real page with a fake one.
+
+## Which set the page opens in (27 September 2026)
+
+ADR-0019 added two more ticket modes to the page, and the default one was the
+**broad** standard-return set from `page_destinations_within` — restricted
+off-peak and advance fares included — while the reviewed selector this ADR
+defines sat behind a third radio. That quietly reversed the decision above. The
+27 September audit caught it as C07: `PRODUCT.md` promises reviewed Anytime Day
+Returns, the page's own footer said the same, and the list a reader landed on
+was a different set from the one the promise describes.
+
+**The page now opens in the reviewed set.** The radio carrying
+`publishable_destinations_within`'s output is the checked one, so the default
+list is the one this ADR reviewed and the one the product brief names. The mode
+values did not change — `anytime` still reads `anytimeDestinations` — so a
+shared link written before this decision still resolves to the set it meant.
+
+**The broad set is kept, renamed, and qualified rather than deleted.** Three
+reasons:
+
+1. A restricted off-peak return is a real price a reader can buy on a real
+   date. Removing it would remove true information to fix a labelling problem.
+2. It is often the cheapest thing on the page, and this product is built around
+   the cheapest thing. A budget tool that hid off-peak fares because they are
+   conditional would be answering a different question than the one asked.
+3. `priced_destinations_within` counts a station priced in *any* mode, so the
+   chooser already depends on the broad set existing. Deleting it would change
+   which stations have pages at all.
+
+What changed is the naming and the qualification. The mode is "Any return",
+not "Return", and a line above the table states what the open set contains:
+that the broad set includes restricted off-peak and advance fares, that a
+restricted fare is not valid on every train or at every time, and that the
+Conditions column carries the feed's own text. A restricted row's Fare cell
+points at that column rather than at a seller. The note sits above the table
+rather than inside the methodology accordion, because the moment a reader
+misreads the caveat is the moment they compare two prices, not the moment they
+go looking for methodology.
+
+**What this does not settle.** The feed's `desc_out` and `desc_rtn` — the
+outward and return validity text — still never reach the page, so where the
+feed cannot explain a condition the page says so plainly and sends the reader
+to the seller. That is C08, and it is open. This ADR fixes which set a reader
+is shown and what they are told about it; it does not make the page able to
+decode a rule it has not been given.
