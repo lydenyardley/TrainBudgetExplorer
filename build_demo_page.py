@@ -101,6 +101,12 @@ PRICING_NOTE = (
 # every build reads it, so provenance is never retyped by hand and never
 # drifts between builds. --price-source still overrides it.
 METADATA_NAME = "metadata.json"
+
+# How old a fares download may be before the page says so beside the prices.
+# A fortnight is the point at which a reader planning a specific day should be
+# told to check the fare again, rather than the point at which the number is
+# wrong: fares change, they do not expire.
+STALE_AFTER_DAYS = 14
 # The downloader records its own non-secret provenance (URL, size, hash, and
 # timestamp) in a manifest beside the feeds it writes. A feed downloaded
 # without a hand-written metadata.json still has that, so a real download can
@@ -725,6 +731,48 @@ def price_source_from_manifest(manifest: dict) -> str | None:
     )
 
 
+def cif_date_to_iso(stamp: str) -> str | None:
+    """A CIF date (YYMMDD) as the ISO date the page and Python share.
+
+    The feed states its service window in its own six-digit form, which is what
+    the audit prints and what a reader comparing it with the file needs to see.
+    The page needs the same date as a value it can measure, so the conversion
+    happens once here rather than as date arithmetic in the browser. A stamp
+    that is not six digits is not a date, and is not guessed at.
+    """
+    if not stamp or len(stamp) != 6 or not stamp.isdigit():
+        return None
+    return "20" + stamp[:2] + "-" + stamp[2:4] + "-" + stamp[4:]
+
+
+def feed_date_from(metadata: dict | None, manifest: dict | None = None) -> str | None:
+    """The fares download's own date, as YYYY-MM-DD, or None.
+
+    The provenance sentence says when a feed was downloaded in words; this is
+    the same fact as a value, so the page can measure the age of the prices it
+    is showing against its own clock rather than repeating a sentence the build
+    wrote once. A timetable entry never wins: the date has to describe the
+    fares, because that is the number the reader is judging.
+    """
+    if metadata:
+        stamp = metadata.get("downloaded")
+        if isinstance(stamp, str) and len(stamp) >= 10:
+            return stamp[:10]
+    entries = manifest.get("downloads") if isinstance(manifest, dict) else None
+    best: str | None = None
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or entry.get("source") != "dtd":
+            continue
+        stamp = entry.get("downloaded_at")
+        if not isinstance(stamp, str) or len(stamp) < 10:
+            continue
+        if entry.get("name") == "fares":
+            return stamp[:10]
+        if best is None or stamp > best:
+            best = stamp[:10]
+    return best
+
+
 def with_base(base_path: str, path: str) -> str:
     """Prefix an internal link with the site's base path, if it has one.
 
@@ -1028,6 +1076,7 @@ def build_payload(
     note: str = DEFAULT_NOTE,
     attribution: str | None = None,
     price_source: str = DEFAULT_PRICE_SOURCE,
+    feed_date: str | None = None,
     base_path: str = "",
     provider: str = DEFAULT_PROVIDER,
     # Fallback by default: the parameterised link is not known to land on a
@@ -1438,6 +1487,15 @@ def build_payload(
         # number; the footer keeps the licence wording, which is a different
         # reader's question.
         "priceSource": price_source,
+        # S33: the dates the reader needs to judge the numbers. The fares date
+        # is the download's own, the timetable dates are the service window the
+        # feed states, and the threshold is the number a reader can hold this
+        # page to. With no timetable the page says it prices fares only, which
+        # is a choice rather than a stale feed.
+        "feedDate": feed_date,
+        "timetableFrom": cif_date_to_iso(timetable.service_window()[0]) if timetable else None,
+        "timetableTo": cif_date_to_iso(timetable.service_window()[1]) if timetable else None,
+        "staleAfterDays": STALE_AFTER_DAYS,
         # Internal links are prefixed when the host does not serve the site at
         # its domain root (ADR-0024). The template carries it too, for the
         # links that are written as HTML rather than built in JS.
@@ -1839,6 +1897,7 @@ def main(argv: list[str] | None = None) -> int:
         metadata_folders.append(Path(args.feed_metadata))
     metadata = read_feed_metadata(metadata_folders)
     price_source = args.price_source or price_source_from_metadata(metadata or {})
+    feed_date = feed_date_from(metadata)
     if not price_source and metadata is None:
         # No metadata file at all: the downloader's own manifest is the next
         # honest source. It only runs when metadata is genuinely absent -- when
@@ -1858,6 +1917,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 2
             print(f"price line read from the download manifest: {price_source}")
+        feed_date = feed_date_from(metadata, manifest)
     base_path = "/" + args.base_path.strip("/") if args.base_path.strip("/") else ""
     if not price_source:
         if metadata is not None:
@@ -1955,6 +2015,7 @@ def main(argv: list[str] | None = None) -> int:
             note=note,
             attribution=notices_or_attribution(args),
             price_source=price_source,
+            feed_date=feed_date,
             base_path=base_path,
             provider=args.provider,
             mode=args.link_mode,
@@ -2031,6 +2092,7 @@ def main(argv: list[str] | None = None) -> int:
             "note": note,
             "attribution": notices_or_attribution(args),
             "price_source": price_source,
+            "feed_date": feed_date,
             "base_path": base_path,
             "provider": args.provider,
             "link_mode": args.link_mode,

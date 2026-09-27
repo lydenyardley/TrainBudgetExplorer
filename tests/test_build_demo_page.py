@@ -394,6 +394,61 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("currentPage = 1; render(); writeUrl();", self.html)
         self.assertIn('"Page " + currentPage + " of " + pageCount + " of " + wanted.length', self.html)
 
+    def test_the_page_states_how_old_its_numbers_are(self) -> None:
+        # S33: the age of the prices and the window of the times, beside the
+        # numbers, judged against the reader's clock rather than the build's.
+        self.assertIn("function renderFreshness()", self.html)
+        self.assertIn('id="freshness"', self.html)
+        self.assertEqual(self.payload["staleAfterDays"], build_demo_page.STALE_AFTER_DAYS)
+        self.assertEqual(self.payload["timetableFrom"], "2026-09-21")
+        self.assertEqual(self.payload["timetableTo"], "2026-12-11")
+        # A build with no timetable says so, and that is a choice rather than a
+        # feed that has gone stale.
+        prices_only = build_payload(self.fares, None, "GRN")
+        self.assertIsNone(prices_only["timetableFrom"])
+        self.assertIn("This build prices fares only", self.html)
+        self.assertIn("which has ended, so these times describe services that no longer run", self.html)
+
+    def test_the_feed_date_is_the_downloads_own_and_never_a_timetables(self) -> None:
+        # The date has to describe the fares: a newer timetable download must
+        # not make the prices look fresh.
+        self.assertEqual(
+            build_demo_page.feed_date_from({"downloaded": "2026-09-20T09:15:00Z"}),
+            "2026-09-20",
+        )
+        manifest = {
+            "downloads": [
+                {"source": "dtd", "name": "fares", "downloaded_at": "2026-09-18T06:00:00Z"},
+                {"source": "dtd", "name": "timetable", "downloaded_at": "2026-09-25T06:00:00Z"},
+            ]
+        }
+        self.assertEqual(build_demo_page.feed_date_from(None, manifest), "2026-09-18")
+        # A timetable-only manifest still dates something honestly rather than
+        # claiming the prices came from a download that never carried them.
+        self.assertEqual(
+            build_demo_page.feed_date_from(None, {"downloads": [manifest["downloads"][1]]}),
+            "2026-09-25",
+        )
+        self.assertIsNone(build_demo_page.feed_date_from(None, None))
+        self.assertIsNone(build_demo_page.feed_date_from({"downloaded": "soon"}, None))
+
+    def test_a_cif_date_becomes_an_iso_date_and_a_non_date_does_not(self) -> None:
+        # The feed states its window in six digits; the page measures it in
+        # calendar dates, and a value that is not a date is not guessed at.
+        self.assertEqual(build_demo_page.cif_date_to_iso("260921"), "2026-09-21")
+        for value in ("", "2609", "2609211", "26-09-21", "abcdef"):
+            self.assertIsNone(build_demo_page.cif_date_to_iso(value), value)
+
+    def test_the_timetable_reports_its_own_service_window(self) -> None:
+        # Read from the feed's own records, so the page and the audit cannot
+        # disagree about the window they print.
+        self.assertEqual(self.timetable.service_window(), ("260921", "261211"))
+        self.assertEqual(TimetableDb().service_window(), ("", ""))
+        self.assertEqual(
+            TimetableDb().load_feed(build_synthetic_timetable(Path(self._tmp.name) / "again")).service_window(),
+            ("260921", "261211"),
+        )
+
     def test_a_shortlist_is_a_list_of_places_and_not_a_booking(self) -> None:
         # S26: the decision the page exists for is which place, so a reader can
         # keep a few, compare them on the price currently shown, and hand the
@@ -756,8 +811,12 @@ class DemoPageTest(unittest.TestCase):
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
         # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
         # reader behind UTC. A copied date off by one is worse than no date.
+        # The clock itself is a different question: reading today's date needs
+        # no parsing, so a bare new Date() is fine and the ban is on the
+        # argument form, which is the one that guesses a time zone.
         self.assertIn("function humanDate(iso)", self.html)
-        self.assertNotIn("new Date(", self.html)
+        self.assertNotIn('new Date("', self.html)
+        self.assertNotIn("new Date(iso", self.html)
 
     def test_a_failed_copy_is_never_reported_as_a_copy(self) -> None:
         # Clipboard access is refused when the file is opened from disk, so the

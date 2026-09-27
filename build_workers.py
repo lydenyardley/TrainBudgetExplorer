@@ -63,6 +63,7 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         note=_WORKER["note"],
         attribution=_WORKER["attribution"],
         price_source=_WORKER["price_source"],
+        feed_date=_WORKER.get("feed_date"),
         base_path=_WORKER["base_path"],
         provider=_WORKER["provider"],
         mode=_WORKER["link_mode"],

@@ -49,8 +49,7 @@ def audit(
         days = schedule.days or "?"
         service_days[days] = service_days.get(days, 0) + 1
 
-    date_starts = sorted(filter(None, (schedule.date_from for schedule in timetable.schedules)))
-    date_ends = sorted(filter(None, (schedule.date_to for schedule in timetable.schedules)))
+    window = timetable.service_window()
 
     return {
         "fares": fares.stats(),
@@ -78,8 +77,8 @@ def audit(
         "normalized_tiplocs": timetable.normalized_tiploc_count(),
         "sample_tiploc_normalizations": normalized_samples,
         "restrictions": fares.restrictions.summary(),
-        "schedule_dates_from": date_starts[0] if date_starts else "",
-        "schedule_dates_to": date_ends[-1] if date_ends else "",
+        "schedule_dates_from": window[0],
+        "schedule_dates_to": window[1],
         "stp_indicators": stp_indicators,
         "service_day_patterns": service_days,
     }

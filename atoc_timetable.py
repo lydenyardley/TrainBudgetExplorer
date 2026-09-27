@@ -781,6 +781,19 @@ class TimetableDb:
             "calling_points": sum(len(schedule.stops) for schedule in self.schedules),
         }
 
+    def service_window(self) -> tuple[str, str]:
+        """The earliest start and latest end across every schedule's dates.
+
+        The dates are the feed's own, not the download's: a timetable is current
+        for the window it says it covers, whatever day the file was fetched. A
+        reader deciding whether to trust a journey time needs that window beside
+        the time, so it is computed here once and read by the page and the
+        audit rather than re-derived from the schedules in each.
+        """
+        starts = sorted(filter(None, (schedule.date_from for schedule in self.schedules)))
+        ends = sorted(filter(None, (schedule.date_to for schedule in self.schedules)))
+        return (starts[0] if starts else "", ends[-1] if ends else "")
+
     # -- journeys --------------------------------------------------------
 
     def best_journey(
