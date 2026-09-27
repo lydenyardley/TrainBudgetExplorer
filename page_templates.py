@@ -352,7 +352,18 @@ function modeCount(mode) {
   return (DATA[MODE_LISTS[mode]] || []).length;
 }
 function budgetCeiling() {
-  return Math.max(1, Math.ceil(Math.max(0, ...activeDestinations().map((d) => d.adultPence)) / 100));
+  // The ceiling is the most the reader can be asked to consider, and the price
+  // on a row depends on who it covers: two adults cost twice one. A ceiling set
+  // by the single fare is therefore a budget nobody reading the party price
+  // could ever type -- on a page with one destination it caps the budget at that
+  // destination's adult fare, and the "Two adults" control then shows nothing at
+  // any budget the page allows. Found by sweeping a published two-station site.
+  //
+  // The railcard is left out on purpose: it makes prices lower, so including it
+  // would move the ceiling down the moment the box was ticked, clamping a
+  // budget the reader had already chosen.
+  const party = unit() === "party";
+  return Math.max(1, Math.ceil(Math.max(0, ...activeDestinations().map((d) => (party ? d.partyPence : d.adultPence))) / 100));
 }
 
 // A prices-only build has no times to show, and two columns of dashes are
