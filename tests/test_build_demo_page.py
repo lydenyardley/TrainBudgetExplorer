@@ -16,6 +16,7 @@ import io
 from pathlib import Path
 
 import build_demo_page
+import run
 from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 import argparse
 from atoc_fares import LOCATION, FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
@@ -1226,7 +1227,27 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
         self.assertIn('cell.dataset.label = label', self.html)
         self.assertIn('restriction.dataset.label = "Conditions"', self.html)
-        self.assertIn("Restricted fare — check seller conditions", self.html)
+        # C07: the conditions are printed in the next column of the same row, so
+        # the label points there rather than sending the reader to a seller to
+        # find out what the price they are comparing actually permits.
+        self.assertIn("Restricted fare — conditions in the next column", self.html)
+
+    def test_the_page_opens_in_the_reviewed_fare_set(self) -> None:
+        # C07: PRODUCT.md promises reviewed unrestricted Anytime Day Returns, so
+        # the set the page opens in is that one. The broad set stays available
+        # and named, which is what the second assertion is about.
+        checked = re.search(r'<input type="radio" name="ticketMode" value="(\w+)" checked>', self.html)
+        self.assertIsNotNone(checked, "no ticket mode is checked in the markup")
+        self.assertEqual("anytime", checked.group(1))
+        self.assertIn("> Anytime Day Return</label>", self.html)
+        self.assertIn("> Any return</label>", self.html)
+        # Each mode says what its fares are, above the table rather than inside
+        # the methodology accordion, so a reader meets the caveat at the moment
+        # they compare two prices.
+        for note in ("anytime:", "return:", "single:"):
+            self.assertIn("  " + note, self.html)
+        self.assertIn('id="modeNote"', self.html)
+        self.assertIn("renderModeNote();", self.html)
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
@@ -3340,6 +3361,173 @@ class RouteManifestTest(unittest.TestCase):
             )
             self.assertEqual(one["routes"], ["/", "/from/grantham/", "/privacy/"])
             self.assertEqual(build_demo_page.manifest_problems(solo, one), [])
+
+
+class SingleOriginRunnerTidyTest(unittest.TestCase):
+    """What `python run.py` leaves behind after a single-origin build.
+
+    C31: the runner used to delete the whole /from/ tree, which a single-origin
+    build had just written its one station page into, so the chooser it served
+    linked to a 404. These drive the real builder and then the real tidying
+    step, because the bug lived in the seam between them and neither half
+    reproduces it alone.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.root = Path(self.tmp)
+        self.feed = self.root / "feed"
+        build_synthetic_feed(self.feed, include_restrictions=True, include_third_origin=True)
+        self.site = self.root / "site"
+
+    def _build(self, *extra: str) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = build_demo_page.main(
+                ["--feed", str(self.feed), "--out", str(self.site / "index.html"), "--origin", "GRN", *extra]
+            )
+        self.assertEqual(code, 0)
+
+    def _tidy(self) -> list[str]:
+        with mock.patch.object(run, "SITE", self.site):
+            with contextlib.redirect_stdout(io.StringIO()):
+                return run.remove_unwritten_station_pages()
+
+    def _station_folders(self) -> list[str]:
+        from_dir = self.site / "from"
+        return sorted(child.name for child in from_dir.iterdir()) if from_dir.is_dir() else []
+
+    def test_the_page_the_build_just_wrote_survives(self) -> None:
+        # A single-origin build writes the chooser, privacy and the one station
+        # page. Tidying must not remove that page, which is the whole defect.
+        self._build()
+        self.assertEqual(self._station_folders(), ["grantham"])
+        self.assertEqual(self._tidy(), [])
+        self.assertTrue((self.site / "from" / "grantham" / "index.html").is_file())
+
+    def test_a_previous_all_origins_tree_is_removed(self) -> None:
+        # The case the old step was written for: leftovers from a wider build,
+        # which the chooser this build wrote does not offer.
+        self._build("--all-origins")
+        self.assertEqual(self._station_folders(), ["grantham", "lincoln", "nottingham"])
+        self._build()
+        self.assertEqual(self._tidy(), ["lincoln", "nottingham"])
+        self.assertEqual(self._station_folders(), ["grantham"])
+
+    def test_a_base_path_build_keeps_its_own_page(self) -> None:
+        # A subpath build writes "/app/from/grantham/", not "/from/grantham/".
+        # Reading the route without the prefix matched nothing and deleted the
+        # page, which is C31 again for every subpath deployment.
+        self._build("--base-path", "app")
+        manifest = json.loads(
+            (self.site / build_demo_page.RELEASE_MANIFEST_NAME).read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["basePath"], "/app")
+        self.assertIn("/app/from/grantham/", manifest["routes"])
+        self.assertEqual(self._tidy(), [])
+        self.assertTrue((self.site / "from" / "grantham" / "index.html").is_file())
+
+    def test_nothing_is_deleted_when_the_manifest_is_absent_or_unreadable(self) -> None:
+        # Deleting generated pages on a guess is the worse failure: the worst
+        # case for a missing manifest is a stale folder left on disk, which the
+        # build already names in its own output.
+        #
+        # The last two cases are the sharp ones. A manifest whose "routes" is a
+        # string iterates character by character, and one whose top level is a
+        # list has no "routes" at all; either way the keep-set comes out empty,
+        # and an empty keep-set deletes the page the build just wrote. That is
+        # the C31 defect arriving by a different road, so it is refused.
+        for content in (None, "{not json", '"/from/grantham/"', "[1, 2, 3]", '{"routes": "/from/grantham/"}'):
+            self._build("--all-origins")
+            manifest = self.site / build_demo_page.RELEASE_MANIFEST_NAME
+            if content is None:
+                manifest.unlink()
+            else:
+                manifest.write_text(content, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(self._tidy(), [], f"manifest {content!r}")
+            self.assertEqual(self._station_folders(), ["grantham", "lincoln", "nottingham"])
+
+    def test_a_build_that_priced_nothing_removes_every_station_folder(self) -> None:
+        # No station route in the manifest means no station page is part of
+        # this release, so none may be left behind to be reached by URL.
+        self._build("--all-origins")
+        (self.site / build_demo_page.RELEASE_MANIFEST_NAME).write_text(
+            json.dumps({"basePath": "", "routes": ["/", "/privacy/"]}), encoding="utf-8"
+        )
+        self.assertEqual(self._tidy(), ["grantham", "lincoln", "nottingham"])
+        self.assertEqual(self._station_folders(), [])
+
+
+class ReturnNetworkFixtureTest(unittest.TestCase):
+    """The optional block that gives the secondary origins a real network.
+
+    The browser suite drives every station page a build writes, so a station
+    with one priced destination turns most of the page's checks into skips.
+    These assert the block produces what those checks need, from the feed's own
+    data rather than from a flag the page reads.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.feed = Path(self.tmp) / "feed"
+        build_synthetic_feed(
+            self.feed,
+            include_restrictions=True,
+            include_third_origin=True,
+            include_return_network=True,
+        )
+        build_synthetic_timetable(self.feed, include_return_network=True)
+        self.fares = FaresDb().load_feed(self.feed)
+        self.timetable = TimetableDb().load_feed(self.feed)
+
+    def test_the_base_fixture_is_unchanged_without_the_flag(self) -> None:
+        # Every parser test counts records, so the block has to stay opt-in.
+        plain = Path(self.tmp) / "plain"
+        build_synthetic_feed(plain, include_restrictions=True)
+        build_synthetic_timetable(plain)
+        base = FaresDb().load_feed(plain)
+        for crs in ("MAT", "RET", "SLD", "LEC"):
+            self.assertNotIn(crs, base.locations_by_crs)
+        plain_timetable = TimetableDb().load_feed(plain)
+        for tiploc in ("MATL", "SLDK", "LEIC"):
+            self.assertIsNone(plain_timetable.crs_for_tiploc(tiploc))
+
+    def test_both_secondary_origins_price_more_than_one_destination(self) -> None:
+        for origin in ("LCN", "NOT"):
+            fares = build_demo_page.build_payload(self.fares, self.timetable, origin)
+            self.assertGreater(
+                len(fares["anytimeDestinations"]), 1, f"{origin} prices too few to exercise the page"
+            )
+
+    def test_the_set_carries_a_heritage_row_a_small_town_and_a_seaside_town(self) -> None:
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
+        with_heritage = [row for row in payload["anytimeDestinations"] if row["heritageSites"]]
+        self.assertTrue(with_heritage, "no destination carries a UNESCO property")
+        types = {t for row in payload["anytimeDestinations"] for t in row["destinationTypes"]}
+        self.assertIn("small_town", types)
+        self.assertIn("seaside", types)
+
+    def test_some_fares_sit_above_the_railcard_minimum_and_some_below(self) -> None:
+        # Both directions matter: a card with nothing to discount cannot be
+        # exercised, and a card that discounts every fare cannot show what the
+        # page does with one it does not beat.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
+        prices = [row["adultPence"] for row in payload["anytimeDestinations"]]
+        self.assertTrue(any(p > 1200 for p in prices), "nothing is above the £12.00 minimum")
+        self.assertTrue(any(p < 1200 for p in prices), "nothing is below the £12.00 minimum")
+        self.assertGreater(payload["railcardEligibleCount"], 0)
+
+    def test_one_destination_is_priced_and_never_served(self) -> None:
+        # The shape the page's "no service" row exists to report.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
+        states = {row["journeyState"] for row in payload["anytimeDestinations"]}
+        self.assertIn("found", states)
+        self.assertTrue(
+            any(state != "found" for state in states),
+            f"every destination has a journey: {states}",
+        )
 
 
 if __name__ == "__main__":
