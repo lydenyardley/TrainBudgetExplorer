@@ -6,28 +6,29 @@
  * a reader can drag the slider, filter to a town, follow a ticket link, or copy a
  * row's journey details. Those are the things a reader actually does.
  *
- * Run it with playwright on the path:
+ * Run it with playwright on one or more page paths:
  *
  *     npx --yes --package playwright node browser_test.cjs
  *     node browser_test.cjs            # when playwright is installed locally
+ *     node browser_test.cjs demo.html _site/index.html
  *
- * Exit codes: 0 the page behaves, 1 it does not, 2 playwright is unavailable.
- * A skip is reported loudly and exits 2, because a test that passes quietly on a
- * machine where it never ran is the thing this project keeps refusing to do.
+ * Every expectation is read out of the page under test, so the suite is a
+ * test of the template rather than of a station, and one run can sweep the
+ * pages a build wrote: each path gets its own context and its own result,
+ * and the run fails if any page fails.
+ *
+ * Exit codes: 0 every page behaves, 1 one does not, 2 playwright is
+ * unavailable. A skip is reported loudly and exits 2, because a test that
+ * passes quietly on a machine where it never ran is the thing this project
+ * keeps refusing to do.
  */
 
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PAGE = process.argv[2] || "demo.html";
+const PAGES = process.argv.length > 2 ? process.argv.slice(2) : ["demo.html"];
 const SELLER = /^https:\/\/www\.(nationalrail\.co\.uk|thetrainline\.com)\//;
-
-const checks = [];
-
-function check(name, condition, detail) {
-  checks.push({ name, ok: Boolean(condition), detail });
-}
 
 function requirePlaywright() {
   try {
@@ -44,34 +45,54 @@ function requirePlaywright() {
   }
 }
 
-function serve(file) {
-  const body = fs.readFileSync(file);
-  const server = http.createServer((_request, response) => {
+function serve(bodies) {
+  // One server for the whole run, with one synthetic path per page. The file
+  // names are not unique -- a chooser and a station page are both index.html
+  // -- and a page served from memory has no directory worth preserving, so
+  // the path is a label rather than a location.
+  const routes = new Map();
+  bodies.forEach((body, index) => routes.set(`/page-${index + 1}.html`, body));
+  const server = http.createServer((request, response) => {
+    const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+    const body = routes.get(pathname);
+    if (body === null || body === undefined) {
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("no such page");
+      return;
+    }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(body);
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-async function main() {
-  const playwright = requirePlaywright();
-  if (!playwright) process.exit(2);
-
-  const file = path.resolve(PAGE);
-  if (!fs.existsSync(file)) {
-    console.error("No page at " + file + ". Build one first:");
-    console.error("  python make_synthetic_feed.py _demo_feed --unserved-station");
-    console.error("  python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html");
-    process.exit(1);
+async function runPage(browser, index, given, file, body, base) {
+  // One context per page. The seller's stub route and the clipboard grant are
+  // both context-scoped, and a page that failed a step must not hand the next
+  // one a reader still carrying its budget, its filters, or its mode.
+  const checks = [];
+  const check = (name, condition, detail) => {
+    checks.push({ name, ok: Boolean(condition), detail });
+  };
+  // One result per page, printed the same way whether the page ran or was
+  // missing, so several pages in one log are read the same way.
+  const printPage = () => {
+    console.log("\n== " + given);
+    for (const { name, ok, detail } of checks) {
+      console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
+    }
+    const failed = checks.filter((entry) => !entry.ok).length;
+    console.log(`${checks.length - failed}/${checks.length} browser checks passed against ${given}`);
+  };
+  let stopped = false;
+  if (body === null) {
+    check("the page under test exists", false, "no file at " + file + "; build one first");
+    printPage();
+    return { given, file, checks, stopped: false };
   }
 
-  const server = await serve(file);
-  const url = `http://127.0.0.1:${server.address().port}/demo.html`;
-  const browser = await playwright.chromium.launch();
   const context = await browser.newContext();
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: `http://127.0.0.1:${server.address().port}`,
-  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
 
   // The seller's site is not part of this test. Stubbing it keeps the run
   // deterministic and keeps the suite off somebody else's server, while still
@@ -81,6 +102,7 @@ async function main() {
   );
 
   const page = await context.newPage();
+  const url = `${base}/page-${index + 1}.html`;
   const rows = () => page.locator("#rows a.buy").count();
 
   // Every expectation below is read out of the page's own payload. The suite
@@ -652,18 +674,71 @@ async function main() {
     // below reports whatever was checked, so this has to be carried out of the
     // try as well: without it a broken selector ends the run early and the
     // summary reads as a pass.
-    console.error("the browser test stopped early: " + error.message);
-    process.exitCode = 1;
+    console.error("the browser test stopped early on " + given + ": " + error.message);
+    stopped = true;
   } finally {
-    for (const { name, ok, detail } of checks) {
-      console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
+    printPage();
+    await context.close();
+  }
+  return { given, file, checks, stopped };
+}
+
+function report(results) {
+  const total = results.reduce((sum, result) => sum + result.checks.length, 0);
+  const failed = results.reduce(
+    (sum, result) => sum + result.checks.filter((entry) => !entry.ok).length,
+    0
+  );
+  const broken = results.filter(
+    (result) => result.stopped || result.checks.some((entry) => !entry.ok)
+  );
+  // One line for the run as well as one per page, so a log with several pages
+  // in it ends with something that can be read without counting back.
+  console.log(
+    broken.length
+      ? `\n${broken.length} of ${results.length} page(s) failed: ${total - failed}/${total} checks passed (${broken.map((result) => result.given).join(", ")})`
+      : `\n${results.length} page(s), ${total}/${total} browser checks passed`
+  );
+  process.exit(failed || broken.length ? 1 : 0);
+}
+
+async function main() {
+  const playwright = requirePlaywright();
+  if (!playwright) process.exit(2);
+
+  const pages = PAGES.map((given) => {
+    const file = path.resolve(given);
+    // A path that is not there is a failed page, not a failed run: the others
+    // still get driven and still get reported. Missing demo.html is the case
+    // worth spelling out, because it is the one a contributor hits first.
+    let body = null;
+    try {
+      body = fs.readFileSync(file);
+    } catch (error) {
+      if (given === "demo.html") {
+        console.error("No page at " + file + ". Build one first:");
+        console.error("  python make_synthetic_feed.py _demo_feed --unserved-station");
+        console.error("  python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html");
+      }
     }
-    const failed = checks.filter((entry) => !entry.ok).length;
-    console.log(`\n${checks.length - failed}/${checks.length} browser checks passed against ${PAGE}`);
+    return { given, file, body };
+  });
+
+  const server = await serve(pages.map((entry) => entry.body));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const browser = await playwright.chromium.launch();
+  const results = [];
+  try {
+    for (let index = 0; index < pages.length; index += 1) {
+      results.push(
+        await runPage(browser, index, pages[index].given, pages[index].file, pages[index].body, base)
+      );
+    }
+  } finally {
     await browser.close();
     server.close();
-    process.exit(process.exitCode || (failed ? 1 : 0));
   }
+  report(results);
 }
 
 main().catch((error) => {
