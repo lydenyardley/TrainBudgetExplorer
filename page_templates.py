@@ -338,10 +338,18 @@ const railcardClose = document.getElementById("railcardClose");
 function ticketMode() {
   return document.querySelector('input[name="ticketMode"]:checked').value;
 }
+// One place that knows which payload list each ticket mode shows, so the
+// count in a message cannot drift from the list the table is built from.
+const MODE_LISTS = {
+  return: "destinations",
+  single: "singleDestinations",
+  anytime: "anytimeDestinations",
+};
 function activeDestinations() {
-  if (ticketMode() === "single") return DATA.singleDestinations;
-  if (ticketMode() === "anytime") return DATA.anytimeDestinations;
-  return DATA.destinations;
+  return DATA[MODE_LISTS[ticketMode()]] || [];
+}
+function modeCount(mode) {
+  return (DATA[MODE_LISTS[mode]] || []).length;
 }
 function budgetCeiling() {
   return Math.max(1, Math.ceil(Math.max(0, ...activeDestinations().map((d) => d.adultPence)) / 100));
@@ -439,19 +447,45 @@ function syncDestinationTypeChips() {
   }
 }
 
+// A mode can be empty while other modes are not. An Anytime Day Return is sold
+// on a handful of interurban routes, so most origins have none, and the page
+// used to return early and leave the reader looking at the previous mode's
+// rows with every destination-type chip hidden -- which reads as a broken
+// control, not as an answer. So an empty mode now says so, clears the table,
+// and says where the fares this origin does have are.
+function modeLabels() {
+  const labels = {};
+  for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
+    labels[input.value] = input.parentElement.textContent.trim();
+  }
+  return labels;
+}
+const MODE_WHY = {
+  anytime: "An Anytime Day Return is valid on any train, so sellers offer it on only some routes and most stations have none.",
+};
+function emptyModeMessage() {
+  const labels = modeLabels();
+  const mode = ticketMode();
+  const elsewhere = ["return", "single", "anytime"]
+    .filter((other) => other !== mode && modeCount(other))
+    .map((other) => labels[other] + " has " + modeCount(other));
+  const why = MODE_WHY[mode] ? " " + MODE_WHY[mode] : "";
+  const where = elsewhere.length
+    ? " " + elsewhere.join(" and ") + (elsewhere.length === 1 ? " destination." : " destinations — switch modes to see them.")
+    : "";
+  return "No " + labels[mode] + " fares were found from " + DATA.origin.name + " in this download." + why + where;
+}
 function render() {
-  // An unpriced page has no budget conversation: provenance() has already
-  // stood the controls and the table down, and anything this function wrote
-  // ("Nothing inside this budget") would contradict the page's own first
-  // sentence. So it does nothing at all.
   const available = activeDestinations();
   // Before the filter is read, not after: a chip the active list cannot support
   // must not be part of what the filter is asked to match.
   syncDestinationTypeChips();
-  const ceiling = budgetCeiling();
-  budget.max = String(ceiling);
-  budgetNumber.max = String(ceiling);
-  if (Number(budget.value) > ceiling) setBudget(ceiling);
+  // An unpriced page has no budget conversation: provenance() has already
+  // stood the controls and the table down, and anything this function wrote
+  // ("Nothing inside this budget") would contradict the page's own first
+  // sentence. So it does nothing at all -- but that is the only case where it
+  // says nothing.
+  if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) return;
   const coverage = document.getElementById("feedCoverage");
   if (coverage) {
     coverage.textContent = ticketMode() === "single"
@@ -462,7 +496,23 @@ function render() {
         : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
           DATA.excludedItxCount + " had only ITX placeholder fares and are not shown.";
   }
-  if (!available.length) return;
+  if (!available.length) {
+    // The budget is left alone on purpose. An empty list has no prices to
+    // bound, and clamping to the £1 ceiling of an empty list would silently
+    // reset the reader's budget for every other mode they switch back to.
+    rows.replaceChildren();
+    summary.textContent = "No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name;
+    empty.hidden = false;
+    empty.textContent = emptyModeMessage();
+    more.hidden = true;
+    pagination.hidden = true;
+    pageStatus.textContent = "";
+    return;
+  }
+  const ceiling = budgetCeiling();
+  budget.max = String(ceiling);
+  budgetNumber.max = String(ceiling);
+  if (Number(budget.value) > ceiling) setBudget(ceiling);
   const cap = Number(budget.value) * 100;
   const wantedTypes = selectedDestinationTypes();
   const wanted = available.filter(

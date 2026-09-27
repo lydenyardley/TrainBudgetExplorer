@@ -630,7 +630,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("[hidden] { display: none !important; }", self.html)
 
     def test_an_unpriced_origin_gets_its_own_first_sentence(self) -> None:
-        payload = dict(self.payload, destinations=[], singleDestinations=[])
+        # All three modes, not just the two the test used to empty: an unpriced
+        # page is one that priced nothing in any ticket mode, and leaving the
+        # Anytime list populated described a page this is not.
+        payload = dict(
+            self.payload, destinations=[], singleDestinations=[], anytimeDestinations=[]
+        )
         html = render_page(payload, budget_pounds=20)
         self.assertIn('id="unpriced"', html)
         script = html.split("<script>")[1].split("</script>")[0]
@@ -647,11 +652,23 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('if (table) table.hidden = true;', script)
         self.assertIn('if (summary) summary.hidden = true;', script)
         # render() runs after provenance() and would un-hide the budget's empty
-        # message; on an unpriced page it must not run at all.
-        self.assertIn("if (!available.length) return;", script)
+        # message; on an unpriced page it must not write anything at all. The
+        # test is for a mode with nothing in it, not a page with nothing in it.
+        render = script.split("function render(")[1].split("\nfunction ")[0]
+        self.assertIn(
+            "if (!DATA.destinations.length && !DATA.singleDestinations.length "
+            "&& !DATA.anytimeDestinations.length) return;",
+            render,
+        )
 
     def test_an_unpriced_origin_with_no_stations_at_all_says_that(self) -> None:
-        payload = dict(self.payload, destinations=[], stations=[])
+        payload = dict(
+            self.payload,
+            destinations=[],
+            singleDestinations=[],
+            anytimeDestinations=[],
+            stations=[],
+        )
         html = render_page(payload, budget_pounds=20)
         script = html.split("<script>")[1].split("</script>")[0]
         self.assertIn("Nothing was priced from any station", script)
@@ -779,6 +796,49 @@ class DemoPageTest(unittest.TestCase):
             render.index("syncDestinationTypeChips()"),
             render.index("selectedDestinationTypes()"),
         )
+
+    def test_a_mode_with_no_fares_says_so_instead_of_going_blank(self) -> None:
+        # An Anytime Day Return is sold on a handful of interurban routes, so
+        # most real origins have none of them: Kings Cross prices 171 returns
+        # and no Anytime fares at all. The page used to return from render()
+        # before it wrote anything, so a reader who switched to that mode kept
+        # the previous mode's rows under a set of destination chips that had
+        # all just been hidden -- a filter that looks broken rather than a
+        # mode that is empty. The mode now clears the table, says what
+        # happened, and says where the fares this origin does have are.
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        render = script.split("function render(")[1].split("\nfunction ")[0]
+        self.assertNotIn("if (!available.length) return;", render)
+        branch = render.split("if (!available.length) {")[1].split("\n  }")[0]
+        self.assertIn("rows.replaceChildren()", branch)
+        self.assertIn("empty.hidden = false", branch)
+        self.assertIn("empty.textContent = emptyModeMessage()", branch)
+        self.assertIn("pagination.hidden = true", branch)
+        # The budget is clamped after the branch, not before it: an empty list
+        # has no prices to bound, and its £1 ceiling would otherwise reset the
+        # reader's budget for every mode they switched back to.
+        self.assertLess(
+            render.index("if (!available.length) {"), render.index("setBudget(ceiling)")
+        )
+        # Silence is now reserved for the one case that already has a message:
+        # a page that priced nothing at all, which provenance() explains.
+        self.assertIn(
+            "if (!DATA.destinations.length && !DATA.singleDestinations.length", render
+        )
+        # The wording names the mode by the label the reader can see, so it
+        # cannot drift from the control, and counts the payload's own lists.
+        message = script.split("function emptyModeMessage()")[1].split("\nfunction ")[0]
+        self.assertIn("modeLabels()", message)
+        self.assertIn("modeCount(", message)
+        self.assertIn('"No " + labels[mode] + " fares were found from "', message)
+        self.assertIn("MODE_WHY", message)
+        # The Anytime mode says why that mode is usually the empty one, since
+        # "none in this download" on its own reads like a broken build.
+        self.assertIn("An Anytime Day Return is valid on any train", script)
+        # One place names which list each mode shows, so a count quoted in a
+        # message cannot come from a different list than the table is built
+        # from.
+        self.assertIn("const MODE_LISTS = {", script)
 
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
         self.assertIn('event.key === "Escape"', self.html)
