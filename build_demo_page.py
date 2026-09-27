@@ -358,26 +358,54 @@ def link_crawl_failed(broken: list[str], out_dir: Path) -> None:
     )
 
 
-def publish_staged(staging: Path, out_dir: Path) -> None:
-    """Swap a validated staging folder into place as the whole site (S07).
+# The routes one release serves, as a list beside the pages (S07). The host
+# consumes the folder this build wrote; this says which routes in it are part
+# of this release, so "the whole verified output" is a set somebody can read
+# rather than a promise about a folder.
+RELEASE_MANIFEST_NAME = "release-manifest.json"
 
-    The host consumes one folder, so a release is the whole folder or nothing.
-    A half-finished batch, or a mixture of this build's pages and an earlier
-    build's stale station folders, is exactly what S07 asks to stop. The
-    staging folder is built and link-crawled first; only then is it moved into
-    place over the output directory. The previous output is removed only after
-    the new folder is in position, so an interrupted publish leaves the old
-    site rather than none.
+
+def write_release_manifest(
+    out_dir: Path,
+    routes: list[str],
+    *,
+    price_source: str,
+    built_at: str,
+    base_path: str = "",
+) -> Path:
+    """Write the release manifest, and return where it went."""
+    manifest = {
+        "schema": 1,
+        "builtAt": built_at,
+        "basePath": base_path,
+        "priceSource": price_source,
+        "synthetic": price_source == DEFAULT_PRICE_SOURCE,
+        "routes": sorted(set(routes)),
+    }
+    path = out_dir / RELEASE_MANIFEST_NAME
+    write_page_atomic(path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    return path
+
+
+def manifest_problems(out_dir: Path, manifest: dict, base_path: str = "") -> list[str]:
+    """Every route the manifest claims, proved to be a written file.
+
+    The link crawl walks the other way: it asks whether every link a reader can
+    follow resolves. This asks whether every route the release says it serves
+    exists, which is the direction a host or a person reading the manifest needs
+    -- a release that claims a station it did not write is a release whose
+    completeness cannot be taken on trust.
     """
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
-    if out_dir.exists():
-        retired = out_dir.with_name(out_dir.name + ".previous")
-        if retired.exists():
-            shutil.rmtree(retired)
-        out_dir.replace(retired)
-    staging.replace(out_dir)
-    if out_dir.with_name(out_dir.name + ".previous").exists():
-        shutil.rmtree(out_dir.with_name(out_dir.name + ".previous"))
+    problems: list[str] = []
+    for route in manifest.get("routes") or []:
+        if not isinstance(route, str) or not route.startswith("/"):
+            problems.append(f"the manifest names {route!r}, which is not a route on this site")
+            continue
+        relative = route[len(base_path):] if base_path and route.startswith(base_path) else route
+        target = out_dir / (relative.lstrip("/") + "index.html" if relative.endswith("/") else relative.lstrip("/"))
+        if not target.is_file():
+            problems.append(f"the manifest names {route}, which was not written")
+    return problems
 
 
 # Bumped when the fare-index pickle layout changes: a worker restoring an
@@ -768,7 +796,10 @@ def cif_date_to_iso(stamp: str) -> str | None:
     the audit prints and what a reader comparing it with the file needs to see.
     The page needs the same date as a value it can measure, so the conversion
     happens once here rather than as date arithmetic in the browser. A stamp
-    that is not six digits is not a date, and is not guessed at.
+    that is not six digits is not a date, and is not guessed at. The century is
+    read as 20xx, which is every feed this project has read; a stamp that would
+    place the window in another century is a feed problem to notice, not one to
+    paper over here.
     """
     if not stamp or len(stamp) != 6 or not stamp.isdigit():
         return None
@@ -1448,6 +1479,8 @@ def build_payload(
         if railcard_record
         else None
     )
+    # The timetable's own service window, read once for both dates below.
+    service_window = timetable.service_window() if timetable else ("", "")
     # S29: how much of the feed's coverage this page could not show, counted
     # rather than asserted. A destination whose type is not in the reviewed
     # registry is still priced and still listed, but no chip can ever select it,
@@ -1537,8 +1570,8 @@ def build_payload(
         # page to. With no timetable the page says it prices fares only, which
         # is a choice rather than a stale feed.
         "feedDate": feed_date,
-        "timetableFrom": cif_date_to_iso(timetable.service_window()[0]) if timetable else None,
-        "timetableTo": cif_date_to_iso(timetable.service_window()[1]) if timetable else None,
+        "timetableFrom": cif_date_to_iso(service_window[0]) if service_window else None,
+        "timetableTo": cif_date_to_iso(service_window[1]) if service_window else None,
         "staleAfterDays": STALE_AFTER_DAYS,
         # Internal links are prefixed when the host does not serve the site at
         # its domain root (ADR-0024). The template carries it too, for the
@@ -2479,6 +2512,26 @@ def main(argv: list[str] | None = None) -> int:
         if broken:
             link_crawl_failed(broken, out_dir)
         print(f"link crawl: every internal link in {out_dir} resolves to a written page")
+        # The release manifest, then proved against the files on disk (S07). A
+        # manifest that was written and not checked is a claim, so it is
+        # checked, and a release that names a station it did not write stops
+        # here rather than at a reader's 404.
+        manifest_path = write_release_manifest(
+            out_dir,
+            [with_base(base_path, "/"), with_base(base_path, "/privacy/")]
+            + [with_base(base_path, f"/from/{slug}/") for slug in sorted(written)],
+            price_source=price_source,
+            built_at=shared["built_at"],
+            base_path=base_path,
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        missing = manifest_problems(out_dir, manifest, base_path)
+        if missing:
+            raise SystemExit(
+                "error: the release manifest names routes this build did not write:\n"
+                + "".join(f"  - {entry}\n" for entry in missing)
+            )
+        print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
         # Say how to open it, because the pages are not in the repository (they
         # are build output) and their station links are root-absolute, so
         # double-clicking the file does not work while a local server does.
@@ -2564,6 +2617,25 @@ def main(argv: list[str] | None = None) -> int:
     if broken:
         link_crawl_failed(broken, out_dir)
     print(f"link crawl: every internal link in {out_dir} resolves to a written page")
+    # The release manifest, proved against the files on disk (S07). Same rule
+    # as the full build: the release is the routes it names, and every one of
+    # them has to be a file before the build calls itself finished.
+    manifest_path = write_release_manifest(
+        out_dir,
+        [with_base(base_path, "/"), with_base(base_path, "/privacy/")]
+        + [entry["href"] for entry in routes],
+        price_source=price_source,
+        built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        base_path=base_path,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    missing = manifest_problems(out_dir, manifest, base_path)
+    if missing:
+        raise SystemExit(
+            "error: the release manifest names routes this build did not write:\n"
+            + "".join(f"  - {entry}\n" for entry in missing)
+        )
+    print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
     if args.link_mode == "fallback":
         print("fallback links: readers get the seller's own search page, not their search")

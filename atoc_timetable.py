@@ -356,6 +356,7 @@ class TimetableDb:
         # A focused load keeps only schedules touching the requested stations.
         # None means the normal complete database used by audit and analysis.
         self._focus_tiplocs: set[str] | None = None
+        self._service_window: tuple[tuple[str, str], int] | None = None
 
     # -- loading ---------------------------------------------------------
 
@@ -790,9 +791,18 @@ class TimetableDb:
         the time, so it is computed here once and read by the page and the
         audit rather than re-derived from the schedules in each.
         """
-        starts = sorted(filter(None, (schedule.date_from for schedule in self.schedules)))
-        ends = sorted(filter(None, (schedule.date_to for schedule in self.schedules)))
-        return (starts[0] if starts else "", ends[-1] if ends else "")
+        if self._service_window is None or self._service_window[1] != len(self.schedules):
+            # One pass rather than two sorts, and memoised: a full-network build
+            # asks for the window once per origin, and the answer cannot change
+            # while the database is loaded.
+            first = last = ""
+            for schedule in self.schedules:
+                if schedule.date_from and (not first or schedule.date_from < first):
+                    first = schedule.date_from
+                if schedule.date_to and schedule.date_to > last:
+                    last = schedule.date_to
+            self._service_window = ((first, last), len(self.schedules))
+        return self._service_window[0]
 
     # -- journeys --------------------------------------------------------
 
