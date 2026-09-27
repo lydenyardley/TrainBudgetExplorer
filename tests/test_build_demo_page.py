@@ -113,7 +113,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
         # The title is the heading's sentence, so a reader with two tabs open
         # can tell the two searches apart.
-        self.assertIn('document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";', self.html)
+        self.assertIn('document.title = "Where can we go from " + DATA.origin.name + " for up to £" + budgetNumber.value + "?";', self.html)
 
     def test_the_chooser_says_what_its_order_is_and_is_not(self) -> None:
         # S10: a cold-start order that does not name its measure reads as a
@@ -1052,7 +1052,19 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('name="destinationType"', self.html)
         self.assertIn('id="destinationTypes"', self.html)
         self.assertIn('value="party"', self.html)
-        self.assertIn("Where can we go for under", self.html)
+        # C21: the filter is `price <= cap`, so the wording that matches the
+        # behaviour is "up to", not "under". An exactly-at-the-ceiling fare is
+        # shown, and a page that says "under" while showing it is describing
+        # itself. Asserted negatively so the word cannot creep back in.
+        self.assertIn("Where can we go for up to", self.html)
+        self.assertNotIn("Where can we go for under", self.html)
+        # The other two places that name the cap. "Within" is not "under", but
+        # it reads the same way beside a fare that lands exactly on the ceiling,
+        # and a summary saying "3 destinations within £20" under a heading that
+        # says "up to £20" is the same defect in different words.
+        self.assertEqual(3, self.html.count('for up to " + money(cap)'),
+                         "the cap is named the old way somewhere")
+        self.assertNotIn('"No destinations within "', self.html)
 
     def test_every_price_renders_with_two_decimal_places(self) -> None:
         # £9 next to £8.70 is harder to scan down a column than £9.00 is.
@@ -1095,6 +1107,11 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn("__SHARED_CSS__", template, f"{name} shipped the placeholder")
         # One palette, one focus ring, one footer -- each stated once in the
         # source, and present in all three rendered routes.
+        # C14: --warn is defined in both schemes, which is the whole point --
+        # a token only the light block sets is a token the dark palette never
+        # redefines, and that was the defect.
+        self.assertIn("--warn: #9a6700;", SHARED_CSS)
+        self.assertIn("--warn: #f0b35b;", SHARED_CSS)
         self.assertEqual(SHARED_CSS.count(":root {"), 2, "a token block and its dark counterpart")
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", SHARED_CSS)
         chooser = build_demo_page.render_chooser([], budget_pounds=60)
@@ -1106,8 +1123,12 @@ class DemoPageTest(unittest.TestCase):
         for name, page in (("chooser", chooser), ("station", self.html), ("privacy", privacy)):
             self.assertIn("--accent: #14509b;", page, f"{name} lost the shared palette")
             self.assertIn("prefers-color-scheme: dark", page, f"{name} lost the dark palette")
+            # C25: the shared block holds the 44px minimum on the anchor, not
+            # only on a container around it, so the privacy page's single
+            # navigation link is a 44px target rather than a 24px one that
+            # happened to be 24px because of its line box.
             self.assertIn(
-                ".footnav a { display: inline-flex; align-items: center; min-height: 24px; color: inherit; }",
+                ".footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }",
                 page,
                 f"{name} restated the footer nav",
             )
@@ -1192,7 +1213,7 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
-        self.assertIn("Where can we go for under", heading)
+        self.assertIn("Where can we go for up to", heading)
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
         self.assertIn("h1 { font-size: var(--h1);", self.html)
