@@ -270,6 +270,33 @@ async function checkChooser(page, url, check) {
     (await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"))) === "42"
   );
   check("the search field takes focus on arrival", (await page.evaluate(() => document.activeElement && document.activeElement.id)) === "pick");
+  // S10: a cold-start order that does not say what it is looks like a
+  // recommendation. The page has to name the measure and deny the two things
+  // a reader would otherwise assume it means.
+  const ranking = await page.textContent("body");
+  check(
+    "the chooser says what its order is, and what it is not",
+    /how many destinations/i.test(ranking) && /not by how busy/i.test(ranking),
+    (await page.locator(".sub").nth(1).textContent()) || ""
+  );
+  // S11: a code fragment is what somebody who knows the network types.
+  // Lowercased to match the page, which lowercases what the reader typed
+  // before comparing: a code in the address bar is upper case.
+  const fragment = (listed[1] || first).crs.slice(0, 2).toLowerCase();
+  await page.fill("#pick", fragment);
+  const byFragment = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#picks a")).map((a) => ({
+      code: (a.querySelector(".code") || {}).textContent || "",
+      name: (a.querySelector("span") || {}).textContent || "",
+    }))
+  );
+  check(
+    "a code fragment finds its station",
+    byFragment.some((row) => row.code.toLowerCase().startsWith(fragment)) &&
+      byFragment.every((row) => row.code.toLowerCase().startsWith(fragment) || row.name.toLowerCase().includes(fragment)),
+    `${fragment} -> ${byFragment.map((row) => row.code).join(" ") || "nothing"}`
+  );
+  await page.fill("#pick", "");
   const privacy = await page.evaluate(() => (document.querySelector(".footnav a") || {}).getAttribute
     ? document.querySelector(".footnav a").getAttribute("href")
     : null);
@@ -1075,6 +1102,34 @@ async function runPage(browser, index, given, file, body, base) {
       await page.fill("#originSearch", query);
       const narrowed = await page.locator("#originPicks a").count();
       const narrowedText = await page.locator("#originPicks").textContent();
+      // S11: the same tolerant match the chooser has, on the page that offers
+      // thousands of stations rather than three.
+      const listedCrses = await page.evaluate(() => DATA.stations.map((station) => station.crs));
+      // Lowercased to match the page, which lowercases what the reader typed
+      // before comparing: a code in the address bar is upper case.
+      const fragment = (listedCrses[0] || "").slice(0, 2).toLowerCase();
+      await page.fill("#originSearch", fragment);
+      const byFragment = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#originPicks a")).map((a) => ({
+          code: (a.querySelector(".code") || {}).textContent || "",
+          name: (a.querySelector("span") || {}).textContent || "",
+        }))
+      );
+      check(
+        "a code fragment finds its station in the picker",
+        fragment && byFragment.length > 0 && byFragment.some((row) => row.code.toLowerCase().startsWith(fragment)) &&
+          byFragment.every((row) => row.code.toLowerCase().startsWith(fragment) || row.name.toLowerCase().includes(fragment)),
+        `${fragment} -> ${byFragment.map((row) => row.code).join(" ") || "nothing"}`
+      );
+      await page.fill("#originSearch", "");
+      // S12: the one distinction a first-time reader cannot guess, said once,
+      // in the page's own terms, and only on the page where it is true.
+      const firstUse = (await page.textContent("#firstUse")) || "";
+      check(
+        "the page says Change moves station and the rest filters",
+        /Change/.test(firstUse) && /narrow/i.test(firstUse),
+        JSON.stringify(firstUse)
+      );
       // A list of one cannot be narrowed. That is a fact about the page's own
       // station list rather than about the filter, so it is reported as the
       // check this page cannot exercise.

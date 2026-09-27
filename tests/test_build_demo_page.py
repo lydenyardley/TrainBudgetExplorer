@@ -115,6 +115,33 @@ class DemoPageTest(unittest.TestCase):
         # can tell the two searches apart.
         self.assertIn('document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";', self.html)
 
+    def test_the_chooser_says_what_its_order_is_and_is_not(self) -> None:
+        # S10: a cold-start order that does not name its measure reads as a
+        # recommendation, and priced-destination count is not popularity.
+        index = build_demo_page.build_station_index({"GRN": 5, "NOT": 2}, self.fares.locations_by_crs)
+        chooser = build_demo_page.render_chooser(index, budget_pounds=20)
+        self.assertIn("Ordered by how many destinations", chooser)
+        self.assertIn("not by how busy it is", chooser)
+
+    def test_both_station_lists_accept_a_code_fragment(self) -> None:
+        # S11: a code fragment finds its station, and the same matcher serves
+        # the chooser and the picker so the two cannot answer differently.
+        for page in (self.html, build_demo_page.render_chooser([], budget_pounds=20)):
+            for fragment in (
+                "station.name.toLowerCase().includes(needle)",
+                "station.crs.toLowerCase().startsWith(needle)",
+            ):
+                self.assertIn(fragment, page)
+        # No alias table: an unreviewed "Grantham = Grantham Stn" is exactly
+        # the plausible-looking invention this project refuses to publish.
+        self.assertNotIn("aliases", self.html)
+
+    def test_the_station_page_says_which_control_changes_station(self) -> None:
+        # S12: the navigation-versus-filter distinction, said once, where it is
+        # true.
+        self.assertIn('id="firstUse"', self.html)
+        self.assertIn("<b>Change</b>", self.html)
+
     def test_a_picker_option_carries_the_readers_search(self) -> None:
         # S06: changing origin corrects where they leave from, not the search
         # they have already made, and the picker writes the same query the
