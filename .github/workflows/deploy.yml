@@ -228,6 +228,10 @@ jobs:
           # --third-origin is what makes that true: without it only two stations
           # are priced and the picker has a single option and nothing to narrow.
           python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
+          if [ ! -s _demo_site/privacy/index.html ]; then
+            echo "::error title=browser test::the demo site wrote no privacy page, so a route every footer links to was never checked"
+            exit 1
+          fi
           # A build that produced no page must fail the run here, with the
           # reason attached to this step. Otherwise the suite is one skipped
           # step away from passing having tested nothing at all.
@@ -236,14 +240,18 @@ jobs:
             echo "::error title=browser test::the demo site built no station page, so the page in a real browser was not tested"
             exit 1
           fi
-          PAGES=("$DEMO_STATION")
+          PAGES=("$DEMO_STATION" _demo_site/index.html _demo_site/privacy/index.html)
           SWEEP=""
           if [ "$SITE_BUILT" = "true" ]; then
             if [ ! -s _site/index.html ]; then
               echo "::error title=browser test::the site was built but there is no page at _site/index.html, so the page that ships was not tested in a browser"
               exit 1
             fi
-            PAGES+=(_site/index.html)
+            if [ ! -s _site/privacy/index.html ]; then
+              echo "::error title=browser test::the site was built but wrote no privacy page, so the route every footer links to was not tested"
+              exit 1
+            fi
+            PAGES+=(_site/index.html _site/privacy/index.html)
             if [ -d _site/from ]; then
               PAGES+=(_site/from)
               SWEEP="--sweep"
