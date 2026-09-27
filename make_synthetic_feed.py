@@ -88,6 +88,68 @@ FARES = (
 THIRD_ORIGIN_FLOWS = (("0000020", "3000", "2000", "00000"),)
 THIRD_ORIGIN_FARES = (("0000020", "SDR", 950, ""),)
 
+# A real network for the two secondary origins, off by default with the rest of
+# the optional blocks.
+#
+# The browser suite drives every station page a build writes, so a station with
+# one priced destination leaves most of the page untested on two pages out of
+# three: a shortlist of one thing, no fare the Two Together minimum does not
+# already exceed, a single destination type so multi-select cannot be tried, and
+# no heritage row. The destinations below are chosen so that between them the
+# two pages carry a UNESCO property, a small town, a seaside town and a city,
+# and so that some fares sit above the £12.00 Two Together minimum, which is
+# what makes the card worth offering. Matlock is here because Derwent Valley
+# Mills is a real World Heritage Site whose settlement list names it, so the
+# heritage row the suite looks for comes from the feed's own data rather than
+# from a flag.
+RETURN_NETWORK_STATIONS = (
+    ("8000", "MAT", "MATLOCK"),
+    ("8100", "RET", "RETFORD"),
+    ("8200", "SLD", "SKEGNESS"),
+    ("8300", "LEC", "LEICESTER"),
+)
+RETURN_NETWORK_TYPES = {
+    "MAT": "town",
+    "RET": "small_town",
+    "SLD": "small_town",
+    "LEC": "city",
+}
+RETURN_NETWORK_FACETS = {
+    "MAT": ["heritage"],
+    "SLD": ["seaside"],
+    "LEC": ["university"],
+}
+# (origin NLC, destination NLC, fare pence). Every fare is an unrestricted SDR,
+# so each row appears in the reviewed set the page opens in as well as the
+# broad one. The two fares under £12.00 are deliberate: without them every row
+# would be railcard-eligible and the page could not show what happens to a fare
+# the card minimum does not beat.
+RETURN_NETWORK_FARES = (
+    ("3000", "8000", 1560),  # Lincoln -> Matlock
+    ("3000", "8100", 980),   # Lincoln -> Retford
+    ("3000", "8200", 3240),  # Lincoln -> Skegness
+    ("3000", "8300", 2680),  # Lincoln -> Leicester
+    ("2000", "8000", 1980),  # Nottingham -> Matlock
+    ("2000", "8100", 1120),  # Nottingham -> Retford
+    ("2000", "8200", 3560),  # Nottingham -> Skegness
+    ("2000", "8300", 2400),  # Nottingham -> Leicester
+)
+# Retford is priced but never called at, which is the shape a real feed has and
+# the one the page's "no service" row exists to report. The other three are
+# called at, so a page has both a timed row and an untimed one.
+RETURN_NETWORK_TIMETABLE_STATIONS = (
+    ("MATL", "MAT", "MATLOCK", "05"),
+    ("SLDK", "SLD", "SKEGNESS", "05"),
+    ("LEIC", "LEC", "LEICESTER", "10"),
+)
+RETURN_NETWORK_TIMETABLE_TRAINS = (
+    ("T20001", ("LINC", "0740"), (), ("MATL", "0825"), "1111110", "P"),
+    ("T20002", ("NOTT", "0800"), (), ("MATL", "0855"), "1111110", "P"),
+    ("T20003", ("LINC", "1100"), (), ("SLDK", "1205"), "1111110", "P"),
+    ("T20004", ("NOTT", "1120"), (), ("SLDK", "1230"), "1111110", "P"),
+    ("T20005", ("NOTT", "0905"), (), ("LEIC", "0940"), "1111110", "P"),
+)
+
 # The shapes a real feed has and a tidy invented one does not. Off by default,
 # so tests about budget arithmetic read a feed with nothing puzzling in it.
 #
@@ -190,6 +252,7 @@ def build_synthetic_feed(
     include_real_shapes: bool = False,
     include_restrictions: bool = False,
     include_third_origin: bool = False,
+    include_return_network: bool = False,
 ) -> Path:
     """Write the fares feed.
 
@@ -197,9 +260,11 @@ def build_synthetic_feed(
     awkward records: several route codes for one station pair, destinations with
     a fare and no station code, a flow with no fare, and a fare with no flow.
     The third origin prices a departure from a station that is only ever a
-    destination, so a published site has a picker with more than one option.
-    The restrictions file is off by default so existing fixtures keep their five
-    files; tests for the publishable selector turn it on.
+    destination, so a published site has a picker with more than one option. The
+    return network gives the two secondary origins a set of destinations to
+    price, so a page the browser suite drives has more than one row to choose
+    from. The restrictions file is off by default so existing fixtures keep
+    their five files; tests for the publishable selector turn it on.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -207,6 +272,8 @@ def build_synthetic_feed(
     stations = STATIONS + (UNSERVED_STATION,) if include_unserved_station else STATIONS
     flows = FLOWS + (UNSERVED_FLOW,) if include_unserved_station else FLOWS
     fares = FARES + (UNSERVED_FARE,) if include_unserved_station else FARES
+    types = dict(LOCATION_TYPES)
+    facets = dict(LOCATION_FACETS)
     if include_real_shapes:
         stations += REAL_SHAPE_STATIONS
         flows += REAL_SHAPE_FLOWS
@@ -214,6 +281,14 @@ def build_synthetic_feed(
     if include_third_origin:
         flows += THIRD_ORIGIN_FLOWS
         fares += THIRD_ORIGIN_FARES
+    if include_return_network:
+        stations += RETURN_NETWORK_STATIONS
+        types.update(RETURN_NETWORK_TYPES)
+        facets.update(RETURN_NETWORK_FACETS)
+        for number, (origin, destination, pence) in enumerate(RETURN_NETWORK_FARES, start=30):
+            flow_id = f"{number:07d}"
+            flows += ((flow_id, origin, destination, "00000"),)
+            fares += ((flow_id, "SDR", pence, ""),)
 
     flow_lines: list[str] = []
     for flow_id, origin, destination, route_code in flows:
@@ -288,9 +363,9 @@ def build_synthetic_feed(
                 "records": {
                     crs: {
                         "primary": kind,
-                        "facets": LOCATION_FACETS.get(crs, []),
+                        "facets": facets.get(crs, []),
                     }
-                    for crs, kind in LOCATION_TYPES.items()
+                    for crs, kind in types.items()
                 },
             }
         )
@@ -436,13 +511,18 @@ def _restriction_lines() -> list[str]:
     ]
 
 
-def build_synthetic_timetable(path: str | Path) -> Path:
+def build_synthetic_timetable(path: str | Path, *, include_return_network: bool = False) -> Path:
     """Write a CIF timetable and a station names file in the real record layouts."""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
 
+    stations = TIMETABLE_STATIONS
+    trains = TIMETABLE_TRAINS
+    if include_return_network:
+        stations += RETURN_NETWORK_TIMETABLE_STATIONS
+        trains += RETURN_NETWORK_TIMETABLE_TRAINS
     cif_lines = [_line({"record_type": "HD", "file_identity": "SYNTHETIC"}, CIF_HEADER)]
-    for train_uid, origin, intermediates, terminus, days, stp_indicator in TIMETABLE_TRAINS:
+    for train_uid, origin, intermediates, terminus, days, stp_indicator in trains:
         cif_lines.append(
             _line(
                 {
@@ -509,7 +589,7 @@ def build_synthetic_timetable(path: str | Path) -> Path:
             },
             MSN_STATION,
         )
-        for tiploc, crs, name, change_time in TIMETABLE_STATIONS
+        for tiploc, crs, name, change_time in stations
     ]
 
     (path / "timetable.mca").write_text("\n".join(cif_lines) + "\n", encoding="utf-8")
@@ -794,6 +874,14 @@ if __name__ == "__main__":
         action="store_true",
         help="price a third station's departures, so a built site's station picker has options",
     )
+    parser.add_argument(
+        "--return-network",
+        action="store_true",
+        help=(
+            "give the two secondary origins a set of destinations to price, so "
+            "every station page the browser suite drives has more than one row"
+        ),
+    )
     arguments = parser.parse_args()
 
     if arguments.kind in {"fares", "both"}:
@@ -806,7 +894,8 @@ if __name__ == "__main__":
                 # depends on a clean .RST file, so the demo feed carries one.
                 include_restrictions=True,
                 include_third_origin=arguments.third_origin,
+                include_return_network=arguments.return_network,
             )
         )
     if arguments.kind in {"timetable", "both"}:
-        print(build_synthetic_timetable(arguments.path))
+        print(build_synthetic_timetable(arguments.path, include_return_network=arguments.return_network))
