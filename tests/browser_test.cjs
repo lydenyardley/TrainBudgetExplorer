@@ -21,16 +21,20 @@
  *
  * A path that is a directory is swept: every index.html beneath it becomes a
  * page of the run, in name order, which is how a whole published station set
- * is driven in one command. Every one of them has to be a station page -- a
- * chooser or a privacy page passed here stops the run early and fails it,
- * which is the right answer for a page that is not what the suite tests.
- * --max bounds a sweep and says on stderr how many pages it left out, because
- * a run that quietly tested twenty of two thousand has not tested the site.
+ * is driven in one command. --max bounds a sweep and says on stderr how many
+ * pages it left out, because a run that quietly tested twenty of two thousand
+ * has not tested the site.
  *
- * Exit codes: 0 every page behaves, 1 one does not, 2 playwright is
- * unavailable. A skip is reported loudly and exits 2, because a test that
- * passes quietly on a machine where it never ran is the thing this project
- * keeps refusing to do.
+ * A path that is not a station page -- a chooser, a privacy page -- is
+ * reported as 0/0 and named at the end of the run, and does not fail it: a
+ * full-network build puts its chooser at the site root, and CI always passes
+ * that path. A run where no page at all was a station page has tested nothing
+ * and does fail, so pointing this at the wrong tree cannot read as a pass.
+ *
+ * Exit codes: 0 every page checked behaves, 1 one does not or nothing was
+ * checked, 2 playwright is unavailable. A skip is reported loudly and exits 2,
+ * because a test that passes quietly on a machine where it never ran is the
+ * thing this project keeps refusing to do.
  */
 
 const http = require("node:http");
@@ -194,6 +198,16 @@ async function runPage(browser, index, given, file, body, base) {
     }
     const failed = checks.filter((entry) => !entry.ok && !entry.skipped).length;
     const skipped = checks.filter((entry) => entry.skipped).length;
+    // A page the suite does not test gets a tally that cannot be misread as a
+    // pass. It used to stop the run and fail, which was right for a mistyped
+    // path and wrong for the root of a full-network site, where the chooser
+    // legitimately lands at the path CI always passes.
+    if (notStation) {
+      console.log(
+        `0/0 browser checks passed against ${given} -- not a station page, so nothing was checked here`
+      );
+      return;
+    }
     console.log(
       `${checks.length - failed - skipped}/${checks.length - skipped} browser checks passed against ${given}` +
         (skipped ? `, ${skipped} not exercised by this page` : "") +
@@ -203,6 +217,7 @@ async function runPage(browser, index, given, file, body, base) {
     );
   };
   let stopped = false;
+  let notStation = false;
   if (body === null) {
     check("the page under test exists", false, "no file at " + file + "; build one first");
     printPage();
@@ -222,6 +237,25 @@ async function runPage(browser, index, given, file, body, base) {
   const page = await context.newPage();
   const url = `${base}/page-${index + 1}.html`;
   const rows = () => page.locator("#rows a.buy").count();
+
+  // Is this a page the suite tests? A station page carries the payload and the
+  // paging constant every expectation below is read out of; the chooser and
+  // the privacy page carry neither. Which is which is a fact about the build,
+  // not about the file: a single-station build writes the station page to the
+  // site root and a full-network build writes a chooser there and its station
+  // pages under from/. So the shape cannot decide whether the run failed --
+  // the page it found on a real site did. It is reported in its own line and
+  // counted, and a run that checked no station page at all still fails, so a
+  // suite pointed at the wrong tree cannot read as a pass.
+  await page.goto(url);
+  notStation = !(await page.evaluate(
+    () => typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined"
+  ));
+  if (notStation) {
+    printPage();
+    await context.close();
+    return { given, file, checks, stopped: false, notStation: true };
+  }
 
   // Every expectation below is read out of the page's own payload. The suite
   // used to name Nottingham, Lincoln, Peterborough and the Tower of London,
@@ -872,13 +906,35 @@ function report(results) {
   const broken = results.filter(
     (result) => result.stopped || result.checks.some((entry) => !entry.ok && !entry.skipped)
   );
+  // A page that is not a station page is neither a pass nor a failure -- it is
+  // a path this suite cannot test. It does not fail the run on its own, but a
+  // run in which no page at all was a station page has tested nothing, and it
+  // fails for that reason instead of the 0/0 it would otherwise report.
+  const offTopic = results.filter((result) => result.notStation);
+  const tested = results.length - offTopic.length;
+  const nothingTested = tested === 0;
+  if (offTopic.length) {
+    console.log(
+      `\n${offTopic.length} page(s) were not station pages and were not checked: ${offTopic
+        .map((result) => result.given)
+        .join(", ")}`
+    );
+  }
+  if (nothingTested) {
+    console.error(
+      `\nNo page in this run is a station page, so no check was made: ${offTopic
+        .map((result) => result.given)
+        .join(", ")}\n` +
+        "Point the suite at a station page, or at a directory of them (a published site keeps them under from/)."
+    );
+  }
   // One line for the run as well as one per page, so a log with several pages
   // in it ends with something that can be read without counting back.
   const summary = broken.length
     ? `${broken.length} of ${results.length} page(s) failed: ${total - failed - skipped}/${total - skipped} checks passed (${broken.map((result) => result.given).join(", ")})`
-    : `${results.length} page(s), ${total - skipped - failed}/${total - skipped} browser checks passed`;
+    : `${tested} of ${results.length} page(s) checked, ${total - skipped - failed}/${total - skipped} browser checks passed`;
   console.log(`\n${summary}${skipped ? `, ${skipped} check(s) not exercised by the pages swept` : ""}`);
-  process.exit(failed || broken.length ? 1 : 0);
+  process.exit(failed || broken.length || nothingTested ? 1 : 0);
 }
 
 async function main() {

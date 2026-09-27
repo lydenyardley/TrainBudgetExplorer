@@ -75,6 +75,19 @@ A path that is not there is a failed page and not a failed run: the other
 pages are still driven and still reported, and the summary names the ones
 that failed.
 
+**A page that is not a station page is a fourth thing, and it does not fail
+the run.** Sweeping a published site found the case: which page sits at the
+site root is a fact about the build, not about the file. A single-station
+build writes the station page there; a full-network build writes a chooser
+there and its station pages under `from/`. CI passes the root path on every
+run that built a site, so a rule that fails on a page's shape would have
+failed the workflow for something a working build had done. A chooser or a
+privacy page is reported as 0/0, named at the end of the run, and skipped —
+while a run in which *no* page was a station page has checked nothing and
+fails for that reason instead. The rule it replaced was "a page that is not
+what this suite tests stops the run and fails it", which was right for a
+mistyped path and wrong for a real site: it failed the tool, not the product.
+
 **A check a page has nothing to exercise is a third outcome, and which
 outcome it is depends on the run.** Some checks need the page to *contain*
 something: a destination carrying a UNESCO property, a small town, two

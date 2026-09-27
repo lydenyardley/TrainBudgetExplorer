@@ -192,7 +192,11 @@ jobs:
         # under _site/from instead, and the whole set is swept -- the suite
         # reads its expectations out of each page, so a sweep of it is a search
         # for origin-specific template bugs rather than a second copy of the
-        # same assertions.
+        # same assertions. Which page sits at the site root is the build's
+        # choice -- a station page for one origin, a chooser for the whole
+        # network -- so a page that is not a station page is reported and
+        # skipped, and a run in which no page was one fails rather than
+        # passing having checked nothing.
         #
         # --sweep is what makes a station set sweepable: a check a page has
         # nothing to exercise (no UNESCO destination, one option in the picker)
