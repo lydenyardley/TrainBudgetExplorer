@@ -407,10 +407,14 @@ class TimetableDb:
     ) -> "TimetableDb":
         """Load a timetable, optionally focused and cached for one page build.
 
-        A cache hit skips the multi-million-record parse entirely. The cache is
-        opt-in so audit and general analysis retain their complete-feed
+        A cache hit skips the multi-million-record parse entirely. On the real
+        DTD timetable a focused parse takes 55.6s and reading the 90MB pickle
+        back takes 2.6s, which is why this cache exists: the focus decides how
+        much of the feed is held, not how long the feed takes to read, because
+        the loader still has to see every record to know to drop it. The cache
+        is opt-in so audit and general analysis retain their complete-feed
         semantics; the page builder supplies a path derived from the feed and
-        requested stations.
+        the requested stations.
         """
         if cache_path is not None:
             cache = Path(cache_path)

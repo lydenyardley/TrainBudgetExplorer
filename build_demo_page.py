@@ -338,19 +338,28 @@ def load_page_fares(feed: str | Path, origin: str) -> PageFares:
     return PageFares(fares, common_cache, index, False)
 
 
-def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) -> Path:
-    """Name a timetable cache by feed bytes and the stations it must serve."""
-    root = Path(feed)
-    files = sorted(root.iterdir()) if root.is_dir() else [root]
+def timetable_cache_identity(feed: str | Path, origin: str, destinations: set[str]) -> str:
+    """Everything a focused timetable database depends on, as one digest.
+
+    The same discipline as ``fares_cache_identity``: the feed's bytes, the
+    source that reads them, and the stations the focus was asked for. A
+    timetable cache keyed on names, sizes and mtimes -- which is what this one
+    was -- cannot tell two downloads apart when a copy preserves timestamps or
+    an archive is extracted with the dates stored in it, and a stale hit would
+    put one download's services on a page built from another, which is a
+    reader being shown a timetable that is not the one in force.
+    """
     digest = hashlib.sha256()
-    for item in files:
-        try:
-            stat = item.stat()
-            digest.update(f"{item.name}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
-        except OSError:
-            digest.update(item.name.encode())
+    digest.update(feed_content_digest(feed).encode())
+    digest.update(source_fingerprint().encode())
     digest.update((origin + ":" + ",".join(sorted(destinations))).encode())
-    return CACHE_DIR / f"timetable-{origin.strip().upper()}-{digest.hexdigest()[:20]}.pickle"
+    return digest.hexdigest()
+
+
+def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) -> Path:
+    """Name a timetable cache by the feed's content and the stations it serves."""
+    digest = timetable_cache_identity(feed, origin, destinations)[:20]
+    return CACHE_DIR / f"timetable-{origin.strip().upper()}-{digest}.pickle"
 
 
 # The newest timetable caches kept per origin. One origin holds at most two
@@ -1515,6 +1524,9 @@ def main(argv: list[str] | None = None) -> int:
             if not args.all_origins
             else None
         )
+        # Whether the cache was there before this build asked for it, which is
+        # what distinguishes a restore from a parse that also happened to write.
+        cache_was_there = cache_path is not None and cache_path.is_file()
         print(f"Loading timetable feed from {args.timetable} ...", flush=True)
         timetable = TimetableDb().load_feed(
             args.timetable,
@@ -1522,10 +1534,19 @@ def main(argv: list[str] | None = None) -> int:
             focus_destinations=focus_destinations,
             cache_path=cache_path,
         )
+        # The cache note says which of the two happened, because on the real
+        # feed they are 2.6s and 55.6s and an operator reading a build log is
+        # exactly the person who needs to know which one they paid.
         print(
             f"Loaded timetable: {timetable.stats()['schedules']:,} schedules, "
             f"{timetable.stats()['calling_points']:,} calling points"
-            + (f" (cache: {cache_path.name})" if cache_path else ""),
+            + (
+                ""
+                if cache_path is None
+                else f" (restored from {cache_path.name})"
+                if cache_was_there
+                else f" (parsed; wrote {cache_path.name})"
+            ),
             flush=True,
         )
     else:
