@@ -3,30 +3,71 @@
 Pure strings: no imports, no logic beyond the __TOKEN__ placeholders that
 render_page / render_privacy / render_chooser replace. The templates are the
 page the reader sees; build_demo_page.py owns what fills them.
+
+SHARED_CSS is the one source for the palette, spacing, focus ring, links,
+navigation and disclosure styles every route uses (S39). It is inlined into
+each template at the bottom of this module, so a route's own block holds only
+what is genuinely its own.
 """
 
-PRIVACY = """<!doctype html>
+SHARED_CSS = """  /* S39: the tokens and components every route shares, written once here and
+     inlined into each generated file. The chooser, a station page and the
+     privacy page therefore cannot drift apart -- and the site still ships no
+     external asset, because this block is part of the HTML it is written into.
+     A route that needs to differ sets a token (--page-max, --page-pad, --h1)
+     in its own :root rather than restating the rule. */
+  :root {
+    --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
+    --ochre: #a65d00; --best: rgba(20, 80, 155, .07); --field: #fff;
+    --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5;
+            --ochre: #f0b35b; --best: rgba(125, 180, 245, .12); --field: #1c2127; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; padding: var(--page-pad); max-width: var(--page-max);
+         background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: var(--h1); line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
+  h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+  p, li { margin: .4rem 0; }
+  a { color: var(--accent); }
+  /* One focus ring for the whole site, on every route, so a keyboard reader
+     finds the same affordance wherever they are. */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
+  ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+  .muted, .tag, .disclosure { color: var(--muted); }
+  .tag { font-size: .8rem; }
+  .sub { color: var(--muted); max-width: 75ch; }
+  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
+           text-transform: uppercase; margin: 0 0 1.25rem; }
+  .back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 1rem; }
+  input[type=search], input[type=number], select { width: 100%; padding: .5rem; border: 1px solid var(--line);
+                                                    border-radius: .35rem; font: inherit; color: var(--fg);
+                                                    background: var(--field); }
+  /* The footer, the back link and the footer nav are the same shape on every
+     route: a quiet rule above, 44px of touch target for a phone. */
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .85rem; }
+  .footnav { margin-top: 1.5rem; }
+  .footnav a { color: inherit; }
+  @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+             clip-path: inset(50%); white-space: nowrap; border: 0; }
+"""
+
+
+
+_PRIVACY_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy</title>
 <style>
-  :root { --bg:#fff; --fg:#11161d; --muted:#5b6472; --accent:#14509b; --ochre:#a65d00; --line:#d0d5dd; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#14181d; --fg:#e7ebf0; --muted:#9aa4b2; --accent:#7db4f5; --ochre:#f0b35b; --line:#3a424c; }
-  }
-  body { margin:0; padding:1.5rem; max-width:40rem; background:var(--bg); color:var(--fg);
-         font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
-           text-transform: uppercase; margin: 0 0 1.25rem; }
-  h1 { font-size: clamp(2rem, 5vw, 5rem); line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
-  h2 { font-size:1.05rem; margin:1.5rem 0 .25rem; }
-  p, li { margin:.4rem 0; }
-  .muted { color:var(--muted); }
-  a { color:var(--accent); }
-  .back-link { display:inline-flex; align-items:center; min-height:44px; margin-bottom:1rem; }
-</style>
+__SHARED_CSS__</style>
 </head>
 <body>
 <nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
@@ -49,26 +90,17 @@ __PRACTICES__</ul>
 
 
 
-TEMPLATE = """<!doctype html>
+_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Where can we go from __ORIGIN__ for &pound;__BUDGET__?</title>
 <style>
-  :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
-          --best: rgba(20, 80, 155, .07); --field: #fff; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5;
-            --best: rgba(125, 180, 245, .12); --field: #1c2127; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0 auto; padding: clamp(1rem, 3vw, 2.25rem); max-width: 78rem;
-         background: var(--bg); color: var(--fg);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: clamp(2rem, 5vw, 5rem);
-       line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
-  .sub { color: var(--muted); max-width: 75ch; }
+__SHARED_CSS__
+  /* The one thing this route changes: it is a wide page with a table, not a
+     single column of prose. */
+  :root { --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); }
   .heading-field { display: inline-flex; align-items: baseline; color: var(--accent);
                    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
                    border-radius: .15rem .15rem 0 0; cursor: text; }
@@ -84,7 +116,6 @@ TEMPLATE = """<!doctype html>
                   font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
   #changeOrigin:hover, #changeOrigin:focus-visible { background: var(--best); border-bottom-style: solid; }
   #changeOrigin::after { content: "↕"; font-size: .5em; opacity: .65; }
-  [hidden] { display: none !important; }
   .filter-bar { display: grid; grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr);
                 gap: 1.25rem 2rem; align-items: start; padding: 1.1rem 1.25rem 1.25rem;
                 border: 1px solid var(--line); border-radius: .7rem; background: color-mix(in srgb, var(--field) 75%, transparent); }
@@ -110,8 +141,6 @@ TEMPLATE = """<!doctype html>
   .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.25rem; }
   .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
   .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
-  input[type=search], select { width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: .35rem;
-                              font: inherit; color: var(--fg); background: var(--field); }
   /* Generous after the controls, tight onto its table: the summary belongs to
      the list below it, not to the panel above. */
   #summary { margin: 1.75rem 0 .5rem; font-weight: 600; }
@@ -125,8 +154,6 @@ TEMPLATE = """<!doctype html>
   /* Hit-slop: the visible mark stays small beside its neighbours, but the
      touch target reaches 44px past it. */
   .toggle::after { content: ""; position: absolute; inset: -6px; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
-  ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
   .toggle[aria-expanded=true] { border-color: var(--accent); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
          white-space: nowrap; position: relative; }
@@ -142,7 +169,6 @@ TEMPLATE = """<!doctype html>
   .heritage-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
   .heritage-proof a { color: inherit; text-underline-offset: .15em; }
   .heritage-proof a:hover, .heritage-proof a:focus-visible { color: var(--accent); }
-  .tag { font-size: .75rem; color: var(--muted); }
   /* A chip's count is part of its label, so it sits inside the chip and is
      never the only thing carrying the type's name. */
   .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em; }
@@ -187,8 +213,6 @@ TEMPLATE = """<!doctype html>
   #more { color: var(--muted); font-size: .9rem; }
   .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
-  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
-             clip-path: inset(50%); white-space: nowrap; border: 0; }
   #originPicker { margin: .75rem 0 1rem; }
   .origin-picker-label { display: block; margin-bottom: .35rem; font-size: .8rem;
                          text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -204,11 +228,8 @@ TEMPLATE = """<!doctype html>
      the normal foreground colour: a finding, not a footnote. */
   .unpriced { margin: 0 0 1.25rem; }
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
-  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
   .method { margin-top: 1rem; }
   .method summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); cursor: pointer; }
-  .footnav a { color: inherit; }
-  @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
      pushes the ticket action off-screen (ADR-0019). The markup stays a real
@@ -1609,31 +1630,20 @@ __ANALYTICS__
 """
 
 
-CHOOSER_TEMPLATE = """<!doctype html>
+_CHOOSER_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Where can we go for &pound;__BUDGET__? Pick your station</title>
 <style>
-  :root { --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b; --ochre: #a65d00;
-          --field: #fff; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5; --ochre: #f0b35b;
-            --field: #1c2127; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 1.5rem; max-width: 40rem;
-         background: var(--bg); color: var(--fg);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-  .sub { color: var(--muted); margin: 0 0 1.25rem; }
-  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
-           text-transform: uppercase; margin: 0 0 1.25rem; }
+__SHARED_CSS__
+  /* A single column: the chooser is a search over a list, not a table. */
+  :root { --h1: 1.5rem; }
+  h1 { margin: 0 0 .25rem; }
+  .sub { margin: 0 0 1.25rem; }
   label.caption { display: block; font-size: .8rem; text-transform: uppercase;
                   letter-spacing: .04em; color: var(--muted); margin-bottom: .35rem; }
-  input[type=search] { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
-                       font: inherit; color: var(--fg); background: var(--field); }
   #picks { list-style: none; margin: .5rem 0 0; padding: 0; }
   #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .5rem .4rem;
              color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
@@ -1641,13 +1651,8 @@ CHOOSER_TEMPLATE = """<!doctype html>
   #picks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
   #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap; }
   #nomatch { color: var(--muted); margin-top: .5rem; }
-  #chooserBudget { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
-                   font: inherit; color: var(--fg); background: var(--field); margin-bottom: 1rem; }
-  p.tag { color: var(--muted); font-size: .85rem; margin-top: 2rem; }
-  .footnav { margin-top: 1.5rem; }
-  .footnav a { color: var(--muted); font-size: .85rem; }
-  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
-             clip-path: inset(50%); white-space: nowrap; border: 0; }
+  #chooserBudget { padding: .6rem; margin-bottom: 1rem; }
+  p.tag { margin-top: 2rem; }
 </style>
 </head>
 <body>
@@ -1760,3 +1765,22 @@ __ANALYTICS__
 </body>
 </html>
 """
+
+
+def with_shared_css(template: str) -> str:
+    """Inline the shared stylesheet into one route template.
+
+    The site's promise is one file per route with no external asset, so the
+    shared block is substituted at import time rather than fetched. A template
+    that still holds the placeholder is a bug, so this says so rather than
+    shipping a page with unstyled text.
+    """
+    filled = template.replace("__SHARED_CSS__", SHARED_CSS)
+    if "__SHARED_CSS__" in filled:
+        raise ValueError("the shared stylesheet was not inlined into this template")
+    return filled
+
+
+PRIVACY = with_shared_css(_PRIVACY_TEMPLATE)
+TEMPLATE = with_shared_css(_TEMPLATE)
+CHOOSER_TEMPLATE = with_shared_css(_CHOOSER_TEMPLATE)

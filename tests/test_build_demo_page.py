@@ -1068,12 +1068,47 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="budgetNumber" type="number"', self.html.split("<h1", 1)[1].split("</h1>", 1)[0])
         self.assertNotIn('id="budgetNumber" type="number"', self.html.split('<section class="filter-bar"', 1)[1])
 
+    def test_every_route_inlines_the_same_shared_stylesheet(self) -> None:
+        # S39: the palette, spacing, focus ring, links, navigation and
+        # disclosure styles have one source, inlined into each file at import
+        # time so the site still ships no external asset. A route's own block
+        # holds only what is its own, and a template that still held the
+        # placeholder would raise rather than ship unstyled text.
+        from page_templates import CHOOSER_TEMPLATE, PRIVACY, SHARED_CSS, TEMPLATE
+
+        for name, template in (
+            ("chooser", CHOOSER_TEMPLATE),
+            ("station", TEMPLATE),
+            ("privacy", PRIVACY),
+        ):
+            self.assertIn(SHARED_CSS, template, f"{name} does not carry the shared stylesheet")
+            self.assertNotIn("__SHARED_CSS__", template, f"{name} shipped the placeholder")
+        # One palette, one focus ring, one footer -- each stated once in the
+        # source, and present in all three rendered routes.
+        self.assertEqual(SHARED_CSS.count(":root {"), 2, "a token block and its dark counterpart")
+        self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", SHARED_CSS)
+        chooser = build_demo_page.render_chooser([], budget_pounds=60)
+        privacy = build_demo_page.render_privacy(
+            "note", "", "a@b.test", build_demo_page.site_features(
+                analytics=False, link_mode="fallback", network=None, disclosure=None
+            )
+        )
+        for name, page in (("chooser", chooser), ("station", self.html), ("privacy", privacy)):
+            self.assertIn("--accent: #14509b;", page, f"{name} lost the shared palette")
+            self.assertIn("prefers-color-scheme: dark", page, f"{name} lost the dark palette")
+            self.assertIn(".footnav a { color: inherit; }", page, f"{name} restated the footer nav")
+        # The chooser and the station page state their width or heading size as
+        # a token, rather than restating the rule the shared block sets.
+        self.assertIn(":root { --h1: 1.5rem; }", chooser)
+        self.assertIn("--page-max: 78rem", self.html)
+
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn("Where can we go for under", heading)
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
-        self.assertIn("font-size: clamp(2rem, 5vw, 5rem)", self.html)
+        self.assertIn("h1 { font-size: var(--h1);", self.html)
+        self.assertIn("--h1: clamp(2rem, 5vw, 5rem)", self.html)
         self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.html)
         self.assertNotIn("max-width: 32ch", self.html)
         self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
