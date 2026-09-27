@@ -99,6 +99,28 @@ class DemoPageTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
 
+    def test_the_address_carries_the_search_and_the_tab_title_follows_it(self) -> None:
+        # S05: the URL is the search, so a refresh, a shared link and Back all
+        # land on the decision already made rather than the build's default.
+        self.assertIn("function stateQuery()", self.html)
+        self.assertIn("function readState()", self.html)
+        self.assertIn("function applyState(state)", self.html)
+        self.assertIn('window.addEventListener("popstate"', self.html)
+        # Every control that changes the result writes it, and the budget is
+        # the one that does so while it is being dragged.
+        self.assertIn("budget.addEventListener(\"input\", () => { setBudget(budget.value); render(); writeUrl({ budget: true }); })", self.html)
+        self.assertIn("railcard.addEventListener(\"change\", () => { render(); writeUrl(); })", self.html)
+        self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
+        # The title is the heading's sentence, so a reader with two tabs open
+        # can tell the two searches apart.
+        self.assertIn('document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";', self.html)
+
+    def test_a_picker_option_carries_the_readers_search(self) -> None:
+        # S06: changing origin corrects where they leave from, not the search
+        # they have already made, and the picker writes the same query the
+        # address does rather than a second, drifting copy of it.
+        self.assertIn('link.href = station.href + "?" + stateQuery();', self.html)
+
     def test_payload_records_the_source_fingerprint_used_to_build_the_page(self) -> None:
         self.assertRegex(self.payload["sourceFingerprint"], r"^[0-9a-f]{16}$")
         self.assertIn("sourceFingerprint", self.html)

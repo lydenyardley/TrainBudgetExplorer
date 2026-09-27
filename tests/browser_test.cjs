@@ -898,6 +898,105 @@ async function runPage(browser, index, given, file, body, base) {
     check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
     check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
 
+    // 7b. The address is the search (S05). Every control the reader moves has
+    // to survive a refresh, a shared link and Back, and the picker has to
+    // carry the same search to the station they switch to (S06). The facts are
+    // read out of the page's own controls, so nothing here names a budget or a
+    // mode the page might not have.
+    await open();
+    // Read the address from the page, not from page.url(): a history change
+    // made by the page's own script reaches the driver one round trip later,
+    // so page.url() immediately after a click can still be the old address and
+    // would make a control that works look broken.
+    const address = () => page.evaluate(() => window.location.href);
+    const stateful = await page.evaluate(() => ({
+      chips: Array.from(document.querySelectorAll('input[name="destinationType"]'))
+        .filter((input) => input.value !== "all")
+        .filter((input) => !input.closest("label").hidden)
+        .map((input) => input.value),
+      hasParty: !!document.querySelector('input[name="unit"][value="party"]'),
+    }));
+    // One non-default mode, if this page has a second mode with fares in it.
+    const otherMode = await page.evaluate(() => {
+      // The radio the page opened with, put back after each probe. Unchecking
+      // the radio that was chosen would leave a group with nothing selected,
+      // which is a state no reader can reach and which the next click cannot
+      // be judged from.
+      const fallback = document.querySelector('input[name="ticketMode"]:checked');
+      const mode = (wanted) => {
+        const input = document.querySelector(`input[name="ticketMode"][value="${wanted}"]`);
+        input.checked = true;
+        render();
+        const rows = document.querySelectorAll("#rows tr").length;
+        fallback.checked = true;
+        return rows;
+      };
+      // Only a mode that is not the page default, because a default is the one
+      // value the address leaves out by design.
+      for (const wanted of ["single", "anytime"]) if (mode(wanted) > 0) return wanted;
+      return null;
+    });
+    const partyBudget = await page.evaluate(() => {
+      // The budget the party mode can actually show, or null when this page
+      // has nothing a pair could buy. The same restore as above.
+      const fallback = document.querySelector('input[name="unit"]:checked');
+      const input = document.querySelector('input[name="unit"][value="party"]');
+      input.checked = true;
+      const ceiling = budgetCeiling();
+      fallback.checked = true;
+      return ceiling > 1 ? ceiling : null;
+    });
+    const aChip = stateful.chips[0] || null;
+    if (otherMode) {
+      // force: the radio itself is visually hidden inside its styled label,
+      // which is the target a reader actually clicks.
+      await page.locator(`input[name="ticketMode"][value="${otherMode}"]`).check({ force: true });
+      check("the address carries the ticket mode", new RegExp("[?&]mode=" + otherMode + "(&|$)").test(await address()), await address());
+    } else {
+      check("the address carries the ticket mode", notExercised("no mode other than Return has a row on this page"));
+    }
+    if (partyBudget && stateful.hasParty) {
+      await page.check('input[name="unit"][value="party"]');
+      check("the address carries the party", /[?&]party=2(&|$)/.test(await address()), await address());
+      // Back to one adult, which is the other end of the same radio group.
+      await page.check('input[name="unit"][value="adult"]');
+    } else {
+      check("the address carries the party", notExercised("this page has no party price a pair could be shown"));
+    }
+    if (aChip) {
+      await page.check(`input[name="destinationType"][value="${aChip}"]`);
+      check("the address carries the destination type", new RegExp("[?&]types=" + aChip + "(&|$)").test(await address()), await address());
+    } else {
+      check("the address carries the destination type", notExercised("this page offers no destination-type chip"));
+    }
+    const sharedUrl = await address();
+    await page.reload();
+    check(
+      "a refresh keeps the search the address describes",
+      (await page.inputValue("#budgetNumber")) === new URL(sharedUrl).searchParams.get("budget") &&
+        (await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value)) === (new URL(sharedUrl).searchParams.get("mode") || "return") &&
+        (await page.evaluate(() => document.querySelectorAll('input[name="destinationType"]:checked').length)) ===
+          new URL(sharedUrl).searchParams.getAll("types").length,
+      sharedUrl
+    );
+    check("and the title still names that budget", new RegExp("£" + new URL(sharedUrl).searchParams.get("budget") + "\?").test(await page.title()), await page.title());
+    // Back is one decision, not a direction the page can only go forwards in.
+    await page.goBack();
+    const backUrl = await address();
+    const afterBack = await page.evaluate(() => ({
+      mode: document.querySelector('input[name="ticketMode"]:checked').value,
+      budget: document.getElementById("budgetNumber").value,
+    }));
+    check(
+      "Back returns to the previous search",
+      (new URL(backUrl).searchParams.get("mode") || "return") === afterBack.mode,
+      `${afterBack.mode} at £${afterBack.budget} on ${backUrl}`
+    );
+    // The budget is the one thing every reader has, so it is the one thing the
+    // heading and the tab must both be saying.
+    await open(3);
+    check("the tab title follows the budget", /£3\?$/.test(await page.title()), await page.title());
+
     // 8. The origin picker: search, navigate, and the no-match wording
     // (ADR-0019). Choosing a station is navigation, so the link must go to
     // another page, and there must never be an empty picker.
@@ -947,12 +1046,24 @@ async function runPage(browser, index, given, file, body, base) {
       // prefixes every internal link with it (ADR-0024), so a check that
       // demanded /from/ would fail the published page and only that page.
       const baseHref = await page.evaluate(() => DATA.baseHref);
+      // The path is the route; the query is the reader's search state (S05),
+      // so it is judged on the path alone and then checked separately below.
+      const route = href === null ? null : new URL(href, "http://x").pathname;
       check(
         "options are links to station pages",
+        route === null
+          ? notExercised("this page lists no other station to link to")
+          : route.startsWith(baseHref + "from/") && route.endsWith("/") && route.length > baseHref.length + 6,
+        href === null ? "" : `${href} under base ${baseHref}`
+      );
+      // S06: choosing another station is a correction of where the reader is
+      // leaving from, so the option carries the search they have already made.
+      check(
+        "the option carries the budget on screen",
         href === null
           ? notExercised("this page lists no other station to link to")
-          : href.startsWith(baseHref + "from/") && href.endsWith("/") && href.length > baseHref.length + 6,
-        href === null ? "" : `${href} under base ${baseHref}`
+          : new URL(href, "http://x").searchParams.get("budget") === (await page.inputValue("#budgetNumber")),
+        href === null ? "" : href
       );
       // The query comes from the picker's own first option, so the check is
       // about narrowing rather than about a station name the fixture happened
@@ -998,7 +1109,7 @@ async function runPage(browser, index, given, file, body, base) {
       check(
         "picker options are keyboard-focusable links",
         pickCount
-          ? await firstOption.evaluate((el) => el.tagName === "A" && el.href.endsWith("/"))
+          ? await firstOption.evaluate((el) => el.tagName === "A" && new URL(el.href).pathname.endsWith("/"))
           : notExercised("this page lists no option to focus")
       );
       await page.keyboard.press("Escape");
