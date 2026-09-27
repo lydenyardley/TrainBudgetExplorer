@@ -1439,10 +1439,41 @@ class DemoPageTest(unittest.TestCase):
             [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5}],
             budget_pounds=20,
             note="the RSP fares feed, downloaded 3 October 2026",
+            synthetic=False,
         )
         self.assertIn("the RSP fares feed, downloaded 3 October 2026", html)
         self.assertNotIn("Synthetic demo data", html)
         self.assertIn("Synthetic demo data", render_chooser([], budget_pounds=20))
+
+    def test_every_route_says_when_its_data_is_invented(self) -> None:
+        # S45: an invented station or fare must not be mistakable for a real
+        # one in a review, a demo or a shared screenshot, so every route states
+        # the state above its content and carries it as a machine-readable
+        # attribute a fixture can assert in either direction.
+        index = [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5}]
+        routes = {
+            "chooser": render_chooser(index, budget_pounds=20, synthetic=True),
+            "privacy": render_privacy(
+                "note", "", "a@b.test", synthetic=True
+            ),
+        }
+        for name, page in routes.items():
+            self.assertIn('<body data-synthetic="true">', page, f"{name} lost the state attribute")
+            self.assertIn("data-synthetic-banner", page, f"{name} has no visible marker")
+            self.assertIn(build_demo_page.SYNTHETIC_LABEL, page)
+            # The marker is one of the shared components, not a route's own
+            # idea of one (S39, S45).
+            self.assertIn(".synthetic-banner {", page)
+        for name, page in (
+            ("chooser", render_chooser(index, budget_pounds=20, synthetic=False)),
+            ("privacy", render_privacy("note", "", "a@b.test", synthetic=False)),
+        ):
+            self.assertIn('<body data-synthetic="false">', page, f"{name} lost the state attribute")
+            self.assertNotIn("data-synthetic-banner", page, f"{name} claims invented data")
+        # A real build's pages say so and a synthetic build's pages do too, from
+        # the same build rather than from a flag per route.
+        self.assertIn('<body data-synthetic="true">', self.html)
+        self.assertIn("data-synthetic-banner", self.html)
 
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
         html = render_chooser([], budget_pounds=20)
