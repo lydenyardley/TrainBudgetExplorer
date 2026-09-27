@@ -611,6 +611,36 @@ def classification_files(directory: Path) -> list[Path]:
         for path in directory.glob(pattern)
         if path.is_file()
     )
+
+
+def location_lookup_candidates(path: str | Path) -> list[Path]:
+    """Every file a load of ``path`` could take a station's type from.
+
+    This is the list ``FaresDb._load_location_lookup`` reads, in the same
+    order, and it is a function rather than a body inside that method because
+    a second caller needs the same answer: a fares cache is keyed on the feed's
+    bytes *and* these files, and a key that listed them separately would be a
+    list that could drift from the one the loader actually reads. A corrected
+    classification file beside the feed, or a reviewed facet added to the
+    checked-in reference data, changes what a parse produces without changing
+    a single byte of the feed.
+    """
+    root = Path(path)
+    candidates: list[Path] = []
+    candidates.extend((Path(__file__).parent / "reference-data").glob("*.json"))
+    if root.is_dir():
+        candidates.extend(root.glob("*.xml"))
+        candidates.extend(root.glob("*.json"))
+        candidates.extend(root.parent.glob("FareLocationsRefData*.xml"))
+        candidates.extend(classification_files(root.parent))
+    elif root.suffix.lower() == ".zip":
+        # The checked-in download lives at feeds/fares/dtd-fares.zip while its
+        # reference files live one level up in feeds/. Accept both that layout
+        # and feeds/dtd-fares.zip beside its references.
+        for base in (root.parent, root.parent.parent):
+            candidates.extend(base.glob("FareLocationsRefData*.xml"))
+            candidates.extend(classification_files(base))
+    return candidates
 DESTINATION_FACETS_BY_KEY = {facet.key: facet for facet in DESTINATION_FACET_SOURCES}
 # Reader id -> the FaresDb method that returns normalised settlement names for
 # it. Registering the reader here keeps a new facet to a registry entry plus a
@@ -1318,22 +1348,7 @@ class FaresDb:
         types is not a source, however plausible it looks sitting beside a feed.
         """
         root = Path(path)
-        candidates: list[Path] = []
-        candidates.extend(
-            (Path(__file__).parent / "reference-data").glob("*.json")
-        )
-        if root.is_dir():
-            candidates.extend(root.glob("*.xml"))
-            candidates.extend(root.glob("*.json"))
-            candidates.extend(root.parent.glob("FareLocationsRefData*.xml"))
-            candidates.extend(classification_files(root.parent))
-        elif root.suffix.lower() == ".zip":
-            # The checked-in download lives at feeds/fares/dtd-fares.zip while
-            # its reference files live one level up in feeds/. Accept both that
-            # layout and feeds/dtd-fares.zip beside its references.
-            for base in (root.parent, root.parent.parent):
-                candidates.extend(base.glob("FareLocationsRefData*.xml"))
-                candidates.extend(classification_files(base))
+        candidates = location_lookup_candidates(root)
         seen: set[Path] = set()
         for candidate in candidates:
             if candidate in seen or not candidate.is_file():
