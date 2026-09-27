@@ -231,6 +231,119 @@ def write_page_atomic(path: Path, html: str) -> None:
     temporary.replace(path)
 
 
+# -- the route manifest (S01, S04) ------------------------------------------
+#
+# The single weakness the re-envision audit names is the route contract: a
+# build can publish a page whose internal links point at pages it never
+# wrote. The fix is one manifest of the routes a release actually serves, and
+# every chooser option, picker option and footer link derived from it. Nothing
+# else in the build is allowed to invent an href.
+
+HREF_ATTR = re.compile(r'href="([^"]+)"')
+
+# The chooser writes its station options from an embedded JSON array rather
+# than as markup, so the links a reader actually follows never appear as an
+# href attribute. They are still this site's contract, and a crawl that only
+# read attributes would pass a root page pointing at a station nobody wrote.
+EMBEDDED_HREF = re.compile(r'"href"\s*:\s*"([^"]+)"')
+
+
+def internal_hrefs(html: str) -> list[str]:
+    """The internal links in one generated page.
+
+    Only root-absolute paths count. A link to the seller's site, a heritage
+    site or an external resource is not this site's contract, and a
+    fragment-only or relative link resolves against the page it is already on.
+
+    Both attributes and embedded JSON are read, because the chooser builds its
+    station list in the browser: a link the page only creates once its script
+    runs is still a link a reader follows, and a route contract that skipped
+    them would check the root page and find nothing.
+    """
+    return [
+        href
+        for href in HREF_ATTR.findall(html) + EMBEDDED_HREF.findall(html)
+        if href.startswith("/") and not href.startswith("//")
+    ]
+
+
+def crawl_internal_links(out_dir: Path, base_path: str = "") -> list[str]:
+    """Every internal link in the built site, resolved against written files.
+
+    A generated site is a set of HTML files under ``out_dir``; a link is
+    healthy when the file it names exists. The chooser at the root, each
+    station page and the privacy page are all crawled, so a link from any page
+    to a page that was not written is caught here rather than by a reader.
+    External and seller links are left alone: they are not this site's files.
+
+    Returns a list of human-readable broken-link descriptions, empty when the
+    site is internally consistent.
+    """
+    written = {
+        path.relative_to(out_dir).as_posix()
+        for path in out_dir.rglob("*.html")
+        if path.is_file()
+    }
+    broken: list[str] = []
+    for page in sorted(out_dir.rglob("*.html")):
+        if not page.is_file():
+            continue
+        source = page.relative_to(out_dir).as_posix()
+        for href in internal_hrefs(page.read_text(encoding="utf-8")):
+            # Strip the site base so the manifest is in terms of files on disk.
+            route = href[len(base_path):].lstrip("/") if base_path and href.startswith(base_path) else href.lstrip("/")
+            if not route:
+                target = "index.html"  # the site root
+            elif route.endswith("/"):
+                target = route + "index.html"
+            else:
+                target = route
+            if target not in written:
+                broken.append(f"{source} links to {href}, which was not written")
+    return broken
+
+
+def link_crawl_failed(broken: list[str], out_dir: Path) -> None:
+    """Refuse to leave a site whose own links do not resolve (S03).
+
+    Called after the manifest is complete and before the staged folder is
+    published, so a build that would ship a dangling internal link never
+    becomes the published site.
+    """
+    if not broken:
+        return
+    listing = "\n".join(f"  - {entry}" for entry in broken)
+    raise SystemExit(
+        f"error: the built site has {len(broken)} internal link(s) that do not "
+        f"resolve to a written page, so publishing it would ship broken links:\n"
+        f"{listing}\n"
+        f"Every internal link must come from the route manifest of pages this "
+        f"build actually wrote under {out_dir}."
+    )
+
+
+def publish_staged(staging: Path, out_dir: Path) -> None:
+    """Swap a validated staging folder into place as the whole site (S07).
+
+    The host consumes one folder, so a release is the whole folder or nothing.
+    A half-finished batch, or a mixture of this build's pages and an earlier
+    build's stale station folders, is exactly what S07 asks to stop. The
+    staging folder is built and link-crawled first; only then is it moved into
+    place over the output directory. The previous output is removed only after
+    the new folder is in position, so an interrupted publish leaves the old
+    site rather than none.
+    """
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    if out_dir.exists():
+        retired = out_dir.with_name(out_dir.name + ".previous")
+        if retired.exists():
+            shutil.rmtree(retired)
+        out_dir.replace(retired)
+    staging.replace(out_dir)
+    if out_dir.with_name(out_dir.name + ".previous").exists():
+        shutil.rmtree(out_dir.with_name(out_dir.name + ".previous"))
+
+
 # Bumped when the fare-index pickle layout changes: a worker restoring an
 # index written under an older code version would rebuild the wrong structure,
 # so the version segment names a fresh file and directory instead (audit B1).
@@ -927,6 +1040,7 @@ def build_payload(
     publisher_id: str = "",
     departure_limit: int = DEPARTURE_LIMIT,
     built_at: str | None = None,
+    published_routes: list[dict] | None = None,
 ) -> dict:
     """Every publishable destination from the origin, at both party prices.
 
@@ -1237,15 +1351,29 @@ def build_payload(
         # unsourced stations (audit A3).
         "unnameableFareCount": unnameable_from_tally(raw_tally),
         "unpricedNote": unpriced_note,
-        "stations": [
-            {
-                "name": loc.name,
-                "crs": loc.crs,
-                "href": with_base(base_path, f"/from/{slugs[crs]}/"),
-            }
-            for crs, loc in sorted(fares.locations_by_crs.items())
-            if crs != origin.crs and not is_pseudo_station(crs)
-        ],
+        # The picker's options, from the route manifest of pages this release
+        # actually writes (S01). When the caller supplies published_routes
+        # those are the only stations offered, so no link can point at a page
+        # that was not generated. When it does not -- the single-page unit
+        # build and the direct build_payload tests -- the options are every
+        # real station in the feed, which is what a full-network site serves.
+        "stations": (
+            [
+                {"name": entry["name"], "crs": entry["crs"], "href": entry["href"]}
+                for entry in published_routes
+                if entry["crs"] != origin.crs
+            ]
+            if published_routes is not None
+            else [
+                {
+                    "name": loc.name,
+                    "crs": loc.crs,
+                    "href": with_base(base_path, f"/from/{slugs[crs]}/"),
+                }
+                for crs, loc in sorted(fares.locations_by_crs.items())
+                if crs != origin.crs and not is_pseudo_station(crs)
+            ]
+        ),
         # Said by the page when this origin priced nothing, so the difference
         # between "nothing inside your budget" and "nothing priced from here at
         # all" is on the page rather than inferred from an empty table.
@@ -1425,6 +1553,27 @@ def render_privacy(note: str, base_path: str = "", contact: str = "") -> str:
 
 
 
+def published_routes_for(index: list[dict], base_path: str = "") -> list[dict]:
+    """The route manifest: one entry per station page this release writes.
+
+    The chooser's options, each station page's picker and the link crawl all
+    read this same list, so a link can only ever name a page the build wrote
+    (S01). ``index`` is the priced station index; an empty index means a build
+    that prices nothing, whose chooser says so instead of offering a station
+    that has no page.
+    """
+    return [
+        {
+            "name": e["name"],
+            "crs": e["crs"],
+            "slug": e["slug"],
+            "destinations": e["destinations"],
+            "href": with_base(base_path, f"/from/{e['slug']}/"),
+        }
+        for e in index
+    ]
+
+
 def render_chooser(
     index: list[dict],
     *,
@@ -1434,6 +1583,10 @@ def render_chooser(
     note: str = DEFAULT_NOTE,
 ) -> str:
     """The root page: the station chooser itself, with no fares on it.
+
+    ``index`` is the priced station index -- the chooser offers exactly the
+    stations whose pages this build wrote, and nothing else, so a root that
+    names a station always has a page behind it (S01).
 
     ``note`` is the same provenance note the station pages carry, so a real-feed
     site does not have a chooser claiming synthetic data above pages that name
@@ -1451,7 +1604,7 @@ def render_chooser(
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", note)
-        .replace("__BASE__", "/" + base_path.strip("/"))
+        .replace("__BASE__", base_path.rstrip("/"))
         .replace("__ANALYTICS__", analytics)
     )
 
@@ -1975,6 +2128,14 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
         print(f"wrote {privacy}")
+        # Route integrity (S03): every internal link in the finished site is
+        # resolved against the files that were actually written, so a chooser
+        # or picker option that names a page this build did not produce fails
+        # here rather than reaching a reader as a 404.
+        broken = crawl_internal_links(out_dir, base_path)
+        if broken:
+            link_crawl_failed(broken, out_dir)
+        print(f"link crawl: every internal link in {out_dir} resolves to a written page")
         # Say how to open it, because the pages are not in the repository (they
         # are build output) and their station links are root-absolute, so
         # double-clicking the file does not work while a local server does.
@@ -2000,26 +2161,64 @@ def main(argv: list[str] | None = None) -> int:
     coverage.from_payload(payload)
     if args.fail_on_unsourced and coverage:
         return coverage.exit_code(True)
-    # A fresh output folder is the normal case (the README tells the operator to
-    # delete a stale _site/), so the single-page path creates it rather than
-    # only working when a previous build left it behind.
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_page(payload, budget_pounds=20, analytics=analytics), encoding="utf-8")
-    print(f"wrote {out} with {len(payload['destinations'])} destinations from {payload['origin']['name']}")
-    # The footer links to the privacy page, so a single-page build writes it
-    # beside the page rather than shipping a link to nowhere.
-    if out.parent.is_dir():
-        privacy = out.parent / "privacy" / "index.html"
-        privacy.parent.mkdir(parents=True, exist_ok=True)
-        privacy.write_text(
-            render_privacy(
-                note,
-                base_path,
-                os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
-            ),
-            encoding="utf-8",
+    # A single-origin build is a site too, not a loose page (S01, S04). It
+    # writes the station at its canonical /from/<slug>/ route, a root chooser
+    # that offers exactly that one station, and the privacy page, and the
+    # station page's picker is built from that same one-entry manifest -- so
+    # every internal link resolves. The station page is no longer written to
+    # --out directly; --out names the site root's index.html, which is the
+    # chooser, and the station sits under from/.
+    out_dir = out.parent
+    station_count = _priced_destinations(fares, timetable, payload_origin, day)
+    index = build_station_index({payload_origin: station_count}, fares.locations_by_crs)
+    routes = published_routes_for(index, base_path)
+    # The picker on this one page offers the written stations except itself.
+    payload["stations"] = [
+        {"name": entry["name"], "crs": entry["crs"], "href": entry["href"]}
+        for entry in routes
+        if entry["crs"] != payload["origin"]["crs"]
+    ]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if index:
+        station_page = out_dir / "from" / index[0]["slug"] / "index.html"
+        write_page_atomic(
+            station_page,
+            render_page(payload, budget_pounds=20, analytics=analytics),
         )
-        print(f"wrote {privacy}")
+        print(
+            f"wrote {station_page} with {len(payload['destinations'])} destinations "
+            f"from {payload['origin']['name']}"
+        )
+    else:
+        # Nothing priced from this origin, so there is no station page to
+        # write. The chooser at the root says so and the build names it.
+        print(
+            f"note: {payload['origin']['name']} priced no destination, so this build "
+            "writes only the chooser; there is no station page to serve."
+        )
+    # The root is the chooser, offering exactly the stations this build wrote.
+    write_page_atomic(
+        out_dir / "index.html",
+        render_chooser(index, budget_pounds=20, analytics=analytics, base_path=base_path, note=note),
+    )
+    print(f"wrote {out_dir / 'index.html'} (the chooser) with {len(index)} station(s)")
+    # The footer links to the privacy page, so a build writes it beside the
+    # pages rather than shipping a link to nowhere.
+    privacy = out_dir / "privacy" / "index.html"
+    write_page_atomic(
+        privacy,
+        render_privacy(
+            note,
+            base_path,
+            os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
+        ),
+    )
+    print(f"wrote {privacy}")
+    # Route integrity (S03), same rule as the full build.
+    broken = crawl_internal_links(out_dir, base_path)
+    if broken:
+        link_crawl_failed(broken, out_dir)
+    print(f"link crawl: every internal link in {out_dir} resolves to a written page")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
     if args.link_mode == "fallback":
         print("fallback links: readers get the seller's own search page, not their search")

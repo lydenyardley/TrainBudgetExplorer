@@ -213,16 +213,24 @@ jobs:
           SITE_BUILT: ${{ steps.feed_check.outputs.changed }}
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
-          python make_synthetic_feed.py _demo_feed --unserved-station
-          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
+          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin
+          # A single-origin build is a site (S01, S04): the chooser is the root
+          # index.html and each station sits at its canonical /from/<slug>/
+          # route. The demo site is built --all-origins so the synthetic feed's
+          # priced stations give the picker real sibling options to exercise, the
+          # way a published site does; the suite drives one station page from it.
+          # --third-origin is what makes that true: without it only two stations
+          # are priced and the picker has a single option and nothing to narrow.
+          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
           # A build that produced no page must fail the run here, with the
           # reason attached to this step. Otherwise the suite is one skipped
           # step away from passing having tested nothing at all.
-          if [ ! -s demo.html ]; then
-            echo "::error title=browser test::no page was built at demo.html, so the page in a real browser was not tested"
+          DEMO_STATION=$(ls _demo_site/from/*/index.html 2>/dev/null | head -1 || true)
+          if [ -z "$DEMO_STATION" ] || [ ! -s "$DEMO_STATION" ]; then
+            echo "::error title=browser test::the demo site built no station page, so the page in a real browser was not tested"
             exit 1
           fi
-          PAGES=(demo.html)
+          PAGES=("$DEMO_STATION")
           SWEEP=""
           if [ "$SITE_BUILT" = "true" ]; then
             if [ ! -s _site/index.html ]; then

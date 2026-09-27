@@ -42,6 +42,20 @@ def embedded_payload(html: str) -> dict:
     return json.loads(match.group(1))
 
 
+def station_page(out: Path) -> Path:
+    """The station page a single-origin build wrote beside its chooser.
+
+    A single-origin build is a site: --out names the root index.html, which is
+    the chooser, and the one station page is written to its canonical
+    /from/<slug>/ route (S01, S04). Tests that want the station's own content
+    read it from here rather than from the root.
+    """
+    pages = sorted((out.parent / "from").glob("*/index.html"))
+    if len(pages) != 1:
+        raise AssertionError(f"expected exactly one station page under {out.parent / 'from'}, got {pages}")
+    return pages[0]
+
+
 # Every build writes a parsed-fares cache named by the feed's content, so a
 # suite that built in the repository's own cache directory would leave one
 # pair of files per fixture behind, and would read whichever pair an earlier
@@ -395,7 +409,7 @@ class DemoPageTest(unittest.TestCase):
             with contextlib.redirect_stdout(buffer):
                 code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
             self.assertEqual(code, 0)
-            page = out.read_text(encoding="utf-8")
+            page = station_page(out).read_text(encoding="utf-8")
             self.assertIn("the National Rail Data Portal DTD fares feed", page)
             self.assertIn("downloaded 23 September 2026", page)
             self.assertNotIn("Synthetic demo data", page)
@@ -429,7 +443,7 @@ class DemoPageTest(unittest.TestCase):
             with contextlib.redirect_stdout(buffer):
                 code = build_demo_page.main(["--feed", str(archive), "--out", str(out)])
             self.assertEqual(code, 0)
-            page = out.read_text(encoding="utf-8")
+            page = station_page(out).read_text(encoding="utf-8")
             self.assertIn("the National Rail Data Portal DTD fares feed", page)
             self.assertNotIn("the synthetic demo feed", page)
 
@@ -1621,7 +1635,7 @@ class PartialMetadataTest(unittest.TestCase):
         with contextlib.redirect_stdout(buffer):
             code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
         self.assertEqual(code, 0)
-        self.assertIn("RSP fares feed", out.read_text(encoding="utf-8"))
+        self.assertIn("RSP fares feed", station_page(out).read_text(encoding="utf-8"))
 
     def test_price_source_override_settles_an_unfinished_note(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -1639,7 +1653,7 @@ class PartialMetadataTest(unittest.TestCase):
                 ["--feed", str(feed), "--out", str(out), "--price-source", "the 2026 RSP download"]
             )
         self.assertEqual(code, 0)
-        self.assertIn("the 2026 RSP download", out.read_text(encoding="utf-8"))
+        self.assertIn("the 2026 RSP download", station_page(out).read_text(encoding="utf-8"))
 
 
 class PublicationGateTest(unittest.TestCase):
@@ -2206,7 +2220,7 @@ class FaresCacheTest(unittest.TestCase):
         with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
             return build_demo_page.prune_fare_index_caches(*used)
     def page(self) -> str:
-        return self.out.read_text(encoding="utf-8")
+        return station_page(self.out).read_text(encoding="utf-8")
 
     def without_timestamp(self, html: str) -> str:
         return html.replace(html.split('"builtAt":"')[1][:20], "TIMESTAMP")
@@ -2421,6 +2435,185 @@ class FreshOutputFolderTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         self.assertIn("GRANTHAM", out.read_text(encoding="utf-8"))
+
+
+class RouteManifestTest(unittest.TestCase):
+    """S01, S03, S04, S07: one manifest of the routes a release actually serves.
+
+    The re-envision audit names the route contract as the weakest subsystem: a
+    single-origin build used to publish a station page at the root whose Change
+    picker linked to every station in the feed, none of which it had written.
+    A release now writes a chooser at the root, one page per station at its
+    canonical /from/<slug>/ route, and the privacy page, and proves every
+    internal link resolves before calling the build good.
+    """
+
+    def build_site(self, root: Path, *extra: str) -> tuple[int, str]:
+        feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+        out = root / "site" / "index.html"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(["--feed", str(feed), "--out", str(out), *extra])
+        return code, buffer.getvalue()
+
+    def test_a_single_origin_build_is_a_site_with_the_chooser_at_the_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, log = self.build_site(root)
+            self.assertEqual(code, 0)
+            site = root / "site"
+            # The root is the chooser, the one station has its canonical route,
+            # and the privacy page the footer links to is present (S01, S04).
+            chooser = (site / "index.html").read_text(encoding="utf-8")
+            self.assertIn("const STATIONS", chooser)
+            self.assertNotIn("const DATA", chooser)  # the chooser carries no fares
+            station = station_page(site / "index.html")
+            self.assertTrue(station.is_file())
+            self.assertIn("const DATA", station.read_text(encoding="utf-8"))
+            self.assertTrue((site / "privacy" / "index.html").is_file())
+            self.assertIn("link crawl", log)
+
+    def test_the_root_names_only_the_stations_the_build_wrote(self) -> None:
+        # The single-origin picker used to offer all 3,424 feed stations. The
+        # manifest is what the chooser, the picker and the crawl all read, so a
+        # named station always has a page behind it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.build_site(root)
+            chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
+            match = re.search(r"const STATIONS = (\[.*?\]);", chooser, re.DOTALL)
+            self.assertIsNotNone(match)
+            stations = json.loads(match.group(1))
+            self.assertEqual([entry["crs"] for entry in stations], ["GRN"])
+            for entry in stations:
+                target = root / "site" / entry["href"].strip("/") / "index.html"
+                self.assertTrue(target.is_file(), f"chooser names {entry['href']} with no page")
+
+    def test_a_station_page_links_back_to_the_chooser(self) -> None:
+        # A one-station site has no sibling to switch to, so the way back to the
+        # root is the "All stations" link, not a picker with nothing in it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.build_site(root)
+            station = station_page(root / "site" / "index.html").read_text(encoding="utf-8")
+            self.assertIn('href="/"', station)
+
+    def test_every_internal_link_in_a_built_site_resolves(self) -> None:
+        # S03: the crawl is the proof, run from the generated files themselves.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.build_site(root)
+            self.assertEqual(build_demo_page.crawl_internal_links(root / "site"), [])
+
+    def test_the_link_crawl_names_a_link_to_a_page_that_was_not_written(self) -> None:
+        # The failure the crawl exists to catch: a picker or footer link to a
+        # page the build did not produce must be found, not shipped.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text(
+                '<a href="/from/nottingham/">Nottingham</a><a href="/privacy/">Privacy</a>',
+                encoding="utf-8",
+            )
+            broken = build_demo_page.crawl_internal_links(site)
+            self.assertEqual(len(broken), 2, broken)
+            self.assertIn("nottingham", broken[0])
+            self.assertIn("privacy", broken[1])
+
+    def test_the_crawl_ignores_external_and_seller_links(self) -> None:
+        # A link off the site is not this site's contract; the crawl must not
+        # fail on the seller's URL or a heritage link.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            site.mkdir(parents=True)
+            (site / "index.html").write_text(
+                '<a href="https://example.test/buy">Buy</a>'
+                '<a href="//cdn.example.test/x">CDN</a>'
+                '<a href="/privacy/">Privacy</a>',
+                encoding="utf-8",
+            )
+            (site / "privacy").mkdir()
+            (site / "privacy" / "index.html").write_text("<p>privacy</p>", encoding="utf-8")
+            self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+
+    def test_the_crawl_strips_the_site_base_path(self) -> None:
+        # A project site serves under /tb/, so its internal links carry the
+        # base. The crawl resolves them against files on disk, not against the
+        # domain, so the base is stripped before the file lookup.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text(
+                '<a href="/tb/from/nottingham/">Nottingham</a>', encoding="utf-8"
+            )
+            broken = build_demo_page.crawl_internal_links(site, base_path="/tb")
+            self.assertEqual(len(broken), 1, broken)
+            (site / "from" / "nottingham").mkdir()
+            (site / "from" / "nottingham" / "index.html").write_text("<p>N</p>", encoding="utf-8")
+            self.assertEqual(build_demo_page.crawl_internal_links(site, base_path="/tb"), [])
+
+    def test_the_crawl_fail_refuses_to_ship_a_broken_site(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            site.mkdir()
+            (site / "index.html").write_text('<a href="/nowhere/">x</a>', encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                build_demo_page.link_crawl_failed(["index.html links to /nowhere/"], site)
+
+    def test_the_chooser_search_is_wired_to_its_list(self) -> None:
+        # The root page is the departure picker, so the one control it exists
+        # for has to filter the list. It had no listener at all, so typing a
+        # name left every station on screen and the list read as a result.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.build_site(root)
+            chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
+            self.assertIn('pick.addEventListener("input", render)', chooser)
+
+    def test_the_chooser_links_to_the_privacy_page(self) -> None:
+        # The root page is where a reader starts, so the thing that says what
+        # the site sends has to be reachable from it, not only from a station.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.build_site(root)
+            chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
+            self.assertIn('href="/privacy/"', chooser)
+            # A base path has to prefix it too, and a leading slash must not be
+            # doubled: "//privacy/" is a different host, not this site.
+            self.assertIn('href="/tb/privacy/"', build_demo_page.render_chooser([], budget_pounds=20, base_path="/tb"))
+
+    def test_the_crawl_reads_the_links_the_chooser_builds_in_the_browser(self) -> None:
+        # The chooser's station links are written by its script from an
+        # embedded array, so a crawl reading only href attributes would check
+        # the root page and find nothing to check.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            site.mkdir(parents=True)
+            (site / "index.html").write_text(
+                'const STATIONS = [{"name":"Grantham","crs":"GRN","href":"/from/grantham/"}];',
+                encoding="utf-8",
+            )
+            broken = build_demo_page.crawl_internal_links(site)
+            self.assertEqual(len(broken), 1, broken)
+            self.assertIn("grantham", broken[0])
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text("<p>Grantham</p>", encoding="utf-8")
+            self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+
+    def test_publishing_moves_the_staged_folder_over_the_old_one_as_a_whole(self) -> None:
+        # S07: the host consumes one folder, so a release is the whole folder.
+        # An interrupted publish leaves the previous site, not a mixture.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "site"
+            (out / "from" / "old").mkdir(parents=True)
+            (out / "from" / "old" / "index.html").write_text("old", encoding="utf-8")
+            staging = Path(tmp) / "site.staging"
+            (staging / "from" / "new").mkdir(parents=True)
+            (staging / "from" / "new" / "index.html").write_text("new", encoding="utf-8")
+            build_demo_page.publish_staged(staging, out)
+            self.assertTrue((out / "from" / "new" / "index.html").is_file())
+            self.assertFalse((out / "from" / "old").exists())
+            self.assertFalse((out.parent / "site.previous").exists())
 
 
 if __name__ == "__main__":

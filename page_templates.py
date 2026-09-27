@@ -308,7 +308,7 @@ TEMPLATE = """<!doctype html>
     <p class="tag" id="provenance"></p>
     <p id="disclosure" hidden></p>
   </details>
-  <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
+  <nav class="footnav"><a href="__BASE__/">All stations</a> <a href="__BASE__/privacy/">Privacy</a></nav>
   <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
@@ -1042,6 +1042,8 @@ CHOOSER_TEMPLATE = """<!doctype html>
   #chooserBudget { width: 100%; padding: .6rem; border: 1px solid var(--line); border-radius: .35rem;
                    font: inherit; color: var(--fg); background: var(--field); margin-bottom: 1rem; }
   p.tag { color: var(--muted); font-size: .85rem; margin-top: 2rem; }
+  .footnav { margin-top: 1.5rem; }
+  .footnav a { color: var(--muted); font-size: .85rem; }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
 </style>
@@ -1060,6 +1062,7 @@ CHOOSER_TEMPLATE = """<!doctype html>
 <p id="nomatch" hidden></p>
 <p id="capMessage" class="tag" hidden></p>
 <p class="tag">__NOTE__</p>
+<nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
 <script>
 const STATIONS = __STATIONS__;
 const picks = document.getElementById("picks");
@@ -1140,6 +1143,10 @@ if (chooserBudget) {
     render();
   });
 }
+// The field the whole page exists for. It had no listener, so a typed name or
+// code changed nothing on screen while the list below sat there looking like a
+// search result.
+pick.addEventListener("input", render);
 render();
 pick.focus();
 </script>
