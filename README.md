@@ -593,6 +593,13 @@ site does is generated from the same feature configuration the pages are built
 from, so it cannot describe a site this build did not ship
 (`adr/ADR-0032`; gates S36–S38 in the re-envision audit).
 
+**A synthetic build says so above the content.** Every generated route -- the
+chooser, each station page, the privacy page -- carries a banner naming the
+invented data, plus a `data-synthetic` attribute on `<body>` a test or a
+screenshot fixture can assert in either direction. It is a banner rather than
+a footer paragraph because the footer is what gets cropped out of a screenshot
+(ADR-0033's shared `.synthetic-banner` component; audit suggestion S45).
+
 Every build also names the priced destinations no source could classify — the
 stations the page's settlement filters therefore cannot return. The list is a
 warning, because a full-network build legitimately meets stations nobody has

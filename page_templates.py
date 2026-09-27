@@ -56,6 +56,15 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
+  /* S45: the synthetic-data state, in the same component on every route, so
+     an invented fare cannot be mistaken for a real one in a review, a demo or
+     a shared screenshot. It is a banner rather than a footnote because the
+     footnote is what gets cropped. */
+  .synthetic-banner { display: block; margin: 0 0 1rem; padding: .5rem .7rem;
+                      border: 1px solid var(--ochre); border-left-width: .3rem; border-radius: .35rem;
+                      background: color-mix(in srgb, var(--ochre) 10%, transparent);
+                      color: var(--fg); font-size: .85rem; }
+  .synthetic-banner strong { color: var(--ochre); }
 """
 
 
@@ -69,7 +78,8 @@ _PRIVACY_TEMPLATE = """<!doctype html>
 <style>
 __SHARED_CSS__</style>
 </head>
-<body>
+<body data-synthetic="__SYNTHETIC__">
+__SYNTHETIC_BANNER__
 <nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
 <p class="brand">Rail Budget</p>
 <h1>Privacy</h1>
@@ -262,7 +272,8 @@ __SHARED_CSS__
   }
 </style>
 </head>
-<body>
+<body data-synthetic="__SYNTHETIC__">
+__SYNTHETIC_BANNER__
 <h1 id="pageHeading">Where can we go for under <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
 <p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
 <p class="sub" id="firstUse">This page is about one station: <b>Change</b> in the heading moves to another one. Everything below narrows the destinations from here.</p>
@@ -1655,7 +1666,8 @@ __SHARED_CSS__
   p.tag { margin-top: 2rem; }
 </style>
 </head>
-<body>
+<body data-synthetic="__SYNTHETIC__">
+__SYNTHETIC_BANNER__
 <h1>Where can we go for &pound;__BUDGET__?</h1>
 <p class="brand">Rail Budget</p>
 <p class="sub">Pick the station you are starting from, and see every destination reachable by train inside the budget.</p>

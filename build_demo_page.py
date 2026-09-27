@@ -70,6 +70,15 @@ DEFAULT_NOTE = (
 # metadata.json (read_feed_metadata), so the default only ever reaches a page
 # built from the synthetic feed.
 DEFAULT_PRICE_SOURCE = "the synthetic demo feed"
+# S45: what a synthetic page states, above the content rather than in the
+# footer paragraph that a screenshot crops. One sentence, on every route, and
+# written here so the chooser, a station page and the privacy page cannot say
+# three different things about the same invented data.
+SYNTHETIC_LABEL = "Synthetic demo data."
+SYNTHETIC_BANNER = (
+    "The stations, fares and times here are invented to exercise the pipeline, "
+    "not real journeys."
+)
 # Railcard prices are emitted unless a current DTD RR total ban matches the
 # fare's ticket, route, or endpoint locations. RR restriction codes are retained
 # as travel conditions rather than mistaken for bans.
@@ -1535,6 +1544,9 @@ def build_payload(
         # its domain root (ADR-0024). The template carries it too, for the
         # links that are written as HTML rather than built in JS.
         "baseHref": with_base(base_path, "/"),
+        # S45: the state is a fact about the build, so it is carried in the
+        # payload rather than re-derived by each renderer.
+        "synthetic": price_source == DEFAULT_PRICE_SOURCE,
         "linkNote": LINK_NOTE_FALLBACK if mode == "fallback" else None,
     # The pricing paragraph is a fixed part of the page, but the payload
     # carries it so tests can assert the page says what the times are.
@@ -1678,6 +1690,24 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
         .replace("__NOTE__", payload["note"])
         .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
         .replace("__ANALYTICS__", analytics)
+        .replace("__SYNTHETIC__", "true" if payload.get("synthetic", True) else "false")
+        .replace("__SYNTHETIC_BANNER__", synthetic_markup(payload.get("synthetic", True)))
+    )
+
+
+def synthetic_markup(synthetic: bool) -> str:
+    """The visible synthetic-data state for a route, or nothing for a real one.
+
+    S45: the marker is markup rather than a sentence passed in, so a build
+    cannot ship a page whose banner says something the rest of the page
+    contradicts. A real build writes no banner and keeps ``data-synthetic="false"``,
+    which is the state a screenshot fixture can assert in either direction.
+    """
+    if not synthetic:
+        return ""
+    return (
+        '<p class="synthetic-banner" data-synthetic-banner>'
+        f"<strong>{html.escape(SYNTHETIC_LABEL)}</strong> {html.escape(SYNTHETIC_BANNER)}</p>"
     )
 
 
@@ -1770,6 +1800,7 @@ def render_privacy(
     base_path: str = "",
     contact: str = "",
     features: dict | None = None,
+    synthetic: bool = True,
 ) -> str:
     if not contact.strip():
         raise ValueError("a privacy contact is required before publishing the privacy page")
@@ -1805,6 +1836,8 @@ def render_privacy(
         .replace("__NOTE__", note)
         .replace("__CONTACT__", contact)
         .replace("__PRACTICES__", "".join(f"  <li>{item}</li>\n" for item in practices))
+        .replace("__SYNTHETIC__", "true" if synthetic else "false")
+        .replace("__SYNTHETIC_BANNER__", synthetic_markup(synthetic))
     )
 
 
@@ -1838,6 +1871,7 @@ def render_chooser(
     analytics: str = "",
     base_path: str = "",
     note: str = DEFAULT_NOTE,
+    synthetic: bool = True,
 ) -> str:
     """The root page: the station chooser itself, with no fares on it.
 
@@ -1863,6 +1897,8 @@ def render_chooser(
         .replace("__NOTE__", note)
         .replace("__BASE__", base_path.rstrip("/"))
         .replace("__ANALYTICS__", analytics)
+        .replace("__SYNTHETIC__", "true" if synthetic else "false")
+        .replace("__SYNTHETIC_BANNER__", synthetic_markup(synthetic))
     )
 
 
@@ -2228,6 +2264,7 @@ def main(argv: list[str] | None = None) -> int:
         measurement=args.measurement_plan,
     )
     public = price_source != DEFAULT_PRICE_SOURCE
+    synthetic = not public
     privacy_contact = args.privacy_contact or os.environ.get("PRIVACY_CONTACT", "")
     if not privacy_contact and not public:
         # A synthetic demo site prices invented fares and is not published at
@@ -2403,6 +2440,7 @@ def main(argv: list[str] | None = None) -> int:
             analytics=analytics,
             base_path=base_path,
             note=note,
+            synthetic=synthetic,
         )
         root = out_dir / "index.html"
         # A feed with no reviewed price for any origin writes no station pages,
@@ -2429,7 +2467,7 @@ def main(argv: list[str] | None = None) -> int:
         privacy = out_dir / "privacy" / "index.html"
         privacy.parent.mkdir(parents=True, exist_ok=True)
         privacy.write_text(
-            render_privacy(note, base_path, privacy_contact, features),
+            render_privacy(note, base_path, privacy_contact, features, synthetic),
             encoding="utf-8",
         )
         print(f"wrote {privacy}")
@@ -2504,13 +2542,22 @@ def main(argv: list[str] | None = None) -> int:
     # The root is the chooser, offering exactly the stations this build wrote.
     write_page_atomic(
         out_dir / "index.html",
-        render_chooser(index, budget_pounds=20, analytics=analytics, base_path=base_path, note=note),
+        render_chooser(
+        index,
+        budget_pounds=20,
+        analytics=analytics,
+        base_path=base_path,
+        note=note,
+        synthetic=synthetic,
+    ),
     )
     print(f"wrote {out_dir / 'index.html'} (the chooser) with {len(index)} station(s)")
     # The footer links to the privacy page, so a build writes it beside the
     # pages rather than shipping a link to nowhere.
     privacy = out_dir / "privacy" / "index.html"
-    write_page_atomic(privacy, render_privacy(note, base_path, privacy_contact, features))
+    write_page_atomic(
+        privacy, render_privacy(note, base_path, privacy_contact, features, synthetic)
+    )
     print(f"wrote {privacy}")
     # Route integrity (S03), same rule as the full build.
     broken = crawl_internal_links(out_dir, base_path)
