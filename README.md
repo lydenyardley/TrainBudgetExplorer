@@ -593,6 +593,17 @@ site does is generated from the same feature configuration the pages are built
 from, so it cannot describe a site this build did not ship
 (`adr/ADR-0032`; gates S36–S38 in the re-envision audit).
 
+**A phone gets the journey, not the table.** Below 44rem the budget slider
+stays open, the results stay beneath it, and the three refinements — ticket
+type, party, destination type — fold behind one control whose label states what
+is currently narrowed ("Return · Two adults · all types"), so a reader who has
+not opened it can still see that a filter is on. Above that width the wrapper
+and its panel are `display: contents`, so the filter bar's layout is the same
+three columns it has always been and depends on no JavaScript at all. The
+control is a button carrying `aria-expanded`, and the panel's visibility is a
+stylesheet fact rather than a state a missed event can strand (audit suggestion
+S42; the phone checks are in `tests/browser_test.cjs`).
+
 **A synthetic build says so above the content.** Every generated route -- the
 chooser, each station page, the privacy page -- carries a banner naming the
 invented data, plus a `data-synthetic` attribute on `<body>` a test or a

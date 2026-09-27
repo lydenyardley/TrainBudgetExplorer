@@ -1102,6 +1102,44 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(":root { --h1: 1.5rem; }", chooser)
         self.assertIn("--page-max: 78rem", self.html)
 
+    def test_a_phone_keeps_the_budget_and_folds_the_refinements(self) -> None:
+        # S42: the phone reflows around the journey rather than around the
+        # table. The budget stays open, the refinements travel as one
+        # disclosure that says what is currently narrowed, and the summary is
+        # rewritten on every state change so it cannot describe a filter the
+        # reader has since cleared.
+        self.assertIn('<div class="more-filters" id="moreFilters" data-open="false">', self.html)
+        self.assertIn('id="moreFiltersToggle"', self.html)
+        self.assertIn('aria-controls="moreFiltersPanel"', self.html)
+        self.assertIn('id="moreFiltersPanel"', self.html)
+        self.assertIn("Narrow this list", self.html)
+        # The three refinements are inside the panel; the budget is not.
+        bar = self.html.split('<section class="filter-bar"', 1)[1].split("</section>", 1)[0]
+        budget, folded = bar.split('<div class="more-filters"', 1)
+        self.assertIn('id="budget" type="range"', budget)
+        self.assertIn("more-filters-panel", folded)
+        for group in ("ticket-filter", "party-filter", "destination-filter"):
+            self.assertIn(group, folded, f"{group} is outside the disclosure")
+        # Above the phone breakpoint the block is not a disclosure at all: the
+        # toggle is not rendered and the panel is displayed, so a missed resize
+        # event cannot leave a reader with controls they can neither see nor
+        # open. Below it, the panel is displayed only while data-open says so.
+        self.assertIn(".more-filters, .more-filters-panel { display: contents; }", self.html)
+        self.assertIn(".more-filters-toggle { display: none; }", self.html)
+        self.assertIn(".more-filters { display: block; }", self.html)
+        self.assertIn("@media (max-width: 44rem) {", self.html)
+        self.assertIn('.more-filters[data-open="true"] .more-filters-panel { display: grid;', self.html)
+        self.assertIn('moreFilters.dataset.open = open ? "true" : "false";', self.html)
+        self.assertIn('moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");', self.html)
+        # The state is written from the page's own controls, on every render
+        # and on the path that stands the whole panel down.
+        self.assertIn("function filterStateText()", self.html)
+        self.assertIn('window.matchMedia("(min-width: 44.01rem)")', self.html)
+        self.assertIn("wideEnough.addEventListener(\"change\", followViewport)", self.html)
+        self.assertIn('window.addEventListener("resize", followViewport)', self.html)
+        self.assertIn("renderFilterState();", self.html)
+        self.assertGreaterEqual(self.html.count("renderFilterState();"), 2)
+
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn("Where can we go for under", heading)
@@ -1161,7 +1199,7 @@ class DemoPageTest(unittest.TestCase):
         render = script.split("function render(")[1].split("\nfunction ")[0]
         self.assertIn(
             "if (!DATA.destinations.length && !DATA.singleDestinations.length "
-            "&& !DATA.anytimeDestinations.length) return;",
+            "&& !DATA.anytimeDestinations.length) {",
             render,
         )
 
@@ -1493,7 +1531,7 @@ class DemoPageTest(unittest.TestCase):
         # From the first max-width block to the end of the stylesheet: the
         # footer nav has its own small block, and the table's rules must be
         # found wherever they sit.
-        reflow = self.html[self.html.index("@media (max-width: 44rem)"):].split("</style>")[0]
+        reflow = self.html[self.html.index("table, tbody { display: block; }") - 200:].split("</style>")[0]
         self.assertIn("flex-wrap", reflow)
         self.assertNotIn("display: none", reflow.split("thead")[0])
         self.assertIn("thead { position:absolute; width:1px; height:1px;", reflow)

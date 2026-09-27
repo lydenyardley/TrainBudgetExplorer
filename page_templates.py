@@ -130,6 +130,29 @@ __SHARED_CSS__
                 gap: 1.25rem 2rem; align-items: start; padding: 1.1rem 1.25rem 1.25rem;
                 border: 1px solid var(--line); border-radius: .7rem; background: color-mix(in srgb, var(--field) 75%, transparent); }
   .filter-bar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  /* S42: the refinements travel as one block on a phone. Above the phone
+     breakpoint the block is not a disclosure at all: the wrapper and the panel
+     are display: contents, so the three fieldsets are the filter bar's own
+     grid items exactly as they were before, and the toggle is not rendered.
+     Nothing about a desktop reader's layout depends on a resize event arriving
+     -- only on CSS, which cannot be late. */
+  .more-filters, .more-filters-panel { display: contents; }
+  .more-filters-toggle { display: none; }
+  .more-filters-label { font-weight: 700; }
+  @media (max-width: 44rem) {
+    .more-filters { display: block; }
+    .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem;
+                            width: 100%; min-height: 44px; padding: .5rem .6rem; margin-bottom: .75rem;
+                            border: 1px solid var(--line); border-radius: .45rem;
+                            background: var(--field); color: var(--fg); font: inherit; text-align: left;
+                            cursor: pointer; }
+    .more-filters-toggle::after { content: "\25be"; color: var(--accent); }
+    .more-filters[data-open="true"] .more-filters-toggle { margin-bottom: .9rem; border-color: var(--accent); }
+    .more-filters[data-open="true"] .more-filters-toggle::after { content: "\25b4"; }
+    .more-filters-panel { display: none; }
+    .more-filters[data-open="true"] .more-filters-panel { display: grid; grid-template-columns: 1fr;
+                                                             gap: 1.1rem; align-items: start; }
+  }
   .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
                                       text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
@@ -295,6 +318,13 @@ __SYNTHETIC_BANNER__
     <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
     <span class="tag" id="budgetHint">Drag to change the budget in the heading.</span>
   </fieldset>
+  <div class="more-filters" id="moreFilters" data-open="false">
+    <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
+            aria-expanded="false" aria-controls="moreFiltersPanel">
+      <span class="more-filters-label">Narrow this list</span>
+      <span class="tag" id="filterState"></span>
+    </button>
+    <div class="more-filters-panel" id="moreFiltersPanel">
   <fieldset class="ticket-filter">
     <legend>Ticket type</legend>
     <div class="filter-options segmented">
@@ -318,6 +348,8 @@ __SYNTHETIC_BANNER__
   <span class="tag" id="typeRule">More than one type shows destinations of any of them. The count on each is how many are inside the budget now.</span>
   <button id="clearTypes" class="toggle" type="button" hidden>Clear destination types</button>
   </fieldset>
+    </div>
+  </div>
 </section>
 
 <p id="summary" role="status" aria-live="polite"></p>  <p class="tag" id="priceSource" hidden></p>
@@ -402,6 +434,53 @@ const pageStatus = document.getElementById("pageStatus");
 const railcardDrawer = document.getElementById("railcardDrawer");
 const railcardClose = document.getElementById("railcardClose");
 const clearTypes = document.getElementById("clearTypes");
+const moreFilters = document.getElementById("moreFilters");
+const moreFiltersToggle = document.getElementById("moreFiltersToggle");
+const filterState = document.getElementById("filterState");
+// S42: a phone shows the budget and the results, and keeps the refinements
+// behind one control. The control is a button carrying aria-expanded, so a
+// screen reader announces the state without any of this JavaScript; the
+// stylesheet decides what a viewport shows, and this only decides where a
+// phone starts and follows the viewport when a reader rotates the device.
+const wideEnough = window.matchMedia("(min-width: 44.01rem)");
+function setFiltersOpen(open) {
+  if (!moreFilters) return;
+  moreFilters.dataset.open = open ? "true" : "false";
+  if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function followViewport() {
+  setFiltersOpen(wideEnough.matches);
+}
+if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
+  setFiltersOpen(moreFilters.dataset.open !== "true");
+});
+wideEnough.addEventListener("change", followViewport);
+// The resize listener is a second road to the same place, not a second rule:
+// some engines deliver the media-query change late or not at all, and a reader
+// who rotates their phone must not be left with refinements they can neither
+// see nor open.
+window.addEventListener("resize", followViewport);
+followViewport();
+
+// What is narrowed, said in the summary, so a reader who has collapsed the
+// refinements on a phone can still see that a filter is on.
+function filterStateText() {
+  // selectedDestinationTypes() is a Set, and the chip's own label is the only
+  // wording a reader has seen for it.
+  const types = Array.from(selectedDestinationTypes());
+  const party = unit() === "party" ? "Two adults" : "One adult";
+  const card = document.getElementById("railcard").checked ? " + Two Together" : "";
+  const labelOf = (value) => {
+    const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
+    const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
+    return span ? span.textContent : value;
+  };
+  const typeText = types.length ? types.map(labelOf).join(", ") : "all types";
+  return modeLabels()[ticketMode()] + " \u00b7 " + party + card + " \u00b7 " + typeText;
+}
+function renderFilterState() {
+  if (filterState) filterState.textContent = filterStateText();
+}
 
 function matches(station, needle) {
   if (!needle) return true;
@@ -823,7 +902,10 @@ function render() {
   // ("Nothing inside this budget") would contradict the page's own first
   // sentence. So it does nothing at all -- but that is the only case where it
   // says nothing.
-  if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) return;
+  if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) {
+    if (filterState) filterState.textContent = "";
+    return;
+  }
   renderCoverage();
   if (!available.length) {
     // The budget is left alone on purpose. An empty list has no prices to
@@ -840,6 +922,7 @@ function render() {
     // prices none of them empties it rather than leaving a list of names with
     // no fares behind them.
     shortlistCodes = [];
+    renderFilterState();
     renderShortlist();
     return;
   }
@@ -855,6 +938,7 @@ function render() {
   budgetNumber.value = budget.value;
   sizeBudgetField();
   updateChipCounts(available, cap);
+  renderFilterState();
   rows.replaceChildren();
 
   const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
