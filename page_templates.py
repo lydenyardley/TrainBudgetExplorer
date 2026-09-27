@@ -146,6 +146,21 @@ TEMPLATE = """<!doctype html>
   .heritage-proof a { color: inherit; text-underline-offset: .15em; }
   .heritage-proof a:hover, .heritage-proof a:focus-visible { color: var(--accent); }
   .tag { font-size: .75rem; color: var(--muted); }
+  /* A chip's count is part of its label, so it sits inside the chip and is
+     never the only thing carrying the type's name. */
+  .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em; }
+  #typeRule { display: block; margin: .35rem 0 0; }
+  #clearTypes { margin-top: .35rem; }
+  /* S19: the condition is the sentence; the record is folded under it. */
+  .feed-record { margin-top: .2rem; font-size: .72rem; }
+  .feed-record summary { cursor: pointer; color: var(--muted); }
+  .feed-record dl { margin: .2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 .4rem; }
+  .feed-record dt { color: var(--muted); }
+  .feed-record dd { margin: 0; font-variant-numeric: tabular-nums; }
+  /* S23: an absence the feed can name is not the same as a zero. */
+  td.missing { color: var(--muted); font-style: italic; }
+  .empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .empty-actions .toggle { min-height: 44px; }
   #railcardDrawer { width: min(30rem, calc(100% - 1rem)); max-width: none; height: 100dvh;
                     max-height: none; margin: 0 0 0 auto; padding: 1.25rem;
                     border: 0; border-left: 1px solid var(--line); color: var(--fg);
@@ -262,16 +277,18 @@ TEMPLATE = """<!doctype html>
   <fieldset class="destination-filter">
     <legend>Destination type</legend>
     <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
+  <span class="tag" id="typeRule">More than one type shows destinations of any of them. The count on each is how many are inside the budget now.</span>
+  <button id="clearTypes" class="toggle" type="button" hidden>Clear destination types</button>
   </fieldset>
 </section>
 
 <p id="summary" role="status" aria-live="polite"></p>  <p class="tag" id="priceSource" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
 <table>
-  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Restriction</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare</th><th scope="col">Conditions</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
-<p id="empty" hidden>Nothing inside this budget. Raise it or switch who it covers.</p>
+<div id="empty" hidden></div>
 <p id="more" hidden></p>
 <nav id="pagination" hidden aria-label="Results pages">
   <button id="previousPage" type="button" class="toggle">Previous</button>
@@ -335,6 +352,7 @@ const nextPage = document.getElementById("nextPage");
 const pageStatus = document.getElementById("pageStatus");
 const railcardDrawer = document.getElementById("railcardDrawer");
 const railcardClose = document.getElementById("railcardClose");
+const clearTypes = document.getElementById("clearTypes");
 
 function matches(station, needle) {
   if (!needle) return true;
@@ -406,6 +424,35 @@ function priceOf(destination) {
   }
   return base;
 }
+// S15: Two Together is a railcard for a named number of adults travelling
+// together, so it is a constraint on the party rather than a discount a solo
+// reader can tick. The number is the feed's own railcard record, not a rule
+// this page invented, and a box that cannot apply is disabled rather than
+// left there to be ticked and silently ignored.
+function syncRailcardParty() {
+  const party = DATA.railcardParty;
+  // No railcard record in the feed, or nothing eligible for one, is not this
+  // rule's business: provenance() has already stood the control down and owns
+  // the sentence beside it.
+  if (!party || !DATA.railcardAvailable) return;
+  const applies = unit() === "party";
+  if (!applies && railcard.checked) railcard.checked = false;
+  railcard.disabled = !applies;
+  const choice = document.getElementById("railcardChoice");
+  if (choice) choice.dataset.state = applies ? "ready" : "needs-a-pair";
+  const help = document.getElementById("railcardHelp");
+  if (help) {
+    const covers = "The railcard in this feed covers " + party.minAdults + " to " + party.maxAdults +
+      " adults travelling together";
+    help.textContent = applies
+      ? covers + ", so it prices a journey for the party rather than for one reader. " +
+        DATA.railcardEligibleCount + " destinations receive a lower price with it; Card details on any row " +
+        "shows the minimum fare and the conditions."
+      : covers + ", so it prices a journey for the party rather than for one reader. " +
+        "Choose “Two adults” to use it.";
+  }
+}
+
 function selectedDestinationTypes() {
   return new Set(destinationTypeInputs
     .filter((input) => input.value !== "all" && input.checked)
@@ -420,7 +467,34 @@ function typeLabel() {
   const labels = destinationTypeInputs
     .filter((input) => input.value !== "all" && input.checked)
     .map((input) => input.parentElement.textContent.trim().toLowerCase());
-  return labels.length ? " in " + labels.join(" and ") : "";
+  // "or", not "and": two selected types show the union, and a message that
+  // said "and" would describe a filter the page does not apply.
+  return labels.length > 1 ? " in " + labels.join(" or ") : labels.length ? " in " + labels[0] : "";
+}
+
+// S20: how many of the destinations in the list the reader is looking at are
+// inside the budget and carry this type. A chip that can only ever return
+// nothing is a broken control; a chip that says it would return nothing is a
+// decision the reader gets to make.
+function updateChipCounts(available, cap) {
+  for (const input of destinationTypeInputs) {
+    if (input.value === "all") continue;
+    const slot = document.querySelector(`.chipcount[data-count-for="${input.value}"]`);
+    if (!slot) continue;
+    const count = available.filter(
+      (destination) => priceOf(destination) <= cap &&
+        (destination.destinationTypes || [destination.destinationType]).includes(input.value)
+    ).length;
+    slot.textContent = count === 1 ? "(1)" : "(" + count + ")";
+  }
+  const clear = document.getElementById("clearTypes");
+  if (clear) clear.hidden = selectedDestinationTypes().size === 0;
+}
+function clearDestinationTypes() {
+  for (const input of destinationTypeInputs) input.checked = input.value === "all";
+  currentPage = 1;
+  render();
+  writeUrl();
 }
 function sizeBudgetField() {
   const digits = Math.max(1, String(budgetNumber.value || "1").length);
@@ -493,6 +567,141 @@ function emptyModeMessage() {
     : "";
   return "No " + labels[mode] + " fares were found from " + DATA.origin.name + " in this download." + why + where;
 }
+// S28: an empty list is a decision the reader has not finished making, so it
+// says which of the choices on this page would change the answer and offers
+// each as a control. Every move is offered only when it is true for this
+// page's own rows -- a "raise the budget" button on a page where the budget
+// already covers everything is a control that does nothing.
+// The empty-mode case has one recovery this page can offer -- another ticket
+// type that does have fares from here -- and it is the same control as
+// everywhere else, so a reader who is offered a move is never offered one that
+// does nothing.
+// S29: "every destination" is a claim about the feed, so the page counts what
+// it dropped and what it cannot classify. A destination whose type is not in
+// the reviewed registry is still priced and still listed -- it is simply one no
+// type chip can select, and saying so is the difference between a complete
+// claim and a true one. Written in one place because the ticket-mode switch
+// and the first render both rewrite this line.
+function renderCoverage() {
+  const coverage = document.getElementById("feedCoverage");
+  if (!coverage || DATA.rawFareDestinationCount === undefined) return;
+  const mode = ticketMode();
+  const lead = mode === "single"
+    ? DATA.singleDestinations.length + " displayable outbound single fares are available in this mode." +
+      (DATA.singleJourneyNote ? " " + DATA.singleJourneyNote : "")
+    : mode === "anytime"
+      ? DATA.anytimeDestinations.length + " reviewed unrestricted Anytime Day Return fares are available in this mode."
+      : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed" + droppedFromFeed() + "." +
+        (DATA.destinations.length
+          ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
+          : "");
+  coverage.textContent = lead + classifiedNote();
+}
+function droppedFromFeed() {
+  const dropped = [];
+  if (DATA.excludedItxCount) dropped.push(DATA.excludedItxCount + " had only ITX placeholder fares");
+  if (DATA.unnameableFareCount) dropped.push(DATA.unnameableFareCount + " had no station name in the feed");
+  return dropped.length ? "; " + dropped.join(" and ") + ", and are not shown" : ", and all are shown";
+}
+function classifiedNote() {
+  if (DATA.unclassifiedDestinationCount) {
+    return " " + DATA.unclassifiedDestinationCount + " priced destinations carry no reviewed " +
+      "destination type, so no type chip on this page can select them.";
+  }
+  return DATA.locationTypeReviewed ? " Every destination on this page carries a reviewed type." : "";
+}
+
+function renderEmptyMode() {
+  empty.replaceChildren();
+  const why = document.createElement("p");
+  why.textContent = emptyModeMessage();
+  empty.append(why);
+  const actions = document.createElement("p");
+  actions.className = "empty-actions";
+  for (const [mode, label] of Object.entries(modeLabels())) {
+    if (mode === ticketMode() || !modeCount(mode)) continue;
+    const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toggle";
+    button.textContent = label + " has " + modeCount(mode);
+    button.addEventListener("click", () => {
+      input.checked = true;
+      currentPage = 1;
+      render();
+      writeUrl();
+    });
+    actions.append(button);
+  }
+  if (actions.childElementCount) {
+    actions.prepend(document.createTextNode("Try: "));
+    empty.append(actions);
+  }
+}
+
+function renderEmpty(available, wanted, cap, what) {
+  empty.replaceChildren();
+  if (wanted.length) return;
+  const why = document.createElement("p");
+  why.textContent = "No destinations within " + money(cap) + " " + what + typeLabel() + ".";
+  empty.append(why);
+  const actions = document.createElement("p");
+  actions.className = "empty-actions";
+  const offer = (label, run) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toggle";
+    button.textContent = label;
+    button.addEventListener("click", run);
+    actions.append(button);
+  };
+  // The cheapest destination this mode carries, whatever the budget: the
+  // budget that would include it is the one number the reader is missing.
+  const cheapest = available.reduce(
+    (low, destination) => Math.min(low, priceOf(destination)), Infinity);
+  if (Number.isFinite(cheapest) && cheapest > cap) {
+    const enough = Math.ceil(cheapest / 100);
+    offer("Show everything up to " + money(enough * 100), () => {
+      setBudget(enough);
+      currentPage = 1;
+      render();
+      writeUrl({ budget: true });
+    });
+  }
+  if (selectedDestinationTypes().size) {
+    offer("Clear the destination type", clearDestinationTypes);
+  }
+  // A pair's price is a different number, so a party the reader has not chosen
+  // yet is a real way out of an empty list rather than advice.
+  if (unit() === "adult" && DATA.railcardAvailable) {
+    const cheaper = activeDestinations().some((destination) => destination.partyPence <= cap * 100);
+    if (cheaper) {
+      offer("Price it for two adults", () => {
+        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        currentPage = 1;
+        render();
+        writeUrl();
+      });
+    }
+  }
+  // Another ticket type on this origin, with its own count.
+  for (const [mode, label] of Object.entries(modeLabels())) {
+    if (mode !== ticketMode() && modeCount(mode)) {
+      const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
+      offer(label + " has " + modeCount(mode), () => {
+        input.checked = true;
+        currentPage = 1;
+        render();
+        writeUrl();
+      });
+    }
+  }
+  if (actions.childElementCount) {
+    actions.prepend(document.createTextNode("Try: "));
+    empty.append(actions);
+  }
+}
+
 function render() {
   // The tab title is the same sentence as the heading, and a reader who
   // dragged the budget and then looked at the tab list had no way to tell two
@@ -500,6 +709,9 @@ function render() {
   // priced still names its origin and its budget.
   document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
   const available = activeDestinations();
+  // Before any price is read: the railcard changes the price of every row, and
+  // a card ticked for a party of one is a number no reader could buy.
+  syncRailcardParty();
   // Before the filter is read, not after: a chip the active list cannot support
   // must not be part of what the filter is asked to match.
   syncDestinationTypeChips();
@@ -509,16 +721,7 @@ function render() {
   // sentence. So it does nothing at all -- but that is the only case where it
   // says nothing.
   if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) return;
-  const coverage = document.getElementById("feedCoverage");
-  if (coverage) {
-    coverage.textContent = ticketMode() === "single"
-      ? DATA.singleDestinations.length + " displayable outbound single fares are available in this mode." +
-        (DATA.singleJourneyNote ? " " + DATA.singleJourneyNote : "")
-      : ticketMode() === "anytime"
-        ? DATA.anytimeDestinations.length + " reviewed unrestricted Anytime Day Return fares are available in this mode."
-        : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
-          DATA.excludedItxCount + " had only ITX placeholder fares and are not shown.";
-  }
+  renderCoverage();
   if (!available.length) {
     // The budget is left alone on purpose. An empty list has no prices to
     // bound, and clamping to the £1 ceiling of an empty list would silently
@@ -526,7 +729,7 @@ function render() {
     rows.replaceChildren();
     summary.textContent = "No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name;
     empty.hidden = false;
-    empty.textContent = emptyModeMessage();
+    renderEmptyMode();
     more.hidden = true;
     pagination.hidden = true;
     pageStatus.textContent = "";
@@ -543,6 +746,7 @@ function render() {
   );
   budgetNumber.value = budget.value;
   sizeBudgetField();
+  updateChipCounts(available, cap);
   rows.replaceChildren();
 
   const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
@@ -556,8 +760,13 @@ function render() {
       [money(priceOf(destination)), "num", "Price"],
     ];
     if (DATA.hasJourneys) {
-      cells.push([duration(destination.minutes), "num", "Time"]);
-      cells.push([destination.changes === null ? "-" : String(destination.changes), "num", "Changes"]);
+      // S23: a dash said nothing about which of three different absences this
+      // is. The fare is real either way, so the cell names the absence and
+      // says so in its tooltip too.
+      const missing = destination.journeyState !== "found";
+      const tone = missing ? "num missing" : "num";
+      cells.push([missing ? "No service" : duration(destination.minutes), tone, "Time"]);
+      cells.push([missing ? "Unknown" : String(destination.changes), tone, "Changes"]);
     }
     // An Advance single is train-specific whatever the feed calls it, so it
     // replaces the other labels rather than qualifying them: a reader must not
@@ -571,7 +780,10 @@ function render() {
           : destination.quality === "unrestricted Anytime Day Return"
             ? "Unrestricted Anytime Day Return"
             : "Standard return fare";
-    cells.push([fareLabel + " · " + destination.ticket, "", "Fare"]);
+    // S19: the reader needs the fare in words beside the price. The codes are
+    // the feed's own vocabulary, so they move into the expandable record below
+    // rather than competing with the sentence in the cell.
+    cells.push([fareLabel, "", "Fare"]);
     for (const [text, className, label] of cells) {
       const cell = document.createElement("td");
       cell.dataset.label = label;
@@ -597,15 +809,20 @@ function render() {
     }
     const restriction = document.createElement("td");
     restriction.className = "restriction";
-    restriction.dataset.label = "Restriction";
+    restriction.dataset.label = "Conditions";
     const restricted = Boolean(destination.restrictionCode);
     restriction.dataset.status = restricted ? "restricted" : "unrestricted";
-    restriction.textContent = restricted
-      ? destination.restrictionCode + (destination.restrictionDescription ? " — " + destination.restrictionDescription : "")
-      : "No restriction code";
+    // S19: what the reader has to know to rule the fare in or out, in
+    // sentences. The code, the ticket and the route are below it, folded away.
+    const readable = document.createElement("span");
+    readable.className = "condition";
+    readable.textContent = restricted
+      ? (destination.restrictionDescription || "This fare carries a restriction code; check the seller's conditions before buying.")
+      : "No travel conditions on this fare in the feed.";
     restriction.title = restricted
       ? (destination.restrictionDescription || "This fare has a restriction code; check the seller before buying.")
       : "No fare restriction code is attached to this fare.";
+    restriction.append(readable, feedRecord(destination));
     row.append(restriction);
     cellWithLinks(row, destination, wanted);
     rows.append(row);
@@ -618,14 +835,39 @@ function render() {
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " within " + money(cap) + " " + what
     : available.length ? "No destinations within " + money(cap) + " " + what : "";
   empty.hidden = wanted.length > 0;
-  empty.textContent = wanted.length
-    ? ""
-    : "No destinations within " + money(cap) + " " + what + typeLabel() + ". Raise the budget or switch the destination type.";
+  renderEmpty(available, wanted, cap, what);
   more.hidden = true;
   pagination.hidden = pageCount <= 1;
-  pageStatus.textContent = "Page " + currentPage + " of " + pageCount + " · " + wanted.length + " results";
+  pageStatus.textContent = "Page " + currentPage + " of " + pageCount + " of " + wanted.length +
+    (wanted.length === 1 ? " result" : " results");
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
+}
+
+// S19: the record as the feed states it -- ticket code, restriction code,
+// route, and which price-quality the build chose it as. Folded away, because a
+// reader deciding where to go needs the condition, not the vocabulary.
+function feedRecord(destination) {
+  const details = document.createElement("details");
+  details.className = "feed-record";
+  const summary = document.createElement("summary");
+  summary.textContent = "Feed record";
+  const list = document.createElement("dl");
+  const add = (term, value) => {
+    if (value === null || value === undefined || value === "") return;
+    const dt = document.createElement("dt");
+    dt.textContent = term;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    list.append(dt, dd);
+  };
+  add("Ticket", destination.ticket);
+  add("Restriction", destination.restrictionCode || "none");
+  add("Route", destination.routeCode);
+  add("Priced as", destination.quality);
+  add("Times", destination.journeyState);
+  details.append(summary, list);
+  return details;
 }
 
 function cellWithLinks(row, destination, wanted) {
@@ -784,14 +1026,7 @@ function provenance() {
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
     ? DATA.pricingBasis + ". Use the ticket-type control to switch between return and outbound single fares, then use the budget filter to narrow the list."
     : "";
-  if (DATA.rawFareDestinationCount !== undefined) {
-    document.getElementById("feedCoverage").textContent =
-      DATA.rawFareDestinationCount + " standard-return destinations were found in the feed; " +
-      DATA.excludedItxCount + " had only ITX placeholder fares and are not shown." +
-      (DATA.destinations.length
-        ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
-        : "");
-  }
+  renderCoverage();
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.
   if (DATA.linkNote) {
@@ -1055,7 +1290,10 @@ function applyState(state) {
   for (const input of document.querySelectorAll('input[name="unit"]')) {
     if (input.value === state.unit) input.checked = true;
   }
-  railcard.checked = state.railcard;
+  // A card=1 that arrived on a link from a page where the reader had chosen a
+  // pair is not applied to a party of one: the control is disabled in that
+  // case, and a checkbox the page disables must not read as checked.
+  railcard.checked = state.railcard && unit() === "party";
   for (const input of destinationTypeInputs) {
     input.checked = input.value !== "all" && state.types.includes(input.value);
   }
@@ -1073,15 +1311,19 @@ window.addEventListener("popstate", () => {
   render();
 });
 
-budget.addEventListener("input", () => { setBudget(budget.value); render(); writeUrl({ budget: true }); });
-budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); render(); writeUrl({ budget: true }); });
+// S22: a result set that just changed under the reader starts again at its
+// first page, because the cheapest destinations are the ones a narrowed
+// search wants to see first and page 4 of the previous set is not where they
+// are now. The count and the page position are both re-announced by render().
+budget.addEventListener("input", () => { setBudget(budget.value); currentPage = 1; render(); writeUrl({ budget: true }); });
+budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); currentPage = 1; render(); writeUrl({ budget: true }); });
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
     budgetNumber.focus();
     budgetNumber.select();
   }
 });
-railcard.addEventListener("change", () => { render(); writeUrl(); });
+railcard.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
 for (const input of destinationTypeInputs) {
   input.addEventListener("change", () => {
     const all = destinationTypeInputs.find((candidate) => candidate.value === "all");
@@ -1097,11 +1339,12 @@ for (const input of destinationTypeInputs) {
     writeUrl();
   });
 }
-for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => { render(); writeUrl(); });
+for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
 for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
 previousPage.addEventListener("click", () => { currentPage -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 nextPage.addEventListener("click", () => { currentPage += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 applyState(readState());
+if (clearTypes) clearTypes.addEventListener("click", clearDestinationTypes);
 provenance();
 sizeBudgetField();
 render();

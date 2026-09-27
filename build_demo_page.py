@@ -1271,6 +1271,7 @@ def build_payload(
             "quality": quality,
             "offPeak": one.off_peak,
             "restrictionCode": one.restriction_code,
+            "routeCode": one.route_code,
             "restrictionDescription": (
                 fares.restrictions.headers[one.restriction_code].description
                 if one.restriction_code in fares.restrictions.headers
@@ -1282,6 +1283,17 @@ def build_payload(
             ),
             "minutes": journey.duration if journey else None,
             "changes": journey.changes if journey else None,
+            # S23: why there is no time, in the page's own words, so a reader
+            # can tell "the feed has no service" from "this build priced fares
+            # only" instead of reading a bare dash for both.
+            "journeyState": (
+                "found"
+                if journey
+                else "no timetable in this build"
+                if journey_db is None
+                else f"no service on {day.isoformat()}" if day
+                else "no service in this timetable"
+            ),
             "legs": [leg.train_uid for leg in journey.legs] if journey else [],
             "link": {"url": link.url, "label": link.label, "rel": link.rel},
             "departures": [
@@ -1329,6 +1341,31 @@ def build_payload(
         if row["railcardPence"] is not None and row["railcardPence"] < row["adultPence"]
     }
     railcard_eligible_count = len(railcard_eligible_destinations)
+    # S15: the railcard is a constraint on the party, not a discount a solo
+    # reader can tick. The feed's own railcard record says how many adults it
+    # covers, so the page states the rule the data states rather than one this
+    # project invented.
+    railcard_record = fares.railcards.get(railcard_code) if railcard_code else None
+    railcard_party = (
+        {
+            "name": railcard_record.name,
+            "minAdults": railcard_record.min_adults,
+            "maxAdults": railcard_record.max_adults,
+        }
+        if railcard_record
+        else None
+    )
+    # S29: how much of the feed's coverage this page could not show, counted
+    # rather than asserted. A destination whose type is not in the reviewed
+    # registry is still priced and still listed, but no chip can ever select it,
+    # so the count is the difference between "every type" and "every type we
+    # have reviewed".
+    unclassified = {
+        row["crs"]
+        for collection in (destinations, single_destinations, anytime_destinations)
+        for row in collection
+        if not set(row.get("destinationTypes") or []) - {"other"}
+    }
 
     return {
         "origin": {"crs": origin_row.crs, "name": origin_row.name},
@@ -1350,6 +1387,11 @@ def build_payload(
         # ceiling on coverage, carried so the report can count it beside the
         # unsourced stations (audit A3).
         "unnameableFareCount": unnameable_from_tally(raw_tally),
+        # S29: priced rows no chip can select, because their type is not in the
+        # reviewed registry. Shown beside the counts so "every destination"
+        # stays a defensible claim.
+        "unclassifiedDestinationCount": len(unclassified),
+        "locationTypeReviewed": bool(fares.location_type_source),
         "unpricedNote": unpriced_note,
         # The picker's options, from the route manifest of pages this release
         # actually writes (S01). When the caller supplies published_routes
@@ -1386,6 +1428,7 @@ def build_payload(
         "railcardEligibleCount": railcard_eligible_count,
         "railcardAvailable": railcard_eligible_count > 0,
         "railcardRules": railcard_rules,
+        "railcardParty": railcard_party,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
@@ -1524,8 +1567,12 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
         for kind in row.get("destinationTypes") or [row.get("destinationType", "other")]
     }
     destination_filters = ['<label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>']
+    # The count lives in the chip, not beside it, so the number and the thing
+    # it counts are one target and one label. render() fills it in from the
+    # page's own rows at the budget on screen.
     destination_filters.extend(
-        f'<label class="choice-chip"><input type="checkbox" name="destinationType" value="{html.escape(value)}"> <span>{html.escape(label)}</span></label>'
+        f'<label class="choice-chip"><input type="checkbox" name="destinationType" value="{html.escape(value)}"> '
+        f'<span>{html.escape(label)}</span> <span class="chipcount" data-count-for="{html.escape(value)}"></span></label>'
         for value, label in DESTINATION_TYPE_FILTERS
         if value in used
     )
