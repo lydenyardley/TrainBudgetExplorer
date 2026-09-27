@@ -25,11 +25,13 @@
  * pages it left out, because a run that quietly tested twenty of two thousand
  * has not tested the site.
  *
- * A path that is not a station page -- a chooser, a privacy page -- is
- * reported as 0/0 and named at the end of the run, and does not fail it: a
- * full-network build puts its chooser at the site root, and CI always passes
- * that path. A run where no page at all was a station page has tested nothing
- * and does fail, so pointing this at the wrong tree cannot read as a pass.
+ * A path that is not a station page is the chooser at the site root or the
+ * privacy page. The chooser is driven like any other page -- it is where a
+ * reader chooses the station everything else is about -- while the privacy
+ * page carries no controls and is reported as 0/0, named at the end of the
+ * run, and does not fail it. A run in which no page could be checked at all
+ * has tested nothing and does fail, so pointing this at the wrong tree cannot
+ * read as a pass.
  *
  * Exit codes: 0 every page checked behaves, 1 one does not or nothing was
  * checked, 2 playwright is unavailable. A skip is reported loudly and exits 2,
@@ -174,6 +176,113 @@ function serve(bodies) {
 // reads off the page.
 const money = (pence) => "£" + (pence / 100).toFixed(2);
 
+/**
+ * The chooser at the site root, which S01 made the departure picker: the page
+ * a reader lands on, and the only page whose whole job is choosing where to
+ * depart from. It carries no fares, so every fact is read out of its own
+ * STATIONS array and the list it builds from that array -- the suite never
+ * names a station here either.
+ */
+async function checkChooser(page, url, check) {
+  const listed = await page.evaluate(() => STATIONS.map((s) => ({ name: s.name, crs: s.crs, href: s.href })));
+  const budget = await page.inputValue("#chooserBudget");
+  check("the chooser has stations to choose from", listed.length > 0, `${listed.length} stations`);
+  const heading = ((await page.textContent("h1")) || "").trim();
+  check(
+    "the heading is the budget question and nothing else",
+    new RegExp("^Where can we go for £" + budget + "\?").test(heading),
+    JSON.stringify(heading)
+  );
+  const options = await page.locator("#picks a").count();
+  // A published site prices thousands of stations and the page caps the list,
+  // so the cap is the fact to check rather than the total.
+  const capped = await page.evaluate(() => CHOOSER_LIMIT);
+  const expected = Math.min(listed.length, capped);
+  check("the list opens showing stations without typing", options === expected, `${options} of ${expected}`);
+  check(
+    "the cap says so rather than looking like the whole list",
+    listed.length > capped
+      ? (await page.locator("#capMessage").isVisible()) && /Showing \d+ of \d+/.test(await page.textContent("#capMessage"))
+      : (await page.locator("#capMessage").isHidden()),
+    `${listed.length} stations, cap ${capped}`
+  );
+
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#picks a")).map((a) => ({
+      href: a.getAttribute("href"),
+      text: a.textContent,
+      tall: a.getBoundingClientRect().height,
+    }))
+  );
+  check(
+    "every option is a link to a station page",
+    rows.every((row) => /\/from\/[^/]+\/$/.test(new URL(row.href, "http://x").pathname)),
+    rows.map((row) => row.href).join(" ")
+  );
+  check(
+    "every option carries its name, its code and a count",
+    listed.every((station) => rows.some((row) => row.text.includes(station.name) && row.text.includes(station.crs) && /\d+ destinations?/.test(row.text))),
+    JSON.stringify(rows[0] || null)
+  );
+  check("every option is a 44px target", rows.every((row) => row.tall >= 44), `${rows[0] ? rows[0].tall : 0}px`);
+  check(
+    "the budget travels with the station link",
+    rows.every((row) => new URL(row.href, "http://x").searchParams.get("budget") === budget),
+    rows[0] ? rows[0].href : "no options"
+  );
+
+  // The search, judged against the page's own list rather than a fixture name.
+  const first = listed[0];
+  const query = first.name.split(/[\s(]+/)[0].slice(0, 4);
+  await page.fill("#pick", query);
+  const narrowed = await page.locator("#picks a").count();
+  check(
+    "typing narrows the list",
+    narrowed > 0 && narrowed < options && /Showing|list/i.test(await page.textContent("#pickStatus")),
+    `${query} -> ${narrowed} of ${options}`
+  );
+  const code = listed[1] ? listed[1].crs : first.crs;
+  await page.fill("#pick", code);
+  check(
+    "a three-letter code finds its station",
+    (await page.locator("#picks a").count()) === 1 && (await page.textContent("#picks")).includes(code),
+    code
+  );
+  await page.fill("#pick", "zzzz");
+  const noMatch = await page.locator("#nomatch").isVisible();
+  check("a query with no answer says so", noMatch && (await page.locator("#picks a").count()) === 0, await page.textContent("#nomatch"));
+  check("and it names the code route", /three-letter code/.test(await page.textContent("#nomatch")));
+  await page.fill("#pick", "");
+
+  // The budget is the reader's, and it is the one thing the root page can carry
+  // into the station page it opens (S05).
+  const next = Math.min(500, Number(budget) + 7);
+  await page.fill("#chooserBudget", String(next));
+  check("changing the budget retitles the page", new RegExp("£" + next + "\?").test(await page.title()), await page.title());
+  const carried = await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"));
+  check("and the station links carry it", carried === String(next), String(carried));
+
+  // A shared link: the budget a reader was given is the budget they get back.
+  await page.goto(url + "?budget=42");
+  check("a budget in the link opens the page at that budget", (await page.inputValue("#chooserBudget")) === "42", await page.inputValue("#chooserBudget"));
+  check(
+    "and the station links carry it on",
+    (await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"))) === "42"
+  );
+  check("the search field takes focus on arrival", (await page.evaluate(() => document.activeElement && document.activeElement.id)) === "pick");
+  const privacy = await page.evaluate(() => (document.querySelector(".footnav a") || {}).getAttribute
+    ? document.querySelector(".footnav a").getAttribute("href")
+    : null);
+  check("the chooser links to the privacy page", privacy !== null && /\/privacy\/$/.test(new URL(privacy, "http://x").pathname), String(privacy));
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  const overflow = await page.evaluate(() => {
+    const html = document.documentElement;
+    return Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
+  });
+  check("at 390px nothing overflows horizontally", overflow <= 0, `${overflow}px`);
+}
+
 async function runPage(browser, index, given, file, body, base) {
   // One context per page. The seller's stub route and the clipboard grant are
   // both context-scoped, and a page that failed a step must not hand the next
@@ -252,9 +361,22 @@ async function runPage(browser, index, given, file, body, base) {
     () => typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined"
   ));
   if (notStation) {
+    // The chooser is a page this suite does test: it is the page a reader
+    // lands on and the only control that chooses an origin. The privacy page
+    // carries no controls and is reported untested.
+    const isChooser = await page.evaluate(() => typeof STATIONS !== "undefined" && !!document.getElementById("picks"));
+    try {
+      if (isChooser) await checkChooser(page, url, check);
+    } catch (error) {
+      console.error("the browser test stopped early on " + given + ": " + error.message);
+      stopped = true;
+    }
+    // A checked chooser is a tested page, so it is tallied like one rather
+    // than reported as a path this suite could not read.
+    notStation = !isChooser;
     printPage();
     await context.close();
-    return { given, file, checks, stopped: false, notStation: true };
+    return { given, file, checks, stopped, notStation: !isChooser };
   }
 
   // Every expectation below is read out of the page's own payload. The suite
@@ -953,8 +1075,8 @@ async function main() {
     } catch (error) {
       if (given === "demo.html") {
         console.error("No page at " + file + ". Build one first:");
-        console.error("  python make_synthetic_feed.py _demo_feed --unserved-station");
-        console.error("  python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html");
+        console.error("  python make_synthetic_feed.py _demo_feed --unserved-station --third-origin");
+        console.error("  python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html");
       }
     }
     return { given, file, body };

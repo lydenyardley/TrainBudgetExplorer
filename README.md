@@ -324,8 +324,8 @@ with no change to the page. Prices come only from the reviewed Anytime Day
 Return selector; the builder refuses to run without a clean `.RST` file.
 
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station
-python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
 ```
 
@@ -638,13 +638,13 @@ stop. Useful variants: `--port 9000`, `--no-build` (serve what's there),
 --timetable feeds/timetable` for the real licensed feeds, and `--all-origins`
 for every priced station (slow at network scale — ADR-0024). The demo feed is
 rebuilt first if `_demo_feed/` is missing: `python make_synthetic_feed.py
-_demo_feed --unserved-station`.
+_demo_feed --unserved-station --third-origin`.
 
 The individual commands behind it, if you want them separately:
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station
-python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out demo.html
-python -m http.server 8000   # then open http://localhost:8000/demo.html
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin
+python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
+python -m http.server 8000 --directory _demo_site   # then open http://localhost:8000/
 python -m unittest discover -s tests -p "test_*.py"
 python feed_audit.py --feed _demo_feed --timetable _demo_feed
 python grantham_sweep.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20 --adults 2 --railcard "Two Together"

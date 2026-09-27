@@ -80,6 +80,14 @@ FARES = (
     ("0000006", "FDR", 1500, "00"),
 )
 
+# Off by default, because the base fixture is deliberately small and every
+# parser test counts its records. The published demo site needs it: the station
+# page's Change picker lists the other written stations, so a site pricing two
+# origins leaves the picker with one option and nothing to narrow (S01 made the
+# picker honest about what exists, which is only testable with three).
+THIRD_ORIGIN_FLOWS = (("0000020", "3000", "2000", "00000"),)
+THIRD_ORIGIN_FARES = (("0000020", "SDR", 950, ""),)
+
 # The shapes a real feed has and a tidy invented one does not. Off by default,
 # so tests about budget arithmetic read a feed with nothing puzzling in it.
 #
@@ -181,12 +189,15 @@ def build_synthetic_feed(
     include_unserved_station: bool = False,
     include_real_shapes: bool = False,
     include_restrictions: bool = False,
+    include_third_origin: bool = False,
 ) -> Path:
     """Write the fares feed.
 
     The unserved station carries a fare and no train. The real shapes add the
     awkward records: several route codes for one station pair, destinations with
     a fare and no station code, a flow with no fare, and a fare with no flow.
+    The third origin prices a departure from a station that is only ever a
+    destination, so a published site has a picker with more than one option.
     The restrictions file is off by default so existing fixtures keep their five
     files; tests for the publishable selector turn it on.
     """
@@ -200,6 +211,9 @@ def build_synthetic_feed(
         stations += REAL_SHAPE_STATIONS
         flows += REAL_SHAPE_FLOWS
         fares += REAL_SHAPE_FARES
+    if include_third_origin:
+        flows += THIRD_ORIGIN_FLOWS
+        fares += THIRD_ORIGIN_FARES
 
     flow_lines: list[str] = []
     for flow_id, origin, destination, route_code in flows:
@@ -775,6 +789,11 @@ if __name__ == "__main__":
         action="store_true",
         help="add several route codes, a stationless destination, and unmatched records",
     )
+    parser.add_argument(
+        "--third-origin",
+        action="store_true",
+        help="price a third station's departures, so a built site's station picker has options",
+    )
     arguments = parser.parse_args()
 
     if arguments.kind in {"fares", "both"}:
@@ -786,6 +805,7 @@ if __name__ == "__main__":
                 # The demo page now depends on the reviewed selector, which
                 # depends on a clean .RST file, so the demo feed carries one.
                 include_restrictions=True,
+                include_third_origin=arguments.third_origin,
             )
         )
     if arguments.kind in {"timetable", "both"}:
