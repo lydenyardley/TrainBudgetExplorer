@@ -1555,7 +1555,7 @@ def build_payload(
         "railcardAvailable": railcard_eligible_count > 0,
         "railcardRules": railcard_rules,
         "railcardParty": railcard_party,
-        "pricingBasis": "cheapest displayable standard-class fare found in the feed; choose return or outbound single mode, with ITX placeholders excluded and Advance singles labelled as train-specific",
+        "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
         "attribution": attribution,
