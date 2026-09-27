@@ -19,11 +19,13 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   :root {
     --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
     --ochre: #a65d00; --best: rgba(20, 80, 155, .07); --field: #fff;
+    --warn: #9a6700;
     --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #a7b2c0; --accent: #7db4f5;
-            --ochre: #f0b35b; --best: rgba(125, 180, 245, .12); --field: #1c2127; }
+            --ochre: #f0b35b; --best: rgba(125, 180, 245, .12); --field: #1c2127;
+            --warn: #f0b35b; }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -47,13 +49,19 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   input[type=search], input[type=number], select { width: 100%; padding: .5rem; border: 1px solid var(--line);
                                                     border-radius: .35rem; font: inherit; color: var(--fg);
                                                     background: var(--field); }
+  /* C29: one main landmark per route, so landmark navigation works. It wraps
+     the route's own content only; the back link and the footer stay outside it
+     as the navigation landmarks they are. */
+  main { display: block; }
   /* The footer, the back link and the footer nav are the same shape on every
-     route: a quiet rule above, 44px of touch target for a phone. */
+     route: a quiet rule above, 44px of touch target for a phone. The height is
+     on the anchor itself, not only on a container around it -- a nav that is
+     44px tall with a 24px link in it is not a 44px target (C25). */
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .85rem; }
   .footnav { margin-top: 1.5rem; }
-  .footnav a { display: inline-flex; align-items: center; min-height: 24px; color: inherit; }
-  @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
+  .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
+  .back-link a { color: var(--accent); }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
   /* S45: the synthetic-data state, in the same component on every route, so
@@ -76,24 +84,44 @@ _PRIVACY_TEMPLATE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy</title>
 <style>
-__SHARED_CSS__</style>
+__SHARED_CSS__
+  /* C30: a policy page is read, not skimmed past. The shared --h1 scales to
+     5rem for the fare page's budget heading; here it is sized for a document
+     title, and the brand line that used to sit above it is gone -- a small
+     uppercase eyebrow above a large heading reads as a marketing hero and
+     competes with the document's own title. */
+  :root { --h1: 2rem; --page-max: 42rem; }
+  h1 { margin: 0 0 1rem; }
+  h2 { font-size: 1.15rem; }
+</style>
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
 <nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
-<p class="brand">Rail Budget</p>
+<main>
 <h1>Privacy</h1>
-<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored anywhere: the budget you drag and the destination type you select never leave your device.</p>
+<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
+<h2>What stays in the address bar</h2>
+<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
+<ul>
+<li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
+<li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
+</ul>
+<p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
 <h2>What this site does</h2>
 <ul>
 __PRACTICES__</ul>
 <h2>Ticket links</h2>
 <p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
 <h2>Hosting</h2>
-<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>  <h2>Contact</h2>  <p class="muted">__CONTACT__</p>
-
-
+<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>
+<h2>Contact</h2>
+<p class="muted">__CONTACT__</p>
+</main>
+<footer>
 <p class="muted">__NOTE__</p>
+<nav class="footnav"><a href="__BASE__/">All stations</a></nav>
+</footer>
 </body>
 </html>
 """
@@ -105,7 +133,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Where can we go from __ORIGIN__ for &pound;__BUDGET__?</title>
+<title>Where can we go from __ORIGIN__ for up to &pound;__BUDGET__?</title>
 <style>
 __SHARED_CSS__
   /* The one thing this route changes: it is a wide page with a table, not a
@@ -156,7 +184,12 @@ __SHARED_CSS__
   .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
                                       text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
-  .segmented label, .choice-chip { position: relative; display: inline-flex; align-items: center; min-height: 2.25rem;
+  /* C23: these three families were 36px, below the 44px the row actions are
+     already held to. A control a thumb has to hit gets the same floor as the
+     others the project promised, and the floor is on the label a finger
+     actually touches, not on the input hidden inside it. */
+  .segmented label, .choice-chip { position: relative; display: inline-flex; align-items: center; justify-content: center;
+                                   min-height: 2.75rem; min-width: 2.75rem;
                                    padding: .4rem .7rem; border: 1px solid var(--line); border-radius: .45rem;
                                    color: var(--fg); background: var(--field); cursor: pointer; font-size: .9rem; }
   .segmented input, .choice-chip input { position: absolute; opacity: 0; pointer-events: none; }
@@ -169,9 +202,9 @@ __SHARED_CSS__
   .choice-chip span { pointer-events: none; }
   .choice-chip input { position: absolute; opacity: 0; }
   .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.25rem; margin: 0; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; margin: 0; }
   .filter-bar input[type=checkbox] { accent-color: var(--accent); }
-  .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.25rem; }
+  .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; }
   .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
   .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
   /* Generous after the controls, tight onto its table: the summary belongs to
@@ -197,7 +230,11 @@ __SHARED_CSS__
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   tr.best td { background: var(--best); }
   .restriction { font-size: .78rem; color: var(--muted); }
-  .restriction[data-status="restricted"] { color: #9a6700; }
+  /* C14: this was a hard-coded #9a6700, which the dark palette never
+     redefined -- so the one piece of text a reader must not misread measured
+     3.66:1 in dark, below AA. It is a token now, beside the palette's other
+     tokens, and each scheme sets it. */
+  .restriction[data-status="restricted"] { color: var(--warn); }
   .restriction[data-status="unrestricted"] { color: var(--muted); }
   .heritage-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
   .heritage-proof a { color: inherit; text-underline-offset: .15em; }
@@ -298,13 +335,14 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
-<h1 id="pageHeading">Where can we go for under <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
+<main>
+<h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
 <p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
 <p class="sub" id="firstUse">This page is about one station: <b>Change</b> in the heading moves to another one. Everything below narrows the destinations from here.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
-  <span class="origin-picker-label">Start from a different station</span>
+  <label class="origin-picker-label" for="originSearch">Start from a different station</label>
   <input id="originSearch" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
          aria-describedby="originStatus">
   <span id="originStatus" class="sr-only" role="status"></span>
@@ -393,6 +431,7 @@ __SYNTHETIC_BANNER__
   <h3>Exact DTD rule</h3>
   <p id="railcardRule"></p>
 </dialog>
+</main>
 
 <footer>
   <div id="attribution" hidden></div>
@@ -826,7 +865,11 @@ function renderEmpty(available, wanted, cap, what) {
   empty.replaceChildren();
   if (wanted.length) return;
   const why = document.createElement("p");
-  why.textContent = "No destinations within " + money(cap) + " " + what + typeLabel() + ".";
+  // C21: the predicate is price <= cap, so every place the budget is named
+  // says "up to". "Within" and "under" both read as exclusive to a reader
+  // comparing them with a fare that lands exactly on the ceiling, and the
+  // summary, the empty state and the heading have to agree.
+  why.textContent = "No destinations for up to " + money(cap) + " " + what + typeLabel() + ".";
   empty.append(why);
   const actions = document.createElement("p");
   actions.className = "empty-actions";
@@ -890,7 +933,7 @@ function render() {
   // dragged the budget and then looked at the tab list had no way to tell two
   // searches apart. Before the early returns, because a page with nothing
   // priced still names its origin and its budget.
-  document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
+  document.title = "Where can we go from " + DATA.origin.name + " for up to £" + budgetNumber.value + "?";
   const available = activeDestinations();
   // Before any price is read: the railcard changes the price of every row, and
   // a card ticked for a party of one is a number no reader could buy.
@@ -1026,8 +1069,8 @@ function render() {
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
   summary.textContent = available.length && wanted.length
-    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " within " + money(cap) + " " + what
-    : available.length ? "No destinations within " + money(cap) + " " + what : "";
+    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + what
+    : available.length ? "No destinations for up to " + money(cap) + " " + what : "";
   empty.hidden = wanted.length > 0;
   renderEmpty(available, wanted, cap, what);
   more.hidden = true;
@@ -1755,9 +1798,10 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
-<h1>Where can we go for &pound;__BUDGET__?</h1>
+<main>
+<h1 id="chooserHeading">Where can we go for up to &pound;<span id="chooserBudgetFigure">__BUDGET__</span>?</h1>
 <p class="brand">Rail Budget</p>
-<p class="sub">Pick the station you are starting from, and see every destination reachable by train inside the budget.</p>
+<p class="sub">Pick the station you are starting from, and see every destination reachable by train for up to the budget in the heading.</p>
 <p class="sub">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
 <label class="caption" for="chooserBudget">Starting budget</label>
 <input id="chooserBudget" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric">
@@ -1769,6 +1813,7 @@ __SYNTHETIC_BANNER__
 <p id="nomatch" hidden></p>
 <p id="capMessage" class="tag" hidden></p>
 <p class="tag">__NOTE__</p>
+</main>
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
 <script>
 const STATIONS = __STATIONS__;

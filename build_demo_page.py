@@ -1844,6 +1844,21 @@ def render_privacy(
     # not have.
     practices = [
         "No cookies are set by this site.",
+        # C10: the page used to claim the budget and the selected types "never
+        # leave your device" while also writing both into the address, and the
+        # address is in every request the host logs. The honest statement is
+        # that the state is client-side and is disclosed where it is sent: in
+        # the URL, to the host's logs and to anyone a link is shared with. The
+        # full explanation is its own section on the page; this is the list
+        # entry, so it states the fact and points there rather than saying the
+        # same paragraph twice.
+        (
+            "Your search is kept in the page's web address, so a refresh or a "
+            "shared link returns the same results. It is never sent to this "
+            "site, which has no server, but the host serving these files sees "
+            "it in its request logs. What stays in the address bar, below, "
+            "explains this in full."
+        ),
         (
             "This build injects an analytics snippet, so visits are measured by "
             "that snippet. The reviewed plan it is allowed under: it "

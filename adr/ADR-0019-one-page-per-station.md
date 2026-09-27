@@ -180,7 +180,7 @@ Two refinements landed after the picker itself:
   It says so in its own first sentence — "We couldn't price any journeys from X
   (CODE) in this feed" — links the chooser when other priced stations exist, says
   "nothing was priced from any station" when none did, hides the controls, and
-  leaves the budget summary empty rather than writing "No destinations within £20",
+  leaves the budget summary empty rather than writing "No destinations for up to £20",
   which would imply the budget had filtered something. The difference matters on
   exactly the pages the synthetic feed cannot exercise: with real data, an origin
   with no priced flows is a real station a real reader may start from.
