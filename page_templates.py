@@ -33,12 +33,9 @@ PRIVACY = """<!doctype html>
 <p class="brand">Rail Budget</p>
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored anywhere: the budget you drag and the destination type you select never leave your device.</p>
-<h2>What this site does not do</h2>
+<h2>What this site does</h2>
 <ul>
-  <li>No cookies are set by this site.</li>
-  <li>No analytics run. If the operator later adds analytics, this page will name them here first.</li>
-  <li>The site code does not intentionally collect visit data.</li>
-</ul>
+__PRACTICES__</ul>
 <h2>Ticket links</h2>
 <p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
 <h2>Hosting</h2>

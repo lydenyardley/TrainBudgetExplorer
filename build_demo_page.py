@@ -44,7 +44,13 @@ from atoc_fares import (
 from atoc_timetable import TimetableDb
 from destination_coverage import UnsourcedReport, unnameable_from_tally
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
-from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER, pairing_warning, ticket_link
+from retailer import (
+    AFFILIATE_NETWORKS,
+    DEFAULT_PROVIDER,
+    DISCLOSURE,
+    pairing_warning,
+    ticket_link,
+)
 
 EVERYTHING_PENCE = 1_000_000
 DEPARTURE_LIMIT = 5
@@ -107,6 +113,21 @@ METADATA_NAME = "metadata.json"
 # told to check the fare again, rather than the point at which the number is
 # wrong: fares change, they do not expire.
 STALE_AFTER_DAYS = 14
+
+# S38: the measurement plans this project would accept, written out rather than
+# left implied. Each is a plan a reader can be told about in one sentence, and
+# each is a decision rather than a default: switching analytics on without
+# naming one of these is refused, so a familiar flag cannot quietly turn
+# measurement on. None is in use -- no snippet is configured -- and the gate is
+# here so that turning one on is a recorded act.
+DEFAULT_PRIVACY_CONTACT = "the deployment operator via its public repository issue tracker"
+
+MEASUREMENT_PLANS = {
+    "aggregate-referrer-counts": (
+        "counts referrers in aggregate, keeps no persistent identifier, sets no "
+        "cookie, and retains nothing beyond a short rolling window"
+    ),
+}
 # The downloader records its own non-secret provenance (URL, size, hash, and
 # timestamp) in a manifest beside the feeds it writes. A feed downloaded
 # without a hand-written metadata.json still has that, so a real download can
@@ -1002,6 +1023,20 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "notice). Compose them, e.g. --notices rdg,ogl,accuracy",
     )
     parser.add_argument(
+        "--privacy-contact",
+        default=None,
+        help="who to contact about this site, on the privacy page (overrides PRIVACY_CONTACT)",
+    )
+    parser.add_argument(
+        "--measurement-plan",
+        choices=sorted(MEASUREMENT_PLANS),
+        default=None,
+        help=(
+            "the reviewed measurement plan an analytics snippet is allowed under "
+            "(ADR-0032); a snippet without one is refused"
+        ),
+    )
+    parser.add_argument(
         "--analytics-snippet",
         default=None,
         help="file whose contents are injected before </body>, for counting referrers",
@@ -1646,13 +1681,130 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
     )
 
 
-def render_privacy(note: str, base_path: str = "", contact: str = "") -> str:
+def site_features(
+    *,
+    analytics: bool,
+    link_mode: str,
+    network: str | None,
+    disclosure: str | None,
+    measurement: str | None = None,
+) -> dict:
+    """What this build actually ships, as the facts the notice must state.
+
+    Read from the same values the pages are built from rather than from a
+    checklist somebody maintains beside them, so the notice cannot describe a
+    site this build did not produce (S36). Every key here is a switch a reader
+    would want disclosed.
+    """
+    return {
+        "analytics": analytics,
+        "linkMode": link_mode,
+        "affiliate": network or None,
+        # A tracked link is a redirect that tells the network which page sent
+        # the reader. retailer.ticket_link attaches the disclosure itself when
+        # a network and an advertiser id are both configured, so this is read
+        # the same way: a network that is on is a link that is wrapped.
+        "trackedLinks": bool(network),
+        "disclosure": disclosure or "",
+        # The plan, not a boolean: a reader is told what is measured and for
+        # how long, and that sentence has to come from somewhere (S38).
+        "measurement": measurement or "",
+    }
+
+
+def privacy_gaps(features: dict, contact: str) -> list[str]:
+    """What the notice would have to say and does not, one line per gap.
+
+    Fail closed (S36, S37): a public build that ships a behaviour nobody can
+    be told about is refused rather than published with a notice that has
+    quietly stopped matching it.
+    """
+    gaps: list[str] = []
+    if not contact.strip():
+        gaps.append(
+            "no privacy contact is configured, so nobody can be told about a "
+            "problem with this site (set PRIVACY_CONTACT or pass --privacy-contact)"
+        )
+    if features.get("analytics") and not features.get("measurement"):
+        gaps.append(
+            "an analytics snippet is injected but no measurement plan is "
+            "recorded, so nobody can be told what it measures; pass "
+            "--measurement-plan to name a reviewed plan (ADR-0032)"
+        )
+    if features.get("trackedLinks") and not features.get("disclosure"):
+        gaps.append(
+            "ticket links are wrapped by an affiliate network but no disclosure "
+            "is set, so the pages would not say a click can earn a commission"
+        )
+    return gaps
+
+
+def release_gate_problems(
+    features: dict,
+    *,
+    public: bool,
+    notices: str | list[str] | None,
+    contact: str,
+) -> list[str]:
+    """The conditions a public release has to meet before it can be published.
+
+    S37: these were prose in a checklist, so a familiar flag could turn on a
+    feature whose licence, disclosure or contact condition had not been met.
+    They are refusals now, and a synthetic demo build -- which publishes no real
+    fares and carries no licence obligation -- is exempt by construction rather
+    than by a flag somebody can forget to pass.
+    """
+    problems = privacy_gaps(features, contact)
+    if not public:
+        return problems
+    if not notices:
+        problems.append(
+            "a public build carries no licence or attribution notice; pass "
+            "--notices (or --attribution) so the obligations travel with the site"
+        )
+    return problems
+
+
+def render_privacy(
+    note: str,
+    base_path: str = "",
+    contact: str = "",
+    features: dict | None = None,
+) -> str:
     if not contact.strip():
         raise ValueError("a privacy contact is required before publishing the privacy page")
+    features = features or {}
+    # The three sentences a reader's decision depends on, written from what the
+    # build ships. A behaviour that is on is named; one that is off is named as
+    # off. Either way the page cannot claim a privacy practice the build does
+    # not have.
+    practices = [
+        "No cookies are set by this site.",
+        (
+            "This build injects an analytics snippet, so visits are measured by "
+            "that snippet. The reviewed plan it is allowed under: it "
+            + features.get("measurement", "has none recorded, which should not "
+              "happen -- a build cannot inject a snippet without one (ADR-0032).")
+            if features.get("analytics")
+            else "No analytics run. If the operator later adds analytics, this page will name them here first."
+        ),
+        (
+            "Ticket buttons carry a tracked link, so the seller is told which page sent "
+            "the reader. The fare pages say so in their footer."
+            if features.get("trackedLinks")
+            else "The site code does not intentionally collect visit data."
+        ),
+    ]
+    if features.get("affiliate"):
+        practices.append(
+            "Ticket buttons pass through the " + features["affiliate"] +
+            " affiliate network, which may record the click and the fare shown."
+        )
     return (
         PRIVACY.replace("__BASE__", base_path)
         .replace("__NOTE__", note)
         .replace("__CONTACT__", contact)
+        .replace("__PRACTICES__", "".join(f"  <li>{item}</li>\n" for item in practices))
     )
 
 
@@ -2049,6 +2201,54 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as error:
             print(f"could not read {args.analytics_snippet!r}: {error}", file=sys.stderr)
             return 2
+    if analytics and not args.measurement_plan:
+        print(
+            "error: an analytics snippet was given without --measurement-plan, so the "
+            "build would ship measurement nobody has decided what it measures or how "
+            "long it is kept. Choose one of: " + ", ".join(sorted(MEASUREMENT_PLANS)) +
+            " (ADR-0032), or drop --analytics-snippet to publish without measurement.",
+            file=sys.stderr,
+        )
+        return 2
+    # S36, S37: what this build ships, described once, and the conditions a
+    # release has to meet before it can be published. A synthetic demo site is
+    # exempt from the licence notice because it publishes no real fares; every
+    # other condition applies to both, because a reader reads both.
+    # The affiliate facts come from the same pair of flags retailer.ticket_link
+    # needs before it wraps a link, so the notice cannot say a link is tracked
+    # when the build would not wrap it, or the reverse (S36).
+    affiliate = (
+        args.affiliate_network if (args.affiliate_network and args.advertiser_id) else None
+    )
+    features = site_features(
+        analytics=bool(analytics),
+        link_mode=args.link_mode,
+        network=affiliate,
+        disclosure=DISCLOSURE if affiliate else None,
+        measurement=args.measurement_plan,
+    )
+    public = price_source != DEFAULT_PRICE_SOURCE
+    privacy_contact = args.privacy_contact or os.environ.get("PRIVACY_CONTACT", "")
+    if not privacy_contact and not public:
+        # A synthetic demo site prices invented fares and is not published at
+        # all. It still names who to contact rather than leaving the page
+        # blank, and it says plainly that the address is the operator's issue
+        # tracker rather than inventing a person. A public build gets no such
+        # fallback: below, an unset contact stops the release.
+        privacy_contact = DEFAULT_PRIVACY_CONTACT
+    problems = release_gate_problems(
+        features,
+        public=public,
+        notices=notices_or_attribution(args),
+        contact=privacy_contact,
+    )
+    if problems:
+        print(
+            "error: this build cannot be published as configured:\n"
+            + "".join(f"  - {problem}\n" for problem in problems),
+            file=sys.stderr,
+        )
+        return 2
 
     out = Path(args.out)
     # The picker's station list is the written outputs, so it is attached after
@@ -2229,11 +2429,7 @@ def main(argv: list[str] | None = None) -> int:
         privacy = out_dir / "privacy" / "index.html"
         privacy.parent.mkdir(parents=True, exist_ok=True)
         privacy.write_text(
-            render_privacy(
-                note,
-                base_path,
-                os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
-            ),
+            render_privacy(note, base_path, privacy_contact, features),
             encoding="utf-8",
         )
         print(f"wrote {privacy}")
@@ -2314,14 +2510,7 @@ def main(argv: list[str] | None = None) -> int:
     # The footer links to the privacy page, so a build writes it beside the
     # pages rather than shipping a link to nowhere.
     privacy = out_dir / "privacy" / "index.html"
-    write_page_atomic(
-        privacy,
-        render_privacy(
-            note,
-            base_path,
-            os.environ.get("PRIVACY_CONTACT", "the deployment operator via its public repository issue tracker"),
-        ),
-    )
+    write_page_atomic(privacy, render_privacy(note, base_path, privacy_contact, features))
     print(f"wrote {privacy}")
     # Route integrity (S03), same rule as the full build.
     broken = crawl_internal_links(out_dir, base_path)

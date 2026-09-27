@@ -449,6 +449,185 @@ class DemoPageTest(unittest.TestCase):
             ("260921", "261211"),
         )
 
+    def test_the_privacy_page_describes_the_build_that_was_made(self) -> None:
+        # S36: the notice is generated from the same feature configuration the
+        # pages are built from, so it cannot describe a different site.
+        plain = build_demo_page.site_features(
+            analytics=False, link_mode="fallback", network=None, disclosure=None
+        )
+        measured = build_demo_page.site_features(
+            analytics=True, link_mode="fallback", network=None, disclosure="analytics snippet"
+        )
+        tracked = build_demo_page.site_features(
+            analytics=False, link_mode="fallback", network="affiliate-x", disclosure="Tracked"
+        )
+        quiet = build_demo_page.render_privacy("note", "/base", "a@b.test", plain)
+        self.assertIn("No analytics run", quiet)
+        self.assertNotIn("__PRACTICES__", quiet)
+        self.assertIn("injects an analytics snippet", build_demo_page.render_privacy("note", "", "a@b.test", measured))
+        self.assertIn(
+            "affiliate network",
+            build_demo_page.render_privacy("note", "", "a@b.test", tracked),
+        )
+        # The contact is required whatever the features are, and the base path
+        # still prefixes the way back.
+        with self.assertRaises(ValueError):
+            build_demo_page.render_privacy("note", "", "   ", plain)
+        self.assertIn('href="/base/"', quiet)
+
+    def test_a_public_build_cannot_publish_an_incomplete_notice(self) -> None:
+        # S36, S37: fail closed. Each gap is named, because a refusal an
+        # operator cannot act on is a refusal they will work around.
+        features = build_demo_page.site_features(
+            analytics=False, link_mode="fallback", network=None, disclosure=None
+        )
+        self.assertEqual(
+            build_demo_page.release_gate_problems(features, public=False, notices=None, contact="a@b.test"),
+            [],
+        )
+        self.assertEqual(
+            build_demo_page.privacy_gaps(features, "  "),
+            [
+                "no privacy contact is configured, so nobody can be told about a problem "
+                "with this site (set PRIVACY_CONTACT or pass --privacy-contact)"
+            ],
+        )
+        tracked = build_demo_page.site_features(
+            analytics=False, link_mode="fallback", network="affiliate-x", disclosure=None
+        )
+        self.assertIn(
+            "no disclosure is set",
+            " ".join(build_demo_page.privacy_gaps(tracked, "a@b.test")),
+        )
+        # A deep link is not tracking: it hands the seller the search the
+        # reader was reading and the page says so. Only the network tracks.
+        deep = build_demo_page.site_features(
+            analytics=False, link_mode="deep", network=None, disclosure=None
+        )
+        self.assertEqual(build_demo_page.privacy_gaps(deep, "a@b.test"), [])
+        # Measurement without a plan is a gap, and a plan closes it.
+        self.assertIn(
+            "no measurement plan is recorded",
+            " ".join(
+                build_demo_page.privacy_gaps(
+                    build_demo_page.site_features(
+                        analytics=True, link_mode="fallback", network=None, disclosure=None
+                    ),
+                    "a@b.test",
+                )
+            ),
+        )
+        self.assertEqual(
+            build_demo_page.privacy_gaps(
+                build_demo_page.site_features(
+                    analytics=True,
+                    link_mode="fallback",
+                    network=None,
+                    disclosure=None,
+                    measurement="aggregate-referrer-counts",
+                ),
+                "a@b.test",
+            ),
+            [],
+        )
+        # A public build without a licence notice is refused; a synthetic one is
+        # exempt because it publishes no real fares.
+        self.assertEqual(
+            [
+                problem
+                for problem in build_demo_page.release_gate_problems(
+                    features, public=True, notices=None, contact="a@b.test"
+                )
+                if "licence" in problem
+            ],
+            [
+                "a public build carries no licence or attribution notice; pass --notices "
+                "(or --attribution) so the obligations travel with the site"
+            ],
+        )
+        self.assertEqual(
+            build_demo_page.release_gate_problems(
+                features, public=True, notices=["a notice"], contact="a@b.test"
+            ),
+            [],
+        )
+
+    def test_analytics_needs_a_written_measurement_plan(self) -> None:
+        # S38: the flag cannot be reached without naming a plan, and the plans
+        # are written out rather than implied.
+        self.assertIn("aggregate-referrer-counts", build_demo_page.MEASUREMENT_PLANS)
+        self.assertIn("no persistent identifier", build_demo_page.MEASUREMENT_PLANS["aggregate-referrer-counts"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            snippet = root / "snippet.js"
+            snippet.write_text("window.x = 1;", encoding="utf-8")
+            out = root / "site" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stderr(buffer):
+                code = build_demo_page.main(
+                    ["--feed", str(feed), "--out", str(out), "--analytics-snippet", str(snippet)]
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("--measurement-plan", buffer.getvalue())
+            # With a plan named, the same build proceeds.
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--out", str(out),
+                        "--analytics-snippet", str(snippet),
+                        "--measurement-plan", "aggregate-referrer-counts",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            self.assertIn("injects an analytics snippet", (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8"))
+
+    def test_a_real_source_build_is_refused_until_it_carries_a_notice(self) -> None:
+        # S37: a build that names a real price source publishes real fares, so
+        # the licence notice and somebody to contact are conditions of the
+        # build rather than a step in a checklist. Both are named in the
+        # refusal, because a refusal nobody can act on is one they route
+        # around.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            out = root / "site" / "index.html"
+            refused = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(refused):
+                code = build_demo_page.main(
+                    ["--feed", str(feed), "--out", str(out), "--price-source", "the RSP feed"]
+                )
+            self.assertEqual(code, 2)
+            self.assertFalse(out.exists(), "a refused build writes no page")
+            self.assertIn("no privacy contact is configured", refused.getvalue())
+            self.assertIn("carries no licence or attribution notice", refused.getvalue())
+            # A notice without a contact is still refused: both are conditions.
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(refused):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--out", str(out),
+                        "--price-source", "the RSP feed",
+                        "--notices", "rdg,ogl,accuracy",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("no privacy contact is configured", refused.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--out", str(out),
+                        "--price-source", "the RSP feed",
+                        "--notices", "rdg,ogl,accuracy",
+                        "--privacy-contact", "privacy@b.test",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("privacy@b.test", privacy)
+
     def test_a_shortlist_is_a_list_of_places_and_not_a_booking(self) -> None:
         # S26: the decision the page exists for is which place, so a reader can
         # keep a few, compare them on the price currently shown, and hand the
@@ -640,7 +819,14 @@ class DemoPageTest(unittest.TestCase):
             out = Path(tmp) / "site" / "index.html"
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
-                code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--out", str(out),
+                        "--notices", "accuracy",
+                        "--privacy-contact", "a@b.test",
+                    ]
+                )
             self.assertEqual(code, 0)
             page = station_page(out).read_text(encoding="utf-8")
             self.assertIn("the National Rail Data Portal DTD fares feed", page)
@@ -674,7 +860,14 @@ class DemoPageTest(unittest.TestCase):
             out = Path(tmp) / "site" / "index.html"
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
-                code = build_demo_page.main(["--feed", str(archive), "--out", str(out)])
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(archive),
+                        "--out", str(out),
+                        "--notices", "accuracy",
+                        "--privacy-contact", "a@b.test",
+                    ]
+                )
             self.assertEqual(code, 0)
             page = station_page(out).read_text(encoding="utf-8")
             self.assertIn("the National Rail Data Portal DTD fares feed", page)
@@ -1872,7 +2065,14 @@ class PartialMetadataTest(unittest.TestCase):
         out.parent.mkdir(parents=True)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = build_demo_page.main(["--feed", str(feed), "--out", str(out)])
+            code = build_demo_page.main(
+                [
+                    "--feed", str(feed),
+                    "--out", str(out),
+                    "--notices", "ogl",
+                    "--privacy-contact", "a@b.test",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertIn("RSP fares feed", station_page(out).read_text(encoding="utf-8"))
 
@@ -1889,7 +2089,13 @@ class PartialMetadataTest(unittest.TestCase):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = build_demo_page.main(
-                ["--feed", str(feed), "--out", str(out), "--price-source", "the 2026 RSP download"]
+                [
+                    "--feed", str(feed),
+                    "--out", str(out),
+                    "--price-source", "the 2026 RSP download",
+                    "--notices", "ogl",
+                    "--privacy-contact", "a@b.test",
+                ]
             )
         self.assertEqual(code, 0)
         self.assertIn("the 2026 RSP download", station_page(out).read_text(encoding="utf-8"))

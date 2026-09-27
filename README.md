@@ -461,8 +461,16 @@ python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origi
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
   --link-mode deep                                                  # opt in once a link is verified
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
-  --analytics-snippet counter.html                                  # counting referrers
+  --analytics-snippet counter.html \
+  --measurement-plan aggregate-referrer-counts                       # opt in to measurement
 ```
+
+A snippet is refused without `--measurement-plan`: the plan names what the
+snippet measures, what it keeps, and for how long, and the privacy page prints
+that sentence. There is one plan today and nothing is measured — turning
+measurement on is a decision, recorded in
+`adr/ADR-0032-measurement-needs-a-written-plan.md`, not a flag somebody reaches
+for.
 
 Neither seller's link is currently known to land on a search. To see that stated
 rather than claimed:
@@ -564,9 +572,26 @@ in parallel processes (each origin is independent). In `--fast-all-origins`
 mode, workers use the persisted per-origin fare indexes described above. On a
 host that does not serve the site at its domain root — a GitHub
 Pages project site, most shared hosting — add `--base-path <name>` so every
-internal link resolves. Set `PRIVACY_CONTACT` to the deployment operator's
-monitored contact route before a public deployment; without it, the generated
-privacy page uses the deployment operator's public repository issue tracker.
+internal link resolves.
+
+**A public build is refused until it can answer for itself.** A build whose
+prices come from a real feed (anything but the synthetic default) needs both a
+licence or attribution notice and somebody to contact, and it stops before
+writing a page if either is missing:
+
+```
+PRIVACY_CONTACT=privacy@example.org python build_demo_page.py \
+  --feed feeds/fares --origin GRA --notices rdg,ogl,accuracy --out _site/index.html
+```
+
+The refusal names both conditions and the flag or variable that satisfies each,
+because a gate an operator cannot act on is one they route around. A synthetic
+demo build is exempt from the notice — it publishes invented fares and credits
+nobody — and names the deployment operator's public repository issue tracker as
+its contact so its page is never blank. The privacy page's list of what the
+site does is generated from the same feature configuration the pages are built
+from, so it cannot describe a site this build did not ship
+(`adr/ADR-0032`; gates S36–S38 in the re-envision audit).
 
 Every build also names the priced destinations no source could classify — the
 stations the page's settlement filters therefore cannot return. The list is a
@@ -597,9 +622,10 @@ what they found either way.
 credit without `--notices` (or a custom `--attribution`) naming the licence
 actually held; a price line without the feed's metadata or `--price-source`
 saying where it came from; `--link-mode deep` without a verified link
-(ADR-0017); or affiliate tracking without the disclosure the page carries when
-`payload.tracked` is set. A public price also needs the reviewed selector, and
-the builder is wired to it now: every price in a page comes from
+(ADR-0017); an analytics snippet without a written measurement plan (ADR-0032);
+or a public build without its licence notice and a privacy contact, which stops
+the build rather than waiting to be noticed. A public price also needs the
+reviewed selector, and the builder is wired to it now: every price in a page comes from
 `publishable_destinations_within`, and the build refuses to write anything at all
 when the fares feed carries no readable `.RST` restriction file (ADR-0025). Each
 claim has a switch, and the page states what it
