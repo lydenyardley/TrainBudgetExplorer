@@ -899,19 +899,18 @@ class TimetableDb:
     ) -> Journey | None:
         """The best one-change journey leaving on one schedule at one time.
 
-        The twin of _one_change_journey, and it reads the same three indexes
-        that twin does: the schedule's crs chain, the per-destination position
-        map, and the per-station change times. It used to resolve each
-        interchange with crs_for_tiploc, look the connection time up with
-        connection_minutes_at (a linear scan over every station), and find the
-        onward arrival by walking every later stop of every candidate onward
-        service. On a real origin that last scan was 283 million stop reads for
-        a single origin-to-destination pair, so one station page cost hours.
-        departures() calls this per destination, which is what made a full
-        station set impossible. The indexes are what _one_change_journey has
-        always used; keeping the twins reading the same ones is the whole fix,
-        and the results are byte-identical (atoc_timetable tests, and the
-        42x measured on the real feed).
+        The one place the one-change search is written. best_journey() drives
+        it over every origin departure through _one_change_journey, and
+        departures() calls it per departure directly, so the two share one
+        implementation. It reads three indexes built once in _ensure_indexes:
+        the schedule's crs chain, a per-destination position map, and a
+        per-station change-time dict. It used to resolve each interchange with
+        crs_for_tiploc, look the connection time up with connection_minutes_at
+        (a linear scan over every station), and find the onward arrival by
+        walking every later stop of every candidate onward service. On a real
+        origin that last scan was 283 million stop reads for a single
+        origin-to-destination pair, so one station page cost hours. The results
+        are unchanged: byte-identical to the scan it replaced.
         """
         crs_chain = self._schedule_crs[schedule_index]
         for interchange_index in range(stop_index + 1, len(schedule.stops)):
@@ -989,57 +988,26 @@ class TimetableDb:
         connection_minutes: int | None,
         max_onward: int | None,
     ) -> Journey | None:
+        """The best one-change journey from the origin to the destination.
+
+        Drives _one_change_from over every departure the origin makes. The
+        per-departure one-change search lives in exactly one place, in
+        _one_change_from, so best_journey() and departures() cannot read the
+        data differently -- the divergence that let an 81-second un-indexed
+        copy sit beside a 1.7-second indexed one for a whole release.
+        """
         for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
             if best is not None and departure >= best.arrival:
                 break
-            schedule = self.schedules[schedule_index]
-            crs_chain = self._schedule_crs[schedule_index]
-            for interchange_index in range(stop_index + 1, len(schedule.stops)):
-                interchange_stop = schedule.stops[interchange_index]
-                interchange_crs = crs_chain[interchange_index]
-                if interchange_crs is None or interchange_crs in {origin_crs, destination_crs}:
-                    continue
-                arrival_at_interchange = interchange_stop.alight
-                if arrival_at_interchange is None:
-                    continue
-                if arrival_at_interchange < departure:
-                    arrival_at_interchange += MINUTES_PER_DAY
-                wait = (
-                    connection_minutes
-                    if connection_minutes is not None
-                    else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
-                )
-                earliest_onward = arrival_at_interchange + max(wait, 1)
-                if best is not None and earliest_onward >= best.arrival:
-                    continue
-                entries = self._departures.get(interchange_crs)
-                if not entries:
-                    continue
-                times = self._departure_times[interchange_crs]
-                start = bisect.bisect_left(times, earliest_onward)
-                window = entries[start:] if max_onward is None else entries[start : start + max_onward]
-                for onward_departure, onward_index, onward_stop_index in window:
-                    if onward_index == schedule_index:
-                        continue
-                    onward_schedule = self.schedules[onward_index]
-                    # Positions of this destination on the onward service, after
-                    # the boarding stop: the same train may call there more than
-                    # once, and each call is a candidate arrival.
-                    positions = self._schedule_dest_stops[onward_index].get(destination_crs)
-                    if positions is None:
-                        continue
-                    for later in positions[bisect.bisect_right(positions, onward_stop_index):]:
-                        stop = onward_schedule.stops[later]
-                        arrival = stop.alight
-                        if arrival is None:
-                            continue
-                        if arrival < onward_departure:
-                            arrival += MINUTES_PER_DAY
-                        legs = (
-                            Leg(schedule.train_uid, origin_crs, interchange_crs, departure, arrival_at_interchange),
-                            Leg(onward_schedule.train_uid, interchange_crs, destination_crs, onward_departure, arrival),
-                        )
-                        journey = Journey(origin_crs, destination_crs, departure, arrival, legs)
-                        if best is None or _rank(journey) < _rank(best):
-                            best = journey
+            best = self._one_change_from(
+                origin_crs,
+                destination_crs,
+                departure,
+                self.schedules[schedule_index],
+                schedule_index,
+                stop_index,
+                best,
+                connection_minutes,
+                max_onward,
+            )
         return best
