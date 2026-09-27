@@ -802,6 +802,23 @@ class DemoPageTest(unittest.TestCase):
             render.index("selectedDestinationTypes()"),
         )
 
+    def test_the_budget_ceiling_covers_the_party_price_too(self) -> None:
+        # The ceiling is the most a reader can be asked to consider, and two
+        # adults cost twice one. A ceiling set by the single fare is a budget
+        # nobody reading the party price could type: on a page with one
+        # destination -- Nottingham in the synthetic feed, and any station that
+        # prices one place -- it caps the budget at that destination's adult
+        # fare, and the "Two adults" control shows nothing at any budget the
+        # page allows. Found by sweeping a published two-station site.
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        ceiling = script.split("function budgetCeiling()")[1].split("\n}")[0]
+        self.assertIn('unit() === "party"', ceiling)
+        self.assertIn("d.partyPence : d.adultPence", ceiling)
+        # The railcard is not in the ceiling: it lowers prices, so a ceiling
+        # that moved when the box was ticked would clamp a budget the reader
+        # had already chosen.
+        self.assertNotIn("railcardPence", ceiling)
+
     def test_a_mode_with_no_fares_says_so_instead_of_going_blank(self) -> None:
         # An Anytime Day Return is sold on a handful of interurban routes, so
         # most real origins have none of them: Kings Cross prices 171 returns

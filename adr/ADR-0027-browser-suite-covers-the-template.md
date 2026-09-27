@@ -66,12 +66,34 @@ checks hold on a real station's page and on the synthetic one — which is what
 makes a sweep worth having: pointing the suite at the built station set finds
 origin-specific template bugs (a page whose cheapest fare is above the opening
 budget, a page carrying no destination of a type the checks expect) in one
-run, rather than one page at a time by hand. Each page gets its own browser
+run, rather than one page at a time by hand. A path that is a **directory** is
+swept: every `index.html` beneath it becomes a page of the run, so a whole
+published station set is one command. Each page gets its own browser
 context, so the seller's stub route, the clipboard grant, and the budget,
 filters and mode a reader left behind are per page rather than carried over.
 A path that is not there is a failed page and not a failed run: the other
 pages are still driven and still reported, and the summary names the ones
 that failed.
+
+**A check a page has nothing to exercise is a third outcome, and which
+outcome it is depends on the run.** Some checks need the page to *contain*
+something: a destination carrying a UNESCO property, a small town, two
+destination-type chips, more than one option in the picker. On the demo page
+— the only page CI builds — a page without those is a failure, because a check
+that never ran is the thing this project keeps refusing to let pass quietly.
+Sweeping a station set it is a skip: most real stations have no UNESCO
+property, and failing them would be failing pages for their own size.
+`--sweep` chooses which, and the run always reports how many checks it
+skipped, so a sweep cannot pass by exercising nothing. `--max` bounds a sweep
+and says on stderr how many pages it left out, for the same reason.
+
+The sweep earned its keep the first time it ran, on a two-station build: it
+found a budget bug, not a test artefact. On a page with one destination the
+ceiling the page allows is that destination's adult fare while the party fare
+is double it, so the "Two adults" control could not show a row at any budget
+the page accepted. The suite had been reading the ceiling before selecting
+the party unit, reporting the rows as unreachable, and then waiting thirty
+seconds for a button that could never appear.
 
 One check drives a state the page's own feed may not contain. Most real
 origents price no unrestricted Anytime Day Return at all — King's Cross has

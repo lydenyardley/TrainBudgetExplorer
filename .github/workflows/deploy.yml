@@ -185,13 +185,26 @@ jobs:
         # a page on every run, and it is a build with a timetable, so the
         # times and changes columns are driven by something.
         #
-        # The other is _site/index.html: the page this run is about to
-        # publish, driven in the same run, so the page that ships is one
-        # somebody opened. It is a prices-only build, which the demo page is
-        # not, so the two cover different ground. The site build above only
-        # runs when the feed changed, so on an unchanged run there is no
-        # published page to drive and the suite runs against the demo page
-        # alone -- rather than against a file that is not there.
+        # The other is whatever the site build wrote: _site/index.html today,
+        # driven in the same run, so the page that ships is one somebody
+        # opened. It is a prices-only build, which the demo page is not, so the
+        # two cover different ground. A full-network build writes a station set
+        # under _site/from instead, and the whole set is swept -- the suite
+        # reads its expectations out of each page, so a sweep of it is a search
+        # for origin-specific template bugs rather than a second copy of the
+        # same assertions.
+        #
+        # --sweep is what makes a station set sweepable: a check a page has
+        # nothing to exercise (no UNESCO destination, one option in the picker)
+        # is a skip in a sweep and a failure in the single-page gate, so the
+        # gate keeps its teeth and the sweep does not fail every small station
+        # for being small. The run reports how many checks it skipped, so a
+        # sweep cannot pass by exercising nothing.
+        #
+        # The site build above only runs when the feed changed, so on an
+        # unchanged run there is no published page to drive and the suite runs
+        # against the demo page alone -- rather than against a file that is
+        # not there.
         env:
           SITE_BUILT: ${{ steps.feed_check.outputs.changed }}
         run: |
@@ -206,14 +219,19 @@ jobs:
             exit 1
           fi
           PAGES=(demo.html)
+          SWEEP=""
           if [ "$SITE_BUILT" = "true" ]; then
             if [ ! -s _site/index.html ]; then
               echo "::error title=browser test::the site was built but there is no page at _site/index.html, so the page that ships was not tested in a browser"
               exit 1
             fi
             PAGES+=(_site/index.html)
+            if [ -d _site/from ]; then
+              PAGES+=(_site/from)
+              SWEEP="--sweep"
+            fi
           fi
-          npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}"
+          npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
 
       - name: Save the successful feed manifest and build fingerprint
         if: steps.feed_check.outputs.changed == 'true'

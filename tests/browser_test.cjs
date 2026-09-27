@@ -11,11 +11,21 @@
  *     npx --yes --package playwright node browser_test.cjs
  *     node browser_test.cjs            # when playwright is installed locally
  *     node browser_test.cjs demo.html _site/index.html
+ *     node browser_test.cjs _site/from          # sweep a published site
+ *     node browser_test.cjs _site/from --max 20 # and stop after twenty
  *
  * Every expectation is read out of the page under test, so the suite is a
  * test of the template rather than of a station, and one run can sweep the
  * pages a build wrote: each path gets its own context and its own result,
  * and the run fails if any page fails.
+ *
+ * A path that is a directory is swept: every index.html beneath it becomes a
+ * page of the run, in name order, which is how a whole published station set
+ * is driven in one command. Every one of them has to be a station page -- a
+ * chooser or a privacy page passed here stops the run early and fails it,
+ * which is the right answer for a page that is not what the suite tests.
+ * --max bounds a sweep and says on stderr how many pages it left out, because
+ * a run that quietly tested twenty of two thousand has not tested the site.
  *
  * Exit codes: 0 every page behaves, 1 one does not, 2 playwright is
  * unavailable. A skip is reported loudly and exits 2, because a test that
@@ -27,8 +37,98 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PAGES = process.argv.length > 2 ? process.argv.slice(2) : ["demo.html"];
+// The suite's own options are dropped from the page list by position rather
+// than by shape, so a page path that happens to be a number is still a page
+// path and a flag is never mistaken for one.
+const ARGV = process.argv.slice(2);
+const SWEEP = ARGV.includes("--sweep");
+const MAX_FLAG = ARGV.indexOf("--max");
+const MAX_PAGES = MAX_FLAG === -1 ? Infinity : (() => {
+  const value = Number(ARGV[MAX_FLAG + 1]);
+  if (!Number.isInteger(value) || value < 1) {
+    console.error("--max needs a whole number of pages, not " + ARGV[MAX_FLAG + 1]);
+    process.exit(2);
+  }
+  return value;
+})();
+const PAGES = ARGV.filter((argument, index) => {
+  if (argument === "--sweep") return false;
+  // MAX_FLAG + 1 is index 0 when --max was not given, so the -1 case has to
+  // be excluded first or the first page argument is dropped as the flag's
+  // value.
+  if (MAX_FLAG !== -1 && (index === MAX_FLAG || index === MAX_FLAG + 1)) return false;
+  return true;
+});
 const SELLER = /^https:\/\/www\.(nationalrail\.co\.uk|thetrainline\.com)\//;
+
+// A third outcome, for a check a page has nothing to exercise: no destination
+// carrying a UNESCO property, one option in the picker, one destination-type
+// chip. Those are the right shape for the single-page gate -- "the suite never
+// ran that assertion" is the thing this project keeps refusing to let pass
+// quietly -- and the wrong shape for a sweep of a station set, where most
+// stations have no UNESCO property and failing them would be failing pages for
+// their own size. In --sweep they are reported as skips and the run says how
+// many it skipped, so a sweep cannot pass by exercising nothing.
+const NOT_EXERCISED = Symbol("not exercised");
+
+/** A check this page cannot exercise, and why. */
+function notExercised(reason) {
+  return { skip: NOT_EXERCISED, reason };
+}
+
+/** Every index.html beneath a directory, in name order, at any depth. */
+function pagesBeneath(root) {
+  const found = [];
+  const walk = (directory) => {
+    const children = fs
+      .readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const child of children) {
+      const full = path.join(directory, child.name);
+      if (child.isDirectory()) walk(full);
+      else if (child.name === "index.html") found.push(full);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/**
+ * Turn what was asked for into the pages to drive.
+ *
+ * A directory becomes every index.html beneath it, in name order, so a sweep
+ * is the same command as a single page and a whole station set can be checked
+ * in one run. A directory holding no pages is left as itself, so it is
+ * reported as a missing page rather than as a sweep of nothing that passed.
+ */
+function expand(wanted) {
+  const found = [];
+  for (const argument of wanted) {
+    let directory = null;
+    try {
+      if (fs.statSync(argument).isDirectory()) directory = argument;
+    } catch (error) {
+      // Not there. Left as itself, and reported as a page that does not exist.
+    }
+    if (directory === null) {
+      found.push(argument);
+      continue;
+    }
+    const pages = pagesBeneath(directory);
+    if (pages.length) found.push(...pages);
+    else found.push(argument);
+  }
+  if (found.length > MAX_PAGES) {
+    // Loudly, because a bounded sweep that reads as a whole one is worse than
+    // no sweep: it would be a gate reporting on a sample and calling it the site.
+    console.error(
+      `--max ${MAX_PAGES}: driving the first ${MAX_PAGES} of ${found.length} pages, ` +
+        `and ${found.length - MAX_PAGES} of them are not being tested.`
+    );
+    return found.slice(0, MAX_PAGES);
+  }
+  return found;
+}
 
 function requirePlaywright() {
   try {
@@ -66,23 +166,41 @@ function serve(bodies) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
+// Money, in the page's own way, for a message the suite writes rather than
+// reads off the page.
+const money = (pence) => "£" + (pence / 100).toFixed(2);
+
 async function runPage(browser, index, given, file, body, base) {
   // One context per page. The seller's stub route and the clipboard grant are
   // both context-scoped, and a page that failed a step must not hand the next
   // one a reader still carrying its budget, its filters, or its mode.
   const checks = [];
   const check = (name, condition, detail) => {
-    checks.push({ name, ok: Boolean(condition), detail });
+    // A not-exercised check is a failure outside a sweep, so the single-page
+    // gate keeps the teeth it has always had.
+    if (condition && condition.skip === NOT_EXERCISED) {
+      checks.push({ name, ok: false, skipped: SWEEP, detail: condition.reason });
+      return;
+    }
+    checks.push({ name, ok: Boolean(condition), skipped: false, detail });
   };
   // One result per page, printed the same way whether the page ran or was
   // missing, so several pages in one log are read the same way.
   const printPage = () => {
     console.log("\n== " + given);
-    for (const { name, ok, detail } of checks) {
-      console.log((ok ? "  ok    " : "  FAIL  ") + name + (!ok && detail ? "  <- " + detail : ""));
+    for (const { name, ok, skipped, detail } of checks) {
+      const mark = ok ? "  ok    " : skipped ? "  skip  " : "  FAIL  ";
+      console.log(mark + name + (!ok && detail ? "  <- " + detail : ""));
     }
-    const failed = checks.filter((entry) => !entry.ok).length;
-    console.log(`${checks.length - failed}/${checks.length} browser checks passed against ${given}`);
+    const failed = checks.filter((entry) => !entry.ok && !entry.skipped).length;
+    const skipped = checks.filter((entry) => entry.skipped).length;
+    console.log(
+      `${checks.length - failed - skipped}/${checks.length - skipped} browser checks passed against ${given}` +
+        (skipped ? `, ${skipped} not exercised by this page` : "") +
+        // A run that stopped early has not passed the checks it never reached,
+        // and a tally that reads as a clean pass is how that stays invisible.
+        (stopped ? " -- THE RUN STOPPED EARLY, so this page is not fully checked" : "")
+    );
   };
   let stopped = false;
   if (body === null) {
@@ -333,7 +451,10 @@ async function runPage(browser, index, given, file, body, base) {
         `${heritage.name} in ${heritage.mode} mode: ${heritage.site.name} ${heritage.site.url}; ${heritageText.slice(0, 160)}`
       );
     } else {
-      check("a heritage row links the UNESCO property the payload names", false, "no destination on this page carries a UNESCO property");
+      check(
+        "a heritage row links the UNESCO property the payload names",
+        notExercised("no destination on this page carries a UNESCO property")
+      );
     }
     // 3b. A ticket mode the feed has nothing for says so. An Anytime Day
     // Return is sold on a few interurban routes, so most real origins have
@@ -451,7 +572,10 @@ async function runPage(browser, index, given, file, body, base) {
         `${smallTown.rows.length} small towns, ${smallTownText.slice(0, 160)}`
       );
     } else {
-      check("a small town is its own class, not a town", false, "this page has no small town in return mode");
+      check(
+        "a small town is its own class, not a town",
+        notExercised("this page has no small town in return mode")
+      );
     }
     await page.fill("#budgetNumber", String(facts.affordable));
     // Multi-select, on whichever two types the page carries: the two sets can
@@ -479,8 +603,7 @@ async function runPage(browser, index, given, file, body, base) {
     } else {
       check(
         "specific destination chips are multi-select and union their matches",
-        false,
-        `this page offers ${pair.length} specific chip(s), so multi-select cannot be exercised`
+        notExercised(`this page offers ${pair.length} specific chip(s), so multi-select cannot be exercised`)
       );
     }
     await page.check('input[name="destinationType"][value="all"]');
@@ -553,11 +676,26 @@ async function runPage(browser, index, given, file, body, base) {
     // used above: two adults never cost less than one, so a budget that shows
     // a return row shows no party row at all, and a check written against one
     // was measuring the fixture's numbers rather than the page.
-    const partyBudget = await page.evaluate(() =>
-      Math.max(1, Math.ceil(DATA.destinations.reduce((low, d) => Math.min(low, d.partyPence), Infinity) / 100))
-    );
-    await page.fill("#budgetNumber", String(partyBudget));
+    //
+    // A page whose cheapest two-adult price is above the ceiling the page
+    // itself sets can show no party row at any budget a reader can type: on a
+    // one-destination page the ceiling is that destination's adult fare and the
+    // party fare is double it. Found by sweeping a two-station site, where the
+    // step used to wait thirty seconds for a button that could never appear and
+    // then end the run early -- reported as a page that stopped, with every
+    // check it had already done counting as a pass.
+    // Two adults are selected before the budget is read, because the ceiling
+    // the page allows depends on who the fare covers. Reading it first measured
+    // the single-adult ceiling and concluded the party rows were unreachable
+    // when the slider does reach them once the party price is the one on screen.
     await page.check('input[name="unit"][value="party"]');
+    const party = await page.evaluate(() => ({
+      cheapest: DATA.destinations.reduce((low, d) => Math.min(low, d.partyPence), Infinity),
+      ceiling: Number(document.getElementById("budget").max) * 100,
+    }));
+    const partyReachable = party.cheapest <= party.ceiling;
+    if (partyReachable) {
+    await page.fill("#budgetNumber", String(Math.max(1, Math.ceil(party.cheapest / 100))));
     const copyButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
     const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy the journey details for ", "");
     // The railcard note is owed only where the feed prices one, so what the
@@ -580,6 +718,17 @@ async function runPage(browser, index, given, file, body, base) {
       railcardNamed ? /Two Together discount/.test(partyCopy) : !/Two Together discount/.test(partyCopy),
       `${copiedName} ${railcardNamed ? "is" : "is not"} railcard-eligible: ${partyCopy}`
     );
+    } else {
+      const reason =
+        `with Two adults selected this page's cheapest price is ${money(party.cheapest)} and its ` +
+        `budget goes to ${money(party.ceiling)}, so no party row can be shown at any budget it allows`;
+      for (const name of [
+        "the party copy says two adults",
+        "and names the railcard when the fare is eligible, and stays quiet when it is not",
+      ]) {
+        check(name, notExercised(reason));
+      }
+    }
 
     // 7. At a phone width the ticket action is on-screen, without horizontal
     // scroll (ADR-0019's blocker). Measured, not assumed.
@@ -634,7 +783,9 @@ async function runPage(browser, index, given, file, body, base) {
       check("Change opens the picker", await page.locator("#originPicker").isVisible());
       const pickCount = await page.locator("#originPicks a").count();
       check("the picker lists stations without typing", pickCount > 0, `${pickCount} options`);
-      const href = await page.locator("#originPicks a").first().getAttribute("href");
+      const href = pickCount
+        ? await page.locator("#originPicks a").first().getAttribute("href")
+        : null;
       // Judged against the base the page itself carries, not a root-absolute
       // path: a project site is published under owner.github.io/repo/ and
       // prefixes every internal link with it (ADR-0024), so a check that
@@ -642,22 +793,37 @@ async function runPage(browser, index, given, file, body, base) {
       const baseHref = await page.evaluate(() => DATA.baseHref);
       check(
         "options are links to station pages",
-        href.startsWith(baseHref + "from/") && href.endsWith("/") && href.length > baseHref.length + 6,
-        `${href} under base ${baseHref}`
+        href === null
+          ? notExercised("this page lists no other station to link to")
+          : href.startsWith(baseHref + "from/") && href.endsWith("/") && href.length > baseHref.length + 6,
+        href === null ? "" : `${href} under base ${baseHref}`
       );
       // The query comes from the picker's own first option, so the check is
       // about narrowing rather than about a station name the fixture happened
       // to carry.
-      const firstWord = (((await page.locator("#originPicks a").first().textContent()) || "").trim().split(/[\s(]+/)[0] || "");
+      const firstWord = pickCount
+        ? (((await page.locator("#originPicks a").first().textContent()) || "").trim().split(/[\s(]+/)[0] || "")
+        : "";
       const query = firstWord.slice(0, 4);
       await page.fill("#originSearch", query);
       const narrowed = await page.locator("#originPicks a").count();
       const narrowedText = await page.locator("#originPicks").textContent();
-      check("typing narrows the picker", narrowed > 0 && narrowed < pickCount && narrowedText.includes(firstWord), `${query} -> ${narrowed} of ${pickCount} options`);
+      // A list of one cannot be narrowed. That is a fact about the page's own
+      // station list rather than about the filter, so it is reported as the
+      // check this page cannot exercise.
+      check(
+        "typing narrows the picker",
+        pickCount > 1
+          ? narrowed > 0 && narrowed < pickCount && narrowedText.includes(firstWord)
+          : notExercised(`this page lists ${pickCount} station, so there is nothing to narrow`),
+        `${query || "(no options)"} -> ${narrowed} of ${pickCount} options`
+      );
       await page.fill("#originSearch", "zzzz");
       check(
         "a no-match says so and names the code route",
-        (await page.locator("#originNomatch").isVisible()) && /three-letter code/.test(await page.textContent("#originNomatch"))
+        pickCount
+          ? (await page.locator("#originNomatch").isVisible()) && /three-letter code/.test(await page.textContent("#originNomatch"))
+          : notExercised("this page lists no other station, so a query has nothing to narrow")
       );
       const emptyOptions = await page.locator("#originPicks a").count();
       check("and the list itself is empty rather than stale", emptyOptions === 0, `${emptyOptions} left`);
@@ -673,7 +839,12 @@ async function runPage(browser, index, given, file, body, base) {
       // Keyboard-only reachability of the picker's first option.
       await pickerButton.click();
       const firstOption = page.locator("#originPicks a").first();
-      check("picker options are keyboard-focusable links", await firstOption.evaluate((el) => el.tagName === "A" && el.href.endsWith("/")));
+      check(
+        "picker options are keyboard-focusable links",
+        pickCount
+          ? await firstOption.evaluate((el) => el.tagName === "A" && el.href.endsWith("/"))
+          : notExercised("this page lists no option to focus")
+      );
       await page.keyboard.press("Escape");
     } else {
       check("the page offers a Change control", false, "#changeOrigin missing");
@@ -693,21 +864,20 @@ async function runPage(browser, index, given, file, body, base) {
 }
 
 function report(results) {
-  const total = results.reduce((sum, result) => sum + result.checks.length, 0);
-  const failed = results.reduce(
-    (sum, result) => sum + result.checks.filter((entry) => !entry.ok).length,
-    0
-  );
+  const counted = (predicate) =>
+    results.reduce((sum, result) => sum + result.checks.filter(predicate).length, 0);
+  const total = counted(() => true);
+  const failed = counted((entry) => !entry.ok && !entry.skipped);
+  const skipped = counted((entry) => entry.skipped);
   const broken = results.filter(
-    (result) => result.stopped || result.checks.some((entry) => !entry.ok)
+    (result) => result.stopped || result.checks.some((entry) => !entry.ok && !entry.skipped)
   );
   // One line for the run as well as one per page, so a log with several pages
   // in it ends with something that can be read without counting back.
-  console.log(
-    broken.length
-      ? `\n${broken.length} of ${results.length} page(s) failed: ${total - failed}/${total} checks passed (${broken.map((result) => result.given).join(", ")})`
-      : `\n${results.length} page(s), ${total}/${total} browser checks passed`
-  );
+  const summary = broken.length
+    ? `${broken.length} of ${results.length} page(s) failed: ${total - failed - skipped}/${total - skipped} checks passed (${broken.map((result) => result.given).join(", ")})`
+    : `${results.length} page(s), ${total - skipped - failed}/${total - skipped} browser checks passed`;
+  console.log(`\n${summary}${skipped ? `, ${skipped} check(s) not exercised by the pages swept` : ""}`);
   process.exit(failed || broken.length ? 1 : 0);
 }
 
@@ -715,7 +885,8 @@ async function main() {
   const playwright = requirePlaywright();
   if (!playwright) process.exit(2);
 
-  const pages = PAGES.map((given) => {
+  const wanted = expand(PAGES.length ? PAGES : ["demo.html"]);
+  const pages = wanted.map((given) => {
     const file = path.resolve(given);
     // A path that is not there is a failed page, not a failed run: the others
     // still get driven and still get reported. Missing demo.html is the case
