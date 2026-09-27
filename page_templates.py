@@ -385,6 +385,7 @@ __SYNTHETIC_BANNER__
     <legend>Destination type</legend>
     <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
   <span class="tag" id="typeRule">More than one type shows destinations of any of them. The count on each is how many are inside the budget now.</span>
+  <p id="facetNotice" class="tag" role="status" hidden></p>
   <button id="clearTypes" class="toggle" type="button" hidden>Clear destination types</button>
   </fieldset>
     </div>
@@ -694,7 +695,21 @@ function syncDestinationTypeChips() {
       offered.add(type);
     }
   }
+  // C20: a facet present in only one ticket mode used to be silently unchecked
+  // when the mode changed, so switching back to the mode the reader had chosen
+  // it in showed "All" and no explanation. Each mode now keeps its own
+  // selection, and switching restores it, so intent survives the round trip.
+  const mode = ticketMode();
+  // syncDestinationTypeChips() runs on every render, not only on a mode
+  // change, so "the mode changed" is decided once here and the announcement
+  // below is tied to it. Without this the same message would be re-announced
+  // on every budget drag.
+  const modeChanged = lastSyncedMode !== null && lastSyncedMode !== mode;
+  if (modeChanged) {
+    typeSelectionsByMode[lastSyncedMode] = Array.from(selectedDestinationTypes());
+  }
   const all = destinationTypeInputs.find((input) => input.value === "all");
+  const dropped = [];
   for (const input of destinationTypeInputs) {
     if (input.value === "all") continue;
     const present = offered.has(input.value);
@@ -702,9 +717,60 @@ function syncDestinationTypeChips() {
     if (chip) chip.hidden = !present;
     if (!present && input.checked) {
       input.checked = false;
-      if (all) all.checked = true;
+      dropped.push(chipLabel(input.value));
     }
   }
+  // Restore what the reader chose the last time they were in this mode, minus
+  // anything this mode cannot offer. A mode reached for the first time keeps
+  // whatever the reader has selected now, which is what the previous behaviour
+  // did too.
+  const remembered = typeSelectionsByMode[mode];
+  const restored = [];
+  if (modeChanged && remembered && remembered.length) {
+    let anyRestored = false;
+    for (const input of destinationTypeInputs) {
+      if (input.value === "all") continue;
+      const wanted = remembered.includes(input.value) && offered.has(input.value);
+      if (wanted) { input.checked = true; anyRestored = true; restored.push(chipLabel(input.value)); }
+    }
+    if (anyRestored && all) all.checked = false;
+  }
+  if (!all || !all.checked) {
+    const selected = destinationTypeInputs.some(
+      (input) => input.value !== "all" && input.checked);
+    if (!selected && all) all.checked = true;
+  }
+  lastSyncedMode = mode;
+  if (modeChanged) announceFacetChange(dropped, restored, mode);
+}
+const typeSelectionsByMode = Object.create(null);
+let lastSyncedMode = null;
+function chipLabel(value) {
+  const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
+  const chip = input ? input.closest("label") : null;
+  return chip ? chip.textContent.replace(/\\(\\d+\\)/, "").trim() : value;
+}
+// A filter that changed the result set without saying so is indistinguishable
+// from a broken one, so what happened is stated next to the chips and pushed to
+// assistive technology through the live region it is already in.
+function announceFacetChange(dropped, restored, mode) {
+  const notice = document.getElementById("facetNotice");
+  if (!notice) return;
+  const modeName = modeLabels()[mode] || "this ticket type";
+  const parts = [];
+  if (dropped.length) {
+    parts.push("Cleared " + listWords(dropped) + " — " + modeName +
+      " has no destination of " + (dropped.length === 1 ? "that type" : "those types") +
+      " from this station.");
+  }
+  if (restored.length) {
+    parts.push("Restored your " + listWords(restored) + " filter from " + modeName + ".");
+  }
+  notice.textContent = parts.join(" ");
+  notice.hidden = !parts.length;
+}
+function listWords(items) {
+  return items.length > 1 ? items.join(", ") : items[0] || "";
 }
 
 // A mode can be empty while other modes are not. An Anytime Day Return is sold
@@ -817,12 +883,15 @@ function renderCoverage() {
         (DATA.destinations.length
           ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
           : "");
-  coverage.textContent = lead + classifiedNote();
+  coverage.textContent = lead + classifiedNote() + unnameableNote();
 }
 function droppedFromFeed() {
+  // The naming gap is not listed here. It used to be, in the return mode's
+  // sentence only, which is why the single and Anytime modes had no way to
+  // report it. unnameableNote() owns that count for all three modes instead,
+  // so a reader never sees it stated twice in one line.
   const dropped = [];
   if (DATA.excludedItxCount) dropped.push(DATA.excludedItxCount + " had only ITX placeholder fares");
-  if (DATA.unnameableFareCount) dropped.push(DATA.unnameableFareCount + " had no station name in the feed");
   return dropped.length ? "; " + dropped.join(" and ") + ", and are not shown" : ", and all are shown";
 }
 function classifiedNote() {
@@ -831,6 +900,21 @@ function classifiedNote() {
       "destination type, so no type chip on this page can select them.";
   }
   return DATA.locationTypeReviewed ? " Every destination on this page carries a reviewed type." : "";
+}
+// C11: the coverage line named destinations lost to a missing *type* but not
+// the ones lost to a missing *name*. Those are a different gap with a different
+// consequence -- a row the feed could not put a station name on is a row a
+// reader cannot recognise -- and saying only the first made a shortlist with a
+// known gap in it look complete. It is stated here, as a count of flow records
+// the feed could not name, so it is never read as a destination a reader
+// should expect to find.
+function unnameableNote() {
+  if (!DATA.unnameableFareCount) return "";
+  return " " + DATA.unnameableFareCount + " priced " +
+    (DATA.unnameableFareCount === 1 ? "flow had" : "flows had") +
+    " no station name in the feed, so " +
+    (DATA.unnameableFareCount === 1 ? "it is" : "they are") +
+    " not shown here; that is a gap in the feed's names, not a place with no fare.";
 }
 
 function renderEmptyMode() {
@@ -976,9 +1060,16 @@ function render() {
   if (Number(budget.value) > ceiling) setBudget(ceiling);
   const cap = Number(budget.value) * 100;
   const wantedTypes = selectedDestinationTypes();
-  const wanted = available.filter(
-    (d) => priceOf(d) <= cap && matchesType(d, wantedTypes)
-  );
+  // C17: the three fare arrays arrive sorted once by the standard fare. The
+  // price on screen is not always that fare -- choosing two adults doubles it,
+  // and the railcard replaces it with a per-ticket discounted price that a
+  // minimum fare can hold above the adult price -- so the list is re-sorted by
+  // the price actually displayed, and the "best" highlight is the first row of
+  // that. Sorting the displayed number is the only ordering that cannot
+  // contradict the number in the cell beside it.
+  const wanted = available
+    .filter((d) => priceOf(d) <= cap && matchesType(d, wantedTypes))
+    .sort((a, b) => priceOf(a) - priceOf(b));
   budgetNumber.value = budget.value;
   sizeBudgetField();
   updateChipCounts(available, cap);
@@ -1120,7 +1211,13 @@ function cellWithLinks(row, destination, wanted) {
   link.rel = destination.link.rel;
   link.target = "_blank";
   link.textContent = "Tickets";
-  link.title = destination.link.label + " search for " + destination.crs;
+  // C13: the visible label stays the one word a price-first column can hold,
+  // but a screen reader's links list used to be a column of identical "Tickets"
+  // entries with no way to tell them apart. The name carries the destination,
+  // and the same word is in the title so a sighted reader's tooltip agrees.
+  link.setAttribute("aria-label", "Tickets for " + destination.name);
+  link.title = "Tickets for " + destination.name + " — " +
+    destination.link.label + " search for " + destination.crs;
   cell.append(link);
   if (destination.departures.length) {
     const toggle = document.createElement("button");
@@ -1186,13 +1283,51 @@ railcardDrawer.addEventListener("click", (event) => {
   if (event.target === railcardDrawer) railcardDrawer.close();
 });
 
+// C28: two disclosures can want the same slot under a row -- the times list and
+// the manual-copy box -- and each used to remove whatever sat there without
+// telling the other control. Copying while the times were open left that
+// button announcing "expanded" over content that had gone, and the next click
+// removed the copy box instead. Each disclosure now owns an identified region,
+// and the two are tracked separately: opening one closes the other, and each
+// control's own state is set from the region it owns.
+let regionSeq = 0;
+function nextRegionId(kind, crs) {
+  regionSeq += 1;
+  return "detail-" + kind + "-" + (crs || "x") + "-" + regionSeq;
+}
+function rowRegions(row) {
+  let regions = rowRegions.cache.get(row);
+  if (!regions) {
+    regions = { times: null, copy: null };
+    rowRegions.cache.set(row, regions);
+  }
+  return regions;
+}
+// Keyed on the row element, not its station code: every render replaces the
+// rows, so a code-keyed map would keep detached rows and their panels alive
+// and let one render's state answer for another's row.
+rowRegions.cache = new WeakMap();
+function closeRegion(row, kind) {
+  const regions = rowRegions(row);
+  const region = regions[kind];
+  if (!region) return false;
+  region.row.remove();
+  if (region.control) {
+    if (region.describes) region.control.removeAttribute("aria-describedby");
+    else region.control.setAttribute("aria-expanded", "false");
+  }
+  regions[kind] = null;
+  return true;
+}
 function toggleDetail(row, destination, toggle) {
-  const open = toggle.getAttribute("aria-expanded") === "true";
-  toggle.setAttribute("aria-expanded", String(!open));
-  if (open) {
-    row.nextElementSibling?.remove();
+  const regions = rowRegions(row);
+  if (regions.times) {
+    closeRegion(row, "times");
     return;
   }
+  // The copy box shares this slot. Replacing it, not joining it: the two
+  // panels say different things and only one can occupy the row beneath.
+  closeRegion(row, "copy");
   const detail = document.createElement("tr");
   detail.className = "detail";
   const cell = document.createElement("td");
@@ -1206,7 +1341,11 @@ function toggleDetail(row, destination, toggle) {
   }
   cell.append(list);
   detail.append(cell);
+  detail.id = nextRegionId("times", destination.crs);
   row.after(detail);
+  regions.times = { row: detail, control: toggle };
+  toggle.setAttribute("aria-controls", detail.id);
+  toggle.setAttribute("aria-expanded", "true");
 }
 
 function provenance() {
@@ -1342,9 +1481,15 @@ function humanDate(iso) {
 // anywhere, because no seller accepts it in a link (ADR-0014).
 function journeyText(destination) {
   const together = unit() === "party";
+  // C09: the copied text named the stations, the date and the party but not
+  // the ticket type the reader had chosen, while the same Copy button is
+  // offered in every mode. Copied from Singles and pasted to a seller, the
+  // handoff could silently become a different ticket, so the mode travels with
+  // it.
   const lines = [
     "From: " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     "To: " + destination.name + " (" + destination.crs + ")",
+    "Ticket: " + modeLabels()[ticketMode()],
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
@@ -1354,9 +1499,11 @@ function journeyText(destination) {
   return lines.join("\\n");
 }
 
-function showCopyBox(row, text) {
-  const next = row.nextElementSibling;
-  if (next && next.classList.contains("detail")) next.remove();
+function showCopyBox(row, text, button) {
+  // Opening the manual-copy box closes the times list, and says so through the
+  // times control, rather than leaving it expanded over content that is gone.
+  closeRegion(row, "times");
+  closeRegion(row, "copy");
   const detail = document.createElement("tr");
   detail.className = "detail";
   const cell = document.createElement("td");
@@ -1369,7 +1516,17 @@ function showCopyBox(row, text) {
   box.setAttribute("aria-label", "Journey details to copy");
   cell.append(box);
   detail.append(cell);
+  detail.id = nextRegionId("copy", row.dataset.crs);
   row.after(detail);
+  // The copy control is not a disclosure -- it has no collapsed state to speak
+  // of -- so it names the region it filled rather than claiming to control it.
+  // It is set, not appended to: a second manual copy would otherwise leave the
+  // button pointing at a region that has been removed.
+  if (button) button.setAttribute("aria-describedby", detail.id);
+  // "describes", not "discloses": the copy control has no expanded state, and
+  // closeRegion uses the difference to drop the right attribute rather than
+  // writing aria-expanded="false" onto a button that never had one.
+  rowRegions(row).copy = { row: detail, control: button || null, describes: true };
   box.focus();
   box.select();
 }
@@ -1388,7 +1545,7 @@ async function copyJourney(row, destination, button) {
   const manual = () => {
     button.textContent = "Select below";
     status.textContent = "Could not copy automatically. The details are shown under the row.";
-    showCopyBox(row, text);
+    showCopyBox(row, text, button);
   };
   if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();
   try {
@@ -1833,6 +1990,21 @@ if (chooserBudget) {
   const storedBudget = new URLSearchParams(window.location.search).get("budget");
   if (storedBudget && Number(storedBudget) > 0) chooserBudget.value = storedBudget;
 }
+// C15: the heading is the page's most prominent promise and it was frozen at
+// the build's budget while the field, the tab title and every outgoing link
+// moved. It is written from the same resolved value as those three, so the
+// sentence a reader reads, the title their tab list shows, and the budget the
+// next page is opened with cannot disagree.
+const chooserBudgetFigure = document.getElementById("chooserBudgetFigure");
+function resolvedBudget() {
+  return Math.max(1, Number(chooserBudget.value) || 1);
+}
+function syncChooserBudget() {
+  const value = resolvedBudget();
+  if (chooserBudgetFigure) chooserBudgetFigure.textContent = String(value);
+  document.title = "Where can we go for up to £" + value + "? Pick your station";
+  return value;
+}
 
 function render() {
   // A build that priced no stations has nothing to search over, so the field
@@ -1857,7 +2029,7 @@ function render() {
     link.href = station.href;
     if (chooserBudget) {
       const url = new URL(link.href, window.location.href);
-      url.searchParams.set("budget", Math.max(1, Number(chooserBudget.value) || 1));
+      url.searchParams.set("budget", resolvedBudget());
       link.href = url.pathname + url.search + url.hash;
     }
     const name = document.createElement("span");
@@ -1894,7 +2066,7 @@ function render() {
 
 if (chooserBudget) {
   chooserBudget.addEventListener("input", () => {
-    document.title = "Where can we go for £" + Math.max(1, Number(chooserBudget.value) || 1) + "? Pick your station";
+    syncChooserBudget();
     render();
   });
 }
@@ -1902,6 +2074,7 @@ if (chooserBudget) {
 // code changed nothing on screen while the list below sat there looking like a
 // search result.
 pick.addEventListener("input", render);
+syncChooserBudget();
 render();
 pick.focus();
 </script>

@@ -1672,6 +1672,36 @@ class DemoPageTest(unittest.TestCase):
     def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
         self.assertIn("destination.departures.length + \" times\"", self.html)
 
+    def test_a_row_has_one_state_machine_for_the_region_underneath_it(self) -> None:
+        # C28: the times list and the manual-copy box both insert the row that
+        # follows the data row, and each used to remove whatever was there by
+        # reaching for nextElementSibling. Copying while the times were open
+        # left the times button still announcing "expanded" over content that
+        # had gone, and the next click on it removed the copy box. One owner per
+        # row, keyed weakly so a re-render's detached rows are collectable.
+        script = self.html.split("<script>")[1].split("</script>")[0]
+        self.assertNotIn("nextElementSibling", script.split("function toggleDetail")[1].split("\nfunction ")[0])
+        self.assertNotIn("nextElementSibling", script.split("function showCopyBox")[1].split("\nfunction ")[0])
+        for closer in ("function closeRegion", "function rowRegions"):
+            self.assertIn(closer, script)
+        self.assertIn("rowRegions.cache = new WeakMap();", script)
+        # The two openings each close what is already in the slot, and the
+        # control that owns a region is the control whose state is written back.
+        opening_times = script.split("function toggleDetail")[1].split("\nfunction ")[0]
+        self.assertIn('closeRegion(row, "copy");', opening_times)
+        self.assertIn('toggle.setAttribute("aria-controls", detail.id);', opening_times)
+        opening_copy = script.split("function showCopyBox")[1].split("\nfunction ")[0]
+        self.assertIn('closeRegion(row, "times");', opening_copy)
+        self.assertIn('closeRegion(row, "copy");', opening_copy)
+        closer = script.split("function closeRegion")[1].split("\nfunction ")[0]
+        self.assertIn('region.control.removeAttribute("aria-describedby")', closer)
+        self.assertIn('region.control.setAttribute("aria-expanded", "false")', closer)
+        self.assertIn("regions[kind] = null", closer)
+        # C09: the copied journey has to say which ticket it is, or a handoff to
+        # a seller can silently become a different one.
+        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
+        self.assertIn('"Ticket: " + modeLabels()[ticketMode()],', journey)
+
     def test_the_departure_list_is_capped_and_configurable(self) -> None:
         payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)
         rows = {row["crs"]: row for row in payload["destinations"]}
