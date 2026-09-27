@@ -367,9 +367,9 @@ __SYNTHETIC_BANNER__
   <fieldset class="ticket-filter">
     <legend>Ticket type</legend>
     <div class="filter-options segmented">
-      <label><input type="radio" name="ticketMode" value="return" checked> Return</label>
+      <label><input type="radio" name="ticketMode" value="anytime" checked> Anytime Day Return</label>
+      <label><input type="radio" name="ticketMode" value="return"> Any return</label>
       <label><input type="radio" name="ticketMode" value="single"> Single</label>
-      <label><input type="radio" name="ticketMode" value="anytime"> Anytime Day Return</label>
     </div>
   </fieldset>
   <fieldset class="party-filter">
@@ -392,7 +392,8 @@ __SYNTHETIC_BANNER__
   </div>
 </section>
 
-<p id="summary" role="status" aria-live="polite"></p>  <p class="tag" id="priceSource" hidden></p>
+<p id="summary" role="status" aria-live="polite"></p>
+<p class="tag" id="modeNote"></p>  <p class="tag" id="priceSource" hidden></p>
 <p class="tag" id="freshness" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
 <table>
@@ -789,6 +790,24 @@ function modeLabels() {
 const MODE_WHY = {
   anytime: "An Anytime Day Return is valid on any train, so sellers offer it on only some routes and most stations have none.",
 };
+// C07: the product brief promises reviewed unrestricted Anytime Day Returns,
+// and that is the mode the page opens in. The broader "any return" set is
+// still offered, because a restricted off-peak fare is a real price a reader
+// can buy, but a reader must be told what the set contains *before* they
+// compare two numbers in it: a restricted fare is not interchangeable with an
+// unrestricted one, and the page cannot decode the feed's own validity text.
+// The note sits above the table, not inside the methodology accordion, so it
+// is read at the moment the comparison is made.
+const MODE_NOTE = {
+  anytime: "Unrestricted Anytime Day Returns only: these fares are valid on any train on the route, so the prices can be compared with each other directly.",
+  return: "Every standard-class return the feed prices, including restricted off-peak and advance fares. A restricted fare is not valid on every train or at every time, so check the Conditions column before treating two prices here as the same thing.",
+  single: "Outbound singles rather than returns. An advance single is valid on a particular train only, and is labelled where it appears.",
+};
+function renderModeNote() {
+  const note = document.getElementById("modeNote");
+  if (!note) return;
+  note.textContent = MODE_NOTE[ticketMode()] || "";
+}
 function emptyModeMessage() {
   const labels = modeLabels();
   const mode = ticketMode();
@@ -1035,6 +1054,7 @@ function render() {
     return;
   }
   renderCoverage();
+  renderModeNote();
   if (!available.length) {
     // The budget is left alone on purpose. An empty list has no prices to
     // bound, and clamping to the £1 ceiling of an empty list would silently
@@ -1098,10 +1118,13 @@ function render() {
     // An Advance single is train-specific whatever the feed calls it, so it
     // replaces the other labels rather than qualifying them: a reader must not
     // read a walk-up label on a price that only exists on one train.
+    // C07: a restricted fare's conditions are printed in the Conditions column
+    // on the same row, so the label points there rather than sending the
+    // reader to a seller to find out what the price they are comparing is.
     const fareLabel = destination.isAdvance
       ? "Advance single — choose a qualifying train; price and availability can change"
       : destination.restrictionCode
-        ? "Restricted fare — check seller conditions"
+        ? "Restricted fare — conditions in the next column"
         : destination.quality === "outbound single"
           ? "Standard outbound single"
           : destination.quality === "unrestricted Anytime Day Return"
@@ -1410,9 +1433,10 @@ function provenance() {
   }
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
-    ? DATA.pricingBasis + ". Use the ticket-type control to switch between return and outbound single fares, then use the budget filter to narrow the list."
+    ? DATA.pricingBasis + ". Use the ticket-type control to change which fares are listed, then use the budget filter to narrow the list."
     : "";
   renderCoverage();
+  renderModeNote();
   renderFreshness();
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.
