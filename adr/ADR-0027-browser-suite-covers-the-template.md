@@ -60,6 +60,19 @@ there, the step has a page on every run rather than pointing at an artifact
 that only exists when the feed changed. A build that produced no page fails the
 step with a reason attached.
 
+**The suite takes as many page paths as it is given and reports one result
+per page.** Every expectation comes from the page's payload, so the same
+checks hold on a real station's page and on the synthetic one — which is what
+makes a sweep worth having: pointing the suite at the built station set finds
+origin-specific template bugs (a page whose cheapest fare is above the opening
+budget, a page carrying no destination of a type the checks expect) in one
+run, rather than one page at a time by hand. Each page gets its own browser
+context, so the seller's stub route, the clipboard grant, and the budget,
+filters and mode a reader left behind are per page rather than carried over.
+A path that is not there is a failed page and not a failed run: the other
+pages are still driven and still reported, and the summary names the ones
+that failed.
+
 One check drives a state the page's own feed may not contain. Most real
 origents price no unrestricted Anytime Day Return at all — King's Cross has
 171 returns and none of those — so the check switches to whichever mode the
