@@ -166,6 +166,25 @@ jobs:
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
 
+      - name: Check the release manifest
+        if: steps.feed_check.outputs.changed == 'true'
+        # S07: the release is a set of routes, written beside the pages and
+        # proved against them by the build. This step checks the set an operator
+        # or a host would read, so a manifest that went missing between the
+        # build and the publish cannot pass unnoticed.
+        run: |
+          if [ ! -s _site/release-manifest.json ]; then
+            echo "::error title=release manifest::the build wrote no _site/release-manifest.json, so the routes this release serves are not stated anywhere"
+            exit 1
+          fi
+          ROUTES=$(python -c "import json;print(len(json.load(open('_site/release-manifest.json'))['routes']))")
+          PAGES=$(find _site -name index.html | wc -l)
+          echo "the manifest names $ROUTES route(s) and the folder holds $PAGES page(s)"
+          if [ "$ROUTES" -ne "$PAGES" ]; then
+            echo "::error title=release manifest::the manifest names $ROUTES route(s) but the folder holds $PAGES page(s), so the release and the artifact disagree"
+            exit 1
+          fi
+
       - name: Test the build
         # Coverage runs with a floor, not a target (audit C5): unreachable
         # code and untested branches show up in the printed report, and a

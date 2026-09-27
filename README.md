@@ -632,6 +632,20 @@ screenshot fixture can assert in either direction. It is a banner rather than
 a footer paragraph because the footer is what gets cropped out of a screenshot
 (ADR-0033's shared `.synthetic-banner` component; audit suggestion S45).
 
+**A build states which routes it serves.** Every build writes
+`release-manifest.json` beside the pages: the base path, the price source,
+whether the data is synthetic, the build time, and every route in the release —
+the chooser, each station page, the privacy page. The build proves it against
+the files on disk and refuses rather than reporting success if it names a route
+it did not write, and the deploy workflow refuses a folder whose page count and
+manifest disagree. The link crawl asks the other question — does every link a
+reader can follow resolve? — so the two together are a release that is complete
+in both directions. The output folder is not cleared first: `--fast-all-origins`
+resumes from it, and the project does not delete a page it did not write (it
+names those folders instead), so a local preview can hold an earlier build's
+pages that nothing links to. Audit suggestion S07 asked for a staged swap; that
+would have broken both, so the manifest is what this build does instead.
+
 Every build also names the priced destinations no source could classify — the
 stations the page's settlement filters therefore cannot return. The list is a
 warning, because a full-network build legitimately meets stations nobody has

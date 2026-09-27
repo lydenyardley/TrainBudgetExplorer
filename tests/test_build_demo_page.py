@@ -448,6 +448,16 @@ class DemoPageTest(unittest.TestCase):
             TimetableDb().load_feed(build_synthetic_timetable(Path(self._tmp.name) / "again")).service_window(),
             ("260921", "261211"),
         )
+        # Asked for by every station page in a full-network build, so it is
+        # answered from the database once rather than by rescanning the feed --
+        # and the answer is still right if the database grows afterwards.
+        again = TimetableDb().load_feed(build_synthetic_timetable(Path(self._tmp.name) / "again"))
+        first = again.service_window()
+        self.assertIs(again.service_window(), first, "the window is not memoised")
+        again.schedules.append(
+            type(again.schedules[0])(**{**vars(again.schedules[0]), "date_from": "260101", "date_to": "270101"})
+        )
+        self.assertEqual(again.service_window(), ("260101", "270101"))
 
     def test_the_privacy_page_describes_the_build_that_was_made(self) -> None:
         # S36: the notice is generated from the same feature configuration the
@@ -3189,20 +3199,96 @@ class RouteManifestTest(unittest.TestCase):
             (site / "from" / "grantham" / "index.html").write_text("<p>Grantham</p>", encoding="utf-8")
             self.assertEqual(build_demo_page.crawl_internal_links(site), [])
 
-    def test_publishing_moves_the_staged_folder_over_the_old_one_as_a_whole(self) -> None:
-        # S07: the host consumes one folder, so a release is the whole folder.
-        # An interrupted publish leaves the previous site, not a mixture.
+    def test_a_release_manifest_names_the_routes_this_build_serves(self) -> None:
+        # S07: the host consumes one folder, so "the whole verified output" has
+        # to be a set somebody can read. The manifest is that set, and it is
+        # proved against the files on disk rather than trusted.
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "site"
-            (out / "from" / "old").mkdir(parents=True)
-            (out / "from" / "old" / "index.html").write_text("old", encoding="utf-8")
-            staging = Path(tmp) / "site.staging"
-            (staging / "from" / "new").mkdir(parents=True)
-            (staging / "from" / "new" / "index.html").write_text("new", encoding="utf-8")
-            build_demo_page.publish_staged(staging, out)
-            self.assertTrue((out / "from" / "new" / "index.html").is_file())
-            self.assertFalse((out / "from" / "old").exists())
-            self.assertFalse((out.parent / "site.previous").exists())
+            site = Path(tmp) / "site"
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text("<p>G</p>", encoding="utf-8")
+            (site / "privacy").mkdir()
+            (site / "privacy" / "index.html").write_text("<p>P</p>", encoding="utf-8")
+            (site / "index.html").write_text("<p>C</p>", encoding="utf-8")
+            path = build_demo_page.write_release_manifest(
+                site,
+                ["/", "/privacy/", "/from/grantham/"],
+                price_source=build_demo_page.DEFAULT_PRICE_SOURCE,
+                built_at="2026-09-27T00:00:00Z",
+            )
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["routes"], ["/", "/from/grantham/", "/privacy/"])
+            self.assertTrue(manifest["synthetic"])
+            self.assertEqual(manifest["priceSource"], build_demo_page.DEFAULT_PRICE_SOURCE)
+            self.assertEqual(build_demo_page.manifest_problems(site, manifest), [])
+            # A route the release claims but did not write is the failure the
+            # manifest exists to catch, and a base path is stripped before the
+            # lookup so a project site resolves the same way its links do.
+            manifest["routes"].append("/from/nottingham/")
+            self.assertEqual(
+                build_demo_page.manifest_problems(site, manifest),
+                ["the manifest names /from/nottingham/, which was not written"],
+            )
+            (site / "from" / "nottingham").mkdir()
+            (site / "from" / "nottingham" / "index.html").write_text("<p>N</p>", encoding="utf-8")
+            self.assertEqual(build_demo_page.manifest_problems(site, manifest), [])
+            based = dict(manifest, routes=["/tb/privacy/"], basePath="/tb")
+            self.assertEqual(
+                build_demo_page.manifest_problems(site, based, base_path="/tb"), []
+            )
+            # A route that is not a route on this site is refused rather than
+            # resolved against the disk.
+            self.assertIn(
+                "not a route on this site",
+                " ".join(build_demo_page.manifest_problems(site, dict(manifest, routes=["nottingham"]))),
+            )
+
+    def test_a_build_writes_and_proves_its_own_manifest(self) -> None:
+        # The manifest is written by the build, not only by the helper, and the
+        # build refuses rather than reporting success if it cannot be proved.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            out = root / "site" / "index.html"
+            log = io.StringIO()
+            with contextlib.redirect_stdout(log):
+                code = build_demo_page.main(
+                    ["--feed", str(feed), "--out", str(out), "--all-origins"]
+                )
+            self.assertEqual(code, 0)
+            manifest = json.loads(
+                (root / "site" / build_demo_page.RELEASE_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+            self.assertIn("release-manifest.json", log.getvalue())
+            # Every route named is a file, and every station page the build wrote
+            # is a route named: the two directions, not one.
+            self.assertEqual(
+                build_demo_page.manifest_problems(root / "site", manifest), []
+            )
+            written = sorted(
+                f"/from/{child.name}/"
+                for child in (root / "site" / "from").iterdir()
+                if child.is_dir()
+            )
+            self.assertEqual(
+                sorted(route for route in manifest["routes"] if route.startswith("/from/")),
+                written,
+            )
+            self.assertIn("/", manifest["routes"])
+            self.assertIn("/privacy/", manifest["routes"])
+            # A single-origin build is a release of the same shape.
+            solo = root / "solo"
+            solo.mkdir()
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = build_demo_page.main(
+                    ["--feed", str(feed), "--out", str(solo / "index.html"), "--origin", "GRN"]
+                )
+            self.assertEqual(code, 0)
+            one = json.loads(
+                (solo / build_demo_page.RELEASE_MANIFEST_NAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(one["routes"], ["/", "/from/grantham/", "/privacy/"])
+            self.assertEqual(build_demo_page.manifest_problems(solo, one), [])
 
 
 if __name__ == "__main__":
