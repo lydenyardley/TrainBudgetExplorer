@@ -160,6 +160,15 @@ TEMPLATE = """<!doctype html>
   /* S23: an absence the feed can name is not the same as a zero. */
   td.missing { color: var(--muted); font-style: italic; }
   .empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  /* S26: the shortlist reads as a list, not a table, because it is a handful of
+     places to compare rather than a result set to scan. */
+  #shortlist { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  #shortlist h2 { font-size: 1.05rem; margin: 0 0 .25rem; }
+  #shortlistList { list-style: none; margin: .5rem 0; padding: 0; }
+  #shortlistList li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem;
+                     padding: .4rem 0; border-bottom: 1px solid var(--line); }
+  .shortlist-name { font-weight: 600; }
+  .shortlist-facts { color: var(--muted); font-variant-numeric: tabular-nums; }
   .empty-actions .toggle { min-height: 44px; }
   #railcardDrawer { width: min(30rem, calc(100% - 1rem)); max-width: none; height: 100dvh;
                     max-height: none; margin: 0 0 0 auto; padding: 1.25rem;
@@ -288,6 +297,16 @@ TEMPLATE = """<!doctype html>
   <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare</th><th scope="col">Conditions</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
+<section id="shortlist" aria-labelledby="shortlistHeading">
+  <h2 id="shortlistHeading">Shortlist</h2>
+  <p class="tag">Places you are considering from this station. This is a list to compare and share, not a booking: no train is chosen and no ticket is held.</p>
+  <p id="shortlistEmpty" class="tag">Nothing shortlisted yet. Use Shortlist on a row to add a place.</p>
+  <ul id="shortlistList" hidden></ul>
+  <p id="shortlistShare" class="tag"></p>
+  <p class="tag"><button id="shortlistCopy" class="toggle" type="button" hidden>Copy the shortlist</button> <button id="shortlistClear" class="toggle" type="button" hidden>Clear the shortlist</button></p>
+  <textarea id="shortlistBox" class="copybox" rows="6" readonly hidden aria-label="Shortlist to copy"></textarea>
+  <span id="shortlistStatus" role="status" class="sr-only"></span>
+</section>
 <div id="empty" hidden></div>
 <p id="more" hidden></p>
 <nav id="pagination" hidden aria-label="Results pages">
@@ -733,6 +752,11 @@ function render() {
     more.hidden = true;
     pagination.hidden = true;
     pageStatus.textContent = "";
+    // The shortlist is a list of places this mode can price, so a mode that
+    // prices none of them empties it rather than leaving a list of names with
+    // no fares behind them.
+    shortlistCodes = [];
+    renderShortlist();
     return;
   }
   const ceiling = budgetCeiling();
@@ -784,6 +808,7 @@ function render() {
     // the feed's own vocabulary, so they move into the expandable record below
     // rather than competing with the sentence in the cell.
     cells.push([fareLabel, "", "Fare"]);
+    row.dataset.crs = destination.crs;
     for (const [text, className, label] of cells) {
       const cell = document.createElement("td");
       cell.dataset.label = label;
@@ -842,6 +867,7 @@ function render() {
     (wanted.length === 1 ? " result" : " results");
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
+  renderShortlist();
 }
 
 // S19: the record as the feed states it -- ticket code, restriction code,
@@ -910,6 +936,15 @@ function cellWithLinks(row, destination, wanted) {
   copy.title = "Copy the from, to, date and party size for this row";
   copy.addEventListener("click", () => copyJourney(row, destination, copy));
   cell.append(copy);
+  // S26: saving a place to compare later. A toggle with its pressed state
+  // announced, not a link, because nothing is booked and nothing navigates.
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "toggle shortlist-toggle";
+  save.setAttribute("aria-pressed", "false");
+  save.setAttribute("aria-label", "Shortlist " + destination.name);
+  save.addEventListener("click", () => toggleShortlist(destination.crs));
+  cell.append(save);
   row.append(cell);
 }
 
@@ -1215,6 +1250,160 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   originSearch.addEventListener("input", renderPicks);
 }
 
+// S26: a shortlist of candidate places, and nothing that looks like a
+// booking. The list lives in the address like the rest of the search state, so
+// it survives a refresh and can be handed to somebody else as a link; what it
+// shows is the price currently on screen, because a comparison of a different
+// price than the one beside each row would be a comparison of nothing.
+const SHORTLIST_LIMIT = 8;
+// Read from the address on load and written back on every change, like the rest
+// of the search state: a shortlist that only lives in one tab is not a
+// shortlist anybody can hand to somebody else.
+let shortlistCodes = [];
+const shortlist = document.getElementById("shortlist");
+const shortlistList = document.getElementById("shortlistList");
+const shortlistStatus = document.getElementById("shortlistStatus");
+const shortlistEmpty = document.getElementById("shortlistEmpty");
+const shortlistShare = document.getElementById("shortlistShare");
+const shortlistClear = document.getElementById("shortlistClear");
+const shortlistCopy = document.getElementById("shortlistCopy");
+const shortlistBox = document.getElementById("shortlistBox");
+
+function shortlisted() {
+  const wanted = new Set(shortlistCodes);
+  // In the page's own order, and only rows this ticket mode actually carries:
+  // a shortlist that named a destination the reader cannot see priced would be
+  // a list of places they cannot buy.
+  return activeDestinations().filter((destination) => wanted.has(destination.crs));
+}
+function inShortlist(crs) {
+  return shortlistCodes.includes(crs);
+}
+function toggleShortlist(crs) {
+  if (inShortlist(crs)) {
+    shortlistCodes = shortlistCodes.filter((code) => code !== crs);
+  } else {
+    if (shortlistCodes.length >= SHORTLIST_LIMIT) {
+      // Said rather than silently ignored: a control that stops responding with
+      // no explanation is the one thing a reader cannot act on.
+      setShortlistStatus("The shortlist holds " + SHORTLIST_LIMIT + " places. Remove one to add another.");
+      return;
+    }
+    shortlistCodes = [...shortlistCodes, crs];
+  }
+  setShortlistStatus("");
+  renderShortlist();
+  writeUrl();
+}
+function setShortlistStatus(text) {
+  if (shortlistStatus) shortlistStatus.textContent = text;
+}
+function shortlistRow(destination) {
+  const item = document.createElement("li");
+  const name = document.createElement("span");
+  name.className = "shortlist-name";
+  name.textContent = destination.name + " (" + destination.crs + ")";
+  const facts = document.createElement("span");
+  facts.className = "shortlist-facts";
+  const price = money(priceOf(destination));
+  const changes = destination.changes === null || destination.changes === undefined
+    ? "changes unknown"
+    : destination.changes === 0 ? "no change" : destination.changes + " change(s)";
+  const time = DATA.hasJourneys
+    ? (destination.minutes === null || destination.minutes === undefined
+      ? "no service found"
+      : duration(destination.minutes))
+    : "no timetable in this build";
+  facts.textContent = price + (unit() === "party" ? " for the two of us" : " each") + " \\u00b7 " + time + " \\u00b7 " + changes;
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "toggle";
+  drop.textContent = "Remove";
+  drop.setAttribute("aria-label", "Remove " + destination.name + " from the shortlist");
+  drop.addEventListener("click", () => toggleShortlist(destination.crs));
+  item.append(name, facts, drop);
+  return item;
+}
+function renderShortlist() {
+  if (!shortlist) return;
+  const kept = shortlisted();
+  // A row whose fare the reader can no longer see priced -- a different ticket
+  // mode -- leaves the list rather than sitting in it as a name with no price.
+  shortlistCodes = kept.map((destination) => destination.crs);
+  shortlistList.replaceChildren(...kept.map(shortlistRow));
+  const empty = kept.length === 0;
+  if (shortlistEmpty) shortlistEmpty.hidden = !empty;
+  if (shortlistList) shortlistList.hidden = empty;
+  for (const control of [shortlistClear, shortlistCopy]) {
+    if (control) control.hidden = empty;
+  }
+  if (shortlistShare) {
+    shortlistShare.textContent = empty
+      ? ""
+      : "Shortlist of " + kept.length + (kept.length === 1 ? " place" : " places") + " from " +
+        DATA.origin.name + ". " + window.location.href;
+  }
+  if (shortlistBox) shortlistBox.hidden = true;
+  if (shortlistStatus && !shortlistStatus.textContent) {
+    shortlistStatus.textContent = kept.length ? kept.length + " shortlisted." : "";
+  }
+  for (const row of document.querySelectorAll("#rows tr[data-crs]")) {
+    const button = row.querySelector(".shortlist-toggle");
+    if (!button) continue;
+    const on = inShortlist(row.dataset.crs);
+    button.setAttribute("aria-pressed", String(on));
+    button.textContent = on ? "Shortlisted" : "Shortlist";
+  }
+}
+function shortlistText() {
+  const kept = shortlisted();
+  const what = unit() === "party" ? "for the two of us" : "each";
+  const lines = [
+    "Shortlist from " + DATA.origin.name + " (" + DATA.origin.crs + ")",
+    "Budget: \\u00a3" + budgetNumber.value + " " + what,
+  ];
+  if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
+  for (const destination of kept) {
+    const changes = destination.changes === null || destination.changes === undefined
+      ? "changes unknown"
+      : destination.changes === 0 ? "no change" : destination.changes + " change(s)";
+    const time = DATA.hasJourneys
+      ? (destination.minutes === null || destination.minutes === undefined ? "no service found" : duration(destination.minutes))
+      : "no timetable in this build";
+    lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
+      " " + what + ", " + time + ", " + changes);
+  }
+  lines.push("A shortlist of places, not a booking: no train is chosen and no ticket is held.");
+  return lines.join("\\n");
+}
+if (shortlistCopy) {
+  shortlistCopy.addEventListener("click", async () => {
+    const text = shortlistText();
+    const show = () => {
+      // Never claim a copy that did not happen, the same rule the row copy
+      // follows: a denied clipboard shows the text instead.
+      shortlistBox.value = text;
+      shortlistBox.hidden = false;
+      shortlistStatus.textContent = "Could not copy automatically. The list is shown below to copy by hand.";
+    };
+    if (!navigator.clipboard || !navigator.clipboard.writeText) return show();
+    try {
+      await navigator.clipboard.writeText(text);
+      shortlistStatus.textContent = "Shortlist copied.";
+    } catch (error) {
+      show();
+    }
+  });
+}
+if (shortlistClear) {
+  shortlistClear.addEventListener("click", () => {
+    shortlistCodes = [];
+    setShortlistStatus("");
+    renderShortlist();
+    writeUrl();
+  });
+}
+
 // The address is the search (S05). A reader who has already decided a budget
 // and a ticket type, then refreshes, or shares the tab, or presses Back, must
 // land on the search they made rather than the one the page was built with.
@@ -1234,6 +1423,9 @@ function stateQuery() {
   const types = Array.from(selectedDestinationTypes()).sort();
   for (const type of types) params.append("types", type);
   if (currentPage > 1) params.set("page", String(currentPage));
+  // One repeated short key per place rather than a joined list: URLSearchParams
+  // would percent-encode the commas, and a shared link is meant to be readable.
+  for (const code of shortlistCodes) params.append("short", code);
   return params.toString();
 }
 
@@ -1254,7 +1446,7 @@ function writeUrl({ budget = false } = {}) {
     writeUrlNow(true);
   }, 700);
 }
-const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page"];
+const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short"];
 function writeUrlNow(push) {
   const url = new URL(window.location.href);
   // Only this page's own keys are rewritten. A shared link can carry someone
@@ -1280,6 +1472,9 @@ function readState() {
     railcard: params.get("card") === "1",
     types: params.getAll("types"),
     page: Number(params.get("page")) || 1,
+    // Only codes this page can price are kept: a shared link must not put a
+    // place in the list that the reader cannot see a fare for.
+    short: params.getAll("short").map((code) => code.trim().toUpperCase()).filter(Boolean),
   };
 }
 function applyState(state) {
@@ -1302,6 +1497,12 @@ function applyState(state) {
     all.checked = true;
   }
   currentPage = Math.max(1, state.page);
+  shortlistCodes = state.short.filter(pricedHere);
+}
+// Whether this page can price that station at all, in any of its ticket modes.
+function pricedHere(code) {
+  return [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
+    .some((list) => (list || []).some((destination) => destination.crs === code));
 }
 window.addEventListener("popstate", () => {
   // Back is a decision the reader already made, so it is applied without

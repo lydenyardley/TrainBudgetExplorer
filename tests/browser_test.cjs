@@ -1249,6 +1249,104 @@ async function runPage(browser, index, given, file, body, base) {
       coverage
     );
 
+    // 7d. S26: a shortlist of candidate places that can be compared, shared
+    // and copied, and that never reads as a booking.
+    await open(facts.affordable);
+    const shortlist = await page.evaluate(() => {
+      // Every priced row, not the one a cheapest-affordable budget happens to
+      // leave: comparing two places needs two places on screen.
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+      if (rows.length < 2) return { rows: rows.length };
+      const first = rows[0].querySelector(".shortlist-toggle");
+      const second = rows[1].querySelector(".shortlist-toggle");
+      const facts = () => Array.from(document.querySelectorAll("#shortlistList li")).map((li) => li.textContent);
+      const saved = [];
+      first.click();
+      saved.push(facts());
+      second.click();
+      const both = facts();
+      const address = window.location.href;
+      // The party price is the price a pair would see, so the comparison has
+      // to follow the party control.
+      document.querySelector('input[name="unit"][value="party"]').checked = true;
+      render();
+      const asPair = facts();
+      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      render();
+      const asSolo = facts();
+      const share = document.getElementById("shortlistShare").textContent;
+      const pressed = rows.map((row) => row.querySelector(".shortlist-toggle").getAttribute("aria-pressed"));
+      return { both, asPair, asSolo, share, address, pressed, names: both.map((text) => text.slice(0, 24)) };
+    });
+    if (shortlist.rows !== undefined && shortlist.rows < 2) {
+      for (const name of [
+        "a shortlisted place is listed with its price, time and changes",
+        "and the list is a list of places, not a booking",
+        "the shortlist is in the address, so it can be shared",
+        "a refresh brings the shortlist back",
+        "and it follows the party the reader has chosen",
+        "one control clears it",
+      ]) {
+        check(name, notExercised(`this page lists ${shortlist.rows} row(s) to choose from`));
+      }
+    } else {
+      check(
+        "a shortlisted place is listed with its price, time and changes",
+        shortlist.both.length === 2 &&
+          shortlist.both.every((text) => /£\d/.test(text) && /(no change|\d+ change\(s\)|changes unknown)/.test(text)),
+        JSON.stringify(shortlist.both)
+      );
+      check(
+        "and the list is a list of places, not a booking",
+        /not a booking/i.test(await page.textContent("#shortlist")) &&
+          /no train is chosen/i.test(await page.textContent("#shortlist")),
+        (await page.textContent("#shortlistHeading")) || ""
+      );
+      const wanted = await page.evaluate(() => shortlistCodes);
+      check(
+        "the shortlist is in the address, so it can be shared",
+        wanted.every((code) => shortlist.address.includes("short=" + code)),
+        shortlist.address
+      );
+      check(
+        "and it follows the party the reader has chosen",
+        shortlist.asPair.length === 2 && shortlist.asPair.some((text, index) => text !== shortlist.asSolo[index]),
+        JSON.stringify({ pair: shortlist.asPair, solo: shortlist.asSolo })
+      );
+      check("and the row control announces it is on", shortlist.pressed.filter((value) => value === "true").length === 2, shortlist.pressed.join(","));
+      // A shared link is the whole point, so it is opened, not assumed.
+      await page.goto(shortlist.address);
+      const restored = await page.evaluate(() => Array.from(document.querySelectorAll("#shortlistList li")).length);
+      check("a refresh brings the shortlist back", restored === 2, `${restored} of 2`);
+      const copied = await page.evaluate(() => {
+        document.getElementById("shortlistCopy").click();
+        return null;
+      });
+      void copied;
+      await page.waitForFunction(
+        () => /copied|copy/i.test(document.getElementById("shortlistStatus").textContent || ""),
+        null,
+        { timeout: 3000 }
+      ).catch(() => {});
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      check(
+        "and the copied list names the origin, the prices and says it is not a booking",
+        /Shortlist from /.test(text) && /Budget: /.test(text) && /not a booking/i.test(text) && text.includes("£"),
+        text
+      );
+      await open(facts.affordable);
+      await page.evaluate(() => { document.getElementById("shortlistClear").click(); });
+      check(
+        "one control clears it",
+        (await page.evaluate(() => document.querySelectorAll("#shortlistList li").length)) === 0 &&
+          !(await page.evaluate(() => window.location.search.includes("short="))),
+        (await page.evaluate(() => document.getElementById("shortlistEmpty").textContent)) || ""
+      );
+    }
+
     // 8. The origin picker: search, navigate, and the no-match wording
     // (ADR-0019). Choosing a station is navigation, so the link must go to
     // another page, and there must never be an empty picker.
