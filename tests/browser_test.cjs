@@ -313,6 +313,101 @@ async function main() {
     } else {
       check("a heritage row links the UNESCO property the payload names", false, "no destination on this page carries a UNESCO property");
     }
+    // 3b. A ticket mode the feed has nothing for says so. An Anytime Day
+    // Return is sold on a few interurban routes, so most real origins have
+    // none, and the page used to return from render() before it wrote
+    // anything: the reader kept the previous mode's rows under a set of
+    // destination chips that had all just been hidden, which reads as a
+    // broken filter rather than an answer.
+    await open(facts.affordable);
+    const plan = await page.evaluate(() => {
+      const list = {
+        return: DATA.destinations,
+        single: DATA.singleDestinations,
+        anytime: DATA.anytimeDestinations,
+      };
+      const cap = Number(document.getElementById("budgetNumber").value) * 100;
+      const modes = ["return", "single", "anytime"];
+      const counts = {};
+      const onScreen = {};
+      for (const mode of modes) {
+        counts[mode] = list[mode].length;
+        onScreen[mode] = list[mode].filter((d) => d.adultPence <= cap).length;
+      }
+      const from = modes.find((mode) => onScreen[mode]) || null;
+      if (!from) return null;
+      const empty = modes.find((mode) => !counts[mode]);
+      if (empty) return { from, to: empty, forced: false, counts };
+      // This page priced all three modes, so there is no empty mode to switch
+      // to and the branch would go untested. One is emptied here instead, so a
+      // page whose feed happens to be complete still drives the path a station
+      // with no Anytime fares takes; the mode switched back to is left alone.
+      DATA.anytimeDestinations = [];
+      return { from, to: "anytime", forced: true, counts: { ...counts, anytime: 0 } };
+    });
+    if (plan) {
+      await page.locator(`input[name="ticketMode"][value="${plan.from}"]`).check({ force: true });
+      const budgetBefore = (await page.inputValue("#budgetNumber")).trim();
+      const rowsBefore = await page.locator("#rows tr").count();
+      await page.locator(`input[name="ticketMode"][value="${plan.to}"]`).check({ force: true });
+      const budgetAfter = (await page.inputValue("#budgetNumber")).trim();
+      const emptyText = (await page.textContent("#empty")) || "";
+      const labels = await page.evaluate(() => {
+        const found = {};
+        for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
+          found[input.value] = input.parentElement.textContent.trim();
+        }
+        return found;
+      });
+      const offeredHere = Object.entries(plan.counts)
+        .filter(([other, count]) => other !== plan.to && count);
+      check(
+        "a mode with no fares clears the table rather than leaving the last mode's rows",
+        rowsBefore > 0 && (await page.locator("#rows tr").count()) === 0,
+        `${rowsBefore} ${plan.from}-mode rows before, ${await page.locator("#rows tr").count()} in the empty ${plan.to} mode`
+      );
+      check(
+        "a mode with no fares says so, and says where the fares are",
+        (await page.locator("#empty").isVisible()) &&
+          emptyText.startsWith(`No ${labels[plan.to]} fares were found from ${facts.origin}`) &&
+          offeredHere.every(([other, count]) =>
+            emptyText.includes(labels[other]) && emptyText.includes(String(count))),
+        `${labels[plan.to]}: ${emptyText.slice(0, 240)}; the other modes are ${offeredHere.map(([o, n]) => `${labels[o]} ${n}`).join(", ") || "empty too"}`
+      );
+      check(
+        "an empty mode leaves the budget alone",
+        budgetAfter === budgetBefore,
+        `${budgetBefore} -> ${budgetAfter}`
+      );
+      // All is the unfiltered state and stays offered in every mode; what an
+      // empty mode must not offer is a type that nothing in it carries.
+      const chipLabels = await page.locator("#destinationTypes label").evaluateAll((labels) =>
+        labels
+          .filter((label) => !label.hidden)
+          .map((label) => label.querySelector("input"))
+          .filter((input) => input && input.value !== "all")
+          .map((input) => input.value)
+      );
+      check(
+        "an empty mode offers no destination-type chip to press",
+        chipLabels.length === 0,
+        `offered: ${chipLabels.join(", ") || "none"}`
+      );
+      await page.locator(`input[name="ticketMode"][value="${plan.from}"]`).check({ force: true });
+      check(
+        "and switching back to a priced mode restores its list",
+        (await page.locator("#rows tr").count()) > 0 && !(await page.locator("#empty").isVisible()),
+        `${await page.locator("#rows tr").count()} rows back in ${plan.from} mode` +
+          (plan.forced ? " (the empty mode was forced: this page priced all three)" : "")
+      );
+    } else {
+      check(
+        "a mode with no fares clears the table rather than leaving the last mode's rows",
+        false,
+        "this page shows no rows in any mode at this budget, so the empty-mode case cannot be exercised on it"
+      );
+    }
+
     // Back to returns for the rest of the step, on a page that has not been
     // left holding the previous step's mode, budget and filters.
     await open(facts.affordable);

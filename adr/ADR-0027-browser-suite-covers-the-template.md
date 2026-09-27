@@ -15,7 +15,7 @@ that cover different halves of it:
 - `tests/test_build_demo_page.py` asserts strings inside the rendered page —
   that the right HTML and JavaScript reach the output. Those are stills, not
   behaviour: none of them opens a browser.
-- The Playwright suite (`tests/browser_test.cjs`, 52 checks, run in the
+- The Playwright suite (`tests/browser_test.cjs`, 57 checks, run in the
   deploy workflow) drives the built page in a real browser: it drags the
   budget slider, filters to a town, follows a ticket link to a stub, and
   reads back what **Copy** puts on the clipboard. That is the only cover for
@@ -59,6 +59,15 @@ origin and a day's fares cannot fail it; and because the workflow builds it
 there, the step has a page on every run rather than pointing at an artifact
 that only exists when the feed changed. A build that produced no page fails the
 step with a reason attached.
+
+One check drives a state the page's own feed may not contain. Most real
+origents price no unrestricted Anytime Day Return at all — King's Cross has
+171 returns and none of those — so the check switches to whichever mode the
+payload says is empty. When a page prices all three, as the synthetic demo
+feed does, it empties one list in the page and switches to it, so the path is
+driven on that page too rather than being reported as untestable. The
+alternative was worse: a check that could only pass on a page CI never
+builds is a check whose failure nobody would read.
 
 ## What would change this
 
