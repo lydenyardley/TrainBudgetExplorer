@@ -1,4 +1,4 @@
-# ADR-0028: A parsed-feed cache is keyed by content, not by timestamp
+# ADR-0031: A parsed-feed cache is keyed by content, not by timestamp
 
 **Status:** Accepted
 **Date:** 27 September 2026
