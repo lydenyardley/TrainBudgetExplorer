@@ -99,6 +99,66 @@ class TimetableParserTest(unittest.TestCase):
     def test_unserved_station_returns_none(self) -> None:
         self.assertIsNone(self.timetable.best_journey("GRN", "XFD"))
 
+    def test_departures_lists_each_departure_time_once(self) -> None:
+        # One entry per departure time, earliest first, capped at the limit.
+        # departures() is a second one-change search that runs per destination
+        # on a real page, and it had no test of its own; the index it now reads
+        # (_schedule_dest_stops) is exercised here through a change, which is
+        # the only way this function reaches that index at all.
+        rows = self.timetable.departures("GRN", "NOT", limit=5)
+        self.assertEqual(
+            [(row.departure, row.arrival, row.changes) for row in rows],
+            [
+                (7 * 60, 8 * 60 + 50, 0),
+                (8 * 60, 8 * 60 + 55, 0),
+                (9 * 60, 9 * 60 + 50, 0),
+                (10 * 60, 10 * 60 + 45, 0),
+                (10 * 60 + 30, 11 * 60 + 15, 0),
+            ],
+        )
+
+    def test_departures_and_best_journey_agree_on_the_fastest_option(self) -> None:
+        # The two one-change searches are twins reading the same indexes. They
+        # answer different questions -- best_journey returns the shortest
+        # journey, departures returns the next ways to leave, one per departure
+        # time -- so they are not equal. But the shortest journey has to be one
+        # of the ways to go, or the page would show a "minutes" figure its own
+        # departure list contradicts.
+        for destination in ("NOT", "LCN", "NWK"):
+            best = self.timetable.best_journey("GRN", destination)
+            options = self.timetable.departures("GRN", destination, limit=50)
+            self.assertTrue(options, f"{destination} has no options")
+            shown = {
+                (row.departure, row.arrival, row.changes, tuple(leg.train_uid for leg in row.legs))
+                for row in options
+            }
+            self.assertIn(
+                (best.departure, best.arrival, best.changes, tuple(leg.train_uid for leg in best.legs)),
+                shown,
+                f"{destination}: the shortest journey is not among the ways to go",
+            )
+
+    def test_departures_finds_a_one_change_option_the_direct_search_misses(self) -> None:
+        # Norwich has no single train from Grantham, so every option here is a
+        # change. This is the path that regressed: the un-indexed twin scanned
+        # every onward stop and this function had no test to catch it.
+        rows = self.timetable.departures("GRN", "NWK", limit=5)
+        self.assertEqual(
+            [(row.departure, row.changes) for row in rows],
+            [
+                (7 * 60, 1),
+                (8 * 60, 1),
+                (9 * 60, 1),
+                (10 * 60, 1),
+                (12 * 60, 0),
+            ],
+        )
+        for row in rows:
+            self.assertEqual(len(row.legs), 1 + row.changes)
+
+    def test_departures_for_an_unserved_station_is_empty(self) -> None:
+        self.assertEqual(self.timetable.departures("GRN", "XFD", limit=5), [])
+
     def test_a_weekday_query_applies_the_overlay(self) -> None:
         self.assertEqual(len(self.timetable.active_schedules(MONDAY)), 7)
         journey = self.timetable.best_journey("GRN", "NOT", day=MONDAY)

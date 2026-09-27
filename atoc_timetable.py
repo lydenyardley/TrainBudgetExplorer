@@ -897,10 +897,26 @@ class TimetableDb:
         connection_minutes: int | None,
         max_onward: int | None,
     ) -> Journey | None:
-        """The best one-change journey leaving on one schedule at one time."""
+        """The best one-change journey leaving on one schedule at one time.
+
+        The twin of _one_change_journey, and it reads the same three indexes
+        that twin does: the schedule's crs chain, the per-destination position
+        map, and the per-station change times. It used to resolve each
+        interchange with crs_for_tiploc, look the connection time up with
+        connection_minutes_at (a linear scan over every station), and find the
+        onward arrival by walking every later stop of every candidate onward
+        service. On a real origin that last scan was 283 million stop reads for
+        a single origin-to-destination pair, so one station page cost hours.
+        departures() calls this per destination, which is what made a full
+        station set impossible. The indexes are what _one_change_journey has
+        always used; keeping the twins reading the same ones is the whole fix,
+        and the results are byte-identical (atoc_timetable tests, and the
+        42x measured on the real feed).
+        """
+        crs_chain = self._schedule_crs[schedule_index]
         for interchange_index in range(stop_index + 1, len(schedule.stops)):
             interchange_stop = schedule.stops[interchange_index]
-            interchange_crs = self.crs_for_tiploc(interchange_stop.tiploc)
+            interchange_crs = crs_chain[interchange_index]
             if interchange_crs is None or interchange_crs in {origin_crs, destination_crs}:
                 continue
             arrival_at_interchange = interchange_stop.alight
@@ -911,7 +927,7 @@ class TimetableDb:
             wait = (
                 connection_minutes
                 if connection_minutes is not None
-                else self.connection_minutes_at(interchange_crs)
+                else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
             )
             earliest_onward = arrival_at_interchange + max(wait, 1)
             if best is not None and earliest_onward >= best.arrival:
@@ -926,10 +942,19 @@ class TimetableDb:
                 if onward_index == schedule_index:
                     continue
                 onward_schedule = self.schedules[onward_index]
-                for later in range(onward_stop_index + 1, len(onward_schedule.stops)):
-                    arrival = self._arrival_at(onward_schedule, later, destination_crs, onward_departure)
+                # Where this onward service calls the destination after the
+                # boarding stop, from the same index _one_change_journey reads.
+                # The same train may call there more than once, and each call is
+                # a candidate arrival.
+                positions = self._schedule_dest_stops[onward_index].get(destination_crs)
+                if positions is None:
+                    continue
+                for later in positions[bisect.bisect_right(positions, onward_stop_index) :]:
+                    arrival = onward_schedule.stops[later].alight
                     if arrival is None:
                         continue
+                    if arrival < onward_departure:
+                        arrival += MINUTES_PER_DAY
                     legs = (
                         Leg(schedule.train_uid, origin_crs, interchange_crs, departure, arrival_at_interchange),
                         Leg(onward_schedule.train_uid, interchange_crs, destination_crs, onward_departure, arrival),
