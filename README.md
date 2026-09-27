@@ -212,7 +212,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
 | `benchmark.py` | Measures the onward departure cap against an uncapped search |
 | `build_demo_page.py` | Writes the self-contained demo page from the feeds, or the whole per-station set with `--all-origins` |
-| `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy) |
+| `page_templates.py` | The page's HTML/CSS/JS as fill-in templates (station page, chooser, privacy); `SHARED_CSS` is the one stylesheet every route inlines, so the three cannot drift (ADR-0033) |
 | `build_workers.py` | The per-process feed cache and job function behind `--workers` |
 | `tools/check_commit_message.py` | Checks a commit message against the convention |
 | `tools/test_propose_nature_stations.py` | Proposer tests: host guard, name matching, and never writing a file |
