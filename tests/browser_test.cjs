@@ -925,6 +925,110 @@ async function runPage(browser, index, given, file, body, base) {
     check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
     check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
 
+    // 7a. The phone reflows around the journey, not around the table (S42):
+    // the budget is the one control that stays open, the refinements fold into
+    // one disclosure that says what is currently narrowed, and the results are
+    // on screen without touching either. Driven the way a reader would drive
+    // it -- open the disclosure, press a chip, close it again -- because a
+    // disclosure that only works when it is forced open is not a disclosure.
+    // A viewport change reaches the page's own listener on a later tick than
+    // the resize call returns, so the fold is waited for rather than read
+    // immediately: a page that never folds away must fail this, not race it.
+    await page
+      .waitForFunction(
+        () => document.getElementById("moreFilters").dataset.open === "false",
+        null,
+        { timeout: 2000 }
+      )
+      .catch(() => {});
+    const phone = await page.evaluate(() => {
+      const details = document.getElementById("moreFilters");
+      const toggle = document.getElementById("moreFiltersToggle");
+      const budget = document.getElementById("budget");
+      const firstRow = document.querySelector("#rows tr");
+      return {
+        open: details ? details.dataset.open === "true" : null,
+        expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
+        summaryVisible: toggle ? getComputedStyle(toggle).display !== "none" : false,
+        budgetVisible: !!budget && budget.getBoundingClientRect().height > 0,
+        resultsVisible: !!firstRow && firstRow.getBoundingClientRect().height > 0,
+        state: (document.getElementById("filterState") || {}).textContent || "",
+      };
+    });
+    check("at 390px the refinements start folded away", phone.open === false, JSON.stringify(phone));
+    check("at 390px the folded refinements say what is narrowed", /\bReturn\b/.test(phone.state) && /adult/.test(phone.state), phone.state);
+    check("at 390px the budget is still on screen", phone.budgetVisible, JSON.stringify(phone));
+    check("at 390px the results are on screen without opening anything", phone.resultsVisible, JSON.stringify(phone));
+    check("at 390px the disclosure is labelled", phone.summaryVisible, JSON.stringify(phone));
+    check(
+      "the toggle announces whether the refinements are open",
+      phone.open === false ? phone.expanded === "false" : phone.expanded === "true",
+      String(phone.expanded)
+    );
+    if (phone.open === false && phone.summaryVisible) {
+      await page.click("#moreFiltersToggle");
+      const opened = await page.evaluate(() => {
+        const details = document.getElementById("moreFilters");
+        const panel = document.getElementById("moreFiltersPanel");
+        return {
+          open: details.dataset.open === "true",
+          expanded: document.getElementById("moreFiltersToggle").getAttribute("aria-expanded"),
+          panelVisible: panel.getBoundingClientRect().height > 0,
+        };
+      });
+      check(
+        "one tap opens the refinements",
+        opened.open === true && opened.expanded === "true" && opened.panelVisible,
+        JSON.stringify(opened)
+      );
+      const chipValue = await page.evaluate(() => {
+        const input = document.querySelector('#destinationTypes input[type="checkbox"]');
+        if (!input) return { pressed: false, rows: 0, label: "", name: "" };
+        const name = input.parentElement.querySelector("span").textContent.trim();
+        const before = document.querySelectorAll("#rows tr").length;
+        input.click();
+        return {
+          pressed: input.checked,
+          name,
+          before,
+          // A small page can press a chip and keep every row it had, so the
+          // row count is reported rather than asserted: what has to change is
+          // the state the reader can see.
+          after: document.querySelectorAll("#rows tr").length,
+          label: (document.getElementById("filterState") || {}).textContent || "",
+        };
+      });
+      check(
+        "a refinement pressed inside the disclosure is applied and says so",
+        // The chip took the press, and the summary now names that chip rather
+        // than the state it read before the tap.
+        chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== phone.state,
+        JSON.stringify(chipValue)
+      );
+      await page.click("#moreFiltersToggle");
+      const closed = await page.evaluate(() => {
+        const details = document.getElementById("moreFilters");
+        const row = document.querySelector("#rows tr");
+        return {
+          open: details.dataset.open === "true",
+          rows: document.querySelectorAll("#rows tr").length,
+          rowVisible: !!row && row.getBoundingClientRect().height > 0,
+          state: (document.getElementById("filterState") || {}).textContent || "",
+        };
+      });
+      check("closing it again keeps the narrowed results", closed.open === false && closed.rows > 0 && closed.rowVisible, JSON.stringify(closed));
+      check("and the summary still names what is narrowed", closed.state.trim().length > 0, closed.state);
+      // Put the chips back, then hand the rest of the run a desktop viewport:
+      // the checks below exercise every control, which on a phone means
+      // opening the disclosure each time, and that is what section 7a is for.
+      await page.evaluate(() => {
+        for (const input of document.querySelectorAll('#destinationTypes input[type="checkbox"]')) {
+          if (input.checked) input.click();
+        }
+      });
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+
     // 7b. The address is the search (S05). Every control the reader moves has
     // to survive a refresh, a shared link and Back, and the picker has to
     // carry the same search to the station they switch to (S06). The facts are
