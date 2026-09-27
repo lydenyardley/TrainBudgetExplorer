@@ -1249,6 +1249,48 @@ async function runPage(browser, index, given, file, body, base) {
       coverage
     );
 
+    // 7e. S33: the age of the numbers, beside the numbers. A synthetic feed has
+    // no download to date, so the fares sentence is conditional; the timetable
+    // sentence is not, and is what the check below judges.
+    const fresh = await page.evaluate(() => {
+      const line = document.getElementById("freshness");
+      const now = new Date();
+      const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      const days = (iso) => Math.round((today - Date.parse(iso + "T00:00:00Z")) / 86400000);
+      return {
+        shown: !line.hidden,
+        text: line.textContent,
+        prices: DATA.feedDate
+          ? /downloaded .*\\bday(s)? old/.test(line.textContent) &&
+            new RegExp(DATA.staleAfterDays + "-day freshness threshold").test(line.textContent)
+          : null,
+        window: DATA.timetableFrom
+          ? new RegExp(humanDate(DATA.timetableFrom) + " to " + humanDate(DATA.timetableTo)).test(line.textContent)
+          : false,
+        verdict: DATA.timetableFrom
+          ? (days(DATA.timetableFrom) < 0
+            ? /has not started yet/.test(line.textContent)
+            : days(DATA.timetableTo) > 0
+              ? /has ended/.test(line.textContent)
+              : /includes today/.test(line.textContent))
+          : /prices fares only/.test(line.textContent),
+        underSummary: Boolean(line.compareDocumentPosition(document.getElementById("summary")) &
+          Node.DOCUMENT_POSITION_PRECEDING),
+      };
+    });
+    check("the page says how old its numbers are", fresh.shown && fresh.text.length > 20, fresh.text);
+    check("the timetable sentence carries the feed's own service window", fresh.window, `${fresh.text} (${JSON.stringify(fresh.window)})`);
+    check("and judges that window against the reader's today", fresh.verdict, fresh.text);
+    check("and it sits beside the result count, not in the footer", fresh.underSummary, fresh.text);
+    if (fresh.prices === null) {
+      // A synthetic feed has no download date, so there is nothing to measure.
+      // The sentence that is missing is the honest one: the page does not
+      // invent a download for a feed nobody downloaded.
+      check("a feed with no download date claims no age for its prices", !/downloaded/.test(fresh.text), fresh.text);
+    } else {
+      check("a feed with a download date says how old its prices are", fresh.prices, fresh.text);
+    }
+
     // 7d. S26: a shortlist of candidate places that can be compared, shared
     // and copied, and that never reads as a booking.
     await open(facts.affordable);

@@ -292,6 +292,7 @@ TEMPLATE = """<!doctype html>
 </section>
 
 <p id="summary" role="status" aria-live="polite"></p>  <p class="tag" id="priceSource" hidden></p>
+<p class="tag" id="freshness" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
 <table>
   <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare</th><th scope="col">Conditions</th><th scope="col">Tickets</th></tr></thead>
@@ -601,6 +602,60 @@ function emptyModeMessage() {
 // type chip can select, and saying so is the difference between a complete
 // claim and a true one. Written in one place because the ticket-mode switch
 // and the first render both rewrite this line.
+// S33: how old the numbers are, beside the numbers. Two ages, because they
+// answer different questions: a fare download is a snapshot of prices that
+// change without expiring, and a timetable is current for the window it says
+// it covers. Both are judged against the reader's own clock, not the build's,
+// so a page published in March says in June that it is five months old. A
+// build with no timetable says so plainly: that is a choice about what to
+// compute, not a feed that has gone stale.
+function renderFreshness() {
+  const line = document.getElementById("freshness");
+  if (!line) return;
+  const parts = [];
+  // Whole calendar days, not elapsed 24-hour periods: a timetable that starts
+  // yesterday has not "not started yet" because it started at ten yesterday
+  // morning, and a reader reading this at breakfast should get the same answer
+  // as one reading it at midnight.
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  // Positive is in the past, negative is in the future.
+  const days = (iso) => Math.round((today - Date.parse(iso + "T00:00:00Z")) / 86400000);
+  if (DATA.feedDate) {
+    const age = days(DATA.feedDate);
+    const limit = DATA.staleAfterDays;
+    // A download dated in the future is a clock problem, not a fresh feed, and
+    // is named as one rather than counted as negative days old.
+    const when = age < 0
+      ? "dated after today, so the clock or the download is wrong"
+      : age + (age === 1 ? " day" : " days") + " old";
+    const verdict = age < 0
+      ? ""
+      : age <= limit
+        ? "within the " + limit + "-day freshness threshold"
+        : "past the " + limit + "-day freshness threshold, so check the fare before you travel";
+    parts.push("Prices are from a fares feed downloaded " + humanDate(DATA.feedDate) + ", " + when +
+      (verdict ? " and " + verdict : "") + ".");
+  }
+  if (!DATA.timetableFrom) {
+    parts.push("This build prices fares only: no timetable was supplied, so no times or changes are shown.");
+  } else {
+    // days() is today minus the date, so a start still ahead is negative and
+    // an end already past is positive.
+    const starts = days(DATA.timetableFrom);
+    const ends = days(DATA.timetableTo);
+    const verdict = starts < 0
+      ? "which has not started yet"
+      : ends > 0
+        ? "which has ended, so these times describe services that no longer run"
+        : "which includes today";
+    parts.push("Times are from a timetable covering " + humanDate(DATA.timetableFrom) + " to " +
+      humanDate(DATA.timetableTo) + ", " + verdict + ".");
+  }
+  line.textContent = parts.join(" ");
+  line.hidden = !parts.length;
+}
+
 function renderCoverage() {
   const coverage = document.getElementById("feedCoverage");
   if (!coverage || DATA.rawFareDestinationCount === undefined) return;
@@ -1062,6 +1117,7 @@ function provenance() {
     ? DATA.pricingBasis + ". Use the ticket-type control to switch between return and outbound single fares, then use the budget filter to narrow the list."
     : "";
   renderCoverage();
+  renderFreshness();
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // What the reader has to do for themselves when the link is the plain one.
   if (DATA.linkNote) {
