@@ -487,6 +487,11 @@ function emptyModeMessage() {
   return "No " + labels[mode] + " fares were found from " + DATA.origin.name + " in this download." + why + where;
 }
 function render() {
+  // The tab title is the same sentence as the heading, and a reader who
+  // dragged the budget and then looked at the tab list had no way to tell two
+  // searches apart. Before the early returns, because a page with nothing
+  // priced still names its origin and its budget.
+  document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
   const available = activeDestinations();
   // Before the filter is read, not after: a chip the active list cannot support
   // must not be part of what the filter is asked to match.
@@ -925,7 +930,10 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     for (const station of wanted.slice(0, 40)) {
       const item = document.createElement("li");
       const link = document.createElement("a");
-      link.href = station.href;
+      // The reader's budget, ticket type and facets travel with them: changing
+      // station is a correction of where they are leaving from, not a reset of
+      // the decision they have already made.
+      link.href = station.href + "?" + stateQuery();
       const name = document.createElement("span");
       name.textContent = station.name;
       const code = document.createElement("span");
@@ -967,15 +975,108 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   originSearch.addEventListener("input", renderPicks);
 }
 
-budget.addEventListener("input", () => { setBudget(budget.value); render(); });
-budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); render(); });
+// The address is the search (S05). A reader who has already decided a budget
+// and a ticket type, then refreshes, or shares the tab, or presses Back, must
+// land on the search they made rather than the one the page was built with.
+// Two rules keep it readable: a value equal to the page default is left out
+// entirely, and the facets are repeated short keys rather than one encoded
+// blob. The same query is what a picker option carries, so a link to another
+// origin is the same search from a different station (S06) -- one function
+// writes both, so they cannot drift apart.
+const DEFAULT_MODE = document.querySelector('input[name="ticketMode"]:checked').value;
+function stateQuery() {
+  const params = new URLSearchParams();
+  params.set("budget", budgetNumber.value);
+  const mode = ticketMode();
+  if (mode !== DEFAULT_MODE) params.set("mode", mode);
+  if (unit() === "party") params.set("party", "2");
+  if (railcard.checked) params.set("card", "1");
+  const types = Array.from(selectedDestinationTypes()).sort();
+  for (const type of types) params.append("types", type);
+  if (currentPage > 1) params.set("page", String(currentPage));
+  return params.toString();
+}
+
+// A decision is one history entry. Dragging the budget is one decision however
+// many events it fires, so the budget replaces the address while the pointer
+// is down and pushes once it settles; every other control is a single click
+// and pushes at once.
+let budgetUrlTimer = null;
+function writeUrl({ budget = false } = {}) {
+  if (!budget) {
+    writeUrlNow(true);
+    return;
+  }
+  if (budgetUrlTimer) clearTimeout(budgetUrlTimer);
+  writeUrlNow(false);
+  budgetUrlTimer = setTimeout(() => {
+    budgetUrlTimer = null;
+    writeUrlNow(true);
+  }, 700);
+}
+const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page"];
+function writeUrlNow(push) {
+  const url = new URL(window.location.href);
+  // Only this page's own keys are rewritten. A shared link can carry someone
+  // else's parameters -- a campaign tag, a referrer -- and dropping them
+  // because the reader moved the budget would quietly break whatever they
+  // were for.
+  for (const key of STATE_KEYS) url.searchParams.delete(key);
+  for (const [key, value] of new URLSearchParams(stateQuery())) url.searchParams.append(key, value);
+  if (url.href === window.location.href) return;
+  history[push ? "pushState" : "replaceState"](null, "", url);
+}
+
+// Read the address back into the controls. A value naming a control this page
+// does not have is ignored rather than guessed at: a link from another station
+// can carry a mode or a facet this origin has no fares for, and the reader
+// should get the page's own defaults for those, not a blank table.
+function readState() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    budget: Number(params.get("budget")),
+    mode: params.get("mode"),
+    unit: params.get("party") === "2" ? "party" : null,
+    railcard: params.get("card") === "1",
+    types: params.getAll("types"),
+    page: Number(params.get("page")) || 1,
+  };
+}
+function applyState(state) {
+  if (Number.isFinite(state.budget) && state.budget > 0) setBudget(state.budget);
+  for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
+    if (input.value === state.mode) input.checked = true;
+  }
+  for (const input of document.querySelectorAll('input[name="unit"]')) {
+    if (input.value === state.unit) input.checked = true;
+  }
+  railcard.checked = state.railcard;
+  for (const input of destinationTypeInputs) {
+    input.checked = input.value !== "all" && state.types.includes(input.value);
+  }
+  const all = destinationTypeInputs.find((input) => input.value === "all");
+  if (all && !all.checked && !destinationTypeInputs.some((input) => input.value !== "all" && input.checked)) {
+    all.checked = true;
+  }
+  currentPage = Math.max(1, state.page);
+}
+window.addEventListener("popstate", () => {
+  // Back is a decision the reader already made, so it is applied without
+  // writing the address again: re-writing it here would make the entry Back
+  // just left unreachable, and the control would never come back.
+  applyState(readState());
+  render();
+});
+
+budget.addEventListener("input", () => { setBudget(budget.value); render(); writeUrl({ budget: true }); });
+budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); render(); writeUrl({ budget: true }); });
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
     budgetNumber.focus();
     budgetNumber.select();
   }
 });
-railcard.addEventListener("change", render);
+railcard.addEventListener("change", () => { render(); writeUrl(); });
 for (const input of destinationTypeInputs) {
   input.addEventListener("change", () => {
     const all = destinationTypeInputs.find((candidate) => candidate.value === "all");
@@ -988,18 +1089,17 @@ for (const input of destinationTypeInputs) {
     }
     currentPage = 1;
     render();
+    writeUrl();
   });
 }
-for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", render);
-for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); });
-previousPage.addEventListener("click", () => { currentPage -= 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
-nextPage.addEventListener("click", () => { currentPage += 1; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
-const requestedBudget = Number(new URLSearchParams(window.location.search).get("budget"));
-if (Number.isFinite(requestedBudget) && requestedBudget > 0) setBudget(requestedBudget);
+for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => { render(); writeUrl(); });
+for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
+previousPage.addEventListener("click", () => { currentPage -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+nextPage.addEventListener("click", () => { currentPage += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+applyState(readState());
 provenance();
 sizeBudgetField();
 render();
-document.title = "Where can we go from " + DATA.origin.name + " for £" + budgetNumber.value + "?";
 </script>
 __ANALYTICS__
 </body>
