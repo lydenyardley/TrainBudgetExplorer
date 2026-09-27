@@ -949,7 +949,11 @@ async function runPage(browser, index, given, file, body, base) {
       await page.locator(`input[name="ticketMode"][value="${mode}"]`).check({ force: true });
       return page.evaluate(() => journeyText(TYPES.list()[0] || { name: "X", crs: "XXX" }));
     };
-    const secondMode = ["return", "single", "anytime"].find((m) => modeHasRows[m] && m !== "return");
+    // The default is read off the checked radio rather than written here, so a
+    // change to which mode the page opens in cannot leave this block asserting
+    // against a mode the page never opens in.
+    const defaultMode = await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value);
+    const secondMode = ["return", "single", "anytime"].find((m) => modeHasRows[m] && m !== defaultMode);
     if (secondMode) {
       const copied = await copyForMode(secondMode);
       // The expected name is read off the mode's own visible label, not from
@@ -960,7 +964,7 @@ async function runPage(browser, index, given, file, body, base) {
         (((await page.locator(`input[name="ticketMode"][value="${mode}"]`)
           .evaluate((el) => el.closest("label")?.textContent || "")) || "").trim());
       const expected = await visibleLabel(secondMode);
-      const otherLabel = await visibleLabel("return");
+      const otherLabel = await visibleLabel(defaultMode);
       const ticketLine = (copied.split("\n").find((line) => line.startsWith("Ticket: ")) || "").trim();
       check(
         "the copied journey names the ticket type the reader chose",
@@ -974,7 +978,10 @@ async function runPage(browser, index, given, file, body, base) {
     // handed back in the default state rather than in whatever ticket mode the
     // C09 check happened to be in.
     await open();
-    await page.locator('input[name="ticketMode"][value="return"]').check({ force: true }).catch(() => {});
+    await page
+      .locator(`input[name="ticketMode"][value="${defaultMode}"]`)
+      .check({ force: true })
+      .catch(() => {});
 
     // 4. A ticket link goes where it says it goes, in a new tab.
     const link = page.locator("#rows a.buy").first();
@@ -1153,8 +1160,18 @@ async function runPage(browser, index, given, file, body, base) {
         JSON.stringify(opened)
       );
       const chipValue = await page.evaluate(() => {
-        const input = document.querySelector('#destinationTypes input[type="checkbox"]');
-        if (!input) return { pressed: false, rows: 0, label: "", name: "" };
+        // A chip whose count is zero inside the current budget empties the
+        // list by design, and the page says so on the chip before the press.
+        // This check is about the disclosure keeping whatever the reader
+        // narrowed to, so it presses a chip that has something to narrow to;
+        // a page where no chip does is reported rather than failed.
+        const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
+        const withRows = boxes.filter((box) => {
+          const count = document.querySelector(`[data-count-for="${box.value}"]`);
+          return count && Number(count.textContent.replace(/\D/g, "")) > 0;
+        });
+        const input = withRows[0] || boxes[0] || null;
+        if (!input) return { pressed: false, rows: 0, label: "", name: "", noneLeft: true };
         const name = input.parentElement.querySelector("span").textContent.trim();
         const before = document.querySelectorAll("#rows tr").length;
         input.click();
@@ -1173,7 +1190,7 @@ async function runPage(browser, index, given, file, body, base) {
         "a refinement pressed inside the disclosure is applied and says so",
         // The chip took the press, and the summary now names that chip rather
         // than the state it read before the tap.
-        chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== phone.state,
+        !chipValue.noneLeft && chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== phone.state,
         JSON.stringify(chipValue)
       );
       await page.click("#moreFiltersToggle");
@@ -1187,7 +1204,11 @@ async function runPage(browser, index, given, file, body, base) {
           state: (document.getElementById("filterState") || {}).textContent || "",
         };
       });
-      check("closing it again keeps the narrowed results", closed.open === false && closed.rows > 0 && closed.rowVisible, JSON.stringify(closed));
+      check(
+        "closing it again keeps the narrowed results",
+        closed.open === false && closed.rows > 0 && closed.rowVisible,
+        JSON.stringify(closed)
+      );
       check("and the summary still names what is narrowed", closed.state.trim().length > 0, closed.state);
       // Put the chips back, then hand the rest of the run a desktop viewport:
       // the checks below exercise every control, which on a phone means
@@ -1234,8 +1255,15 @@ async function runPage(browser, index, given, file, body, base) {
         return rows;
       };
       // Only a mode that is not the page default, because a default is the one
-      // value the address leaves out by design.
-      for (const wanted of ["single", "anytime"]) if (mode(wanted) > 0) return wanted;
+      // value the address leaves out by design. The default is whatever the
+      // page opened with, not a name written here, so changing which mode the
+      // page opens in cannot make this probe pick the default and then assert
+      // the address carries it.
+      const defaultValue = fallback.value;
+      for (const wanted of ["return", "single", "anytime"]) {
+        if (wanted === defaultValue) continue;
+        if (mode(wanted) > 0) return wanted;
+      }
       return null;
     });
     const partyBudget = await page.evaluate(() => {
@@ -1255,7 +1283,7 @@ async function runPage(browser, index, given, file, body, base) {
       await page.locator(`input[name="ticketMode"][value="${otherMode}"]`).check({ force: true });
       check("the address carries the ticket mode", new RegExp("[?&]mode=" + otherMode + "(&|$)").test(await address()), await address());
     } else {
-      check("the address carries the ticket mode", notExercised("no mode other than Return has a row on this page"));
+      check("the address carries the ticket mode", notExercised("no mode other than this page's default has a row"));
     }
     if (partyBudget && stateful.hasParty) {
       await page.check('input[name="unit"][value="party"]');
@@ -1271,12 +1299,14 @@ async function runPage(browser, index, given, file, body, base) {
     } else {
       check("the address carries the destination type", notExercised("this page offers no destination-type chip"));
     }
+    // An absent mode parameter means the page's own default, read above from
+    // the control rather than repeated here.
     const sharedUrl = await address();
     await page.reload();
     check(
       "a refresh keeps the search the address describes",
       (await page.inputValue("#budgetNumber")) === new URL(sharedUrl).searchParams.get("budget") &&
-        (await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value)) === (new URL(sharedUrl).searchParams.get("mode") || "return") &&
+        (await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value)) === (new URL(sharedUrl).searchParams.get("mode") || defaultMode) &&
         (await page.evaluate(() => document.querySelectorAll('input[name="destinationType"]:checked').length)) ===
           new URL(sharedUrl).searchParams.getAll("types").length,
       sharedUrl
@@ -1291,7 +1321,7 @@ async function runPage(browser, index, given, file, body, base) {
     }));
     check(
       "Back returns to the previous search",
-      (new URL(backUrl).searchParams.get("mode") || "return") === afterBack.mode,
+      (new URL(backUrl).searchParams.get("mode") || defaultMode) === afterBack.mode,
       `${afterBack.mode} at £${afterBack.budget} on ${backUrl}`
     );
     // The budget is the one thing every reader has, so it is the one thing the
@@ -1505,12 +1535,20 @@ async function runPage(browser, index, given, file, body, base) {
     );
     await open(facts.affordable);
 
-    // S29: the coverage claim is counted, and the count is on the page.
+    // S29: the coverage claim is counted, and the count is on the page. The
+    // lead sentence is per mode, so the expected shape is read from the mode
+    // the page is actually in rather than pinned to one of them.
     const coverage = (await page.textContent("#feedCoverage")) || "";
+    const coverageMode = await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value);
+    const COVERAGE_LEAD = {
+      anytime: /reviewed unrestricted Anytime Day Return fares are available in this mode/,
+      single: /displayable outbound single fares are available in this mode/,
+      return: /standard-return destinations were found in the feed/,
+    };
     check(
       "the page states what it could not show",
-      /standard-return destinations were found in the feed/.test(coverage),
-      coverage
+      Boolean(COVERAGE_LEAD[coverageMode] && COVERAGE_LEAD[coverageMode].test(coverage)),
+      `${coverageMode}: ${coverage}`
     );
     check(
       "including the destinations no type chip can select",
