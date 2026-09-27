@@ -190,7 +190,10 @@ async function checkChooser(page, url, check) {
   const heading = ((await page.textContent("h1")) || "").trim();
   check(
     "the heading is the budget question and nothing else",
-    new RegExp("^Where can we go for £" + budget + "\?").test(heading),
+    // C15 and C21: the figure in the heading is written from the same
+    // resolved budget as the field, the title and the outgoing links, and the
+    // wording is the inclusive one.
+    new RegExp("^Where can we go for up to £" + budget + "\?").test(heading),
     JSON.stringify(heading)
   );
   const options = await page.locator("#picks a").count();
@@ -523,7 +526,10 @@ async function runPage(browser, index, given, file, body, base) {
     const heading = (await page.textContent("h1")) || "";
     check(
       "renders the continuous budget-and-origin heading",
-      /Where can we go for under/.test(heading) && heading.includes(facts.origin.toUpperCase()),
+      // C21: the filter includes a fare exactly at the budget (price <= cap),
+      // so the sentence says "up to". "Under" would describe a page that
+      // excludes a row it actually shows.
+      /Where can we go for up to/.test(heading) && heading.includes(facts.origin.toUpperCase()),
       heading.trim()
     );
     check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");
@@ -560,7 +566,7 @@ async function runPage(browser, index, given, file, body, base) {
     check("the slider responds to a real drag", draggedBudget !== startBudget, `${startBudget} -> ${draggedBudget}`);
     check("a dragged-down budget drops rows", afterDrag < initial, `${initial} -> ${afterDrag}`);
     check("an empty budget says so rather than showing nothing", await page.locator("#empty").isVisible());
-    check("the summary counts what is left", /No destinations within/.test(await page.textContent("#summary")));
+    check("the summary counts what is left", /No destinations for up to/.test(await page.textContent("#summary")));
 
     // 3. The destination-type chips narrow the result set and support both
     // exclusive All and multi-select specific types. Every chip is judged
@@ -817,13 +823,158 @@ async function runPage(browser, index, given, file, body, base) {
       also: Array.from(document.querySelectorAll('input[name="destinationType"]'))
         .filter((input) => input.value !== "all" && input.checked)
         .map((input) => input.value),
-    }));
-    check(
-      "All is checked exclusively",
+    }));    check("All is checked exclusively",
       exclusivity.all && exclusivity.also.length === 0,
       `all ${exclusivity.all}; also checked: ${exclusivity.also.join(", ") || "none"}`
     );
     check("clearing the type filter restores the list", (await rows()) === initial);
+
+    // C20: a facet present in only one mode used to be silently unchecked when
+    // the mode changed, and switching back showed "All" with no explanation.
+    // The selection is now kept per mode, and a change is announced. Both are
+    // checked here, on whatever modes this page actually carries chips for.
+    // C17 and C20 each start from a fresh load: both drive the ticket-mode
+    // radios, and leaving a mode or a party selected behind them would make a
+    // later check read a page state it did not ask for.
+    await open();
+    const chipInMode = await page.evaluate(() => {
+      // Which chips does each mode offer? A chip the reader can pick has to be
+      // offered by the mode they pick it in; the mode it is then compared
+      // against is one that cannot carry it, because that is the only situation
+      // where it is dropped. A mode with fares is preferred for that second
+      // role because it is the harder case -- an empty mode drops everything
+      // anyway -- but a mode with no fares at all is what most real stations
+      // actually have for Anytime Day Return, so it is used when nothing else
+      // will do rather than reported as a check this page cannot make.
+      const MODES = ["return", "single", "anytime"];
+      const rowsFor = (mode) => {
+        const list = { return: "destinations", single: "singleDestinations", anytime: "anytimeDestinations" }[mode];
+        return (DATA[list] || []).length;
+      };
+      const switchable = MODES.filter((mode) => document.querySelector(`input[name="ticketMode"][value="${mode}"]`));
+      if (switchable.length < 2) return [];
+      const original = document.querySelector('input[name="ticketMode"]:checked').value;
+      const offered = {};
+      for (const mode of switchable) {
+        document.querySelector(`input[name="ticketMode"][value="${mode}"]`).checked = true;
+        render();
+        offered[mode] = new Set(activeDestinations().flatMap((x) => x.destinationTypes || [x.destinationType]));
+      }
+      document.querySelector(`input[name="ticketMode"][value="${original}"]`).checked = true;
+      render();
+      const out = [];
+      for (const input of document.querySelectorAll('input[name="destinationType"]')) {
+        if (input.value === "all") continue;
+        const home = switchable.find((m) => rowsFor(m) && offered[m].has(input.value));
+        if (!home) continue;
+        const away = switchable.find((m) => m !== home && rowsFor(m) && !offered[m].has(input.value)) ||
+          switchable.find((m) => m !== home && !offered[m].has(input.value));
+        if (away) out.push({ value: input.value, home, away });
+      }
+      return out;
+    });
+    if (chipInMode.length) {
+      const chip = chipInMode[0];
+      await page.locator(`input[name="ticketMode"][value="${chip.home}"]`).check({ force: true });
+      await page.check(`input[name="destinationType"][value="${chip.value}"]`);
+      await page.locator(`input[name="ticketMode"][value="${chip.away}"]`).check({ force: true });
+      const notice = ((await page.textContent("#facetNotice").catch(() => "")) || "").trim();
+      // The notice names the facet the way the reader knows it -- the chip's
+      // own label, without its count -- so that is what is looked for.
+      const chipLabel = ((await page.locator(`input[name="destinationType"][value="${chip.value}"]`)
+        .evaluate((el) => el.closest("label")?.textContent || "")).replace(/\(\d+\)/, "")).trim();
+      check(
+        "switching ticket mode says a filter was cleared",
+        notice.startsWith("Cleared ") && notice.includes(chipLabel),
+        JSON.stringify({ notice, chipLabel, chip })
+      );
+      await page.locator(`input[name="ticketMode"][value="${chip.home}"]`).check({ force: true });
+      check(
+        "and switching back restores the filter the reader had",
+        await page.isChecked(`input[name="destinationType"][value="${chip.value}"]`),
+        `${chip.value} checked again in ${chip.home}`
+      );
+    } else {
+      check("switching ticket mode says a filter was cleared",
+        notExercised("every chip this page offers is offered by every mode it can switch to"));
+      check("and switching back restores the filter the reader had", notExercised("see above"));
+    }
+    await page.check('input[name="destinationType"][value="all"]');
+
+    // C17: the order and the "best" highlight follow the price actually on
+    // screen, which is not the standard fare once the party or the railcard
+    // changes it. Read in both states, because the defect was only visible in
+    // one of them.
+    await open();
+    const orderState = () => page.evaluate(() => {
+      const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+      return {
+        prices: shown.map((r) => Number(r.querySelector("td.num").textContent.replace(/[^0-9.]/g, ""))),
+        bestIndex: shown.findIndex((r) => r.classList.contains("best")),
+      };
+    });
+    const adultOrder = await orderState();
+    await page.check('input[name="unit"][value="party"]');
+    const partyOrder = await orderState();
+    const sortedAscending = (xs) => xs.every((v, i) => i === 0 || xs[i - 1] <= v);
+    check(
+      "the rows are ordered by the price on screen, not by the feed's order",
+      sortedAscending(adultOrder.prices) && sortedAscending(partyOrder.prices),
+      `adult ${JSON.stringify(adultOrder.prices.slice(0, 4))}; party ${JSON.stringify(partyOrder.prices.slice(0, 4))}`
+    );
+    // A pair's price is double, so a page with one fare can legitimately return
+    // nothing for two adults. The highlight is only judged where there is a
+    // row to highlight.
+    const bestIsFirst = (s) => s.prices.length === 0 || s.bestIndex === 0;
+    check(
+      "and the cheapest displayed fare is the highlighted best row",
+      bestIsFirst(adultOrder) && bestIsFirst(partyOrder),
+      `best at index ${adultOrder.bestIndex} of ${adultOrder.prices.length}, ` +
+        `${partyOrder.bestIndex} of ${partyOrder.prices.length} (a party over the budget is an empty list, not a missing highlight)`
+    );
+    await page.check('input[name="unit"][value="adult"]');
+
+    // C09: the copied journey carries the ticket mode, so a handoff to a
+    // seller cannot silently become a different ticket. Read from the page's
+    // own journeyText() rather than from a clipboard, which the context denies.
+    // The counts come from the payload rather than from the page's modeCount(),
+    // which is not a global: one list per mode is the same fact the page reads.
+    await open();
+    const modeHasRows = await page.evaluate(() => ({
+      return: (DATA.destinations || []).length,
+      single: (DATA.singleDestinations || []).length,
+      anytime: (DATA.anytimeDestinations || []).length,
+    }));
+    const copyForMode = async (mode) => {
+      await page.locator(`input[name="ticketMode"][value="${mode}"]`).check({ force: true });
+      return page.evaluate(() => journeyText(TYPES.list()[0] || { name: "X", crs: "XXX" }));
+    };
+    const secondMode = ["return", "single", "anytime"].find((m) => modeHasRows[m] && m !== "return");
+    if (secondMode) {
+      const copied = await copyForMode(secondMode);
+      // The expected name is read off the mode's own visible label, not from
+      // the page's modeLabels() helper: journeyText() builds its line with that
+      // same helper, so comparing the two would pass on any string at all --
+      // including a label of "" or one carrying a row count.
+      const visibleLabel = async (mode) =>
+        (((await page.locator(`input[name="ticketMode"][value="${mode}"]`)
+          .evaluate((el) => el.closest("label")?.textContent || "")) || "").trim());
+      const expected = await visibleLabel(secondMode);
+      const otherLabel = await visibleLabel("return");
+      const ticketLine = (copied.split("\n").find((line) => line.startsWith("Ticket: ")) || "").trim();
+      check(
+        "the copied journey names the ticket type the reader chose",
+        expected.length > 2 && ticketLine === "Ticket: " + expected && expected !== otherLabel,
+        JSON.stringify({ ticketLine, expected, otherLabel, secondMode })
+      );
+    } else {
+      check("the copied journey names the ticket type the reader chose", notExercised("no second mode on this page has a row"));
+    }
+    // The next section reads the ticket link off the first row, so the page is
+    // handed back in the default state rather than in whatever ticket mode the
+    // C09 check happened to be in.
+    await open();
+    await page.locator('input[name="ticketMode"][value="return"]').check({ force: true }).catch(() => {});
 
     // 4. A ticket link goes where it says it goes, in a new tab.
     const link = page.locator("#rows a.buy").first();
@@ -1728,6 +1879,71 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     unnamed.length === 0 && named > 0,
     `${named} named, ${unnamed.length} unnamed${unnamed.length ? " (" + unnamed.join(", ") + ")" : ""}`
   );
+
+  // A placeholder is an accessible-name fallback, so the check above reports a
+  // field that has only a placeholder as named -- and it names it with text the
+  // reader cannot see once they start typing, which is the whole reason C12 was
+  // a defect while the gate stayed green. A control counted as properly labelled
+  // here has a real label element, an aria-label or an aria-labelledby; only a
+  // placeholder is a failure.
+  const placeholderOnly = await page.evaluate(() => {
+    const namedProperly = (el) => {
+      if (el.getAttribute("aria-label")?.trim()) return true;
+      const by = el.getAttribute("aria-labelledby");
+      if (by && by.split(/\s+/).some((id) => document.getElementById(id)?.textContent?.trim())) {
+        return true;
+      }
+      if (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent?.trim()) {
+        return true;
+      }
+      return el.closest("label")?.textContent?.trim() ? true : false;
+    };
+    const out = [];
+    for (const el of document.querySelectorAll("input, select, textarea")) {
+      if (el.closest("[hidden]") || el.type === "hidden") continue;
+      if (!el.placeholder?.trim()) continue;
+      if (!namedProperly(el)) {
+        out.push((el.id || el.name || el.type) + ` (placeholder "${el.placeholder.trim().slice(0, 24)}")`);
+      }
+    }
+    return out;
+  });
+  check(
+    `no ${routeKind} field is named only by its placeholder`,
+    placeholderOnly.length === 0,
+    placeholderOnly.length ? placeholderOnly.join("; ") : "every placeholder field also has a real label"
+  );
+  // C29: one main landmark, and the back link and footer stay outside it as
+  // the navigation landmarks they are. A route that omitted it made landmark
+  // navigation the only way through a long page, and nothing above caught it.
+  const landmarks = await page.evaluate(() => ({
+    main: document.querySelectorAll("main").length,
+    nav: document.querySelectorAll("nav").length,
+    navsInMain: document.querySelectorAll("main nav").length,
+    headingsInMain: document.querySelectorAll("main h1").length,
+  }));
+  check(
+    `the ${routeKind} has exactly one main landmark around its own content`,
+    landmarks.main === 1 && landmarks.headingsInMain === 1,
+    JSON.stringify(landmarks)
+  );
+
+  // C13: a links list of identical "Tickets" entries cannot be scanned. Every
+  // ticket link is named for its destination, and no two names collide, so a
+  // reader choosing one from a list can tell them apart.
+  const isStation = routeKind === "station";
+  const ticketNames = await page.evaluate(() => {
+    const names = Array.from(document.querySelectorAll("a.buy")).map(
+      (a) => a.getAttribute("aria-label") || a.textContent.trim());
+    return { total: names.length, distinct: new Set(names).size, sample: names.slice(0, 3) };
+  });
+  check(
+    `the ${routeKind} names each ticket link for its destination`,
+    !isStation || (ticketNames.total > 0 && ticketNames.distinct === ticketNames.total),
+    `${ticketNames.distinct} distinct of ${ticketNames.total}` +
+      (ticketNames.sample.length ? " -- " + JSON.stringify(ticketNames.sample) : "")
+  );
+
   // One heading, and it is the page's own subject rather than a brand line.
   const headings = await page.evaluate(() =>
     Array.from(document.querySelectorAll("h1, h2")).map((el) => ({
@@ -1848,8 +2064,14 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         ["#summary", "the result count"],
         ["td", "a cell"],
         [".restriction", "a travel condition"],
+        [".restriction[data-status=restricted]", "a restricted-fare condition"],
+        ["h1", "the page heading"],
+        ["h2", "a section heading"],
+        [".condition", "the condition in words"],
+        [".origin-picker-label", "the change-station field label"],
         [".chipcount", "a chip's count"],
         [".condition", "the readable condition"],
+        ["#facetNotice", "a filter-change notice"],
         [".synthetic-banner", "the synthetic-data banner"],
         [".synthetic-banner strong", "the banner's label"],
         [".brand", "the brand line"],
@@ -1951,7 +2173,15 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         };
         seen.push(record);
         if (Math.min(box.w, box.h) + 0.5 < MINIMUM) small.push(record);
-        const promised = el.classList.contains("toggle") || el.classList.contains("buy") || el.id === "moreFiltersToggle";
+        // The filter families were 36px and outside the gate entirely, because
+        // the control a finger touches is a <label> wrapping a hidden input and
+        // the selector below only ever asked for buttons, links and inputs.
+        // C23 holds the segmented ticket types, the destination chips and the
+        // party choices to the same 44px the row actions are held to, and the
+        // label is what is measured.
+        const filterControl = el.closest(".segmented label, .choice-chip, .railcard-choice, input[type=range]");
+        const promised = el.classList.contains("toggle") || el.classList.contains("buy") ||
+          el.id === "moreFiltersToggle" || !!filterControl;
         if (promised && Math.min(box.w, box.h) + 0.5 < PROMISED) underPromised.push(record);
       }
       return { small, underPromised, inlineInText, seen };
