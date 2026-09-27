@@ -223,6 +223,7 @@ TEMPLATE = """<!doctype html>
 <body>
 <h1 id="pageHeading">Where can we go for under <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
 <p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
+<p class="sub" id="firstUse">This page is about one station: <b>Change</b> in the heading moves to another one. Everything below narrows the destinations from here.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
@@ -334,6 +335,12 @@ const nextPage = document.getElementById("nextPage");
 const pageStatus = document.getElementById("pageStatus");
 const railcardDrawer = document.getElementById("railcardDrawer");
 const railcardClose = document.getElementById("railcardClose");
+
+function matches(station, needle) {
+  if (!needle) return true;
+  return station.name.toLowerCase().includes(needle) ||
+    station.crs.toLowerCase().startsWith(needle);
+}
 
 function ticketMode() {
   return document.querySelector('input[name="ticketMode"]:checked').value;
@@ -923,9 +930,7 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
 
   function renderPicks() {
     const needle = originSearch.value.trim().toLowerCase();
-    const wanted = DATA.stations.filter(
-      (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
-    );
+    const wanted = DATA.stations.filter((station) => !needle || matches(station, needle));
     originPicks.replaceChildren();
     for (const station of wanted.slice(0, 40)) {
       const item = document.createElement("li");
@@ -1152,6 +1157,7 @@ CHOOSER_TEMPLATE = """<!doctype html>
 <h1>Where can we go for &pound;__BUDGET__?</h1>
 <p class="brand">Rail Budget</p>
 <p class="sub">Pick the station you are starting from, and see every destination reachable by train inside the budget.</p>
+<p class="sub">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
 <label class="caption" for="chooserBudget">Starting budget</label>
 <input id="chooserBudget" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric">
 <label class="caption" for="pick">Your station</label>
@@ -1172,6 +1178,11 @@ const pick = document.getElementById("pick");
 const chooserBudget = document.getElementById("chooserBudget");
 const capMessage = document.getElementById("capMessage");
 const CHOOSER_LIMIT = 40;
+function matches(station, needle) {
+  if (!needle) return true;
+  return station.name.toLowerCase().includes(needle) ||
+    station.crs.toLowerCase().startsWith(needle);
+}
 if (chooserBudget) {
   const storedBudget = new URLSearchParams(window.location.search).get("budget");
   if (storedBudget && Number(storedBudget) > 0) chooserBudget.value = storedBudget;
@@ -1192,9 +1203,7 @@ function render() {
     return;
   }
   const needle = pick.value.trim().toLowerCase();
-  const wanted = STATIONS.filter(
-    (s) => !needle || s.name.toLowerCase().includes(needle) || s.crs.toLowerCase() === needle
-  );
+  const wanted = STATIONS.filter((station) => !needle || matches(station, needle));
   picks.replaceChildren();
   for (const station of wanted.slice(0, CHOOSER_LIMIT)) {
     const item = document.createElement("li");
