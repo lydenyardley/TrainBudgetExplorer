@@ -752,26 +752,6 @@ class DemoPageTest(unittest.TestCase):
                 for row in self.payload.get(mode, [])
             ]
         html = render_page(payload, budget_pounds=50)
-        head = html.split("<script")[0]
-        self.assertIn('name="destinationType" value="city"', head)
-        self.assertNotIn('name="destinationType" value="seaside"', head)
-        self.assertNotIn('name="destinationType" value="university"', head)
-        self.assertNotIn('name="destinationType" value="island"', head)
-
-    def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
-        # A chip that can only ever return nothing reads as a broken control,
-        # so the page offers only the types its destinations actually carry.
-        payload = dict(self.payload)
-        payload["destinations"] = [
-            dict(row, destinationTypes=["city"], destinationType="city")
-            for row in self.payload["destinations"]
-        ]
-        for mode in ("singleDestinations", "anytimeDestinations"):
-            payload[mode] = [
-                dict(row, destinationTypes=["city"], destinationType="city")
-                for row in self.payload.get(mode, [])
-            ]
-        html = render_page(payload, budget_pounds=50)
         head = html.split("<script>")[0]
         self.assertIn('name="destinationType" value="city"', head)
         self.assertNotIn('name="destinationType" value="seaside"', head)
