@@ -1577,8 +1577,10 @@ if (shortlistClear) {
 // The address is the search (S05). A reader who has already decided a budget
 // and a ticket type, then refreshes, or shares the tab, or presses Back, must
 // land on the search they made rather than the one the page was built with.
-// Two rules keep it readable: a value equal to the page default is left out
-// entirely, and the facets are repeated short keys rather than one encoded
+// Two rules keep it readable. The budget is always written, because it is the
+// decision the page exists to record and a shared link without it would not be
+// the search that was made; every other value equal to the page default is left
+// out entirely. And the facets are repeated short keys rather than one encoded
 // blob. The same query is what a picker option carries, so a link to another
 // origin is the same search from a different station (S06) -- one function
 // writes both, so they cannot drift apart.
