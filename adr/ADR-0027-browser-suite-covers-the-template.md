@@ -91,9 +91,12 @@ re-discovering it: the deploy workflow installs Chromium and runs the suite
 (`deploy.yml`, "Test the page in a real browser"), so the shipped path is
 covered; a contributor's local run is what goes without.
 
-A second cost is that CI runs the suite against the synthetic page, so a real
-station's page is not driven in a browser before it is published. The suite is
-written to be run against any page (`node tests/browser_test.cjs <page>`) and
-passes against real Grantham and King's Cross pages, so the gap is one command
-rather than a rewrite — but it is a gap, and the page that ships is the one
-nobody has opened in a browser on the day.
+The suite runs against the published page in the same CI run that publishes
+it, so a real station's page is no longer the one nobody opened on the day.
+That closes the cost this record used to name, and it closes it because the
+suite reads its expectations from the payload rather than from a fixture: the
+checks that could not pass on a real page three decisions ago now hold on it,
+and the page that ships is one a browser drove. The remaining gap is the
+unchanged-feed run, where the site was not rebuilt and there is no published
+page to drive; the demo page still runs there, and the next build drives its
+own output.

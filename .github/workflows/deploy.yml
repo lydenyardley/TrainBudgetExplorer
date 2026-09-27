@@ -178,15 +178,22 @@ jobs:
         # browser JS that the Python suite cannot see (audit C2). Playwright
         # needs a browser; chromium is the lightest.
         #
-        # The page under test is built here, from the synthetic demo feed,
-        # because the suite tests the template rather than a station: it is
-        # written against the payload the page carries, so it holds for any
+        # Two pages go through the suite. The synthetic demo feed's is built
+        # here, because the suite tests the template rather than a station: it
+        # is written against the payload the page carries, so it holds for any
         # origin, and a day's fares cannot fail it. It also means the step has
-        # a page on every run. Pointed at _site/index.html it had none when the
-        # feed was unchanged and the site was not rebuilt -- the step below this
-        # one only builds on a change -- so it tested a file that was not there
-        # and failed, or tested a real station page whose fares the suite had
-        # no business asserting against.
+        # a page on every run, and it is a build with a timetable, so the
+        # times and changes columns are driven by something.
+        #
+        # The other is _site/index.html: the page this run is about to
+        # publish, driven in the same run, so the page that ships is one
+        # somebody opened. It is a prices-only build, which the demo page is
+        # not, so the two cover different ground. The site build above only
+        # runs when the feed changed, so on an unchanged run there is no
+        # published page to drive and the suite runs against the demo page
+        # alone -- rather than against a file that is not there.
+        env:
+          SITE_BUILT: ${{ steps.feed_check.outputs.changed }}
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
           python make_synthetic_feed.py _demo_feed --unserved-station
@@ -198,7 +205,15 @@ jobs:
             echo "::error title=browser test::no page was built at demo.html, so the page in a real browser was not tested"
             exit 1
           fi
-          npx --yes --package playwright node tests/browser_test.cjs demo.html
+          PAGES=(demo.html)
+          if [ "$SITE_BUILT" = "true" ]; then
+            if [ ! -s _site/index.html ]; then
+              echo "::error title=browser test::the site was built but there is no page at _site/index.html, so the page that ships was not tested in a browser"
+              exit 1
+            fi
+            PAGES+=(_site/index.html)
+          fi
+          npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}"
 
       - name: Save the successful feed manifest and build fingerprint
         if: steps.feed_check.outputs.changed == 'true'

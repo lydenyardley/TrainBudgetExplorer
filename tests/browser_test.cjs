@@ -635,7 +635,16 @@ async function runPage(browser, index, given, file, body, base) {
       const pickCount = await page.locator("#originPicks a").count();
       check("the picker lists stations without typing", pickCount > 0, `${pickCount} options`);
       const href = await page.locator("#originPicks a").first().getAttribute("href");
-      check("options are links to station pages", /^\/from\/.+\/$/.test(href), href);
+      // Judged against the base the page itself carries, not a root-absolute
+      // path: a project site is published under owner.github.io/repo/ and
+      // prefixes every internal link with it (ADR-0024), so a check that
+      // demanded /from/ would fail the published page and only that page.
+      const baseHref = await page.evaluate(() => DATA.baseHref);
+      check(
+        "options are links to station pages",
+        href.startsWith(baseHref + "from/") && href.endsWith("/") && href.length > baseHref.length + 6,
+        `${href} under base ${baseHref}`
+      );
       // The query comes from the picker's own first option, so the check is
       // about narrowing rather than about a station name the fixture happened
       // to carry.
