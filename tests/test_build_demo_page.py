@@ -1096,11 +1096,51 @@ class DemoPageTest(unittest.TestCase):
         for name, page in (("chooser", chooser), ("station", self.html), ("privacy", privacy)):
             self.assertIn("--accent: #14509b;", page, f"{name} lost the shared palette")
             self.assertIn("prefers-color-scheme: dark", page, f"{name} lost the dark palette")
-            self.assertIn(".footnav a { color: inherit; }", page, f"{name} restated the footer nav")
+            self.assertIn(
+                ".footnav a { display: inline-flex; align-items: center; min-height: 24px; color: inherit; }",
+                page,
+                f"{name} restated the footer nav",
+            )
         # The chooser and the station page state their width or heading size as
         # a token, rather than restating the rule the shared block sets.
         self.assertIn(":root { --h1: 1.5rem; }", chooser)
         self.assertIn("--page-max: 78rem", self.html)
+
+    def test_accessibility_is_a_route_matrix_and_not_one_happy_path(self) -> None:
+        # S41: the AA commitment was evidenced from one station page. The
+        # browser suite now runs a matrix on every route it is pointed at --
+        # chooser, station page, privacy page -- in both colour schemes, at
+        # desktop, phone and 200% zoom, and this asserts the matrix is wired
+        # into that path rather than left in a function nobody calls.
+        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        for wanted in (
+            "async function checkAccessibilityMatrix(",
+            "await checkAccessibilityMatrix(page, url, check, kind);",
+            # Both schemes, and the scheme has to land or the dark pass is the
+            # light pass wearing another name.
+            'for (const scheme of ["light", "dark"])',
+            "page.emulateMedia({ colorScheme: scheme })",
+            # A 320px viewport is what 200% zoom leaves of a 640px screen.
+            "width: 320",
+            # Computed names, contrast off the rendered pixels, measured targets
+            # and a focus indicator: the four things a claim of AA rests on.
+            ".ariaSnapshot()",
+            "every kind of text meets AA contrast",
+            "every pointer target is at least 24px",
+            "the controls promised at 44px are at least 44px",
+            "the focused control shows where it is",
+            "nothing scrolls sideways",
+            "at 320px the text is still the base size",
+        ):
+            self.assertIn(wanted, suite, f"the matrix lost: {wanted}")
+        # The privacy page is a route, not a path this suite cannot read.
+        self.assertIn('return "privacy";', suite)
+        self.assertIn("routes in the accessibility matrix", suite)
+        # The two page defects the matrix found are fixed in the page itself,
+        # so the numbers above are the ones the suite measures.
+        self.assertIn("--muted: #a7b2c0", self.html)
+        self.assertIn(".synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }", self.html)
+        self.assertIn(".feed-record summary { display: inline-flex; align-items: center; min-height: 24px;", self.html)
 
     def test_a_phone_keeps_the_budget_and_folds_the_refinements(self) -> None:
         # S42: the phone reflows around the journey rather than around the

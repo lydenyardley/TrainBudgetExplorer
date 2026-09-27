@@ -384,26 +384,46 @@ async function runPage(browser, index, given, file, body, base) {
   // counted, and a run that checked no station page at all still fails, so a
   // suite pointed at the wrong tree cannot read as a pass.
   await page.goto(url);
-  notStation = !(await page.evaluate(
-    () => typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined"
-  ));
-  if (notStation) {
-    // The chooser is a page this suite does test: it is the page a reader
-    // lands on and the only control that chooses an origin. The privacy page
-    // carries no controls and is reported untested.
-    const isChooser = await page.evaluate(() => typeof STATIONS !== "undefined" && !!document.getElementById("picks"));
+  // Which route is this, decided by what the page carries rather than by where
+  // it sits: a single-station build writes the station page to the site root
+  // and a full-network build writes a chooser there.
+  const kind = await page.evaluate(() => {
+    if (typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined") return "station";
+    if (typeof STATIONS !== "undefined" && document.getElementById("picks")) return "chooser";
+    if (document.querySelector("h1")) return "privacy";
+    return "other";
+  });
+  notStation = kind !== "station";
+  // S41: the matrix runs first and on every route, including the privacy page,
+  // which used to be reported as 0/0 because it carries no controls. It is a
+  // published route a reader can land on from every footer on the site.
+  try {
+    await checkAccessibilityMatrix(page, url, check, kind);
+  } catch (error) {
+    console.error("the accessibility matrix stopped early on " + given + ": " + error.message);
+    stopped = true;
+  }
+  if (kind === "privacy" || kind === "other") {
+    // A route with no reader-facing controls has nothing else to drive, and
+    // the matrix above is its whole check.
+    notStation = kind === "other";
+    printPage();
+    await context.close();
+    return { given, file, checks, stopped, notStation, kind };
+  }
+  if (kind === "chooser") {
     try {
-      if (isChooser) await checkChooser(page, url, check);
+      await checkChooser(page, url, check);
     } catch (error) {
       console.error("the browser test stopped early on " + given + ": " + error.message);
       stopped = true;
     }
     // A checked chooser is a tested page, so it is tallied like one rather
     // than reported as a path this suite could not read.
-    notStation = !isChooser;
+    notStation = false;
     printPage();
     await context.close();
-    return { given, file, checks, stopped, notStation: !isChooser };
+    return { given, file, checks, stopped, notStation, kind };
   }
 
   // Every expectation below is read out of the page's own payload. The suite
@@ -1651,7 +1671,341 @@ async function runPage(browser, index, given, file, body, base) {
     printPage();
     await context.close();
   }
-  return { given, file, checks, stopped };
+  return { given, file, checks, stopped, notStation, kind };
+}
+
+/**
+ * The accessibility matrix (S41).
+ *
+ * The AA commitment was evidenced from one station-page happy path. This is
+ * the other half of it: the same checks, run against every route in the run --
+ * the chooser, a station page, the privacy page -- in both colour schemes, at
+ * desktop and phone widths, and at the width a 200% zoom leaves behind.
+ *
+ * What it measures, and why each is a measurement rather than an assertion
+ * about the source:
+ *
+ *   - names: the accessibility tree's own computed names, so a control with no
+ *     label is caught even when its visible text comes from a ::before.
+ *   - contrast: the rendered colours, composited over whatever is behind them
+ *     and resolved through a canvas, so color-mix() and alpha are read as the
+ *     reader sees them. The threshold follows the text: 4.5:1 for body copy,
+ *     3:1 for large text, which is the AA rule rather than a number chosen here.
+ *   - targets: the rendered box, plus a positioned ::after's slop, which is
+ *     how the row actions reach 44px while staying small on screen.
+ *   - zoom: a 320px viewport, which is what 200% zoom leaves of a 640px screen,
+ *     with the two things zoom breaks checked directly -- sideways scrolling and
+ *     text that shrinks below the base size.
+ *   - keyboard: the focus ring, read off the focused element, and the fact that
+ *     Tab reaches a control without a mouse.
+ */
+async function checkAccessibilityMatrix(page, url, check, routeKind) {
+  // ------------------------------------------------------------- the names
+  // Read from the browser's own accessibility tree rather than from the
+  // markup, so a control whose name comes from a label, an aria-label or text
+  // this suite has never heard of is counted, and one with no name at all is
+  // caught however it was built.
+  await page.goto(url);
+  const CONTROL_ROLES = new Set([
+    "button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox",
+    "slider", "spinbutton", "switch", "heading", "listbox", "option", "img",
+  ]);
+  const tree = await page.locator("body").ariaSnapshot();
+  const unnamed = [];
+  let named = 0;
+  for (const line of String(tree).split("\n")) {
+    // A line reads `- link "Name":`, `- heading "Name" [level=1]` or
+    // `- button:` for a control with no name at all. The quoted string between
+    // the role and the colon is the accessible name; anything in brackets is
+    // state, not a name.
+    const found = line.match(/^\s*-\s+([a-z]+)\s*(?:"([^"]*)")?\s*:?/);
+    if (!found || !CONTROL_ROLES.has(found[1])) continue;
+    if (found[2] && found[2].trim()) named += 1;
+    else unnamed.push(found[1]);
+  }
+  check(
+    `every control on the ${routeKind} has a name a screen reader reads`,
+    unnamed.length === 0 && named > 0,
+    `${named} named, ${unnamed.length} unnamed${unnamed.length ? " (" + unnamed.join(", ") + ")" : ""}`
+  );
+  // One heading, and it is the page's own subject rather than a brand line.
+  const headings = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("h1, h2")).map((el) => ({
+      level: el.tagName,
+      text: (el.textContent || "").trim(),
+    }))
+  );
+  check(
+    "the route has one first-level heading and it is not the brand",
+    headings.filter((h) => h.level === "H1").length === 1 &&
+      !/rail budget/i.test(headings[0].text),
+    JSON.stringify(headings.slice(0, 3))
+  );
+
+  // ------------------------------------------------------------ the keyboard
+  const focusStyle = () =>
+    page.evaluate(() => {
+      const el = document.activeElement;
+      const described = (node) => {
+        if (!node) return "";
+        const style = getComputedStyle(node);
+        // Everything a focus style is allowed to change. An indicator is a
+        // visible difference, and WCAG does not require it to be an outline --
+        // but it does require there to be one.
+        return [
+          style.outlineStyle, style.outlineWidth, style.outlineColor,
+          style.backgroundColor, style.borderBottomStyle, style.borderBottomColor,
+          style.borderBottomWidth, style.boxShadow, style.textDecorationLine,
+        ].join("|");
+      };
+      return {
+        reached: !!el && el !== document.body,
+        tag: el ? el.tagName : null,
+        self: described(el),
+        parent: el ? described(el.parentElement) : "",
+        name: el ? (el.getAttribute("aria-label") || el.textContent || el.value || "").trim().slice(0, 40) : "",
+      };
+    });
+  const beforeFocus = await focusStyle();
+  await page.keyboard.press("Tab");
+  const focus = await focusStyle();
+  const outlined = await page.evaluate(() => {
+    const style = getComputedStyle(document.activeElement);
+    return style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
+  });
+  check(
+    "one Tab reaches a control",
+    focus.reached && focus.tag !== "BODY",
+    JSON.stringify(focus)
+  );
+  check(
+    "the focused control shows where it is",
+    focus.reached && (outlined || focus.self !== beforeFocus.self || focus.parent !== beforeFocus.parent),
+    JSON.stringify({ outlined, before: beforeFocus.self.slice(0, 40), after: focus.self.slice(0, 40), parent: focus.parent.slice(0, 40) })
+  );
+
+  // ------------------------------------------- contrast, targets, reflow, per scheme
+  for (const scheme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme: scheme });
+    // The scheme has to change the page, or the dark pass is the light pass
+    // wearing a different name and every check below it proves nothing.
+    const painted = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(
+      `the ${scheme} palette is the one the page paints`,
+      scheme === "light" ? isLight(painted) : !isLight(painted),
+      painted
+    );
+
+    const contrast = await page.evaluate(() => {
+      // Any CSS colour the browser understands, read as pixels: color-mix(),
+      // oklab, currentColor and alpha all resolve, and a contrast ratio
+      // computed from a string would be a guess about the string.
+      const probe = document.createElement("canvas");
+      probe.width = probe.height = 1;
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      const toRgba = (value) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = value;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        return [r, g, b, a / 255];
+      };
+      // What is behind the text, composited: a transparent background is not a
+      // background, it is whatever is behind it.
+      const behind = (el) => {
+        const layers = [];
+        for (let node = el; node; node = node.parentElement) {
+          const [r, g, b, a] = toRgba(getComputedStyle(node).backgroundColor);
+          if (a > 0) {
+            layers.push([r, g, b, a]);
+            if (a === 1) break;
+          }
+        }
+        let out = [255, 255, 255, 1];
+        for (const [r, g, b, a] of layers.reverse()) {
+          out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a), 1];
+        }
+        return out;
+      };
+      const channel = (value) => {
+        const c = value / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      const luminance = ([r, g, b]) =>
+        0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      const ratio = (a, b) => {
+        const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (light + 0.05) / (dark + 0.05);
+      };
+      const SELECTORS = [
+        ["body", "the page's own text"],
+        [".sub", "the intro"],
+        [".tag", "a hint under a control"],
+        ["a", "a link"],
+        [".footnav a", "a footer link"],
+        ["th", "a column heading"],
+        ["#summary", "the result count"],
+        ["td", "a cell"],
+        [".restriction", "a travel condition"],
+        [".chipcount", "a chip's count"],
+        [".condition", "the readable condition"],
+        [".synthetic-banner", "the synthetic-data banner"],
+        [".synthetic-banner strong", "the banner's label"],
+        [".brand", "the brand line"],
+        ["legend", "a group label"],
+        [".choice-chip", "a destination chip"],
+        [".segmented label", "a ticket type"],
+        [".railcard-choice", "a party choice"],
+        [".toggle", "a button"],
+        [".buy", "a ticket link"],
+        ["#moreFiltersToggle", "the phone refinements control"],
+        ["label.caption", "a chooser field label"],
+        ["#nomatch", "a no-match message"],
+        [".method summary", "the method disclosure"],
+        ["#empty", "an empty result"],
+      ];
+      const measured = [];
+      for (const [selector, what] of SELECTORS) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const style = getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) continue;
+        const size = parseFloat(style.fontSize);
+        const bold = parseInt(style.fontWeight, 10) >= 700;
+        // WCAG's own split: large text is 24px, or 18.66px when bold.
+        const needed = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5;
+        const value = ratio(toRgba(style.color).slice(0, 3), behind(el).slice(0, 3));
+        measured.push({ what, selector, value: Math.round(value * 100) / 100, needed, size });
+      }
+      return measured;
+    });
+    const failures = contrast.filter((entry) => entry.value < entry.needed);
+    check(
+      `every kind of text meets AA contrast in ${scheme}`,
+      contrast.length >= 4 && failures.length === 0,
+      `${contrast.length} measured, worst ${contrast.reduce((low, e) => Math.min(low, e.value / e.needed), 99).toFixed(2)}x of what it needs` +
+        (failures.length ? " -- " + failures.map((f) => `${f.what} ${f.value}:1 needs ${f.needed}:1`).join("; ") : "")
+    );
+
+    // ------------------------------------------------------------- the targets
+    const targets = await page.evaluate(() => {
+      // The rendered box, plus a positioned ::after's slop: the row actions
+      // are small marks that reach 44px through it, and measuring the mark
+      // alone would fail a target that is really 44px.
+      const hitBox = (el) => {
+        const rect = el.getBoundingClientRect();
+        const after = getComputedStyle(el, "::after");
+        if (after.content === "none" || after.position !== "absolute") {
+          return { w: rect.width, h: rect.height, rawW: rect.width, rawH: rect.height };
+        }
+        // The slop is written as a negative inset and reaches outwards, so its
+        // magnitude is what adds to the box.
+        const inset = (name) => {
+          const raw = parseFloat(after[name]);
+          return Number.isFinite(raw) ? Math.abs(raw) : 0;
+        };
+        return {
+          w: rect.width + inset("left") + inset("right"),
+          h: rect.height + inset("top") + inset("bottom"),
+          rawW: rect.width,
+          rawH: rect.height,
+        };
+      };
+      // WCAG 2.5.8 is 24px for any pointer target; the row actions and the
+      // phone control are promised at 44px, so both are measured and named.
+      const MINIMUM = 24;
+      const PROMISED = 44;
+      const small = [];
+      const underPromised = [];
+      const inlineInText = [];
+      const seen = [];
+      for (const el of document.querySelectorAll(
+        "button, a[href], input, select, textarea, summary, [role=button]"
+      )) {
+        if (el.closest("[hidden]")) continue;
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden") continue;
+        // A control that is optically hidden inside its own label is measured
+        // through that label: the label is what a finger touches.
+        const measured = el.type && el.closest("label") ? el.closest("label") : el;
+        if (measured.getBoundingClientRect().width === 0 || measured.getBoundingClientRect().height === 0) continue;
+        // WCAG 2.5.8 exempts a target that sits in a sentence or a block of
+        // text -- a link inside a fare's description is read, not aimed at. The
+        // exemption is counted and reported rather than applied silently.
+        if (el.tagName === "A" && getComputedStyle(el).display === "inline") {
+          const surrounding = (el.parentElement ? el.parentElement.textContent : "").trim();
+          if (surrounding.length > el.textContent.trim().length) {
+            inlineInText.push(el.getAttribute("href") || el.textContent.trim().slice(0, 30));
+            continue;
+          }
+        }
+        const box = hitBox(measured);
+        const record = {
+          what: el.id || el.getAttribute("aria-label") || el.tagName.toLowerCase(),
+          w: Math.round(box.w),
+          h: Math.round(box.h),
+          raw: `${Math.round(box.rawW || box.w)}x${Math.round(box.rawH || box.h)}`,
+          html: el.outerHTML.slice(0, 70),
+        };
+        seen.push(record);
+        if (Math.min(box.w, box.h) + 0.5 < MINIMUM) small.push(record);
+        const promised = el.classList.contains("toggle") || el.classList.contains("buy") || el.id === "moreFiltersToggle";
+        if (promised && Math.min(box.w, box.h) + 0.5 < PROMISED) underPromised.push(record);
+      }
+      return { small, underPromised, inlineInText, seen };
+    });
+    check(
+      `every pointer target is at least 24px in ${scheme}`,
+      targets.small.length === 0,
+      targets.small.length
+        ? JSON.stringify(targets.small.slice(0, 5))
+        : `${targets.seen.length} targets measured, ${targets.inlineInText.length} inline in a sentence and exempt`
+    );
+    check(
+      `the controls promised at 44px are at least 44px in ${scheme}`,
+      targets.underPromised.length === 0,
+      targets.underPromised.length ? JSON.stringify(targets.underPromised.slice(0, 5)) : "row actions and the phone control"
+    );
+
+    // ------------------------------------------------------------------ zoom
+    // 320px is what 200% zoom leaves of a 640px screen: the width at which a
+    // layout that only works at desktop stops working.
+    await page.setViewportSize({ width: 320, height: 720 });
+    const zoomed = await page.evaluate(() => {
+      const html = document.documentElement;
+      return {
+        overflow: Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+      };
+    });
+    check(
+      `at 320px -- a 200% zoom -- nothing scrolls sideways in ${scheme}`,
+      zoomed.overflow <= 0,
+      `${zoomed.overflow}px`
+    );
+    check(
+      `at 320px the text is still the base size in ${scheme}`,
+      zoomed.body >= 16,
+      `${zoomed.body}px`
+    );
+  }
+
+  // The matrix leaves the page as it found it: the next section drives controls.
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(url);
+}
+
+/** Is a painted background the light one? Used only to prove the scheme landed. */
+function isLight(colour) {
+  const parts = String(colour).match(/[\d.]+/g);
+  if (!parts) return true;
+  const [r, g, b] = parts.map(Number);
+  // Rec. 601 luma: the same split the eye makes, and enough to tell #fff from
+  // #14181d without a colour library.
+  return 0.299 * r + 0.587 * g + 0.114 * b > 128;
 }
 
 function report(results) {
@@ -1675,6 +2029,16 @@ function report(results) {
       `\n${offTopic.length} page(s) were not station pages and were not checked: ${offTopic
         .map((result) => result.given)
         .join(", ")}`
+    );
+  }
+  // The routes the matrix drove are named, because a run that covered the
+  // chooser and the privacy page is a different claim from one that covered
+  // three station pages, and the tally alone cannot tell them apart.
+  const routes = [...new Set(results.filter((r) => r.kind).map((r) => r.kind))].sort();
+  if (routes.length) {
+    console.log(
+      `\nroutes in the accessibility matrix: ${routes.join(", ")} ` +
+        `(${results.filter((r) => routes.includes(r.kind)).length} page(s) in light and dark, at desktop, phone and 200% zoom)`
     );
   }
   if (nothingTested) {

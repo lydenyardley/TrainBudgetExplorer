@@ -593,6 +593,27 @@ site does is generated from the same feature configuration the pages are built
 from, so it cannot describe a site this build did not ship
 (`adr/ADR-0032`; gates S36–S38 in the re-envision audit).
 
+**Accessibility is a route matrix, not one happy path.** The browser suite
+runs an accessibility matrix against every route it is pointed at — the
+chooser, a station page, the privacy page — in light and dark, at desktop,
+phone and 200% zoom, and measures rather than asserts:
+
+| what | how it is measured |
+| --- | --- |
+| names | the browser's own accessibility tree (`ariaSnapshot`), so a control named by a label, an `aria-label` or text this suite has never heard of counts, and one with no name fails |
+| contrast | the rendered colours composited over whatever is behind them and resolved through a canvas, against WCAG's own split of 4.5:1 and 3:1 |
+| targets | the rendered box plus a positioned `::after`'s slop — 24px for any pointer target, 44px for the row actions the project promises, with links inside a sentence counted and reported as exempt rather than quietly ignored |
+| zoom | a 320px viewport, which is what 200% zoom leaves of a 640px screen: no sideways scrolling, no text below the base size |
+| keyboard | one Tab reaches a control, and the focused element (or its `:focus-within` wrapper) visibly changes |
+
+Writing it found four real defects, all fixed in the page rather than excused
+in the check: the dark palette's muted text measured 4.48:1, the synthetic-data
+banner's label 4.37:1, the feed record's disclosure and the footer nav's links
+were both under 24px. The privacy page used to be reported as `0/0` because it
+carries no controls; it is a route every footer on the site links to, and the
+deploy workflow now drives it (audit suggestion S41; ADR-0027 for the suite
+itself).
+
 **A phone gets the journey, not the table.** Below 44rem the budget slider
 stays open, the results stay beneath it, and the three refinements — ticket
 type, party, destination type — fold behind one control whose label states what

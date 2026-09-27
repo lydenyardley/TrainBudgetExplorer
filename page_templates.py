@@ -22,7 +22,7 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
     --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #9aa4b2; --accent: #7db4f5;
+    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #a7b2c0; --accent: #7db4f5;
             --ochre: #f0b35b; --best: rgba(125, 180, 245, .12); --field: #1c2127; }
   }
   * { box-sizing: border-box; }
@@ -52,7 +52,7 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .85rem; }
   .footnav { margin-top: 1.5rem; }
-  .footnav a { color: inherit; }
+  .footnav a { display: inline-flex; align-items: center; min-height: 24px; color: inherit; }
   @media (max-width: 44rem) { .footnav { min-height: 44px; display: flex; align-items: center; } }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
              clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -64,7 +64,7 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
                       border: 1px solid var(--ochre); border-left-width: .3rem; border-radius: .35rem;
                       background: color-mix(in srgb, var(--ochre) 10%, transparent);
                       color: var(--fg); font-size: .85rem; }
-  .synthetic-banner strong { color: var(--ochre); }
+  .synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }
 """
 
 
@@ -209,7 +209,8 @@ __SHARED_CSS__
   #clearTypes { margin-top: .35rem; }
   /* S19: the condition is the sentence; the record is folded under it. */
   .feed-record { margin-top: .2rem; font-size: .72rem; }
-  .feed-record summary { cursor: pointer; color: var(--muted); }
+  .feed-record summary { display: inline-flex; align-items: center; min-height: 24px;
+                         cursor: pointer; color: var(--muted); }
   .feed-record dl { margin: .2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 .4rem; }
   .feed-record dt { color: var(--muted); }
   .feed-record dd { margin: 0; font-variant-numeric: tabular-nums; }
