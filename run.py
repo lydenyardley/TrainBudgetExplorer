@@ -24,6 +24,7 @@ outside this folder is touched.
 import argparse
 from datetime import date
 import http.server
+import json
 import os
 import socketserver
 import subprocess
@@ -35,6 +36,14 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 SITE = ROOT / "_site"
 PORT_DEFAULT = 8741
+# Written by the build beside the pages, naming the routes this release
+# serves. Imported rather than repeated so the tidying step below and the
+# build that precedes it cannot name the file differently. The path insert is
+# for the "import run" case (a test), where the project root is not otherwise
+# importable; running this file as a script already has it.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from build_demo_page import RELEASE_MANIFEST_NAME  # noqa: E402
 
 
 def _feed_exists(path: Path) -> bool:
@@ -74,13 +83,79 @@ def build(args: argparse.Namespace) -> int:
     print("Building the site ...")
     result = subprocess.run(cmd, cwd=ROOT)
     if result.returncode == 0 and not args.all_origins:
-        # The single-origin runner serves _site/index.html, but a previous
-        # all-origins run may have left a browsable /from/<origin>/ tree. It is
-        # generated output, so remove it before serving the fresh single page.
-        import shutil
-        shutil.rmtree(SITE / "from", ignore_errors=True)
-        (SITE / "current.html").unlink(missing_ok=True)
+        remove_unwritten_station_pages()
     return result.returncode
+
+
+def remove_unwritten_station_pages() -> list[str]:
+    """Delete the station page folders this build did not write.
+
+    A single-origin build is a site too, so it writes its one station at
+    /from/<slug>/ beside the chooser, and that page must survive to be served.
+    What genuinely needs removing is the *other* station folders: a previous
+    --all-origins run leaves a browsable /from/<origin>/ tree, and serving one
+    of those pages under a chooser that does not offer it is the same
+    contract the build's own link crawl refuses to publish.
+
+    The set of folders to keep is read from the release manifest the build
+    just wrote, rather than guessed, so this cannot disagree with the release
+    it is tidying. An unreadable or absent manifest removes nothing: the worst
+    case is a stale folder left on disk, which the build already names in its
+    output, and deleting pages on a guess is the worse failure.
+    """
+    import shutil
+
+    from_dir = SITE / "from"
+    if not from_dir.is_dir():
+        return []
+    manifest_path = SITE / RELEASE_MANIFEST_NAME
+    if not manifest_path.is_file():
+        print(f"note: {manifest_path.name} is not there, so no station page folder was removed.")
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print(f"note: {manifest_path.name} could not be read, so no station page folder was removed.")
+        return []
+    # A manifest this function cannot read the way the builder writes one is
+    # treated the same as an unreadable one: remove nothing. Iterating a string
+    # where a list of routes belongs, or asking a list for "routes", would both
+    # leave the keep-set empty, and an empty keep-set means deleting every
+    # station folder including the one the build just wrote.
+    if not isinstance(manifest, dict):
+        print(f"note: {manifest_path.name} is not a release manifest, so no station page folder was removed.")
+        return []
+    routes = manifest.get("routes")
+    if not isinstance(routes, list):
+        print(f"note: {manifest_path.name} names no route list, so no station page folder was removed.")
+        return []
+    # A build served from a subpath writes its routes prefixed with that path,
+    # so the prefix has to come off before the station segment is read. Taking
+    # it from the manifest rather than from argv keeps this correct for
+    # --base-path without run.py having to agree with the builder about it:
+    # reading "/app/from/grantham/" as a station route without stripping "/app"
+    # would match nothing and delete the page the build just wrote.
+    base_path = manifest.get("basePath") or ""
+    if not isinstance(base_path, str):
+        base_path = ""
+    prefix = "/" + base_path.strip("/") + "/" if base_path.strip("/") else "/"
+    station_prefix = prefix + "from/"
+    written = {
+        segment
+        for route in routes
+        if isinstance(route, str) and route.startswith(station_prefix) and route.endswith("/")
+        for segment in [route[len(station_prefix):-1]]
+        if "/" not in segment
+    }
+    removed: list[str] = []
+    for child in sorted(from_dir.iterdir()):
+        if not child.is_dir() or child.name in written:
+            continue
+        shutil.rmtree(child, ignore_errors=True)
+        removed.append(child.name)
+    if removed:
+        print(f"removed {len(removed)} station page folder(s) this build did not write: {', '.join(removed)}")
+    return removed
 
 
 def main() -> int:
