@@ -394,6 +394,30 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("currentPage = 1; render(); writeUrl();", self.html)
         self.assertIn('"Page " + currentPage + " of " + pageCount + " of " + wanted.length', self.html)
 
+    def test_a_shortlist_is_a_list_of_places_and_not_a_booking(self) -> None:
+        # S26: the decision the page exists for is which place, so a reader can
+        # keep a few, compare them on the price currently shown, and hand the
+        # list to somebody else as a link. Nothing about it implies a booking.
+        self.assertIn('id="shortlistHeading">Shortlist', self.html)
+        self.assertIn("not a booking: no train is chosen and no ticket is held", self.html)
+        self.assertIn('save.className = "toggle shortlist-toggle"', self.html)
+        self.assertIn('save.setAttribute("aria-pressed", "false")', self.html)
+        # It is part of the address, one readable key per place.
+        self.assertIn('for (const code of shortlistCodes) params.append("short", code);', self.html)
+        self.assertIn('short: params.getAll("short")', self.html)
+        self.assertIn("A shortlist of places, not a booking", self.html)
+        # The comparison is of the price on screen, and it is rebuilt whenever
+        # the party or the mode changes what that price is.
+        self.assertIn("function shortlistText()", self.html)
+        self.assertIn("money(priceOf(destination))", self.html)
+        self.assertIn("renderShortlist();\n}", self.html)
+        # A station this page cannot price never enters the list, whatever a
+        # shared link claims.
+        self.assertIn("shortlistCodes = state.short.filter(pricedHere);", self.html)
+        # The limit is said, not silently applied.
+        self.assertIn('setShortlistStatus("The shortlist holds " + SHORTLIST_LIMIT + " places.', self.html)
+        self.assertIn('save.setAttribute("aria-label", "Shortlist " + destination.name);', self.html)
+
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
         # R9 is the railcard's travel condition, not a total ban, so the
         # synthetic fares that carry it remain eligible.
