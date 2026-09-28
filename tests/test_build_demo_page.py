@@ -43,6 +43,31 @@ def embedded_payload(html: str) -> dict:
     return json.loads(match.group(1))
 
 
+def serialised_callback_lines(source: str) -> list[str]:
+    """The lines of every page callback node does not run where it is written.
+
+    ``page.evaluate`` stringifies its callback and the page parses the string
+    again, so the text inside one is read twice by two parsers. Pairing the
+    brackets by hand is enough here: the suite's callbacks are either an
+    arrow function in parentheses or a brace-delimited block, and a suite that
+    made that untrue would fail to run at all.
+    """
+    lines: list[str] = []
+    for call in re.finditer(r"page\.(?:evaluate|waitForFunction|evaluateHandle)\(", source):
+        depth = 0
+        index = source.index("(", call.end() - 1)
+        while index < len(source):
+            if source[index] == "(":
+                depth += 1
+            elif source[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        lines.extend(source[source.index("(", call.end() - 1) : index + 1].split("\n"))
+    return lines
+
+
 def station_page(out: Path) -> Path:
     """The station page a single-origin build wrote beside its chooser.
 
@@ -454,6 +479,37 @@ class DemoPageTest(unittest.TestCase):
         self.assertIsNone(prices_only["timetableFrom"])
         self.assertIn("This build prices fares only", self.html)
         self.assertIn("which has ended, so these times describe services that no longer run", self.html)
+
+    def test_no_page_callback_carries_a_doubled_escape(self) -> None:
+        # A regex literal inside a page.evaluate callback is parsed twice, and
+        # a doubled escape survives the second parse as a literal backslash:
+        # the word boundary the suite wrote becomes a backslash that matches
+        # nothing, and the check quietly stops being able to pass. That is not
+        # a hypothetical. It is how "a feed with a download date says how old
+        # its prices are" came to fail on every real build while printing a
+        # correct sentence -- the demo feed carries no download date, so the
+        # branch was dead in CI and the escape was never read by a browser.
+        # A single escape is fine and is used; only the doubled kind is refused,
+        # and a deliberate literal-backslash matcher is listed rather than
+        # tolerated, so the exception is visible instead of assumed.
+        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        deliberate = set()
+        doubled = chr(92) * 2
+        for line in serialised_callback_lines(suite):
+            if doubled in line and line.strip() not in deliberate:
+                self.fail(f"a doubled escape inside a page callback: {line.strip()}")
+
+    def test_the_freshness_claim_is_judged_against_the_builds_own_date(self) -> None:
+        # The suite reports the page's own feedDate and judges the sentence
+        # beside it in node, so the age on the page is compared with the age
+        # the page should have printed rather than merely looked for. A page
+        # claiming "downloaded 24 September 2026" beside a stale "0 days old"
+        # passes a presence test and misleads the reader this sentence exists
+        # for, which is the reader deciding whether to trust a fare.
+        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        self.assertIn("feedDate: DATA.feedDate || null,", suite)
+        self.assertIn("daysSince(fresh.feedDate)", suite)
+        self.assertIn("a feed with a download date says how old its prices are", suite)
 
     def test_the_feed_date_is_the_downloads_own_and_never_a_timetables(self) -> None:
         # The date has to describe the fares: a newer timetable download must

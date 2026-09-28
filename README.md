@@ -651,6 +651,18 @@ the run also **fails when more than 5% of the checks on the station and chooser
 pages were skipped**, and names the pages that skipped. A green sweep is a claim
 that the suite exercised the page, not just that nothing it did exercise broke.
 
+One check the demo run still cannot reach is **a feed with a download date says
+how old its prices are**. The synthetic feed carries no download, because a feed
+nobody downloaded has no date to claim and the page is right to print no age for
+it, so the check is not run at all until a real build. That is where it was
+found: failing on a real page whose sentence was perfectly correct, because the
+regex lived inside a `page.evaluate` and was therefore parsed twice — once by
+node, and again in the page from the serialised source, where a doubled escape
+arrives as a literal backslash and matches nothing. The age on the page is now
+compared rather than looked for, to the day, against the build's own `feedDate`;
+and `tests/test_build_demo_page.py` refuses a doubled escape inside any page
+callback, which is the shape that made the check unfalsifiable.
+
 ## The real-data build, end to end
 
 When the licensed feeds land, this is the whole path from download to site. Each
