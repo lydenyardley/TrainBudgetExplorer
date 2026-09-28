@@ -1011,6 +1011,11 @@ for every priced station (slow at network scale — ADR-0024). The demo feed is
 rebuilt first if `_demo_feed/` is missing: `python make_synthetic_feed.py
 _demo_feed --unserved-station --third-origin`.
 
+A real-feed run carries the same licence notices the deploy workflow passes,
+without being asked, so the page you preview is the page that ships. `--notices`
+narrows that set rather than granting it; the demo feed gets none, because
+crediting NRE for invented prices would be false attribution.
+
 The individual commands behind it, if you want them separately:
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network

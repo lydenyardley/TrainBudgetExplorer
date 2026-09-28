@@ -3786,15 +3786,51 @@ class RunnerPassthroughTest(unittest.TestCase):
     def test_neither_flag_is_passed_when_neither_was_given(self) -> None:
         # Passing an empty --notices would satisfy the builder's "is it
         # present" test with nothing in it, so an absent flag has to stay
-        # absent rather than become an empty one.
-        command = self._command()
+        # absent rather than become an empty one. This is the synthetic feed:
+        # nothing here is a public build, and crediting NRE for prices NRE did
+        # not supply would be false attribution rather than a missing one.
+        command = self._command(feed=run.ROOT / "_demo_feed")
         self.assertNotIn("--notices", command)
         self.assertNotIn("--privacy-contact", command)
+
+    def test_a_real_feed_carries_every_notice_without_being_asked(self) -> None:
+        # `python run.py` with no arguments swaps the demo feed for the
+        # downloaded one the moment it exists, so the default path *is* a public
+        # build. It used to be refused by the builder for carrying no notice,
+        # which made the documented way to run the app fail as soon as the feeds
+        # were downloaded. The set comes from the builder's own table, so a
+        # notice added there cannot be missing here.
+        command = self._command()
+        self.assertIn("--notices", command)
+        carried = command[command.index("--notices") + 1].split(",")
+        self.assertEqual(sorted(carried), sorted(build_demo_page.NOTICES))
+        self.assertEqual(len(carried), len(set(carried)))
+
+    def test_a_narrower_notice_set_is_passed_verbatim(self) -> None:
+        # The direction that is allowed is narrowing. A person who knows why
+        # their release owes less can say so; nothing here widens a set past
+        # what the builder offers.
+        command = self._command(notices="rdg,ogl")
+        self.assertEqual(command[command.index("--notices") + 1], "rdg,ogl")
 
     def test_a_real_feed_builds_through_the_runner_with_only_the_notice(self) -> None:
         # The contact now defaults in the builder, so the notice is the only
         # thing a real-feed build needs the runner to carry.
         self.assertIn("--notices", self._command(notices="rdg"))
+
+    def test_an_explicitly_empty_notice_set_is_not_replaced_by_the_default(self) -> None:
+        # The default is for a flag that was never passed. An empty one is a
+        # person asking for no notice, and the honest answer is the builder's
+        # refusal -- not this line handing over the set they just declined.
+        self.assertNotIn("--notices", self._command(notices=""))
+
+    def test_a_relative_demo_feed_path_is_still_synthetic(self) -> None:
+        # The same folder arrives as "_demo_feed" on the command line and as an
+        # absolute path from the default. Comparing the two as strings would let
+        # the relative one through as a real feed, and every generated price
+        # would be credited to NRE.
+        command = self._command(feed=Path("_demo_feed"))
+        self.assertNotIn("--notices", command)
 
 
 class SingleOriginRunnerTidyTest(unittest.TestCase):
