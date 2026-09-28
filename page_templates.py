@@ -36,6 +36,22 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
   p, li { margin: .4rem 0; }
   a { color: var(--accent); }
+  /* A single unbroken run of characters must not decide the width of the
+     page. Real text contains these and the project cannot choose their
+     content: a privacy contact address, a tracked affiliate link, a
+     restriction code list, a URL in a feed-record line. One that cannot fit
+     its column used to widen the whole document, so a 200%-zoom phone reader
+     scrolled sideways on a page whose only fault was an email address.
+
+     `anywhere` rather than `break-word` because the text sits inside grid and
+     table tracks, and only `anywhere` also shrinks the intrinsic min-content
+     size those tracks are sized against -- `break-word` leaves a flex or grid
+     child able to overflow before the text has anywhere to break. Prose is
+     untouched: a word that fits on a line is never split.
+
+     Inherited, so one rule covers every element including those the page
+     script creates after load, which no selector here could name. */
+  body { overflow-wrap: anywhere; }
   /* One focus ring for the whole site, on every route, so a keyboard reader
      finds the same affordance wherever they are. */
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
@@ -919,31 +935,36 @@ function renderRestrictionReference() {
   if (!line) return;
   const ref = DATA.restrictionReference;
   if (!ref) { line.hidden = true; return; }
+  // Every date is written through dayPhrase, which returns "" for a date it
+  // cannot read. A clause is then built by concatenation, so a missing date
+  // removes the clause rather than printing a broken one.
+  const published = dayPhrase(ref.published);
+  const checked = ref.checkedAt ? dayPhrase(ref.checkedAt) : "";
+  const checkedClause = checked ? ", last checked" + checked : "";
   const text = (() => {
     if (ref.status === "absent") {
       return "Ticket conditions are quoted from the fares feed. No independent reference feed was checked.";
     }
     if (ref.status === "unknown") {
       return "Ticket conditions are quoted from the fares feed. The independent reference feed could not be checked"
-        + (ref.note ? " (" + ref.note + ")" : "") + ", so nothing here has been confirmed against it"
-        + (ref.published ? "; it was published " + humanDate(ref.published.slice(0, 10)) : "") + ".";
+        + (ref.note ? " (" + ref.note + ")" : "")
+        + ", so nothing here has been confirmed against it"
+        + (published ? "; it was published" + published : "") + ".";
     }
     if (ref.status === "disagrees") {
       const codes = (ref.differing || []).map((d) => d.code).join(", ");
       return "Ticket conditions are quoted from the fares feed. The independent reference feed"
-        + (ref.published ? ", published " + humanDate(ref.published.slice(0, 10)) : "")
+        + (published ? ", published" + published : "")
         + ", disagrees on " + ref.disagree + " of the " + ref.compared
-        + " conditions shown (" + codes + ")"
-        + (ref.checkedAt ? ", last checked " + humanDate(ref.checkedAt.slice(0, 10)) : "")
+        + " conditions shown (" + codes + ")" + checkedClause
         + ". The wording below is the fares feed's, which is the same publication the prices are from.";
     }
     return "Ticket conditions are quoted from the fares feed"
-      + (ref.published ? ", downloaded " + humanDate(DATA.feedDate ? DATA.feedDate.slice(0, 10) : ref.published.slice(0, 10)) : "")
+      + (DATA.feedDate ? ", downloaded" + dayPhrase(DATA.feedDate) : "")
       + ". The independent reference feed"
-      + (ref.published ? ", published " + humanDate(ref.published.slice(0, 10)) : "")
+      + (published ? ", published" + published : "")
       + ", agrees on all " + ref.compared + " of them"
-      + (ref.checkedAt ? ", last checked " + humanDate(ref.checkedAt.slice(0, 10)) : "")
-      + ".";
+      + checkedClause + ".";
   })();
   line.textContent = text;
   line.hidden = !text;
@@ -1620,8 +1641,23 @@ const MONTHS = ["January", "February", "March", "April", "May", "June",
 // Date("2026-10-05") is parsed as UTC midnight, which prints as the 4th for any
 // reader behind UTC. A copied date that is off by a day is worse than none.
 function humanDate(iso) {
-  const parts = iso.split("-").map(Number);
+  const parts = String(iso).split("-").map(Number);
   return parts[2] + " " + MONTHS[parts[1] - 1] + " " + parts[0];
+}
+
+// A date the build could not read is left out of the sentence, not printed as
+// whatever the formatter makes of it. The reference feed's publication date
+// arrives from an HTTP header, and the first version of this line sliced it as
+// an ISO timestamp and shipped the words "published undefined undefined NaN" to
+// a real reader -- a page making a freshness claim it could not actually make.
+// A clause with no readable date is no clause.
+function dayPhrase(value) {
+  if (!value) return "";
+  const text = String(value).slice(0, 10);
+  const parts = text.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return "";
+  const shown = humanDate(text);
+  return shown.includes("undefined") || shown.includes("NaN") ? "" : " " + shown;
 }
 
 // What the reader has to type on the seller's own site, because the ticket link
