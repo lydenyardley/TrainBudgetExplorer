@@ -227,8 +227,11 @@ jobs:
         # nothing to exercise (no UNESCO destination, one option in the picker)
         # is a skip in a sweep and a failure in the single-page gate, so the
         # gate keeps its teeth and the sweep does not fail every small station
-        # for being small. The run reports how many checks it skipped, so a
-        # sweep cannot pass by exercising nothing.
+        # for being small. The run reports how many checks it skipped, and
+        # fails when that count is more than a stated fraction of the checks
+        # the pages could have run -- so a sweep whose pages have stopped
+        # exercising the suite cannot read as a pass, which is what reporting
+        # the number alone allowed.
         #
         # The site build above only runs when the feed changed, so on an
         # unchanged run there is no published page to drive and the suite runs
