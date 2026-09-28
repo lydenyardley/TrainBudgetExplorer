@@ -81,12 +81,15 @@ the three requirements is met — the acknowledgement, by `--notices nre` — an
 other two are not:
 
 - The terms require the publisher to "acknowledge NRE as the source of
-  Information in accordance with this agreement and the Developer Guidelines",
-  and the Developer Guidelines are not published at the URL the terms name
-  (404 on 28 September 2026). `--notices nre` carries a plain acknowledgement,
-  which satisfies the requirement as the terms word it. The mandated wording and
-  the "Powered by National Rail Enquiries" treatment are not invented here: the
-  brand materials are, in NRE's words, "subject to permission from National Rail".
+  Information in accordance with this agreement and the Developer Guidelines".
+  The URL the terms give for those guidelines 404s, but the document is
+  published from `nationalrail.co.uk/developers/` and was read on 28 September
+  2026. It requires "a link to the NRE website for more information and ...
+  displaying the 'Powered by National Rail Enquiries' logo", placed
+  "directly alongside, above or underneath the Information derived from the
+  feed" where that feed is the product's predominant information. `--notices
+  nre` carries the acknowledgement, the logo and the link, and the page's
+  placement is underneath the results. Nothing here is invented.
 - The terms require that "all forecasted arrival and departure times, provided by
   Your End User Product(s), are consistent with Darwin forecasts". The page
   computes its times from the static timetable download, not from Darwin. Whether
