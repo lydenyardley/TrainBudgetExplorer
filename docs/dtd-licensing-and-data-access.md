@@ -7,23 +7,35 @@
 
 The intended zero-cost route is a periodic, authenticated download from the
 National Rail Data Portal (NRDP), historically called the National Rail / DTD
-data service. The public charging material says that most NRE data feeds,
-including feeds used by independent and commercial developers, are free; the
-high-volume charge described there applies to Darwin Webservice feeds, not to
-scheduled static DTD downloads. On that evidence, the DTD subscription is a
-**documented working assumption of £0 for this project**, subject to the
-account's current terms and any product-specific schedule.
+data service. Both halves of that are now answered from published documents
+rather than assumed, and both were re-read on 28 September 2026:
 
-That conclusion is not the same as a signed permission to publish. Before a
-public page goes live:
+- **Permission.** The portal terms grant copying, publishing, distributing,
+  transmitting and commercial exploitation of the Information in an End User
+  Product. Publication is inside the grant; see "The portal terms" below.
+- **Fee.** The Usage Charging Document confines charges to high-volume use of
+  the Darwin **Webservice** feeds, above 5 million enquiries per user per
+  28-day period. This build makes no Webservice enquiries, so the DTD
+  subscription is **£0 for this project on a published document**, not on a
+  working assumption.
 
-1. confirm that the account has the separate **Fares, Routeing Guide and
-   Timetable data** subscription;
-2. read the current DTD/NRE terms and developer brand pack again;
-3. keep the National Rail Enquiries attribution/branding requirement visible;
-4. do not treat a Knowledgebase subscription as evidence of DTD entitlement; and
-5. obtain written clarification from RDG if the portal or a schedule says that
-   a fee or additional permission applies. The letter to send is drafted in
+What is still open is compliance with the terms' three requirements, and none of
+it is a question a footer can answer. Before a public page goes live:
+
+1. [x] the account holds the separate **Fares, Routeing Guide and Timetable
+   data** selection — evidenced by the two static-feed downloads recorded in
+   `feeds/download-manifest.json`, not by the Knowledgebase feeds;
+2. [x] the current DTD/NRE terms have been read; the Developer Guidelines and
+   brand pack they name return 404, so the mandated wording and logo treatment
+   are unverified;
+3. [ ] whether a **static computed time** is a "forecasted" time the terms
+   require to stay consistent with Darwin, and how Time-Bound Data must be
+   displayed — both are answered by the unpublished guidelines;
+4. [x] the National Rail Enquiries source acknowledgement is on every page
+   (`--notices nre`), and the Knowledgebase data is credited to the Rail
+   Delivery Group (`--notices rdg`) — a third credit, not a replacement;
+5. [ ] obtain written clarification from RDG on anything the guidelines or the
+   account screen says differently. The letter to send is drafted in
    `docs/rdg-licence-enquiry.md`.
 
 The project will not use Easy Fares, an RSP Data Licence fee, or any other paid
@@ -193,21 +205,102 @@ have no record at all. The audit also reports the 1,294 TIPLOCs whose raw
 seven-character value needed normalisation, which is how a padded location
 field such as ``ABHLJN 2`` stopped acquiring a second key.
 
+## The portal terms, read 28 September 2026
+
+Read from the copy filed in `licences/`, whose footer is dated 24/09/2026 and
+which is the document served from `opendata.nationalrail.co.uk/terms`.
+
+**Permission is granted, and it is explicit.** The licensee is free to "copy,
+publish, distribute and transmit the Information", to "adapt the format", and to
+"exploit the Information commercially … by including it in Your own product or
+application ("End User Product")". The build's route — a static HTML page
+carrying fares and times, published publicly, with ticket links that may be
+affiliate-linked — is inside that grant. The terms also bar any use that
+suggests official status or NRE endorsement, which the page's wording avoids.
+
+**Three requirements come with it**, and they are compliance, not permission:
+
+1. Registration information must be true and accurate. The portal asks what the
+   data is for and where it will be used, so an account registered without a
+   public page in mind is a defect in the account, not in this build.
+2. The licensee must "acknowledge NRE as the source of Information in
+   accordance with this agreement and the Developer Guidelines". The
+   acknowledgement is now carried by `--notices nre`; the Guidelines that would
+   fix the wording are the 404 above.
+3. "All forecasted arrival and departure times, provided by Your End User
+   Product(s), are consistent with Darwin forecasts", and "all Time-Bound Data
+   … are displayed as directed in the Information, as per the Developer
+   Guidelines". This build computes its times from the static timetable
+   download rather than from Darwin, so whether a static computed time is a
+   "forecasted" time in the terms' sense is the question that decides whether
+   times may be published at all. It is not a footer question, and no footer
+   can answer it.
+
+The warranty position is as expected and is what the accuracy notice says: the
+Information is provided as is, with no representation or warranty and no
+liability; the governing law is England and Wales.
+
+**The entitlement is evidenced, not assumed.** `feeds/download-manifest.json`
+records the fares feed (48.5 MB, 24 members) and the timetable feed (76.2 MB, 9
+members) downloaded on 24 September 2026 from
+`opendata.nationalrail.co.uk/api/staticfeeds/2.0/fares` and `.../3.0/timetable`.
+Those endpoints are the Fares, Routeing Guide and Timetable selection, and they
+returned their files, so the account holds it. The Knowledgebase feeds, a
+separate entitlement, were downloaded on 28 September 2026 and are **not** the
+evidence for this one.
+
+## The charging document, read 28 September 2026
+
+The Usage Charging Document v06-01 recorded in the sources list above is
+retrievable (HTTP 200) and answers the fee question outright:
+
+- "In most cases the feeds are free to use whether you (the licensee 'You') are
+  a commercial entity, a public sector organisation or a small independent
+  developer."
+- The only charging model in the document is high-volume use of **chargeable
+  Darwin feeds**: the threshold is **5 million enquiries per user per 28-day
+  railway reporting period**, and enquiries above it cost **0.042 pence** each.
+- "The high-volume usage threshold applies only to Darwin Webservice feeds" —
+  the public and staff versions. Every charging row for **Darwin Push Feeds** is
+  `N/A`, and "Push feeds, such as Darwin Push Port, are not subject to
+  high-volume usage charges."
+
+This build makes no Darwin Webservice enquiries at all: it downloads two static
+ZIPs a day and renders them. It is therefore not a user the threshold can apply
+to, and the fee term is **nil, from a published document** rather than from a
+working conclusion drawn from volume. The Darwin product schedule's own
+`Open (OGL3)` nil fee is a separate answer for that product and does not decide
+this one.
+
 ## Licensing decisions
 
 ### DTD/NRE: preferred route, conditional publication permission
 
-The charging document is the basis for the zero-cost working conclusion. The
-current NRE developer terms also require acknowledgement of NRE as the source.
-Where an NRE feed is the predominant or standalone data source, the September
-2026 developer brand pack calls for the official:
+The charging document is the basis for the zero-cost conclusion, and it now
+answers the question rather than leaving it open: see "The charging document,
+read 28 September 2026" below. The current NRE developer terms also require
+acknowledgement of NRE as the source. Where an NRE feed is the predominant or
+standalone data source, the brand treatment this project has recorded is:
 
 > Powered by National Rail Enquiries
 
-The logo must be included with the static HTML output (inlined or otherwise
-included in the self-contained page), alongside, above, or below the relevant
-information as the pack requires. Do not imply that RDG/NRE endorses the page.
-If commission is enabled, the page must also disclose the affiliate relationship.
+**That exact wording is not verifiable from any document NRE currently
+publishes.** The Developer Guidelines the terms name
+(`nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`) returned 404 on
+28 September 2026, and the NRE developer pages that are live say only that
+attribution "should be demonstrated in line with the NR Brand Guidelines and
+Logos" and that brand materials are "subject to permission from National Rail".
+The wording above is this project's record of what the brand pack is said to
+ask for, kept because dropping it would lose the requirement; it is not
+authority for it, and it has not been used in the page.
+
+The page therefore carries the acknowledgement the terms actually require
+(`--notices nre`) and no logo, because inventing a brand treatment NRE has not
+granted is worse than omitting one. If NRE supplies the guidelines, the logo
+must be included with the static HTML output (inlined or otherwise included in
+the self-contained page), alongside, above, or below the relevant information as
+the pack requires. Do not imply that RDG/NRE endorses the page. If commission is
+enabled, the page must also disclose the affiliate relationship.
 
 The broad OGL wording in a Darwin document does not override a product-specific
 schedule. This is why the implementation treats the DTD terms and current
@@ -254,12 +347,21 @@ DTD-only page without the corresponding licence basis.
 
 Before a real-data page is published:
 
-- [ ] DTD fares and timetable downloads both succeed with the same account.
-- [ ] The current DTD/NRE terms and brand pack have been reread.
-- [ ] The page visibly acknowledges NRE as source and includes the required
-      **Powered by National Rail Enquiries** treatment/logo.
-- [ ] KB-derived station/ticket-reference data is credited to **Rail Delivery
-      Group, via Rail Data Marketplace**, where those products are used.
+- [x] DTD fares and timetable downloads both succeed with the same account —
+      `feeds/download-manifest.json`, 24 September 2026.
+- [x] The current DTD/NRE terms have been reread, **28 September 2026**; the
+      Developer Guidelines and the brand pack they name return 404, and the
+      exact **Powered by National Rail Enquiries** treatment could not be
+      verified from any published NRE document.
+- [x] The page visibly acknowledges NRE as source — `--notices nre`, in the
+      footer of every generated route, unprompted and without a click.
+- [ ] The **Powered by National Rail Enquiries** treatment/logo is in the page.
+      Not inventable while the guidelines are unpublished: the wording is
+      recorded above as a requirement, not as authority, and the page carries
+      the acknowledgement the terms require instead.
+- [x] KB-derived station/ticket-reference data is credited to **Rail Delivery
+      Group, via Rail Data Marketplace** — `--notices rdg`, worded to the
+      Knowledgebase and fare-locations products it actually covers.
 - [ ] No RSP ultimate-source notice is added unless an RSP licence is actually
       the source.
 - [ ] Darwin is not used as a substitute public timetable source.

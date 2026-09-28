@@ -56,9 +56,21 @@ selection. The Knowledgebase URLs in the project are not evidence of that
 selection. The endpoint examples and the current terms are recorded in
 `docs/dtd-licensing-and-data-access.md`.
 
-- [ ] Confirmed the DTD subscription selection in the account
-- [ ] Read the current DTD/NRE terms and brand pack, not only the older marketplace schedules
-- [ ] Recorded the answers below, in writing, with the date read
+- [x] Confirmed the DTD subscription selection in the account — evidenced by the
+      fares and timetable static-feed downloads in `feeds/download-manifest.json`
+      (24 September 2026), which are the Fares, Routeing Guide and Timetable
+      selection and are **not** the Knowledgebase feeds
+- [x] Read the current DTD/NRE terms, not only the older marketplace schedules —
+      **28 September 2026**, from the copy in `licences/` (footer dated
+      24/09/2026). They grant publication and commercial exploitation outright
+- [ ] Read the **Developer Guidelines / brand pack** the terms name.
+      `nationalrail.co.uk/static/documents/Developer_Guidelines.pdf` returns 404
+      (28 September 2026), and the live NRE developer pages say only that
+      attribution "should be demonstrated in line with the NR Brand Guidelines
+      and Logos" and that brand materials are "subject to permission from
+      National Rail". The exact "Powered by National Rail Enquiries" treatment
+      is therefore **unverified**, and nothing has been invented to fill the gap
+- [x] Recorded the answers below, in writing, with the date read
 - [x] Re-read the Darwin timetable product — **read 22 September 2026**, see below
 - [x] The fares data has a reviewed selector, not the broad query: `publishable_destinations_within`
       keeps only the exact standard-class ANYTIME DAY R ticket codes (`8AE`, `AAB`,
@@ -85,16 +97,17 @@ analogy.
 | Knowledgebase Ticket Types data feed | Data Sharing Agreement | **yes** — "freely available or otherwise distributed to third parties" | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Knowledgebase Ticket Restrictions data feed | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Fare Locations Reference Data v1.3 | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
-| **NRDP/DTD fares and timetable** (RSPS5045 fares and public timetable ZIPs) | current DTD/NRE terms — confirm in the account | **must be confirmed** | NRE source credit and **Powered by National Rail Enquiries** treatment/logo | working conclusion: nil for static DTD downloads; verify | 24 Sep 2026 |
+| **NRDP/DTD fares and timetable** (RSPS5045 fares and public timetable ZIPs) | NRDP terms, read from the filed copy | **yes** — "copy, publish, distribute and transmit", and commercial exploitation in an End User Product | NRE source credit (done, `--notices nre`); the **Powered by National Rail Enquiries** treatment/logo the terms' Developer Guidelines govern is unverified — the guidelines 404 | **nil** — the charging document confines charges to Darwin Webservice feeds, which this build never calls | 28 Sep 2026 |
 
 The licences themselves are in `licences/`, one PDF per product, with the register that
 these rows are drawn from and a test that keeps the two in step.
 
-Still to answer for the DTD route: whether the current account/product schedule
-expressly permits the intended public display and affiliate-linked use, and
-whether any current fee applies. The public charging document supports a
-zero-cost static-download conclusion, but it is not a signed entitlement. Do not
-publish until the account terms and brand pack have been checked.
+Still to answer for the DTD route: the three requirements the permission comes
+with, none of which a footer can satisfy. The acknowledgement is done; what
+remains is whether a **static computed time** is a "forecasted" time that must
+stay consistent with Darwin, and how **Time-Bound Data** must be displayed —
+both answered by the Developer Guidelines, which are not published. The fee is
+answered, and answered as nil.
 
 - [x] Researched the DTD/NRE route and recorded the source links and caveats in
       `docs/dtd-licensing-and-data-access.md`
@@ -107,9 +120,17 @@ publish until the account terms and brand pack have been checked.
       the answer that has to change, or the decision that the published times
       stay switched off. `python tools/check_release_clearance.py --release
       fares,timetable` names it as outstanding.
-- [ ] Read the current DTD/NRE terms and recorded the public-use/attribution answer
-- [ ] **NRE is acknowledged as source** and the required **Powered by National Rail
-      Enquiries** treatment/logo is visible in the generated page
+- [x] Read the current DTD/NRE terms and recorded the public-use/attribution
+      answer — publication and commercial exploitation are permitted; see
+      `docs/dtd-licensing-and-data-access.md`
+- [x] **NRE is acknowledged as source** in the footer of every generated route,
+      in the terms' own words (`--notices nre`), in the template so no
+      regeneration can drop it
+- [ ] The required **Powered by National Rail Enquiries** treatment/logo is
+      visible in the generated page. The Developer Guidelines that fix the
+      wording are not published, so this is not inventable; it needs the
+      guidelines, or written permission from National Rail for the brand
+      materials, which their own developer pages say it requires
 - [ ] **The privacy contact is confirmed for a public service.** The build now
       carries a real address so a real-feed build works locally without an
       operator having to supply one: `lydenyardley+trainbudgetexplorer@example.net`,
@@ -118,7 +139,9 @@ publish until the account terms and brand pack have been checked.
       appropriate to publish, or as durable. Read it before the site is public:
       someone has to read it, and the page promises a reader that there is
       somebody. Replace it here and in the build, or set `PRIVACY_CONTACT` or
-      `--privacy-contact` to override it.
+      `--privacy-contact` to override it. `tools/check_release_clearance.py`
+      now names it as an outstanding question of its own, because a page can
+      clear every licence and still publish an address nobody answers.
 - [ ] If RDG quotes a non-zero fee, the project rejects it and keeps the zero-cost
       route rather than silently adding a cost
 
@@ -174,20 +197,32 @@ that could end it.
 
 **There are two, not one**, and both are required (ADR-0021):
 
-- [ ] **Rail Delivery Group credited as the source** for the three Data Sharing Agreement
+- [x] **Rail Delivery Group credited as the source** for the three Data Sharing Agreement
       feeds — a *condition* of the licence under cl. 3.3.1, in any reasonable manner, and
-      never in a way suggesting the publisher endorses the page
-- [ ] **The OGL fallback wording** for the Darwin timetable, since its §8 gives no
+      never in a way suggesting the publisher endorses the page. `--notices rdg`
+      does it, worded to the Knowledgebase and fare-locations products it
+      actually covers; it used to claim the fares as well, which credited the
+      wrong licensor for data that came from NRE
+- [x] **National Rail Enquiries credited as the source** of the fares and the
+      timetable, which the RDG credit is not — `--notices nre`, the third
+      attribution this page needs and the one the portal terms require
+- [x] **The OGL fallback wording** for the Darwin timetable, since its §8 gives no
       statement: `Contains public sector information licensed under the Open Government Licence v3.0.`
-- [ ] Neither is read off a blank §8 and treated as "nothing required" — the blank field
+- [x] Neither is read off a blank §8 and treated as "nothing required" — the blank field
       names additional third-party licensors, of which there are none
-- [ ] The wording is pinned in one place in the code, not retyped into a build
-      command where the next regenerator can drop it
+- [x] The wording is pinned in one place in the code, not retyped into a build
+      command where the next regenerator can drop it — `NOTICES` in
+      `build_demo_page.py`, with the workflow passing the four names
 
 ## 3. The fee term
 
 - [x] `Licence Fees` for the timetable: **nil** (Schedule 2, `Open (OGL3)`)
-- [ ] `Licence Fees` is either nil or a number, and whichever it is is written down
+- [x] The DTD/NRE fee term: **nil, from the published charging document**
+      (v06-01, read 28 September 2026). Charges apply only to the Darwin
+      **Webservice** feeds, above 5 million enquiries per user per 28-day
+      railway period at 0.042p each; Darwin **Push** feeds are `N/A`
+      throughout, and static downloads make no enquiries at all. This is a
+      document, not a working conclusion
 - [ ] If it is non-zero: it is compared against the affiliate rate — and the rate is
       only visible **after joining** the network, so a fee against an unknown rate
       means the decision is deferred, not guessed

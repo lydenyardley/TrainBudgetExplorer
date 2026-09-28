@@ -14,6 +14,8 @@ product nobody answered, and a release asking for a shape that does not exist.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import tempfile
 import unittest
@@ -22,6 +24,7 @@ from pathlib import Path
 
 from tools.check_release_clearance import (
     DTD,
+    PRIVACY,
     clearance_problems,
     digest,
     main,
@@ -111,11 +114,13 @@ class ClearanceTest(unittest.TestCase):
             }
         )
         base.update(fields)
-        text = cleared(DTD, **base)
-        # Every other product excluded, so the check under test is the only one
-        # with anything to say.
+        # A release that publishes anything needs the privacy contact as well as
+        # the licences, so a record under test clears it too. Every other
+        # product is excluded, so the check under test is the only one with
+        # anything to say.
+        text = cleared(DTD, **base) + "\n" + cleared(PRIVACY, **base)
         for product in products():
-            if product != DTD:
+            if product not in (DTD, PRIVACY):
                 text += f"\n## {product}\n\n- state: excluded\n- reason: not used by this build\n"
         return text
 
@@ -157,6 +162,17 @@ class ClearanceTest(unittest.TestCase):
         )
         self.assertTrue(any("expires" in p for p in problems))
 
+    def test_a_record_with_no_privacy_contact_section_is_a_refusal(self) -> None:
+        # A contact nobody wrote about is the filed-and-forgotten case for a
+        # promise rather than for a licence, and it has to be refused the same
+        # way: an absent section is not a cleared one.
+        text = self._record().replace(f"## {PRIVACY}\n", "## an unrelated heading\n")
+        problems = clearance_problems(text, releasing=["fares"], today=TODAY)
+        self.assertTrue(
+            any(PRIVACY in problem for problem in problems),
+            f"a record with no {PRIVACY} section published without a complaint: {problems}",
+        )
+
 
 class DigestTest(unittest.TestCase):
     """A clearance is made from a licence file, and does not outlive it."""
@@ -172,11 +188,17 @@ class DigestTest(unittest.TestCase):
                 text += f"\n## {product}\n\n- state: excluded\n- reason: not used\n"
         self.assertTrue(clearance_problems(text, releasing=["fares", "timetable"], today=TODAY))
 
-        # With the digest added to that same block, and the DTD route cleared as
-        # well, the release passes. The digest is the whole difference.
+        # With the digest added to that same block, and the DTD route and the
+        # privacy contact cleared as well, the release passes. The digest is the
+        # whole difference.
         text = text.replace(
             f"\n## {DTD}\n\n- state: excluded\n- reason: not used\n",
             f"\n## {DTD}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
+            "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n",
+        )
+        text = text.replace(
+            f"\n## {PRIVACY}\n\n- state: excluded\n- reason: not used\n",
+            f"\n## {PRIVACY}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
             "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n",
         )
         text = text.replace(
@@ -220,15 +242,30 @@ class ScopeTest(unittest.TestCase):
     def test_a_fares_only_release_needs_the_dtd_route(self) -> None:
         needed, problems = products_needed(["fares"])
         self.assertEqual(problems, [])
-        self.assertEqual(needed, [DTD])
+        self.assertEqual(needed, [DTD, PRIVACY])
 
     def test_a_release_with_the_timetable_needs_the_darwin_licence_too(self) -> None:
         # This is the check that stops a fares-only decision being read as
         # permission to publish the times as well.
         needed, problems = products_needed(["fares", "timetable"])
         self.assertEqual(problems, [])
-        self.assertEqual(sorted(needed), sorted([DTD, DARWIN]))
+        self.assertEqual(sorted(needed), sorted([DTD, DARWIN, PRIVACY]))
 
+    def test_every_release_that_publishes_anything_needs_the_privacy_contact(self) -> None:
+        # Every route promises its reader that somebody is at the end of the
+        # contact address, so an address nobody has confirmed cannot be
+        # published. It is not a licence and it has no filed PDF, and the gate
+        # asks about it in exactly the same shape.
+        for shape in (["fares"], ["fares", "timetable"]):
+            with self.subTest(shape=shape):
+                needed, problems = products_needed(shape)
+                self.assertEqual(problems, [])
+                self.assertIn(PRIVACY, needed)
+
+    def test_a_release_that_publishes_nothing_needs_no_contact(self) -> None:
+        # The report-only shape asks what the record says, not for permission,
+        # and a contact nobody is publishing is nobody's business.
+        self.assertEqual(products_needed([]), ([], []))
     def test_a_mistyped_shape_is_a_refusal_not_an_empty_scope(self) -> None:
         # An unrecognised shape must not resolve to "no products", which would
         # clear everything by publishing nothing.
@@ -260,6 +297,42 @@ class RecordShapeTest(unittest.TestCase):
         # Useful for a person, and deliberately spelled differently so it can
         # never be reached by forgetting an argument.
         self.assertEqual(main(["--record", str(RECORD), "--report-only"]), 0)
+
+    def test_report_only_names_what_the_record_leaves_outstanding(self) -> None:
+        # The mode exists to read the record, and it used to answer "cleared
+        # for the record as it stands" over a record that excludes every
+        # product in it: the empty shape requires nothing, so nothing was
+        # wrong and the sentence claimed everything was fine. The shipped
+        # record is the case, because it is the record this project publishes
+        # against.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(main(["--record", str(RECORD), "--report-only"]), 0)
+        said = out.getvalue()
+        self.assertIn("outstanding", said)
+        self.assertIn(PRIVACY, said)
+        self.assertIn(DTD, said)
+        self.assertNotIn("cleared for the record as it stands", said)
+        # A product with no section at all is outstanding too: unrecorded is
+        # not the same as cleared, and the filed-and-forgotten case is exactly
+        # a heading that never got written.
+        with tempfile.TemporaryDirectory() as tmp:
+            thin = Path(tmp) / "thin.md"
+            blocks = []
+            for name, path in products().items():
+                fields = {
+                    "read on": "2026-09-20",
+                    "approved on": "2026-09-21",
+                    "expires": "2027-03-21",
+                }
+                if path is not None:
+                    fields["licence digest"] = digest(path)
+                blocks.append(cleared(name, **fields))
+            thin.write_text("".join(blocks), encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(main(["--record", str(thin), "--report-only"]), 0)
+            self.assertIn("every one of", out.getvalue())
 
     def test_a_product_answered_twice_is_a_refusal(self) -> None:
         # Two headings naming the same product are two answers to one question,

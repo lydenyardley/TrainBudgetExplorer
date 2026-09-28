@@ -484,7 +484,9 @@ jobs:
         # product schedule governs, and this project reads that schedule as
         # internal business purposes only -- so this command now demands a
         # clearance nobody holds, and the publish path stops until someone has
-        # answered the question in docs/publish-checklist.md §1.
+        # answered the question in docs/publish-checklist.md §1. It now also
+        # demands the privacy contact (§1's last row): a page can clear every
+        # licence and still publish an address nobody has vouched for.
         #
         # That refusal is the point of the gate, not an obstacle to it: the
         # build and its tests stay green, and only publication waits. Passing
