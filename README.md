@@ -296,6 +296,28 @@ time. A response that is the wrong shape — an HTML error page behind a `200` �
 is not retried either, because that is a fault to be read, not weather to wait
 out.
 
+**The published build loads the national timetable, so pages carry times and
+changes.** The deploy workflow passes `--timetable feeds/timetable` and the
+date being published. The journey columns and the changes column are computed
+from it, and a run whose station pages come out without journeys fails the
+release-manifest check rather than publishing a prices-only page under a
+workflow that promises times.
+
+That step is measured rather than assumed, against the real feed at Grantham,
+one origin, on the runner the workflow uses:
+
+| build | time |
+| --- | --- |
+| fares only | 2.5 s |
+| fares + timetable, cold index | 1 m 36 s |
+| fares + timetable, warm index | 11 s |
+
+The step's `timeout-minutes` is 10 — roughly four times the cold figure. The
+warm figure is why the workflow caches the timetable index: the cache file is
+named after a digest of the feed bytes and the stations it serves, so a cache
+from a different timetable is a different filename and is never opened. A stale
+restore is a miss, not a wrong answer.
+
 1. Set `NRDP_USERNAME` and `NRDP_PASSWORD` in the local environment. Do not put
    either value in a command, source file, or chat message. The `.env` pattern is
    ignored by this repository if a local environment file is preferred.
