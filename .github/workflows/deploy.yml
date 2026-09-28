@@ -245,26 +245,6 @@ jobs:
             --notices rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
-        if: steps.feed_check.outputs.changed == 'true'
-        env:
-          SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
-          PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
-        run: |
-          BASE_ARGS=()
-          if [ -n "$SITE_BASE_PATH" ]; then
-            BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
-          fi
-          # The fares feed is the public price source. The national timetable
-          # is audited above but is intentionally not loaded for every daily
-          # page build: it contains millions of calling points and turns this
-          # small static publication into a long batch job.
-          python build_demo_page.py \
-            --feed feeds/fares \
-            --origin GRA \
-            --out _site/index.html \
-            --notices rdg,ogl,accuracy \
-            --require-live-reviewed-codes \
-            "${BASE_ARGS[@]}"
 
       - name: Check the release manifest
         if: steps.feed_check.outputs.changed == 'true'
@@ -351,8 +331,9 @@ jobs:
         #
         # The other is whatever the site build wrote: _site/index.html today,
         # driven in the same run, so the page that ships is one somebody
-        # opened. It is a prices-only build, which the demo page is not, so the
-        # two cover different ground. A full-network build writes a station set
+        # opened. It is built from the real DTD feeds with the timetable
+        # loaded, which the synthetic demo page is not, so the two cover
+        # different ground. A full-network build writes a station set
         # under _site/from instead, and the whole set is swept -- the suite
         # reads its expectations out of each page, so a sweep of it is a search
         # for origin-specific template bugs rather than a second copy of the
