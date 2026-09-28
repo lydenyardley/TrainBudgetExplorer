@@ -35,6 +35,8 @@ FEE_OUTCOMES = ("nil", "free", "no charge", "not held")
 SUPPORTING = (
     "BR Fares RDM Pricing.pdf",
     "National Rail Data Portal Terms-and-conditions.pdf",
+    "NRE Developer Brand Guidelines September 2026.pdf",
+    "NRE Feeds Developer Pack v.01-05.pdf",
 )
 
 
