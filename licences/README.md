@@ -28,11 +28,26 @@ information **must not be changed or misrepresented**.
 Common to all five: the term is **1 year, renewing automatically**; data received may be
 **retained** after the term; the Data Consumer field is blank on every export.
 
-The NRE charging/terms and brand-pack source documents are supporting evidence,
-not per-product Marketplace licences, so they do not have a product-id row:
-`National Rail Data Portal Terms-and-conditions.pdf` and the charging document
-linked from `docs/dtd-licensing-and-data-access.md`. `BR Fares RDM Pricing.pdf`
-is likewise a supporting price schedule.
+The NRE terms, brand guidelines, developer pack and charging document are
+supporting evidence, not per-product Marketplace licences, so they do not have a
+product-id row: `National Rail Data Portal Terms-and-conditions.pdf`,
+`NRE Developer Brand Guidelines September 2026.pdf` and
+`NRE Feeds Developer Pack v.01-05.pdf`, all filed here untouched, plus the
+charging document linked from `docs/dtd-licensing-and-data-access.md`.
+`BR Fares RDM Pricing.pdf` is likewise a supporting price schedule.
+
+| document | issued by | what it decides here | read |
+|---|---|---|---|
+| National Rail Data Portal Terms-and-conditions | NRE | permission to copy, publish and commercially exploit the Information, on three requirements | 28 Sep 2026 |
+| NRE Developer Brand Guidelines | NRE | the source acknowledgement: a link to NRE plus the "Powered by National Rail Enquiries" logo, placed alongside, above or underneath the information the feed supplied | 28 Sep 2026 |
+| NRE Feeds Developer Pack v.01-05 | RDG / NRE | a technical description of the feeds, including that the static Darwin Timetable feed carries no live movements. Carries no attribution requirement, so it is not the document the terms name | 28 Sep 2026 |
+| NRE Usage Charging Document v06-01 | NRE | the fee: charges apply only above 5 million enquiries per user per 28 days, and only to the Darwin Webservice feeds | 28 Sep 2026 |
+
+The terms name
+`nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`, which returns
+404. The brand guidelines above are the document that requirement points at, and
+the file that the ZIP carried it in — `assets/powered-by-national-rail.svg` — is
+the mark the page inlines, byte for byte.
 
 Differences worth knowing:
 
@@ -64,11 +79,11 @@ The account must separately subscribe to **Fares, Routeing Guide and Timetable
 data**; the Knowledgebase feeds listed in the project research do not establish
 that entitlement.
 
-The DTD/NRE terms require acknowledgement of NRE as source, and the current
-developer brand pack calls for the official **Powered by National Rail
-Enquiries** treatment/logo where the feed is predominant or standalone. The
-full source list, caveats, fallback, and escalation contacts are in
-`docs/dtd-licensing-and-data-access.md`.
+The DTD/NRE terms require acknowledgement of NRE as source, and the Developer
+Brand Guidelines (filed above) require a link to NRE's site and the official
+**Powered by National Rail Enquiries** logo where the feed is predominant or
+standalone. The page carries both. The full source list, caveats, fallback, and
+escalation contacts are in `docs/dtd-licensing-and-data-access.md`.
 
 The fares product is not represented by one of the marketplace PDFs in this
 folder yet. That is expected: DTD is a portal subscription/download route,
