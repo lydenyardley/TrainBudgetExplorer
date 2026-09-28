@@ -1360,10 +1360,19 @@ class DemoPageTest(unittest.TestCase):
         # light-dark() counterpart is a token the dark palette never sets, and
         # that was the defect. The plain value first is deliberate -- it is what
         # a browser without light-dark() falls back to -- so both are required.
-        for token in ("--bg", "--fg", "--line", "--muted", "--accent", "--ochre", "--warn", "--field", "--logo-plate"):
+        for token in ("--bg", "--fg", "--line", "--muted", "--accent", "--ochre", "--warn", "--field"):
             with self.subTest(token=token):
                 self.assertIn(f"{token}: ", SHARED_CSS)
                 self.assertIn(f"{token}: light-dark(", SHARED_CSS, f"{token} has no dark counterpart")
+        # The NRE credit is dark in both palettes on purpose -- the mark is a
+        # light rendering of NRE's blue -- so its two colours are fixed rather
+        # than a light-dark pair, and the mark looks the same either way.
+        self.assertIn("--nre-plate: #141b3d; --nre-ink: #cdd6ff;", SHARED_CSS)
+        # !important is load-bearing, and the browser suite is what proves it:
+        # the mark's shapes each carry fill in a style attribute, which
+        # outranks a stylesheet rule, so a rule without it would leave the mark
+        # in NRE's blue on a dark plate at 1.4:1 without anything here failing.
+        self.assertIn(".nre-logo svg * { fill: var(--nre-ink) !important; }", SHARED_CSS)
         self.assertEqual(SHARED_CSS.count(":root {"), 1, "one token block, both schemes in it")
         self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', SHARED_CSS)
         self.assertIn(':root[data-theme="light"] { color-scheme: light; }', SHARED_CSS)
@@ -1653,6 +1662,17 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn("Adobe Illustrator", credit)
         self.assertNotIn("<img", credit)
         self.assertNotIn('src="', credit)
+        # The mark is reversed onto a dark plate by the page's own stylesheet, so
+        # the file in assets/ must still be NRE's, with NRE's colour in it. If
+        # somebody "helpfully" baked the light ink into the file, this is what
+        # catches it -- and the page would no longer be carrying the artwork it
+        # was given.
+        mark = (Path(__file__).parent.parent / "assets" / "powered-by-national-rail.svg").read_text(
+            encoding="iso-8859-1"
+        )
+        self.assertIn("2E2D7F", mark)
+        self.assertNotIn("cdd6ff", mark.lower())
+        self.assertNotIn("141b3d", mark.lower())
 
     def test_the_credit_is_written_only_where_the_page_acknowledges_nre(self) -> None:
         # Composing the NRE notice is what asks for the mark; a build given

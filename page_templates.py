@@ -36,12 +36,22 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
     --best: rgba(20, 80, 155, .07); --best: light-dark(rgba(20, 80, 155, .07), rgba(125, 180, 245, .12));
     --field: #fff; --field: light-dark(#fff, #1c2127);
     --warn: #9a6700; --warn: light-dark(#9a6700, #f0b35b);
-    /* The plate the NRE mark sits on. The mark is dark blue on a fixed fill,
-       so the plate has to stay light in both schemes for the mark to be
-       legible, as the Developer Brand Guidelines require; in the dark palette
-       it is a near-white rather than pure white so it reads as a chip instead
-       of a hole in the footer. */
-    --logo-plate: #fff; --logo-plate: light-dark(#fff, #f2f0ec);
+    /* The NRE credit, reversed. The file in assets/ is NRE's own, byte for
+       byte; the reversal is applied here rather than by editing the artwork,
+       because an edited file stops being the file the brand supplied and
+       nothing downstream could tell. The mark is painted in a light rendering
+       of NRE's blue on a deep plate of the same blue, which is what makes the
+       credit read as a designed chip rather than a white box in a dark footer.
+       The plate is dark in both palettes, so the mark looks the same either
+       way and its contrast does not have to be re-earned per theme.
+
+       This is a judgement call, not a licence finding: NRE's pack ships no
+       reversed asset, and their developer page says brand materials are
+       subject to their permission, so a reversed rendering is recorded as an
+       open question in licences/release-clearance.md. Taking these two tokens
+       and the rule at the bottom of this block out, and giving .nre-logo a
+       light background, puts NRE's own colours back. */
+    --nre-plate: #141b3d; --nre-ink: #cdd6ff;
     --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
   }
   /* The reader's choice, which beats the system preference: the tokens are
@@ -108,18 +118,26 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      route: a quiet rule above, 44px of touch target for a phone. The height is
      on the anchor itself, not only on a container around it -- a nav that is
      44px tall with a 24px link in it is not a 44px target (C25). */
-  /* The NRE "Powered by" mark is a dark blue (#2E2D7F) on a fixed fill, which
-     the dark palette would swallow whole. The Developer Brand Guidelines
-     require the logo to be legible, so it is given its own light plate rather
-     than being recoloured: an edited mark is not the mark that was licensed. */
+  /* The NRE "Powered by" mark, reversed onto a dark plate: see --nre-plate.
+     The artwork keeps its own fill, and this paints over it, so the file in
+     assets/ is still exactly what NRE supplied. The !important is not
+     decoration: Illustrator wrote fill:#2E2D7F into a style attribute on each
+     of the mark's 22 shapes, and a style attribute outranks any stylesheet
+     rule however specific it is, so a plain selector here loses silently and
+     the mark stays NRE's blue on a dark plate -- 1.4:1, which the browser
+     suite measures and fails on, so the two cannot drift apart. */
   .nre-credit { margin: 0 0 .7rem; }
   /* The link is the pointer target, so it has to be as tall as the plate it
      wraps. Left inline, its box is the line box -- 18px -- while the mark
      overflows it, and a 24px-target check rightly fails. */
   .nre-credit a { display: inline-flex; align-items: center; }
   .nre-logo { display: inline-flex; align-items: center; padding: .3rem .55rem;
-              background: var(--logo-plate); border: 1px solid var(--line);
+              background: var(--nre-plate);
+              border: 1px solid color-mix(in srgb, var(--nre-ink) 22%, transparent);
               border-radius: .3rem; }
+  /* Every shape in the mark, not just the paths: two of the 22 are rects, and
+     a rule that caught the paths alone would leave those in NRE's blue. */
+  .nre-logo svg * { fill: var(--nre-ink) !important; }
   .nre-logo svg { display: block; height: 2rem; width: auto; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .85rem; }

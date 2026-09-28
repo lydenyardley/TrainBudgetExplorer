@@ -118,6 +118,36 @@ It is a portal subscription rather than a marketplace product schedule, so it
 has no PDF in this folder and no product id — which is precisely why it needed a
 section of its own.
 
+## the NRE mark is reversed
+
+- state: open question, not a product decision
+- reason: NRE's brand pack ships no reversed asset, so the mark on every page is a rendering they have not approved
+
+The Developer Brand Guidelines (September 2026, filed in this folder, read 28
+September 2026) require the logo to be "legible to viewers". The mark is
+`#2E2D7F`, which is invisible on this page's dark palette, so the page reverses
+it: a light rendering of NRE's blue on a dark plate of the same blue. The file
+in `assets/powered-by-national-rail.svg` is NRE's, byte for byte, and the page
+inlines it unchanged; the reversal is applied by the page's own stylesheet at
+paint time (ADR-0036).
+
+Nothing in the pack permits or forbids it. The ZIP holds one #2E2D7F `Powered by
+National Rail.svg` and one #2e2d7f wordmark, and no reversed variant of either,
+so a dark page has two options: this, or a logo the guidelines say is not
+legible. The developer page says brand materials are subject to NRE's
+permission, and the guidelines name the address to ask
+(`NationalRailDatafeeds@raildeliverygroup.com`) for an exemption.
+
+Asking is one email, and the answer is one of two: a reversed asset, which
+replaces the stylesheet rule with a file; or written permission for the
+reversed rendering, which turns this paragraph into a decision. Until one
+arrives the page carries an edited logo, and this is where that is recorded.
+It is deliberately not a gated pseudo-product like `privacy contact`: the credit
+itself is required and satisfied, the question is about the rendering, and
+making it block publication would gate the whole site on an unanswered email.
+Turn it into one by adding it to `products_needed()` in
+`tools/check_release_clearance.py`.
+
 ## privacy contact
 
 - state: excluded
