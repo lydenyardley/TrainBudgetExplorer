@@ -252,21 +252,27 @@ def _line(values: dict[str, str], spec: tuple[tuple[str, int], ...]) -> str:
 
 
 def build_synthetic_knowledgebase(
-    path: str | Path, *, disagree_on: str | None = "1A"
+    path: str | Path, *, omit: str | None = "1A"
 ) -> Path:
     """Write a Knowledgebase ``ticket-restrictions`` reference feed.
 
     The wording is taken from the very same ``RH`` records the fares feed's
     ``.RST`` carries, so the two fixtures cannot drift apart and a test of
-    "the reference feed agrees" is a statement about the comparison rather than
-    about two hand-kept copies of the same sentence.
+    "the portal still publishes every condition this build quotes" is a
+    statement about the comparison rather than about two hand-kept copies of
+    the same list.
 
-    *disagree_on* names one code whose wording the reference feed states
-    differently. That is the case worth testing: a reference feed that always
-    agrees proves only that the comparison ran, while one that disagrees proves
-    the page reports a disagreement instead of overwriting the fares feed's
-    wording with the newer one -- which is the failure that would misprice a
-    journey in the reader's favour of a stale condition.
+    *omit* names one code the reference feed does not carry at all. That is the
+    case worth testing: a reference feed holding everything proves only that
+    the comparison ran, while one missing a condition proves the page names the
+    one the portal no longer lists instead of quietly printing "all of them".
+
+    It used to reword a record instead, which was the right way to build a
+    disagreement when a disagreement meant "these two feeds word the same
+    condition differently". Run against the real portal feed, that comparison
+    reported every one of 628 conditions disagreeing, because the portal words
+    a condition in prose and the fares feed compresses it. The check now asks
+    about publication, so the fixture omits rather than rewords.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -276,16 +282,11 @@ def build_synthetic_knowledgebase(
             continue
         offsets = RESTRICTION_OFFSETS["RH"]
         code = line[offsets["restriction_code"][0]:offsets["restriction_code"][1]].strip()
-        if not code:
+        if not code or code == omit:
             continue
         description = line[offsets["description"][0]:offsets["description"][1]].strip()
         outward = line[offsets["desc_out"][0]:offsets["desc_out"][1]].strip()
         back = line[offsets["desc_rtn"][0]:offsets["desc_rtn"][1]].strip()
-        if code == disagree_on:
-            # Deliberately a different condition, not a reworded one, so the
-            # test is about a real disagreement rather than about case folding.
-            outward = "NOT VALID AT ANY TIME"
-            back = "NOT VALID AT ANY TIME"
         records.append(
             "    <Restriction>\n"
             f"      <RestrictionCode>{code}</RestrictionCode>\n"

@@ -112,7 +112,10 @@ class MatchingTest(unittest.TestCase):
 class ReportTest(unittest.TestCase):
     def test_a_feed_the_reader_can_use_says_so(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            folder = build_synthetic_knowledgebase(Path(tmp) / "kb")
+            # omit=None: the fixture drops one code by default so the page has
+            # a missing condition to report, and this test is about a feed the
+            # reader can read every code out of.
+            folder = build_synthetic_knowledgebase(Path(tmp) / "kb", omit=None)
             report = inspector.inspect_file(folder / "ticket-restrictions.xml")
         self.assertTrue(report["reader"]["usable"])
         self.assertEqual(report["reader"]["codesWithWording"], ["1A", "AS", "R1"])

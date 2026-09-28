@@ -1765,14 +1765,14 @@ async function runPage(browser, index, given, file, body, base) {
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
 
     // 7f. The conditions in the table are the fares feed's own wording; the
-    // page says what an independent reference feed was asked and answered, and
-    // says it ABOVE the table, because a condition that has since changed is
+    // page says what the portal's own restriction feed was asked and answered,
+    // and says it ABOVE the table, because a condition that has since changed is
     // what a reader needs before choosing between two prices, not after.
     //
     // The dangerous case is the one that reads best: a build that checked
-    // nothing and reported agreement. So each branch is judged against what the
-    // payload actually holds, and "agrees" is only accepted when codes were
-    // compared.
+    // nothing and reported the portal as still publishing every condition. So
+    // each branch is judged against what the payload actually holds, and "all"
+    // is only accepted when conditions were actually compared.
     const reference = await page.evaluate(() => {
       const line = document.getElementById("restrictionReference");
       const ref = DATA.restrictionReference;
@@ -1784,7 +1784,7 @@ async function runPage(browser, index, given, file, body, base) {
         // Collected inside the page: DATA lives in the browser, and reading it
         // out here would be an undefined reference that aborts the whole run
         // rather than failing one check.
-        differing: ref && ref.differing ? ref.differing.map((d) => d.code) : [],
+        unlisted: ref && ref.unlisted ? ref.unlisted.slice() : [],
         above: line
           ? Boolean(line.compareDocumentPosition(document.getElementById("rows")) &
               Node.DOCUMENT_POSITION_FOLLOWING)
@@ -1812,31 +1812,47 @@ async function runPage(browser, index, given, file, body, base) {
       `${reference.text} (above: ${reference.above})`
     );
     // The invariant is about the WORDED claim, not the status value: a build
-    // that compared nothing must not be allowed to read as agreeing. Tested
+    // that compared nothing must not be allowed to read as confirmed. Tested
     // against the sentence a reader actually sees, because that is the thing
     // that can mislead. Deliberately not matched on exact wording -- pinning
     // the check to one phrasing would make it a test of this project's prose
     // rather than of the claim, and would break for the wrong reason whenever
     // the sentence is improved.
-    const claimsAgreement = /agrees on all/i.test(reference.text);
+    //
+    // The claim is publication, never agreement about wording. Run against the
+    // real portal feed, comparing the two texts word for word reported 628 of
+    // 628 conditions disagreeing on a feed where none did: the portal words a
+    // condition in prose where the fares feed compresses it, so a page saying
+    // the portal disagrees with everything it quotes is crying wolf, and a
+    // reader who sees it once stops reading the rest of the line.
+    const claimsAll = /still publishes all/i.test(reference.text);
     check(
-      "agreement is only claimed when codes were actually compared",
-      !claimsAgreement || reference.compared > 0,
+      "the portal is only credited with publishing when conditions were compared",
+      !claimsAll || reference.compared > 0,
       `${reference.text} (compared: ${reference.compared})`
     );
     check(
-      "an unchecked reference feed says so rather than reading as agreement",
+      "an unchecked reference feed says so rather than reading as confirmation",
       reference.status === "absent" || reference.status === "unknown"
-        ? !claimsAgreement && /not been checked|not checked|could not be checked|no .*feed was checked/i.test(reference.text)
+        ? !claimsAll && /not been checked|not checked|could not be checked|no .*feed was checked/i.test(reference.text)
         : true,
       `${reference.text} (status: ${reference.status})`
     );
-    if (reference.status === "disagrees") {
+    // The claim is about publication, so the page must never say the two feeds
+    // agree about what a condition *says*. The portal words conditions in prose
+    // and the fares feed compresses them; that is not a disagreement and must
+    // not be printed as one.
+    check(
+      "it claims publication rather than agreement about wording",
+      !/\bagrees\b|\bdisagrees\b|\bwording matches\b/i.test(reference.text),
+      reference.text
+    );
+    if (reference.status === "unpublished") {
       check(
-        "a disagreement names the codes that differ",
-        reference.differing.length > 0 &&
-          reference.differing.every((code) => reference.text.includes(code)),
-        `${reference.text} (differing: ${reference.differing.join(", ")})`
+        "a condition the portal no longer lists is named",
+        reference.unlisted.length > 0 &&
+          reference.unlisted.every((code) => reference.text.includes(code)),
+        `${reference.text} (unlisted: ${reference.unlisted.join(", ")})`
       );
     }
     check("and it sits beside the result count, not in the footer", fresh.underSummary, fresh.text);

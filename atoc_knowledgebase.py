@@ -40,6 +40,7 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,8 +51,8 @@ from pathlib import Path
 # guessed name would either match nothing or, worse, match the wrong element.
 CODE_NAMES = frozenset({"restrictioncode", "code", "restriction"})
 DESCRIPTION_NAMES = frozenset({"description", "desc", "restrictiondescription"})
-OUTWARD_NAMES = frozenset({"descout", "outwarddescription", "outwardtext", "desc_out"})
-RETURN_NAMES = frozenset({"descrtn", "returndescription", "returntext", "desc_rtn"})
+OUTWARD_NAMES = frozenset({"descout", "outwarddescription", "outwardtext", "desc_out", "detailsoutward"})
+RETURN_NAMES = frozenset({"descrtn", "returndescription", "returntext", "desc_rtn", "detailsreturn"})
 
 # A restriction code in this data is two characters. Used to decide whether a
 # value that arrived in a generically-named element is a code at all, so a
@@ -73,21 +74,6 @@ class KnowledgebaseRestriction:
     outward_text: str
     return_text: str
 
-    def wording_matches(self, description: str, outward: str, return_text: str) -> bool:
-        """Whether this record says the same thing as the fares feed's header.
-
-        Compared on the three pieces of wording separately and on a normalised
-        form, because a feed that reflows a line or changes its case has not
-        changed the condition, and a page that reported that as a disagreement
-        would be crying wolf until nobody read it.
-        """
-
-        return (
-            _normalise(self.description) == _normalise(description)
-            and _normalise(self.outward_text) == _normalise(outward)
-            and _normalise(self.return_text) == _normalise(return_text)
-        )
-
 
 def _normalise(text: str) -> str:
     """Fold the differences that are not differences in meaning."""
@@ -99,7 +85,7 @@ def _normalise(text: str) -> str:
 # invent a fifth by misspelling a string, and so the page's wording for each
 # is written in one place.
 CHECKED = "checked"
-DISAGREES = "disagrees"
+UNPUBLISHED = "unpublished"
 UNKNOWN = "unknown"
 ABSENT = "absent"
 
@@ -207,6 +193,16 @@ def _read_one(kb: Knowledgebase, source: Path) -> None:
 
 
 def _read_xml(kb: Knowledgebase, payload: bytes, origin: str) -> None:
+    """Read one document into *kb*.
+
+    The counters accumulate rather than reset. The reference feed is a folder
+    of seven documents, and a reader that assigned them instead of adding to
+    them reported the count of whichever document happened to be read last:
+    on the real folder that was ``tocs.xml``, which has no restrictions in it,
+    so 644 records the reader had actually understood were counted as zero and
+    the whole feed came back unusable -- the reader was working, and the number
+    it reported was about a different file.
+    """
     try:
         root = ET.fromstring(payload)
     except ET.ParseError as error:
@@ -221,9 +217,9 @@ def _read_xml(kb: Knowledgebase, payload: bytes, origin: str) -> None:
         # A second record for a code is a re-issue, not a contradiction.
         kb.restrictions[record.code] = record
         understood.add(position)
-    kb.records_understood = len(understood)
+    kb.records_understood += len(understood)
     unreadable = _unreadable_records(elements, understood)
-    kb.records_seen = len(understood) + sum(unreadable.values())
+    kb.records_seen += len(understood) + sum(unreadable.values())
     kb.unrecognised.update(unreadable)
 
 
@@ -262,6 +258,26 @@ def _unreadable_records(elements: list, understood: set[int]) -> dict[str, int]:
     return unreadable
 
 
+def _code_fields(element: ET.Element) -> list[tuple[int, str]]:
+    """Every code field at or inside *element*, with its depth below it.
+
+    Depth 1 is a direct child. The depth is what tells a record from a wrapper
+    and a record from its own code field, which look identical by name alone.
+    """
+
+    found: list[tuple[int, str]] = []
+    stack: list[tuple[ET.Element, int]] = [(child, 1) for child in element]
+    while stack:
+        node, depth = stack.pop()
+        name = local_name(node.tag)
+        text = (node.text or "").strip()
+        if text and name in CODE_NAMES and CODE_SHAPE.match(text.upper()):
+            found.append((depth, text.upper()))
+        for child in node:
+            stack.append((child, depth + 1))
+    return found
+
+
 def _restriction_from(element: ET.Element) -> KnowledgebaseRestriction | None:
     """A restriction from *element*, or ``None`` if it is not one.
 
@@ -269,27 +285,47 @@ def _restriction_from(element: ET.Element) -> KnowledgebaseRestriction | None:
     local name is a known code field *and* whose value looks like a code. Any
     other element is not a record and is not counted, so a document that this
     reader does not understand produces no records rather than wrong ones.
+
+    Two things the real feed taught, both found by running this reader against
+    it rather than against a fixture shaped like the guess:
+
+    The record is the *innermost* element carrying a code. Search only direct
+    children and the real 644 records read fine but yield no wording, because
+    the feed wraps the wording as
+    ``TicketRestriction > Restrictions > Restriction > DetailsOutward``. Search
+    everything and three other things start reading as records: the file's root,
+    each ``RestrictionCode`` field (a leaf whose own text is its own code), and
+    so 1,289 "records" of which the 644 code fields are last, and last wins --
+    every code ends up mapped to a bare field with no wording, which is the
+    "partly understood" shape this reader exists to catch. So the code must be
+    a direct child, and no code may sit deeper than that: that is what makes
+    the root a wrapper rather than a record.
+
+    The wording, once a record is established, is found wherever it sits inside
+    it. Everything within a record's own extent is a field of that record.
     """
 
-    code = ""
+    codes = _code_fields(element)
+    if not codes or any(depth != 1 for depth, _ in codes):
+        return None
+    code = codes[0][1]
     description = ""
     outward = ""
     return_text = ""
-    for child in element:
+
+    for child in element.iter():
+        if child is element:
+            continue
         name = local_name(child.tag)
         text = (child.text or "").strip()
-        if not text:
+        if not text or name in CODE_NAMES:
             continue
-        if not code and name in CODE_NAMES and CODE_SHAPE.match(text.upper()):
-            code = text.upper()
-        elif name in DESCRIPTION_NAMES:
+        if name in DESCRIPTION_NAMES:
             description = text
         elif name in OUTWARD_NAMES:
             outward = text
         elif name in RETURN_NAMES:
             return_text = text
-    if not code:
-        return None
     return KnowledgebaseRestriction(
         code=code, description=description, outward_text=outward, return_text=return_text
     )
@@ -304,15 +340,16 @@ def carries_wording(reference: KnowledgebaseRestriction) -> bool:
 
 @dataclass(frozen=True)
 class RestrictionCheck:
-    """The answer to "is the printed condition still the published one?"."""
+    """The answer to "does the portal still publish these conditions?"."""
 
     status: str
     compared: int = 0
-    agree: int = 0
-    disagree: int = 0
-    #: Codes whose wording differs, so the page can name them rather than
-    #: asserting a count. A reader is entitled to know *which* condition moved.
-    differing: tuple[tuple[str, str], ...] = ()
+    listed: int = 0
+    missing: int = 0
+    #: The codes the portal no longer lists, so the page can name them rather
+    #: than asserting a count. A reader is entitled to know *which* condition
+    #: is missing, because that is the one they would otherwise trust.
+    unlisted: tuple[str, ...] = ()
     note: str = ""
     #: When the reference feed says it was published, and when it was last
     #: confirmed. The first is the portal's own word for its vintage; the
@@ -322,30 +359,41 @@ class RestrictionCheck:
 
     @property
     def verified(self) -> bool:
-        """Whether a claim of agreement may be made at all.
+        """Whether a claim of confirmation may be made at all.
 
-        A count of zero compared codes is not agreement. It is the absence of
-        any evidence, and a page that read it as agreement would be asserting
-        something it did not check.
+        A count of zero compared codes is not confirmation. It is the absence
+        of any evidence, and a page that read it as confirmation would be
+        asserting something it did not check.
         """
 
         return self.status == CHECKED and self.compared > 0
 
 
 def check_restrictions(
-    fares_headers: dict[str, object],
+    codes: Iterable[str],
     kb: Knowledgebase | None,
     *,
     published: str = "",
     checked_at: str = "",
 ) -> RestrictionCheck:
-    """Compare the fares feed's restriction wording with the reference feed.
+    """Whether the portal still publishes every condition this build quotes.
 
-    *fares_headers* maps a code to an object exposing ``description``,
-    ``outward_text`` and ``return_text`` -- the ``RestrictionHeader`` the
-    ``.RST`` parser produces. Only codes the page actually shows are compared,
-    because agreement about a condition nobody is reading is not a fact about
-    this page.
+    *codes* is the set of restriction codes the build's own fares carry.
+
+    What is compared is *publication*, not wording, and that is not a
+    simplification -- it is the only thing this feed can honestly be asked. Run
+    against the real download, the two feeds describe the same conditions in
+    different vocabularies: the fares feed says ``VALID ON ANY TRAIN 0930 OR
+    LATER M-F`` where the portal's own record says "Not valid to depart the
+    origin station shown on the ticket until 09:30". Comparing the two texts
+    reported 628 of 628 conditions disagreeing on a feed where nothing at all
+    did, which is a false alarm printed on every page of every release.
+
+    So the claim is the one the data supports: the portal still lists these
+    conditions. That is checkable, it catches a condition being retired, and it
+    cannot be wrong in the direction of crying wolf. A missing code is reported
+    and named, because a page quoting a condition the portal no longer lists
+    is telling a reader something the portal would not.
     """
 
     if kb is None or not kb.loaded:
@@ -361,58 +409,41 @@ def check_restrictions(
         if not detail and kb.records_understood:
             # Codes were read and the wording was not. The feed was parsed
             # successfully, which is exactly the case where a reader might
-            # report agreement, so the note has to say what was actually found
-            # rather than blame the file.
+            # report a confirmed check, so the note has to say what was
+            # actually found rather than blame the file.
             detail = (
                 f"{kb.records_understood} restriction record(s) were read but none carried a "
-                "description or validity text, so there is nothing to compare against"
+                "description or validity text, so this is not known to be a feed of "
+                "restriction conditions at all"
             )
         if not detail:
             detail = "the reference feed held no restriction records this reader recognises"
         return RestrictionCheck(status=UNKNOWN, note=detail, published=published, checked_at=checked_at)
 
-    compared = agree = disagree = 0
-    differing: list[tuple[str, str]] = []
-    for code, header in sorted(fares_headers.items()):
+    compared = listed = 0
+    unlisted: list[str] = []
+    for code in sorted({(str(one) or "").strip().upper() for one in codes}):
         if not code:
             continue
-        reference = kb.restrictions.get(code)
-        if reference is None:
-            # The reference feed not carrying a code is not a contradiction of
-            # it. Skipped rather than counted, and the count of compared codes
-            # is what the claim is made from.
-            continue
         compared += 1
-        if not carries_wording(reference):
-            # A reference record with no wording is not a claim about this
-            # condition, so it cannot be compared and cannot be said to
-            # disagree. Treating it as a disagreement would be the worst
-            # possible failure for this feature: it would tell a reader the
-            # reference feed has retired a condition when the truth is that
-            # this reader did not find the text.
-            compared -= 1
-            continue
-        if reference.wording_matches(
-            header.description, header.outward_text, header.return_text
-        ):
-            agree += 1
+        if kb.restrictions.get(code) is None:
+            unlisted.append(code)
         else:
-            disagree += 1
-            differing.append((code, reference.description or reference.outward_text))
+            listed += 1
     if compared == 0:
         return RestrictionCheck(
             status=UNKNOWN,
-            note="the reference feed describes none of the conditions on this page",
+            note="this build quotes no restriction condition the reference feed could speak to",
             published=published,
             checked_at=checked_at,
         )
-    status = CHECKED if disagree == 0 else DISAGREES
+    status = CHECKED if not unlisted else UNPUBLISHED
     return RestrictionCheck(
         status=status,
         compared=compared,
-        agree=agree,
-        disagree=disagree,
-        differing=tuple(differing),
+        listed=listed,
+        missing=len(unlisted),
+        unlisted=tuple(unlisted),
         published=published,
         checked_at=checked_at,
     )
