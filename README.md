@@ -218,6 +218,28 @@ server long enough for that to quietly become false.
 The fares feed stays the authority. A disagreement is reported to the reader,
 never resolved in either direction.
 
+**Checking the guess.** The reader matches element names from a set of plausible
+spellings, and that set is a guess. `tools/inspect_knowledgebase.py` is how you
+check it against a real download:
+
+```
+python dtd_download.py --output-root feeds --kb-only   # needs NRDP credentials
+python tools/inspect_knowledgebase.py feeds/knowledgebase
+```
+
+It prints every element name in the feed with its count, depth and a sample of
+its text; which of the four fields the reader currently matches each to; the
+names carrying text that it matches to nothing; and the specific line to add
+when a name is a near miss. It then reports what a page built on that feed would
+say, in the reader's own words — so the tool cannot describe the reader
+differently from how the build behaves. `--json` for the same report
+machine-readably.
+
+It reads the local file and never writes to the reader, so running it against
+the real feed is safe precisely when the reader is wrong. A feed the reader
+cannot use exits zero: the report is the deliverable, and a non-comparable feed
+is the situation the tool exists for.
+
 ## Why the onward search stops at 200 departures
 
 A one-change journey is found by looking for an onward train at every place the
@@ -250,6 +272,8 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `fuzz_feed.py` | Mutates a feed at random and checks the parser's invariants |
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
+| `tools/inspect_knowledgebase.py` | CLI: what a Knowledgebase reference feed actually contains, what the reader makes of it, and which element name to add when it guesses wrong |
+| `tools/test_inspect_knowledgebase.py` | Tests for the inspector's element summary, name matching and verdicts |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `destination_coverage.py` | Names the priced destinations no source could classify; a build prints the summary, `--fail-on-unsourced` turns it into a refusal, and `--unsourced-ceiling` holds the count |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
