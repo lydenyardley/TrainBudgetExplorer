@@ -283,13 +283,58 @@ class DemoPageTest(unittest.TestCase):
     def test_each_destination_carries_its_fare_restriction_status(self) -> None:
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
-        self.assertIn("restriction", rows["NOT"]["restrictionDescription"].lower())
+        # C08: the description is now the feed's own wording for the code
+        # rather than a placeholder, so it is judged against that.
+        self.assertEqual(rows["NOT"]["restrictionDescription"], "NOT VALID AT WEEKENDS")
         self.assertEqual(rows["SLP"]["restrictionCode"], "")
         self.assertIn("restrictionCode", self.html)
         self.assertIn("restrictionDescription", self.html)
         self.assertIn('(destination.restrictionDescription || "This fare carries a restriction code', self.html)
         self.assertIn('add("Restriction", destination.restrictionCode || "none")', self.html)
         self.assertIn("ITX placeholder fares", self.html)
+
+    def test_a_restricted_row_carries_the_validity_the_feed_states(self) -> None:
+        # C08: the condition a reader is being asked to rule a fare in or out
+        # by is only useful if it says what it permits. The feed's own outward
+        # and return text reaches the page, once per code rather than once per
+        # row, so a page of 1,678 rows does not repeat the same two sentences
+        # 1,678 times.
+        validity = self.payload["restrictionValidity"]
+        self.assertEqual(
+            validity["1A"],
+            {
+                "outwardText": "NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY",
+                "returnText": "RETURN NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY",
+            },
+        )
+        # A code the feed has no header for is absent rather than empty, so the
+        # page can tell "nothing to show" from "show nothing".
+        self.assertNotIn("", validity)
+        self.assertIn("DATA.restrictionValidity", self.html)
+        self.assertIn("Valid outward: ", self.html)
+        self.assertIn("Valid on the return: ", self.html)
+        # A single is one way, so a return condition beside it would state a
+        # limit on a leg the ticket does not have.
+        self.assertIn('const single = destination.quality === "outbound single";', self.html)
+        self.assertIn("if (!single && validity.returnText)", self.html)
+
+    def test_a_restriction_the_feed_cannot_describe_says_so_plainly(self) -> None:
+        # C08: "confirm the conditions before buying" reads as if the page had
+        # decoded a rule and left the reader a task. What it has is a code and
+        # no wording, and that is what the page says.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(
+                Path(tmp) / "fares", include_restrictions=True
+            )
+            fares = FaresDb().load_feed(feed)
+            fares.restrictions.headers.pop("1A", None)
+            payload = build_payload(fares, None, "GRN")
+        rows = {row["crs"]: row for row in payload["destinations"]}
+        self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
+        self.assertIn("does not describe", rows["NOT"]["restrictionDescription"])
+        # Nothing to show is the honest outcome, and the map says so by
+        # leaving the code out rather than by carrying an empty pair.
+        self.assertNotIn("1A", payload["restrictionValidity"])
 
     def test_a_railcard_is_a_constraint_on_the_party_not_a_discount(self) -> None:
         # S15: the cheapest number on screen has to be a fare the party could

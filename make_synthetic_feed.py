@@ -134,6 +134,12 @@ RETURN_NETWORK_FARES = (
     ("2000", "8200", 3560),  # Nottingham -> Skegness
     ("2000", "8300", 2400),  # Nottingham -> Leicester
 )
+# One restricted fare on each secondary page. The reviewed Anytime set drops
+# restricted fares by design, so without one of these the two secondary pages
+# carry no restriction code at all -- and a check that asks what a condition
+# permits has nothing to ask about on two pages out of three. The code is the
+# one the .RST fixture below describes with a validity the reader can read.
+RETURN_NETWORK_RESTRICTED = (("3000", "8300"), ("2000", "8300"))
 # Retford is priced but never called at, which is the shape a real feed has and
 # the one the page's "no service" row exists to report. The other three are
 # called at, so a page has both a timed row and an untimed one.
@@ -287,8 +293,9 @@ def build_synthetic_feed(
         facets.update(RETURN_NETWORK_FACETS)
         for number, (origin, destination, pence) in enumerate(RETURN_NETWORK_FARES, start=30):
             flow_id = f"{number:07d}"
+            restriction = "1A" if (origin, destination) in RETURN_NETWORK_RESTRICTED else ""
             flows += ((flow_id, origin, destination, "00000"),)
-            fares += ((flow_id, "SDR", pence, ""),)
+            fares += ((flow_id, "SDR", pence, restriction),)
 
     flow_lines: list[str] = []
     for flow_id, origin, destination, route_code in flows:
@@ -393,6 +400,44 @@ def _restriction_lines() -> list[str]:
                 "desc_rtn": "NOT VALID ARRIVING BEFORE 0930",
                 "type_out": "O",
                 "type_rtn": "R",
+                "change_ind": "N",
+            },
+            RESTRICTION_LAYOUTS["RH"],
+        ),
+        # A header for each restriction code the fixture's own fares carry, so
+        # the page has something to decode: without these, every restricted row
+        # falls back to "this feed does not describe it" and the validity text
+        # the reader is meant to see can never be exercised anywhere -- not in
+        # the browser suite, and not on the demo site a contributor reads.
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "RH",
+                "cf_marker": "C",
+                "restriction_code": "1A",
+                # 30 characters, which is the field's real width: a fixture
+                # whose description only works because the parser truncated it
+                # is testing the truncation, not the description.
+                "description": "NOT VALID AT WEEKENDS",
+                "desc_out": "NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY",
+                "desc_rtn": "RETURN NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY",
+                "type_out": "D",
+                "type_rtn": "D",
+                "change_ind": "N",
+            },
+            RESTRICTION_LAYOUTS["RH"],
+        ),
+        _line(
+            {
+                "update_marker": "R",
+                "record_type": "RH",
+                "cf_marker": "C",
+                "restriction_code": "AS",
+                "description": "ADVANCE TICKET, VALID ON ONE NAMED TRAIN",
+                "desc_out": "VALID ONLY ON THE TRAIN NAMED ON THE TICKET",
+                "desc_rtn": "NOT APPLICABLE: THIS IS AN OUTBOUND SINGLE",
+                "type_out": "T",
+                "type_rtn": "T",
                 "change_ind": "N",
             },
             RESTRICTION_LAYOUTS["RH"],

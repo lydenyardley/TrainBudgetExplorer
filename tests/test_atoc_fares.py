@@ -1239,11 +1239,26 @@ class PublishableSelectorTest(unittest.TestCase):
 
     def test_the_restriction_file_is_parsed_and_gated(self) -> None:
         self.assertEqual(self.db.restrictions.gate_problem(), None)
-        self.assertEqual(self.db.restrictions.record_counts["RH"], 1)
+        # One header per restriction code the fixture's own fares carry, plus
+        # the one that exercises the rest of the record types.
+        self.assertEqual(self.db.restrictions.record_counts["RH"], 3)
         self.assertEqual(self.db.restrictions.record_counts["RR"], 2)
         self.assertEqual(self.db.restrictions.headers["R1"].description, "PEAK TO LONDON")
         self.assertIn("TWO", self.db.restrictions.railcard_record_counts)
         self.assertEqual(self.plain_db.restrictions.gate_problem() is not None, True)
+
+    def test_a_restriction_header_carries_the_validity_beside_the_description(
+        self,
+    ) -> None:
+        # C08: the page can only tell a reader what a condition permits because
+        # the header carries the outward and return text, not just the code's
+        # name. A parser that read the description and dropped the other two
+        # would leave the page nothing to show.
+        header = self.db.restrictions.headers["1A"]
+        self.assertEqual(header.outward_text, "NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY")
+        self.assertEqual(
+            header.return_text, "RETURN NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY"
+        )
 
 
 class AdvanceFareTest(unittest.TestCase):

@@ -1397,6 +1397,8 @@ async function runPage(browser, index, given, file, body, base) {
     const conditions = await page.evaluate(() =>
       Array.from(document.querySelectorAll("#rows td.restriction")).map((cell) => ({
         readable: (cell.querySelector(".condition") || {}).textContent || "",
+        validity: (cell.querySelector(".validity") || {}).textContent || "",
+        restricted: cell.dataset.status === "restricted",
         record: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
         summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
       }))
@@ -1411,6 +1413,67 @@ async function runPage(browser, index, given, file, body, base) {
       "and the codes sit in a disclosure beside it, not in the sentence",
       conditions.every((cell) => cell.summary && cell.record.length >= 2),
       JSON.stringify(conditions[0] || null)
+    );
+    // C08: where the feed states what a restriction permits, the row prints it
+    // beside the condition rather than leaving the reader with a code. Judged
+    // against the payload, so a page whose feed has nothing to decode is not
+    // failed for not inventing it -- but a page whose feed has the text and
+    // does not print it is.
+    //
+    // The mode is found rather than assumed: the reviewed set the page opens in
+    // drops restricted fares by design, so the row that carries the validity is
+    // in a mode the reader has to switch to. The page is put back the way it
+    // was, or every later check on this page runs against a mode nobody asked
+    // for.
+    const restrictedMode = await page.evaluate(() => {
+      const fallback = document.querySelector('input[name="ticketMode"]:checked');
+      // Every priced row, at the page's own ceiling: the restricted fare is
+      // often the dearest one on the page, and a check that only looked at
+      // what the current budget happened to leave on screen would report
+      // nothing to check on a page that carries the row.
+      const budgetBefore = budget.value;
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      const codes = Object.entries(DATA.restrictionValidity || {}).filter(
+        ([, value]) => value && (value.outwardText || value.returnText)
+      ).map(([code]) => code);
+      if (!codes.length) return null;
+      for (const wanted of [fallback.value, "return", "single", "anytime"]) {
+        const input = document.querySelector(`input[name="ticketMode"][value="${wanted}"]`);
+        if (!input) continue;
+        input.checked = true;
+        render();
+        const shown = Array.from(document.querySelectorAll("#rows td.restriction"))
+          .filter((cell) => cell.dataset.status === "restricted")
+          .map((cell) => ({
+            // The record is Ticket, Restriction, Route -- so the code is the
+            // second value in it.
+            code: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent)[1],
+            text: (cell.querySelector(".validity") || {}).textContent || "",
+          }));
+        fallback.checked = true;
+        render();
+        if (shown.some((cell) => codes.includes(cell.code))) {
+          const found = { mode: wanted, cells: shown };
+          setBudget(budgetBefore);
+          return found;
+        }
+      }
+      fallback.checked = true;
+      render();
+      setBudget(budgetBefore);
+      currentPage = 1;
+      render();
+      return { mode: null, cells: [] };
+    });
+    check(
+      "a restricted row prints the validity the feed states for its code",
+      !restrictedMode || restrictedMode.mode === null
+        ? notExercised(
+            restrictedMode ? "no mode on this page lists a fare whose restriction code has validity text" : "this page's feed states no restriction validity"
+          )
+        : restrictedMode.cells.some((cell) => cell.text.length > 20 && /valid/i.test(cell.text)),
+      JSON.stringify(restrictedMode)
     );
 
     // S23: an absence the feed can name is not a dash.
@@ -2109,6 +2172,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         [".origin-picker-label", "the change-station field label"],
         [".chipcount", "a chip's count"],
         [".condition", "the readable condition"],
+        [".validity", "the fare validity"],
         ["#facetNotice", "a filter-change notice"],
         [".synthetic-banner", "the synthetic-data banner"],
         [".synthetic-banner strong", "the banner's label"],

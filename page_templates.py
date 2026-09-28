@@ -235,6 +235,10 @@ __SHARED_CSS__
      3.66:1 in dark, below AA. It is a token now, beside the palette's other
      tokens, and each scheme sets it. */
   .restriction[data-status="restricted"] { color: var(--warn); }
+  /* C08: the validity the feed states, in the same voice as the condition it
+     belongs to, and separated from it so the two are not read as one run-on
+     sentence. */
+  .validity { display: block; margin-top: .15rem; }
   .restriction[data-status="unrestricted"] { color: var(--muted); }
   .heritage-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
   .heritage-proof a { color: inherit; text-underline-offset: .15em; }
@@ -1173,7 +1177,12 @@ function render() {
     restriction.title = restricted
       ? (destination.restrictionDescription || "This fare has a restriction code; check the seller before buying.")
       : "No fare restriction code is attached to this fare.";
-    restriction.append(readable, feedRecord(destination));
+    const validity = validityNote(destination);
+    restriction.append(readable);
+    // append() would stringify a null argument into the word "null", so the
+    // optional note is added only when there is one to add.
+    if (validity) restriction.append(validity);
+    restriction.append(feedRecord(destination));
     row.append(restriction);
     cellWithLinks(row, destination, wanted);
     rows.append(row);
@@ -1194,6 +1203,33 @@ function render() {
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
   renderShortlist();
+}
+
+// C08: what the condition actually permits, in the feed's own words. A code
+// and a one-line description tell a reader which fare is restricted, not
+// whether the train they have in mind is one of the trains it is valid on --
+// which is the thing being decided when two prices are compared. So the
+// outward and return validity the feed states is printed here, next to the
+// description, and the codes stay in the folded record below as audit detail.
+//
+// The single-mode row is a one-way ticket, so only the outward text can apply
+// to it; showing a return condition beside a single would state a limit on a
+// leg the ticket does not have.
+function validityNote(destination) {
+  if (!destination.restrictionCode) return null;
+  const validity = DATA.restrictionValidity
+    ? DATA.restrictionValidity[destination.restrictionCode]
+    : null;
+  if (!validity) return null;
+  const single = destination.quality === "outbound single";
+  const lines = [];
+  if (validity.outwardText) lines.push("Valid outward: " + validity.outwardText);
+  if (!single && validity.returnText) lines.push("Valid on the return: " + validity.returnText);
+  if (!lines.length) return null;
+  const note = document.createElement("span");
+  note.className = "validity";
+  note.append(lines.join(" "));
+  return note;
 }
 
 // S19: the record as the feed states it -- ticket code, restriction code,
