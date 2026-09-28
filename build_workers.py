@@ -18,7 +18,7 @@ from atoc_fares import FaresDb
 from atoc_knowledgebase import Knowledgebase
 from atoc_timetable import TimetableDb
 
-from build_demo_page import build_payload, render_page, with_base
+from build_demo_page import build_payload, render_page, wants_nre_credit, with_base
 
 # Per-process state: the feed databases and the shared build config. In pool
 # mode the initialiser fills it once per worker; the in-process build fills
@@ -116,5 +116,10 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/")}
         for e in _WORKER["index"] if e["crs"] != origin_crs
     ]
-    html = render_page(payload, budget_pounds=20, analytics=_WORKER["analytics"])
+    html = render_page(
+        payload,
+        budget_pounds=20,
+        analytics=_WORKER["analytics"],
+        nre_credit=wants_nre_credit(_WORKER["attribution"]),
+    )
     return job["slug"], job["origin_name"], html
