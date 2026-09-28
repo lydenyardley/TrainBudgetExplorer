@@ -2526,39 +2526,6 @@ class FaresDb:
         )
         return rows
 
-    def restriction_codes(self, origin_crs: str | None = None) -> set[str]:
-        """Every restriction code the fares this build shows can carry.
-
-        With *origin_crs*, the codes on fares reachable from that one station.
-        With no origin, the codes on every flow in the feed -- what a
-        multi-origin build quotes across the whole release.
-
-        This exists because "the codes on this page" was the wrong question
-        answered the only way it could be, which is by listing every code in
-        the feed. The real feed holds 841 headers and the Grantham page quotes
-        four of them, so a check built on the feed's own list claimed to have
-        compared 628 conditions with a page that shows 4. Asking the flows is
-        the difference between a claim about the page and a claim about the
-        download.
-        """
-
-        codes: set[str] = set()
-        if origin_crs is None:
-            candidates: list[object] = list(self.flows.values())
-        else:
-            origin = self.locations_by_crs.get(origin_crs.strip().upper())
-            if origin is None:
-                return codes
-            candidates = []
-            for nlc in self.nlcs_by_crs.get(origin.crs, {origin.nlc}):
-                candidates.extend(self.flows_touching_nlc.get(nlc, ()))
-        for flow in candidates:
-            for fare in self.fares_by_flow.get(flow.flow_id, {}).values():
-                code = (fare.restriction_code or "").strip().upper()
-                if code:
-                    codes.add(code)
-        return codes
-
     def publishable_destinations_within(
         self,
         origin_crs: str,

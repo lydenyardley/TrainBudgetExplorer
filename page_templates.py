@@ -926,10 +926,19 @@ function renderFreshness() {
 // the same publication as the prices. The reference feed is a second opinion,
 // published on its own schedule, and this is the claim the page makes about it.
 //
-// Every branch says what was compared. "Agrees" with nothing to agree about
+// Every branch says what was compared. "All of them" with nothing behind it
 // would be a claim the build never checked, so a check that compared no codes
 // is written as not checked, and an unreadable reference feed is written as
 // unreadable rather than passed over in silence.
+//
+// The count is the conditions *the fares in this build can carry*, which is a
+// bigger set than the rows on screen and deliberately so. Naming only the codes
+// the reader's current budget happens to surface would make the sentence change
+// meaning when they drag the slider -- and would leave a fare carrying a
+// retired condition unremarked, because the page cannot know a budget the
+// reader has not chosen yet. Taken from the flows, the set holds at every
+// budget, party and ticket mode, so a reader who later sees one of these
+// conditions was warned before they saw it.
 function renderRestrictionReference() {
   const line = document.getElementById("restrictionReference");
   if (!line) return;
@@ -962,14 +971,20 @@ function renderRestrictionReference() {
         + "restriction feed"
         + (published ? ", published" + published : "")
         + " no longer lists " + ref.missing + " of the " + ref.compared
-        + " conditions this page's fares carry (" + codes + ")" + checkedClause
+        + " conditions on this page (" + codes + ")" + checkedClause
         + ". The wording below is the fares feed's, which is the same publication the prices are from.";
     }
+    // The publication clause belongs to the publication date, so the verb
+    // phrase carries its own connector. Built as "feed, published <date>, still
+    // publishes" when the portal gave a date and "feed still publishes" when it
+    // did not -- which is the usual case, because these feeds carry no
+    // Last-Modified: joining the absent clause with a comma printed "restriction
+    // feed, still publishes all 10", a splice a reader sees on the real page.
     return "Ticket conditions are quoted from the fares feed"
       + (DATA.feedDate ? ", downloaded" + dayPhrase(DATA.feedDate) : "")
       + ". The National Rail Data Portal's own restriction feed"
-      + (published ? ", published" + published : "")
-      + ", still publishes all " + ref.compared + " conditions this page's fares carry"
+      + (published ? ", published" + published + ", still publishes all " : " still publishes all ")
+      + ref.compared + " conditions on this page"
       + checkedClause + ".";
   })();
   line.textContent = text;

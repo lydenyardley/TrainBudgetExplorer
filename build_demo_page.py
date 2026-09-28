@@ -30,6 +30,7 @@ import time
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+from collections.abc import Iterable
 from typing import NamedTuple
 
 from atoc_fares import (
@@ -44,7 +45,9 @@ from atoc_fares import (
 from atoc_timetable import TimetableDb
 from atoc_knowledgebase import (
     ABSENT,
+    UNKNOWN,
     UNPUBLISHED,
+    Knowledgebase,
     RestrictionCheck,
     check_restrictions,
     load_ticket_restrictions,
@@ -721,57 +724,89 @@ def knowledgebase_dates(manifest: dict | None, name: str = "ticket-restrictions"
     return "", ""
 
 
-def describe_restriction_check(check: RestrictionCheck) -> str:
+def describe_restriction_note(note: dict) -> str:
     """One sentence saying what the reference feed was asked and answered.
 
-    The four answers are worded here and nowhere else, so the console line, the
-    page and a test all speak about the same check. Each says what was asked and
-    what came back, and none of them says the portal still publishes something
-    without saying how many conditions that was -- because "all" with nothing
-    behind it is not a check.
+    Takes the note the page itself carries rather than the check it was made
+    from, so the console line and the page cannot describe different answers:
+    the console prints what the reader will see. The four answers are worded
+    here and nowhere else, so the console, the page and a test all speak about
+    the same check. Each says what was asked and what came back, and none of
+    them says the portal still publishes something without saying how many
+    conditions that was -- because "all" with nothing behind it is not a check.
     """
 
-    when = f" (published {check.published})" if check.published else ""
-    if check.status == "absent":
-        return f"not checked, {check.note}{when}"
-    if check.status == "unknown":
-        return f"could not be checked, {check.note}{when}"
-    if check.status == UNPUBLISHED:
-        codes = ", ".join(check.unlisted)
+    when = f" (published {note['published']})" if note.get("published") else ""
+    status = note.get("status")
+    if status == ABSENT:
+        return f"not checked, {note.get('note', '')}{when}"
+    if status == UNKNOWN:
+        return f"could not be checked, {note.get('note', '')}{when}"
+    if status == UNPUBLISHED:
+        codes = ", ".join(note.get("unlisted") or ())
         return (
-            f"the portal no longer publishes {check.missing} of the {check.compared} "
-            f"condition(s) this build quotes ({codes}){when}"
+            f"the portal no longer publishes {note.get('missing')} of the "
+            f"{note.get('compared')} condition(s) this page shows ({codes}){when}"
         )
     return (
-        f"the portal still publishes all {check.compared} condition(s) "
-        f"this build quotes{when}"
+        f"the portal still publishes all {note.get('compared')} condition(s) "
+        f"this page shows{when}"
     )
 
 
-def restriction_check(
-    fares, knowledgebase_path: str | Path | None, manifest: dict | None, *, origin_crs: str | None = None
-):
-    """Check the reference feed against the conditions this build quotes.
+def reference_feed(path: str | Path | None) -> Knowledgebase | None:
+    """The portal's own restriction feed, read once for the whole run.
 
-    *origin_crs* narrows the claim to one station's fares; with no origin the
-    claim covers every fare in the release, which is what a multi-origin build
-    publishes.
-
-    Returns the check to publish. It is never ``None``: a page with no
-    reference feed has an answer to the reader's question too, and that answer
-    is "not checked" rather than silence.
+    Read once because it is one document. A --all-origins build renders up to
+    2,700 pages and every one of them asks a question of this same file, so it
+    is parsed once and each page's answer is worked out from what that page
+    shows. ``None`` means no reference feed was named, which the page has
+    wording for rather than silence.
     """
-    if knowledgebase_path is None:
-        return RestrictionCheck(status=ABSENT, note="no reference feed was named")
-    kb = load_ticket_restrictions(knowledgebase_path)
-    published, checked = knowledgebase_dates(manifest)
-    # The codes come from the flows this build can show, not from the feed's
-    # own header list. The real feed holds 841 headers; Grantham's fares carry
-    # 31 of them, and the page puts four on screen. Asking the feed instead
-    # made a station page claim to have checked 628 conditions.
-    return check_restrictions(
-        fares.restriction_codes(origin_crs), kb, published=published, checked_at=checked
-    )
+
+    if path is None:
+        return None
+    return load_ticket_restrictions(path)
+
+
+def restriction_codes_shown(rows: Iterable[dict]) -> set[str]:
+    """The condition codes the given rows print.
+
+    This set *is* the claim: the page reports on the conditions a reader can
+    find on it. The first version asked the feed for every code the origin's
+    flows could carry -- 32 for Grantham on the real feed, against the 4 its
+    rows show -- so the page reported on conditions it did not display, naming
+    ``2H`` and ``HR`` as retired while showing neither. A reader cannot check
+    that, and on a page whose value is that its claims are checkable, an
+    uncheckable claim is noise. What is on screen is the set.
+    """
+
+    codes: set[str] = set()
+    for row in rows:
+        code = (row.get("restrictionCode") or "").strip().upper()
+        if code:
+            codes.add(code)
+    return codes
+
+
+def reference_fingerprint(
+    reference: Knowledgebase | None, published: str, checked: str
+) -> str:
+    """The identity of the reference feed, for a resumed build's signature.
+
+    A build that resumes must not mix pages answered against two different
+    reference feeds, so the feed belongs in the signature -- as a digest, not
+    as the feed itself. The signature is JSON-serialised, and a parsed feed has
+    no stable serialised form: its repr carries an address, which changes every
+    run, so every resumed build would look like a different one and resume
+    nothing.
+    """
+
+    if reference is None:
+        return "absent"
+    listed = ",".join(sorted(reference.restrictions))
+    digest = hashlib.sha256(listed.encode("utf-8")).hexdigest()[:16]
+    return f"{published}|{checked}|{digest}"
 
 
 def read_feed_metadata(folders: list[Path]) -> dict | None:
@@ -1306,7 +1341,9 @@ def build_payload(
     departure_limit: int = DEPARTURE_LIMIT,
     built_at: str | None = None,
     published_routes: list[dict] | None = None,
-    restriction_reference: "RestrictionCheck | None" = None,
+    reference: "Knowledgebase | None" = None,
+    reference_published: str = "",
+    reference_checked: str = "",
 ) -> dict:
     """Every publishable destination from the origin, at both party prices.
 
@@ -1600,6 +1637,11 @@ def build_payload(
     # same sentence on a page 1,678 times, which is what the railcard rule map
     # below already had to be fixed for.
     restriction_validity: dict[str, dict[str, str]] = {}
+    shown_codes = restriction_codes_shown(
+        row
+        for collection in (destinations, single_destinations, anytime_destinations)
+        for row in collection
+    )
     for collection in (destinations, single_destinations, anytime_destinations):
         for row in collection:
             code = row["restrictionCode"]
@@ -1617,17 +1659,30 @@ def build_payload(
     # The freshness claim for the conditions above. Carried as plain data
     # rather than as a sentence so the page writes it in its own voice, and so
     # a test can assert on the fact rather than on a wording that changes.
-    reference = restriction_reference or check_restrictions([], None)
+    # The second opinion is about the conditions *this page* shows, so it is
+    # asked here rather than once for the run. Reading the reference feed stays
+    # a single parse for the whole build; only the set difference is per page,
+    # and it is a handful of codes against a dict.
+    reference_check = (
+        check_restrictions(
+            shown_codes,
+            reference,
+            published=reference_published,
+            checked_at=reference_checked,
+        )
+        if reference is not None
+        else RestrictionCheck(status=ABSENT, note="no reference feed was named")
+    )
     restriction_reference_note = {
-        "status": reference.status,
-        "compared": reference.compared,
-        "listed": reference.listed,
-        "missing": reference.missing,
-        "unlisted": list(reference.unlisted),
-        "note": reference.note,
-        "published": reference.published,
-        "checkedAt": reference.checked_at,
-        "verified": reference.verified,
+        "status": reference_check.status,
+        "compared": reference_check.compared,
+        "listed": reference_check.listed,
+        "missing": reference_check.missing,
+        "unlisted": list(reference_check.unlisted),
+        "note": reference_check.note,
+        "published": reference_check.published,
+        "checkedAt": reference_check.checked_at,
+        "verified": reference_check.verified,
     }
     unpriced_note = (
         explain_unpriced(
@@ -2386,25 +2441,21 @@ def main(argv: list[str] | None = None) -> int:
     else:
         note = DEFAULT_NOTE if price_source == DEFAULT_PRICE_SOURCE else ""
 
-    # The restriction second opinion, computed once for the whole run. It is
-    # the same comparison for every origin because the reference feed is one
-    # document; recomputing it per page would parse the same XML up to 2,700
-    # times, and would let two pages of one release disagree about whether the
-    # reference feed was checked.
+    # The reference feed, read once for the whole run. What is *asked* of it is
+    # decided per page, because the claim is about the conditions that page
+    # shows: one parse for the build, one answer from each page's own rows.
     manifest_for_reference = read_feed_manifest(metadata_folders) or {}
-    restriction_reference = restriction_check(
-        fares,
-        args.knowledgebase,
-        manifest_for_reference,
-        # A single-origin build quotes one station's conditions; a multi-origin
-        # one quotes every fare in the release, and a claim about one station
-        # printed on 2,700 pages would be a claim none of the others earned.
-        origin_crs=None if args.all_origins else args.origin,
-    )
-    if args.knowledgebase:
+    reference = reference_feed(args.knowledgebase)
+    reference_published, reference_checked = knowledgebase_dates(manifest_for_reference)
+    if args.knowledgebase and args.all_origins:
+        # A single-origin build prints the answer itself, below, once the page's
+        # own rows have decided the question. A multi-origin release answers it
+        # per station, so one line here would have to be a claim about pages
+        # this one is not -- which is the claim the per-page answer exists to
+        # stop making.
         print(
-            "restriction reference: "
-            + describe_restriction_check(restriction_reference),
+            "restriction reference: checked on every station page, against the "
+            "conditions that page shows",
             flush=True,
         )
 
@@ -2472,11 +2523,22 @@ def main(argv: list[str] | None = None) -> int:
             publisher_id=args.publisher_id,
             departure_limit=args.departures,
             built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            restriction_reference=restriction_reference,
+            reference=reference,
+            reference_published=reference_published,
+            reference_checked=reference_checked,
         )
     except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
         return 2
+    if reference is not None and not args.all_origins:
+        # Printed from the page's own note rather than from a second check, so
+        # the line an operator reads and the sentence a reader reads are the
+        # same answer about the same conditions.
+        print(
+            "restriction reference: "
+            + describe_restriction_note(payload["restrictionReference"]),
+            flush=True,
+        )
     origin_seconds = time.perf_counter() - started
     if args.max_origin_seconds and origin_seconds > args.max_origin_seconds:
         # The tripwire fires on the FIRST origin, where it is cheap to learn
@@ -2604,12 +2666,18 @@ def main(argv: list[str] | None = None) -> int:
             "index": index,
             "feed": args.feed,
             "timetable": args.timetable,
-            # The restriction second opinion, computed once in the parent and
-            # handed to every worker. Without this a --all-origins site would
-            # claim no reference feed was checked while a single-page build of
-            # the same feed reported a disagreement -- two answers to one
-            # question, from one build.
-            "restriction_reference": restriction_reference,
+            # The reference feed's identity, for the resume signature. The
+            # feed itself travels as its own initialiser argument below, and
+            # not in here: this dict is serialised into the signature, and a
+            # parsed feed's repr carries an address, so putting it here would
+            # give every run a different signature and resume nothing.
+            "reference_fingerprint": reference_fingerprint(
+                reference, reference_published, reference_checked
+            ),
+            # The dates the pages will quote, and the only part of the answer
+            # that does not come from a feed this dict already fingerprints.
+            "reference_published": reference_published,
+            "reference_checked": reference_checked,
         }
         jobs = []
         for crs in origins:
@@ -2674,10 +2742,11 @@ def main(argv: list[str] | None = None) -> int:
             # The in-process path builds through the same job function the
             # pool uses, with the live databases placed in the job dict, so
             # both modes share one page-building code path.
-            from build_workers import _WORKER, build_page_job
+            from build_workers import _WORKER, build_page_job, configure_worker
 
-            _WORKER.clear()
-            _WORKER.update(shared)
+            # Through the same state assembly the pool initialiser uses, so the
+            # two paths cannot disagree about what a worker was given.
+            configure_worker(shared, reference)
             _WORKER["fares"] = fares
             _WORKER["timetable"] = timetable
             for job in jobs:
@@ -2694,7 +2763,7 @@ def main(argv: list[str] | None = None) -> int:
             with ProcessPoolExecutor(
                 workers,
                 initializer=init_worker,
-                initargs=(args.feed, args.timetable, shared),
+                initargs=(args.feed, args.timetable, shared, reference),
             ) as executor:
                 futures = [executor.submit(build_page_job, job) for job in jobs]
                 for future in as_completed(futures):
