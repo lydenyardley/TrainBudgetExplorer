@@ -195,6 +195,19 @@ function serve(bodies) {
 // reads off the page.
 const money = (pence) => "£" + (pence / 100).toFixed(2);
 
+// Whole days from an ISO day to the reader's today, in the reader's own
+// timezone: the same arithmetic the page does for itself, done here so the
+// age the page printed can be held against the age it should have printed.
+// It lives in node rather than in the page because node parses it once. A
+// callback handed to page.evaluate is parsed again in the page, from the
+// stringified source, and a doubled escape survives that trip as a literal
+// backslash.
+function daysSince(iso) {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - Date.parse(iso + "T00:00:00Z")) / 86400000);
+}
+
 /**
  * The chooser at the site root, which S01 made the departure picker: the page
  * a reader lands on, and the only page whose whole job is choosing where to
@@ -1721,10 +1734,18 @@ async function runPage(browser, index, given, file, body, base) {
       return {
         shown: !line.hidden,
         text: line.textContent,
-        prices: DATA.feedDate
-          ? /downloaded .*\\bday(s)? old/.test(line.textContent) &&
-            new RegExp(DATA.staleAfterDays + "-day freshness threshold").test(line.textContent)
-          : null,
+        // The page reports what it believes; what it claims is judged out
+        // here. A regex literal inside this callback is parsed twice -- once
+        // by node and once again from the serialised source in the page --
+        // and a doubled escape survives the second parse as a literal
+        // backslash, so a word boundary arrives as a backslash and matches
+        // nothing. That is not a hypothetical: it is how "downloaded 24
+        // September 2026, 4 days old" stopped matching and left a check that
+        // could only ever fail, on every real build, for a page that was
+        // right. (A single escape is fine, and is used elsewhere in this
+        // file; tests/test_build_demo_page.py refuses the doubled kind.)
+        feedDate: DATA.feedDate || null,
+        staleAfterDays: DATA.staleAfterDays,
         window: DATA.timetableFrom
           ? new RegExp(humanDate(DATA.timetableFrom) + " to " + humanDate(DATA.timetableTo)).test(line.textContent)
           : false,
@@ -1819,13 +1840,34 @@ async function runPage(browser, index, given, file, body, base) {
       );
     }
     check("and it sits beside the result count, not in the footer", fresh.underSummary, fresh.text);
-    if (fresh.prices === null) {
+    if (!fresh.feedDate) {
       // A synthetic feed has no download date, so there is nothing to measure.
       // The sentence that is missing is the honest one: the page does not
       // invent a download for a feed nobody downloaded.
       check("a feed with no download date claims no age for its prices", !/downloaded/.test(fresh.text), fresh.text);
     } else {
-      check("a feed with a download date says how old its prices are", fresh.prices, fresh.text);
+      // The number has to be the right number, and the threshold beside it has
+      // to be the build's own. "Downloaded 24 September 2026" next to a stale
+      // "0 days old" passes a presence test and misleads the reader deciding
+      // whether to trust a fare, which is the only reason the sentence is here.
+      // One day of slack: the page dates the download against its own clock
+      // and so does this, and a run straddling midnight is not a defect.
+      const expected = daysSince(fresh.feedDate);
+      const stated = /downloaded .*?,\s*(\d+) days? old/.exec(fresh.text);
+      const namesTheThreshold = new RegExp(String(fresh.staleAfterDays) + "-day freshness threshold").test(fresh.text);
+      check(
+        "a feed with a download date says how old its prices are",
+        // A download dated after today is a clock or download fault, and the
+        // page says so instead of counting negative days; the sentence for
+        // that case carries no age and no threshold, so it is answered on its
+        // own terms rather than failed for omitting a number it cannot have.
+        expected < 0
+          ? /dated after today/.test(fresh.text)
+          : stated !== null &&
+            Math.abs(Number(stated[1]) - expected) <= 1 &&
+            namesTheThreshold,
+        `${fresh.text} (downloaded: ${fresh.feedDate}, ${expected} day(s) ago, threshold: ${fresh.staleAfterDays})`
+      );
     }
 
     // 7d. S26: a shortlist of candidate places that can be compared, shared
