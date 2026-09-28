@@ -1445,6 +1445,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
         self.assertIn("h1 { font-size: var(--h1);", self.html)
+        # The currency sign is inside the name a screen reader reads for the
+        # heading. It was aria-hidden, so the heading announced "for up to 20"
+        # with no unit while the page said "£20.00" everywhere else. The number
+        # field keeps its own aria-label, so nothing is announced twice.
+        self.assertIn('<span class="budget-prefix">&pound;</span>', heading)
+        self.assertNotIn('<span class="budget-prefix" aria-hidden="true">', heading)
         self.assertIn("--h1: clamp(2rem, 5vw, 5rem)", self.html)
         self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.html)
         self.assertNotIn("max-width: 32ch", self.html)
@@ -1568,11 +1574,45 @@ class DemoPageTest(unittest.TestCase):
     def test_the_page_offers_to_change_origin_and_navigates_by_link(self) -> None:
         self.assertIn('id="changeOrigin"', self.html)
         self.assertIn('id="originPicks"', self.html)
+        # The control names itself in hidden text in front of the station, not
+        # through aria-label: an aria-label replaces the text the heading's
+        # accessible name is read from, so the heading announced "from Change
+        # starting station" and never said which station. The swap arrow is
+        # likewise a real hidden element, because the browser reads CSS
+        # generated content inside the heading's name.
+        heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
+        self.assertIn('<span class="sr-only">Change starting station: </span>', heading)
+        self.assertIn('class="origin-swap" aria-hidden="true"', heading)
+        self.assertNotIn('aria-label="Change starting station"', self.html)
         # The options are real anchors, not a custom listbox.
         self.assertIn('link.href = station.href', self.html)
         self.assertIn('id="destinationTypes"', self.html.split("<script")[0])
         self.assertIn('name="destinationType" value="city"', self.html.split("<script")[0])
         self.assertIn('name="destinationType" value="seaside"', self.html.split("<script")[0])
+
+    def test_a_build_with_nowhere_to_change_to_names_the_station_as_text(self) -> None:
+        # A single-origin build writes one station page, so its picker has no
+        # other option. The control was still rendered -- focusable, announced
+        # and opening nothing -- and the browser suite failed it four times on
+        # the published site. Now the name stands as text and the heading still
+        # says which station the page is about.
+        payload = dict(self.payload, stations=[])
+        heading = render_page(payload, budget_pounds=20).split("<h1", 1)[1].split("</h1>", 1)[0]
+        self.assertNotIn("changeOrigin", heading)
+        self.assertNotIn("originPicker", heading)
+        self.assertIn(f'<span class="origin-name">{payload["origin"]["name"]}</span>', heading)
+        # The station's name is escaped on the way into the page, like every
+        # other string the build writes into it.
+        named = render_page(
+            dict(self.payload, stations=[], origin={"crs": "GRN", "name": "A & B <rail>"}),
+            budget_pounds=20,
+        ).split("<h1", 1)[1].split("</h1>", 1)[0]
+        self.assertIn('<span class="origin-name">A &amp; B &lt;rail&gt;</span>', named)
+        # The first-use note names the Change control, so it cannot be static
+        # text on a build that has no such control.
+        self.assertNotIn("Change", render_page(payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0])
+        with_control = render_page(self.payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0]
+        self.assertIn("<b>Change</b>", with_control)
 
     def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
         # A chip that can only ever return nothing reads as a broken control,

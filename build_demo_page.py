@@ -1925,6 +1925,57 @@ def build_station_index(
     return index
 
 
+def origin_control(payload: dict) -> str:
+    """The origin in the heading: a control only when there is somewhere to go.
+
+    A one-origin build has no other station's page to move to, and a
+    "Change starting station" button that opens nothing is a control that lies: it was
+    rendered, focusable, announced, and inert, and the browser suite failed on
+    it for exactly that reason. So the control is written only when the build
+    wrote another station's page, and the name stands as text when it did not.
+
+    The control names itself "Change starting station" in front of the station
+    rather than through aria-label, because an aria-label replaces the text the
+    heading is read from: the heading's accessible name came out as "from
+    Change starting station", which says what the control does and not which
+    station the reader is at. The hidden text is the page's own .sr-only
+    pattern, and it keeps the station visible in the name (WCAG 2.5.3).
+    """
+
+    name = html.escape(payload["origin"]["name"])
+    if not payload.get("stations"):
+        return f'<span class="origin-name">{name}</span>'
+    return (
+        '<button id="changeOrigin" type="button" aria-expanded="false"'
+        ' aria-controls="originPicker">'
+        '<span class="sr-only">Change starting station: </span>'
+        f'<span>{name}</span><span class="origin-swap" aria-hidden="true">↕</span></button>'
+    )
+
+
+def first_use_sentence(payload: dict) -> str:
+    """The first-use note, which can only name a control the page has.
+
+    The one thing a first-time reader cannot guess is what the Change control
+    in the heading does, so this sentence used to spend its first clause on it.
+    On a one-origin build there is no such control -- the same condition
+    ``origin_control`` writes for -- so the sentence pointed a reader at a
+    button that is not there. It keeps the half that is still true either way:
+    everything below the heading narrows the destinations.
+    """
+
+    if not payload.get("stations"):
+        return (
+            "This page is about one station, and it is the only one this site "
+            "was built for: everything below narrows the destinations "
+            "reachable from it."
+        )
+    return (
+        "This page is about one station: <b>Change</b> in the heading moves to "
+        "another one. Everything below narrows the destinations from here."
+    )
+
+
 def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> str:
     """Fill the template from the payload.
 
@@ -1960,7 +2011,9 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
     return (
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
-        .replace("__ORIGIN__", payload["origin"]["name"])
+        .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
+        .replace("__ORIGIN_CONTROL__", origin_control(payload))
+        .replace("__FIRST_USE__", first_use_sentence(payload))
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(initial_budget))
         .replace("__NOTE__", payload["note"])

@@ -31,13 +31,14 @@
  * page carries no controls and is reported as 0/0, named at the end of the
  * run, and does not fail it. A run in which no page could be checked at all
  * has tested nothing and does fail, so pointing this at the wrong tree cannot
- * read as a pass. A sweep in which too much of the suite had nothing to
+ * read as a pass. A run in which too much of the suite had nothing to
  * exercise fails too: skips are reported, and a stated fraction of them is the
  * most a run may skip, so a fixture that has quietly stopped exercising the
- * page cannot look green.
+ * page cannot look green. That fraction is the same in every mode, so a
+ * single page and a sweep are held to one standard.
  *
  * Exit codes: 0 every page checked behaves, 1 one does not, nothing was
- * checked, or a sweep skipped more than its budget, 2 playwright is
+ * checked, or the run skipped more than its budget, 2 playwright is
  * unavailable. A skip is reported loudly and exits 2, because a test that
  * passes quietly on a machine where it never ran is the thing this project
  * keeps refusing to do.
@@ -51,7 +52,12 @@ const path = require("node:path");
 // than by shape, so a page path that happens to be a number is still a page
 // path and a flag is never mistaken for one.
 const ARGV = process.argv.slice(2);
-const SWEEP = ARGV.includes("--sweep");
+// --sweep is still accepted, and still stripped from the page list below, so
+// every command that passes it keeps working. It no longer changes anything:
+// what a check the page cannot exercise means is the same in every mode (see
+// NOT_EXERCISED), and the skip budget is enforced in all of them. It used to
+// decide, and the difference was a published one-origin site failing five
+// honest checks and so going untested.
 const MAX_FLAG = ARGV.indexOf("--max");
 const MAX_PAGES = MAX_FLAG === -1 ? Infinity : (() => {
   const value = Number(ARGV[MAX_FLAG + 1]);
@@ -73,12 +79,14 @@ const SELLER = /^https:\/\/www\.(nationalrail\.co\.uk|thetrainline\.com)\//;
 
 // A third outcome, for a check a page has nothing to exercise: no destination
 // carrying a UNESCO property, one option in the picker, one destination-type
-// chip. Those are the right shape for the single-page gate -- "the suite never
-// ran that assertion" is the thing this project keeps refusing to let pass
-// quietly -- and the wrong shape for a sweep of a station set, where most
-// stations have no UNESCO property and failing them would be failing pages for
-// their own size. In --sweep they are reported as skips and the run says how
-// many it skipped, so a sweep cannot pass by exercising nothing.
+// chip, no second station to change to. "The suite never ran that assertion"
+// is the thing this project keeps refusing to let pass quietly -- but neither
+// is failing a page for being small, and a published one-origin build is the
+// smallest page there is: it has no second station and no destination without a
+// journey, so five checks it honestly cannot run used to be five failures and
+// the page went untested. So a check with nothing to exercise is a skip in
+// every mode, the run says how many it skipped, and the budget below is what
+// stops a page that has nothing to exercise from reading as a pass.
 const NOT_EXERCISED = Symbol("not exercised");
 
 // The skip budget, as a fraction of the checks run on the pages that can
@@ -273,7 +281,13 @@ async function checkChooser(page, url, check) {
   const narrowed = await page.locator("#picks a").count();
   check(
     "typing narrows the list",
-    narrowed > 0 && narrowed < options && /Showing|list/i.test(await page.textContent("#pickStatus")),
+    // A chooser holding one station cannot be narrowed by typing: the query
+    // that would exclude it is the reader's own spelling of it. A published
+    // one-origin build is that page, so this is reported as not exercised
+    // rather than failed, and the count is on the page's tally.
+    options < 2
+      ? notExercised(`this chooser lists ${options} station(s), so typing cannot narrow it`)
+      : narrowed > 0 && narrowed < options && /Showing|list/i.test(await page.textContent("#pickStatus")),
     `${query} -> ${narrowed} of ${options}`
   );
   const code = listed[1] ? listed[1].crs : first.crs;
@@ -351,10 +365,16 @@ async function runPage(browser, index, given, file, body, base) {
   // one a reader still carrying its budget, its filters, or its mode.
   const checks = [];
   const check = (name, condition, detail) => {
-    // A not-exercised check is a failure outside a sweep, so the single-page
-    // gate keeps the teeth it has always had.
+    // A check the page cannot exercise is a skip in every mode, reported and
+    // counted wherever it happens. It used to be a failure outside a sweep,
+    // which meant a legitimately small page could not be tested at all: a
+    // one-station build has no second station to link to and no destination
+    // without a journey, so five honest checks failed and the page could only
+    // be left untested. The teeth are the budget, not the failure: a run that
+    // skips more than SKIP_BUDGET of the checks on its station and chooser
+    // pages fails for that reason, in every mode, and names the page.
     if (condition && condition.skip === NOT_EXERCISED) {
-      checks.push({ name, ok: false, skipped: SWEEP, detail: condition.reason });
+      checks.push({ name, ok: false, skipped: true, detail: condition.reason });
       return;
     }
     checks.push({ name, ok: Boolean(condition), skipped: false, detail });
@@ -2061,8 +2081,23 @@ async function runPage(browser, index, given, file, body, base) {
     check("the copy action carries a 44px target", layout.copyHit >= 44, layout.copyHit + "px");
     check("the buy link carries a 44px target", layout.buyHit >= 44, layout.buyHit + "px");
 
-    const pickerButton = page.locator("#changeOrigin");      if (await pickerButton.count()) {
+    // The change control exists exactly when the build wrote another station's
+    // page, and both halves of that are asserted here. The block below drives
+    // it, so a control that is present must work; and a page with nowhere to
+    // change to must not carry an inert one, which is the bug this replaced.
+    // Dropping the control everywhere would otherwise pass by testing less.
+    const pickerState = await page.evaluate(() => ({
+      others: (DATA.stations || []).length,
+      control: Boolean(document.getElementById("changeOrigin")),
+    }));
+    check(
+      "the change control appears exactly when the build has another station",
+      pickerState.control === (pickerState.others > 0),
+      `${pickerState.others} other station(s), control rendered: ${pickerState.control}`
+    );
 
+    const pickerButton = page.locator("#changeOrigin");
+    if (await pickerButton.count()) {
       await pickerButton.click();
       check("Change opens the picker", await page.locator("#originPicker").isVisible());
       const pickCount = await page.locator("#originPicks a").count();
@@ -2171,7 +2206,31 @@ async function runPage(browser, index, given, file, body, base) {
       );
       await page.keyboard.press("Escape");
     } else {
-      check("the page offers a Change control", false, "#changeOrigin missing");
+      // A build with one origin has nowhere to change to, so the heading
+      // states the station as text and carries no control -- the inert button
+      // this replaced was rendered, focusable, announced and did nothing. So
+      // the absence is not the whole check: the origin still has to be named
+      // in the heading, or a page could pass by dropping it altogether.
+      const named = await page.evaluate(() => {
+        const el = document.querySelector("#pageHeading .origin-name");
+        return el ? el.textContent.trim() : "";
+      });
+      const heading = await page.textContent("#pageHeading");
+      check(
+        "the heading names the station as text when there is no Change control",
+        Boolean(named) && (heading || "").includes(named),
+        named ? `no control, heading says ${named}` : "no .origin-name in the heading"
+      );
+      // And the page does not spend its first-use note telling the reader what
+      // a Change control does when there is no Change control. The note was
+      // static text written for a page that has one, so a one-station build
+      // pointed a reader at a button that was not there.
+      const firstUse = (await page.textContent("#firstUse")) || "";
+      check(
+        "and the page does not tell the reader about a Change control it does not have",
+        !/change/i.test(firstUse),
+        JSON.stringify(firstUse)
+      );
     }
   } catch (error) {
     // A step that throws is a failed run, not a short one. The finally block
@@ -2241,6 +2300,24 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     unnamed.length === 0 && named > 0,
     `${named} named, ${unnamed.length} unnamed${unnamed.length ? " (" + unnamed.join(", ") + ")" : ""}`
   );
+
+  // The heading is the one sentence a screen reader announces for the page, so
+  // what it says is the page's own claim, not a detail. Its currency sign was
+  // aria-hidden, so the name read "for up to 20" while the status line said
+  // "£20.00" -- the reader was told a number and no unit. Read from the
+  // browser's tree, not from the markup, so hiding the sign again fails here.
+  if (routeKind === "station" || routeKind === "chooser") {
+    const headingName = (String(await page.locator("h1").ariaSnapshot()).split("\n")[0].match(/"([^"]*)"/) || [])[1] || "";
+    // The chooser's page data is STATIONS, not DATA, and its heading asks which
+    // station rather than naming one, so the station is only read where it is
+    // both in the payload and in the sentence.
+    const origin = routeKind === "station" ? await page.evaluate(() => DATA.origin.name) : "";
+    check(
+      `the heading a screen reader reads states the budget in pounds${origin ? " and names the station" : ""}`,
+      /up to £\s*\d+/.test(headingName) && (!origin || headingName.includes(origin)),
+      headingName || "(no heading name)"
+    );
+  }
 
   // A placeholder is an accessible-name fallback, so the check above reports a
   // field that has only a placeholder as named -- and it names it with text the

@@ -676,13 +676,17 @@ for what the generated JavaScript *does* — `page_templates.py` deliberately ha
 no unit tests of its own, a decision recorded in
 `adr/ADR-0027-browser-suite-covers-the-template.md`.
 
-A sweep (`--sweep` over a directory of pages) treats a check the page has nothing
-to exercise as a skip rather than a failure, so a small station is not failed for
-being small. Reporting skips is not enough on its own — a fixture can get small
-enough that the suite tests almost nothing and the run still reads as a pass — so
-the run also **fails when more than 5% of the checks on the station and chooser
-pages were skipped**, and names the pages that skipped. A green sweep is a claim
-that the suite exercised the page, not just that nothing it did exercise broke.
+A check the page has nothing to exercise is a skip rather than a failure, in
+every mode: no UNESCO destination, one option in the picker, one station to
+change to. A small station is not failed for being small, and neither is the
+published one-origin page, which has no second station and no destination
+without a journey. Reporting skips is not enough on its own — a fixture can get
+small enough that the suite tests almost nothing and the run still reads as a
+pass — so the run also **fails when more than 5% of the checks on the station
+and chooser pages were skipped**, and names the pages that skipped. A green run
+is a claim that the suite exercised the page, not just that nothing it did
+exercise broke. `--sweep` is still accepted and still means "this is a station
+set"; it no longer changes the standard, because one standard is the point.
 
 One check the demo run still cannot reach is **a feed with a download date says
 how old its prices are**. The synthetic feed carries no download, because a feed
