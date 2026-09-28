@@ -402,6 +402,11 @@ __SYNTHETIC_BANNER__
 
 <p id="summary" role="status" aria-live="polite"></p>
 <p class="tag" id="modeNote"></p>  <p class="tag" id="priceSource" hidden></p>
+<!-- The conditions in the table are the fares feed's own wording. This is the
+     second opinion on it, and the reader gets it before the table rather than
+     after a row: a condition that has since changed is exactly what a reader
+     comparing two prices needs to know before, not after, they choose. -->
+<p class="tag" id="restrictionReference" hidden></p>
 <p class="tag" id="freshness" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
   <!-- C03: what the ticket action costs, stated before the first ticket action
@@ -899,6 +904,49 @@ function renderFreshness() {
   }
   line.textContent = parts.join(" ");
   line.hidden = !parts.length;
+}
+
+// The conditions printed in the table are the fares feed's own wording, from
+// the same publication as the prices. The reference feed is a second opinion,
+// published on its own schedule, and this is the claim the page makes about it.
+//
+// Every branch says what was compared. "Agrees" with nothing to agree about
+// would be a claim the build never checked, so a check that compared no codes
+// is written as not checked, and an unreadable reference feed is written as
+// unreadable rather than passed over in silence.
+function renderRestrictionReference() {
+  const line = document.getElementById("restrictionReference");
+  if (!line) return;
+  const ref = DATA.restrictionReference;
+  if (!ref) { line.hidden = true; return; }
+  const text = (() => {
+    if (ref.status === "absent") {
+      return "Ticket conditions are quoted from the fares feed. No independent reference feed was checked.";
+    }
+    if (ref.status === "unknown") {
+      return "Ticket conditions are quoted from the fares feed. The independent reference feed could not be checked"
+        + (ref.note ? " (" + ref.note + ")" : "") + ", so nothing here has been confirmed against it"
+        + (ref.published ? "; it was published " + humanDate(ref.published.slice(0, 10)) : "") + ".";
+    }
+    if (ref.status === "disagrees") {
+      const codes = (ref.differing || []).map((d) => d.code).join(", ");
+      return "Ticket conditions are quoted from the fares feed. The independent reference feed"
+        + (ref.published ? ", published " + humanDate(ref.published.slice(0, 10)) : "")
+        + ", disagrees on " + ref.disagree + " of the " + ref.compared
+        + " conditions shown (" + codes + ")"
+        + (ref.checkedAt ? ", last checked " + humanDate(ref.checkedAt.slice(0, 10)) : "")
+        + ". The wording below is the fares feed's, which is the same publication the prices are from.";
+    }
+    return "Ticket conditions are quoted from the fares feed"
+      + (ref.published ? ", downloaded " + humanDate(DATA.feedDate ? DATA.feedDate.slice(0, 10) : ref.published.slice(0, 10)) : "")
+      + ". The independent reference feed"
+      + (ref.published ? ", published " + humanDate(ref.published.slice(0, 10)) : "")
+      + ", agrees on all " + ref.compared + " of them"
+      + (ref.checkedAt ? ", last checked " + humanDate(ref.checkedAt.slice(0, 10)) : "")
+      + ".";
+  })();
+  line.textContent = text;
+  line.hidden = !text;
 }
 
 function renderCoverage() {
@@ -1500,6 +1548,7 @@ function provenance() {
   renderCoverage();
   renderModeNote();
   renderFreshness();
+  renderRestrictionReference();
   renderIntro();
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
   // C03: what the reader has to do for themselves when the link is the plain

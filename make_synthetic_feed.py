@@ -20,7 +20,7 @@ from atoc_fares import (
     RAILCARD,
     TICKET_TYPE,
 )
-from atoc_restrictions import RESTRICTION_LAYOUTS
+from atoc_restrictions import RESTRICTION_LAYOUTS, RESTRICTION_OFFSETS
 from atoc_timetable import (
     CIF_HEADER,
     CIF_INTERMEDIATE,
@@ -249,6 +249,70 @@ TIPLOC_INSERTS = (("NOTT", "XXX"),)
 
 def _line(values: dict[str, str], spec: tuple[tuple[str, int], ...]) -> str:
     return "".join(str(values.get(name, ""))[:width].ljust(width) for name, width in spec)
+
+
+def build_synthetic_knowledgebase(
+    path: str | Path, *, disagree_on: str | None = "1A"
+) -> Path:
+    """Write a Knowledgebase ``ticket-restrictions`` reference feed.
+
+    The wording is taken from the very same ``RH`` records the fares feed's
+    ``.RST`` carries, so the two fixtures cannot drift apart and a test of
+    "the reference feed agrees" is a statement about the comparison rather than
+    about two hand-kept copies of the same sentence.
+
+    *disagree_on* names one code whose wording the reference feed states
+    differently. That is the case worth testing: a reference feed that always
+    agrees proves only that the comparison ran, while one that disagrees proves
+    the page reports a disagreement instead of overwriting the fares feed's
+    wording with the newer one -- which is the failure that would misprice a
+    journey in the reader's favour of a stale condition.
+    """
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    records = []
+    for line in _restriction_lines():
+        if not line[1:3] == "RH":
+            continue
+        offsets = RESTRICTION_OFFSETS["RH"]
+        code = line[offsets["restriction_code"][0]:offsets["restriction_code"][1]].strip()
+        if not code:
+            continue
+        description = line[offsets["description"][0]:offsets["description"][1]].strip()
+        outward = line[offsets["desc_out"][0]:offsets["desc_out"][1]].strip()
+        back = line[offsets["desc_rtn"][0]:offsets["desc_rtn"][1]].strip()
+        if code == disagree_on:
+            # Deliberately a different condition, not a reworded one, so the
+            # test is about a real disagreement rather than about case folding.
+            outward = "NOT VALID AT ANY TIME"
+            back = "NOT VALID AT ANY TIME"
+        records.append(
+            "    <Restriction>\n"
+            f"      <RestrictionCode>{code}</RestrictionCode>\n"
+            f"      <Description>{_xml_escape(description)}</Description>\n"
+            f"      <DescOut>{_xml_escape(outward)}</DescOut>\n"
+            f"      <DescRtn>{_xml_escape(back)}</DescRtn>\n"
+            "    </Restriction>"
+        )
+    document = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Knowledgebase>\n"
+        "  <TicketRestrictions>\n"
+        + "\n".join(records)
+        + "\n  </TicketRestrictions>\n"
+        "</Knowledgebase>\n"
+    )
+    target = path / "ticket-restrictions.xml"
+    target.write_text(document, encoding="utf-8")
+    return path
+
+
+def _xml_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 def build_synthetic_feed(
@@ -927,6 +991,17 @@ if __name__ == "__main__":
             "every station page the browser suite drives has more than one row"
         ),
     )
+    parser.add_argument(
+        "--knowledgebase",
+        metavar="PATH",
+        help=(
+            "also write a Knowledgebase ticket-restrictions reference feed in "
+            "PATH, as a second opinion on the fares feed's own restriction "
+            "wording. One code is deliberately worded differently, so the case a "
+            "page has to get right -- a disagreement it must report rather than "
+            "resolve -- is the case the demo site shows"
+        ),
+    )
     arguments = parser.parse_args()
 
     if arguments.kind in {"fares", "both"}:
@@ -944,3 +1019,5 @@ if __name__ == "__main__":
         )
     if arguments.kind in {"timetable", "both"}:
         print(build_synthetic_timetable(arguments.path, include_return_network=arguments.return_network))
+    if arguments.knowledgebase:
+        print(build_synthetic_knowledgebase(arguments.knowledgebase))

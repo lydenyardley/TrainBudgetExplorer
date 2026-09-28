@@ -120,6 +120,29 @@ jobs:
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: python dtd_download.py --output-root feeds
 
+      - name: Download the Knowledgebase reference feeds
+        # A separate step, and a tolerant one, on purpose. These are a
+        # different subscription from the DTD fares and timetable, so the same
+        # credentials do not prove entitlement to them, and a 403 here is a
+        # subscription question rather than a fault in this project. The
+        # reference feed is a *second opinion* on restriction wording: the page
+        # states prices and conditions correctly without it and says plainly
+        # that nothing was checked. So a missing subscription must not take the
+        # daily build down with it -- but it must be visible, which is what the
+        # warning and the continued-on-error are for. Folding this into the DTD
+        # step would have made an unanswered subscription question look like a
+        # broken downloader.
+        continue-on-error: true
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: |
+          if python dtd_download.py --output-root feeds --kb-only; then
+            echo "reference feeds downloaded"
+          else
+            echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. This is usually an entitlement question, not a fault: they are a different subscription from the DTD fares and timetable. The build will publish prices and conditions, and will say on each page that no independent reference feed was checked."
+          fi
+
       - name: Detect whether the feed changed
         id: feed_check
         shell: bash
@@ -363,7 +386,7 @@ jobs:
           # single destination a page cannot exercise the shortlist, the party
           # switch, the railcard or a type chip, and those checks became
           # silent skips on two pages out of three.
-          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
+          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --knowledgebase _demo_kb
           # A single-origin build is a site (S01, S04): the chooser is the root
           # index.html and each station sits at its canonical /from/<slug>/
           # route. The demo site is built --all-origins so the synthetic feed's
@@ -371,7 +394,7 @@ jobs:
           # way a published site does; the suite drives one station page from it.
           # --third-origin is what makes that true: without it only two stations
           # are priced and the picker has a single option and nothing to narrow.
-          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
+          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --knowledgebase _demo_kb --all-origins --out _demo_site/index.html
           if [ ! -s _demo_site/privacy/index.html ]; then
             echo "::error title=browser test::the demo site wrote no privacy page, so a route every footer links to was never checked"
             exit 1
