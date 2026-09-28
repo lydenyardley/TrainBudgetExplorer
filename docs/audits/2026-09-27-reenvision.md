@@ -17,11 +17,21 @@ A traveller arrives with a price ceiling and an origin in mind, gets a shortlist
 
 Each item has an explicit expected benefit. They range from small copy/interaction fixes to substantial product and data-platform bets; they are intentionally not implementation commitments.
 
-> **Twenty-six of these are now built.** The completed items have been
+> **Thirty of these are now built.** The completed items have been
 > removed from this list; the record of each is the commit that carries it,
 > the `adr/` entry where the change was a decision rather than a fix, and the
 > test that holds it in place. The suggestions still listed here are the ones
 > the project has not taken up.
+>
+> Four were removed for the count above by checking the source rather than the
+> note: **S18** (per-mode notes above the table name the set and separate
+> unrestricted, restricted and Advance-single fares — `MODE_NOTE`,
+> `renderModeNote`), **S21** (`moreFiltersToggle`/`moreFiltersPanel`), **S30**
+> (`#linkNote` and `#disclosure` sit above the table, not in the method
+> accordion), and **S32** (`journeyText` carries origin, destination, ticket
+> mode, date, passengers and the railcard caveat, and the copy box survives a
+denied clipboard permission). **S17** was checked at the same time and is only
+> half built, so it stays below with what remains named.
 
 ### Origin discovery and entry points
 
@@ -42,14 +52,10 @@ Each item has an explicit expected benefit. They range from small copy/interacti
 **S16 — Sort and emphasize by the price currently being displayed.** Recompute order and the “best” cue after party-size or railcard changes.  
 **Expected benefit:** price-first ranking remains truthful for the selected scenario.
 
-**S17 — Make the budget contract explicit and consistent.** Choose “up to £X” for an inclusive ceiling, expose how the maximum is determined, and keep the heading, control, results count, and URL in sync.  
+**S17 — Make the budget contract explicit and consistent.** *(half built)*  
+The inclusive ceiling is done: one resolver (`resolvedBudget`) feeds the heading, the control, the results count and the URL, and all four say “up to”, so a fare at the boundary is included and the figure cannot drift between them (ADR-0019, C15, C21).  
+**What remains:** the second half — *expose how the maximum is determined*. The control's ceiling is a build-substituted value (`__MAXPOUNDS__`) with nothing on the page saying where it comes from, so a reader cannot tell why the slider stops where it does.  
 **Expected benefit:** users can predict exactly whether a fare at the boundary is included and why a control stops where it does.
-
-**S18 — Explain ticket modes before the reader compares their prices.** Use human ticket names and a concise distinction between return, outbound single, Anytime Day Return, and Advance train-specific availability.  
-**Expected benefit:** a cheaper number is less likely to be mistaken for an equivalent return or unrestricted fare.
-
-**S21 — Keep the first screen to the budget and the shortlist; group less-used refinements.** Consider a “More filters” disclosure for the long tail of destination categories while retaining selected-filter chips and counts.  
-**Expected benefit:** the product's primary budget question dominates without removing powerful filters from experienced users.
 
 **S24 — Offer date-specific schedules as an explicit product mode.** Build or select a timetable snapshot for the named date, label its service date beside times, and keep undated aggregate schedules visibly indicative.  
 **Expected benefit:** a journey-time suggestion is tied to the travel day the user cares about rather than a mixed schedule set.
@@ -62,14 +68,8 @@ Each item has an explicit expected benefit. They range from small copy/interacti
 
 ### Ticket handoff and confidence
 
-**S30 — Treat the seller handoff as part of the result, not a generic footer detail.** Before a click, name whether the link is a blank seller search or a verified destination search and what the reader must fill in.  
-**Expected benefit:** fewer users think the site or seller has lost their destination after following a link.
-
 **S31 — Verify deep links per seller, date, and party before enabling them.** Keep a working fallback and make the destination's link mode explicit; never infer success from a URL that merely has query parameters.  
 **Expected benefit:** users receive the shortest handoff that is actually known to work.
-
-**S32 — Make copy/clipboard a complete fallback, with independent accessible state.** Give the copied text the selected origin, destination, date, party and relevant fare caveat; ensure it remains available when clipboard permission is denied.  
-**Expected benefit:** the user can complete a manual search even in restrictive browsers without ambiguous “copied” or expanded states.
 
 **S34 — Add a human-readable feed-change report for the operator.** Compare each new feed with the previous one, highlighting material price changes, removed fares, changed station coverage, and timetable freshness.  
 **Expected benefit:** scheduled publication has a reviewable reason to change and suspicious jumps are easier to catch.
