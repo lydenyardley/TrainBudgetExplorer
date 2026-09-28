@@ -1,13 +1,18 @@
-"""Tests for the Knowledgebase reference check on restriction wording.
+"""Tests for the Knowledgebase reference check on restriction conditions.
 
-The check exists to answer one question a fares feed cannot answer alone: is
-the condition printed beside this price still the condition the reference feed
-publishes? So the tests are about the *answers* rather than the parse, and each
-one pins down a way the answer could be a lie:
+The check exists to answer one question a fares feed cannot answer alone: does
+the portal still publish the conditions printed beside these prices? So the
+tests are about the *answers* rather than the parse, and each one pins down a
+way the answer could be a lie:
 
-* a feed that agrees with itself proves the comparison ran, not that it works;
-* a feed this reader does not understand must not be read as agreement;
-* zero codes compared is not agreement, however complete the feed looked.
+* a feed that lists what this reader lists proves the comparison ran, not that
+  it works;
+* a feed this reader does not understand must not be read as confirmation;
+* zero codes compared is not confirmation, however complete the feed looked.
+
+What is compared is publication, never wording, and one test exists to hold
+that: run against the real portal feed, comparing the two texts word for word
+reported every one of 628 conditions disagreeing on a feed where none did.
 """
 
 from __future__ import annotations
@@ -20,8 +25,8 @@ import atoc_knowledgebase as kb
 from atoc_knowledgebase import (
     ABSENT,
     CHECKED,
-    DISAGREES,
     UNKNOWN,
+    UNPUBLISHED,
     Knowledgebase,
     KnowledgebaseRestriction,
     RestrictionCheck,
@@ -136,7 +141,7 @@ class ReaderTest(unittest.TestCase):
             self.assertEqual(loaded.records_understood, 1)
             self.assertFalse(loaded.usable)
             self.assertEqual(sum(loaded.unrecognised.values()), 40)
-            check = check_restrictions({"1A": _Header("PEAK")}, loaded)
+            check = check_restrictions(["1A"], loaded)
             self.assertEqual(check.status, UNKNOWN)
             self.assertFalse(check.verified)
 
@@ -175,23 +180,27 @@ class ReaderTest(unittest.TestCase):
             self.assertEqual(sorted(loaded.restrictions), ["B3"])
             self.assertEqual(loaded.records_understood, 1)
             self.assertFalse(loaded.usable)
-            check = check_restrictions({"B3": _Header("EARLY", "OUT", "RTN")}, loaded)
+            check = check_restrictions(["B3"], loaded)
             self.assertEqual(check.status, UNKNOWN)
             # And the reason names what was found, so a reader is not sent to
             # look for records the tool has already read.
             self.assertIn("none carried a description", check.note)
 
-    def test_a_reference_record_with_no_wording_cannot_be_a_disagreement(self) -> None:
+    def test_a_reference_record_with_no_wording_cannot_be_a_missing_condition(self) -> None:
         # If the real feed nests its text one element deeper than this reader
         # looks, every record would come back empty. Reading that as "the
-        # reference feed disagrees" would tell readers the portal had retired
-        # conditions it had said nothing about -- the worst failure this
-        # feature has.
+        # portal no longer publishes this" would tell readers the portal had
+        # retired conditions it had said nothing about -- the worst failure
+        # this feature has. The reader's own gate catches it: a feed whose
+        # records carry no wording at all is not known to be a feed of
+        # restriction conditions, so the check is unknown and nothing is
+        # counted either way.
         check = check_restrictions(
-            {"1A": _Header("PEAK", "OUT 1A", "RTN 1A")},
+            ["1A"],
             self_kb_with_empty_record(),
         )
-        self.assertNotEqual(check.status, DISAGREES)
+        self.assertEqual(check.status, UNKNOWN)
+        self.assertNotEqual(check.status, UNPUBLISHED)
         self.assertFalse(check.verified)
         self.assertEqual(check.compared, 0)
 
@@ -225,8 +234,8 @@ def self_kb_with_empty_record() -> Knowledgebase:
 
 
 class CheckTest(unittest.TestCase):
-    def _headers(self) -> dict[str, _Header]:
-        return {"1A": _Header("PEAK", "OUT 1A", "RTN 1A"), "R1": _Header("OTHER", "OUT R1", "RTN R1")}
+    def _codes(self) -> list[str]:
+        return ["1A", "R1"]
 
     def _kb(self, *pairs: tuple[str, str, str, str]) -> Knowledgebase:
         loaded = Knowledgebase(files_read=["x.xml"])
@@ -236,67 +245,90 @@ class CheckTest(unittest.TestCase):
         loaded.records_understood = len(pairs)
         return loaded
 
-    def test_matching_wording_is_reported_as_checked_with_a_count(self) -> None:
+    def test_every_listed_condition_is_reported_as_checked_with_a_count(self) -> None:
         check = check_restrictions(
-            self._headers(),
+            self._codes(),
             self._kb(("1A", "PEAK", "OUT 1A", "RTN 1A"), ("R1", "OTHER", "OUT R1", "RTN R1")),
         )
         self.assertEqual(check.status, CHECKED)
-        self.assertEqual((check.compared, check.agree, check.disagree), (2, 2, 0))
+        self.assertEqual((check.compared, check.listed, check.missing), (2, 2, 0))
+        self.assertEqual(check.unlisted, ())
         self.assertTrue(check.verified)
 
-    def test_a_disagreement_is_reported_and_the_code_is_named(self) -> None:
-        # The case the page exists for: the reference feed has retired a
-        # condition the fares file still prints. The reader must be told which.
+    def test_a_condition_the_portal_no_longer_lists_is_reported_and_named(self) -> None:
+        # The case the page exists for: this build quotes a condition the
+        # portal's own feed does not carry. The reader must be told which.
         check = check_restrictions(
-            self._headers(),
-            self._kb(("1A", "PEAK", "NOT VALID AT ANY TIME", "RTN 1A"), ("R1", "OTHER", "OUT R1", "RTN R1")),
+            self._codes(),
+            self._kb(("1A", "PEAK", "OUT 1A", "RTN 1A")),
         )
-        self.assertEqual(check.status, DISAGREES)
-        self.assertEqual((check.compared, check.agree, check.disagree), (2, 1, 1))
-        self.assertEqual([code for code, _ in check.differing], ["1A"])
+        self.assertEqual(check.status, UNPUBLISHED)
+        self.assertEqual((check.compared, check.listed, check.missing), (2, 1, 1))
+        self.assertEqual(check.unlisted, ("R1",))
         self.assertFalse(check.verified)
 
-    def test_a_reflowed_sentence_is_not_a_disagreement(self) -> None:
-        # Crying wolf is how a warning stops being read. Case and internal
-        # whitespace are not differences in meaning.
+    def test_different_wording_for_the_same_condition_is_not_a_problem(self) -> None:
+        # The decision this whole comparison rests on, and the one a future
+        # reader is most likely to undo by accident.
+        #
+        # The portal words a condition in prose and the fares feed compresses
+        # it, for the same condition: "VALID ON ANY TRAIN 0930 OR LATER M-F"
+        # against "Not valid to depart the origin station shown on the ticket
+        # until 09:30". Compare those texts and every condition differs. A
+        # page that reported that would be crying wolf, and a reader who saw it
+        # once would stop reading the line that tells them the portal still
+        # publishes what they are being quoted.
         check = check_restrictions(
-            {"1A": _Header("peak", "OUT 1A", "RTN 1A")},
-            self._kb(("1A", "PEAK", "  out 1a  ", "RTN 1A")),
+            ["3V"],
+            self._kb(
+                (
+                    "3V",
+                    "",
+                    "Not valid to depart the origin station shown on the ticket until 09:30",
+                    "Not valid to depart the origin station shown on the ticket until 09:30",
+                )
+            ),
         )
         self.assertEqual(check.status, CHECKED)
-        self.assertEqual(check.disagree, 0)
+        self.assertEqual((check.compared, check.listed, check.missing), (1, 1, 0))
+        self.assertTrue(check.verified)
 
-    def test_no_reference_feed_is_absent_not_agreement(self) -> None:
-        check = check_restrictions(self._headers(), None)
+    def test_no_reference_feed_is_absent_not_confirmation(self) -> None:
+        check = check_restrictions(self._codes(), None)
         self.assertEqual(check.status, ABSENT)
         self.assertFalse(check.verified)
 
-    def test_an_unusable_reference_feed_is_unknown_not_agreement(self) -> None:
+    def test_an_unusable_reference_feed_is_unknown_not_confirmation(self) -> None:
         loaded = Knowledgebase(files_read=["x.xml"])
         loaded.unrecognised["somethingelse"] += 3
-        check = check_restrictions(self._headers(), loaded)
+        check = check_restrictions(self._codes(), loaded)
         self.assertEqual(check.status, UNKNOWN)
         self.assertFalse(check.verified)
         self.assertIn("not understood", check.note)
 
-    def test_zero_codes_compared_is_unknown_however_complete_the_feed(self) -> None:
-        # The dangerous one. A reference feed with 400 restrictions and none of
-        # them on this page has not confirmed anything about this page.
-        check = check_restrictions(
-            {"1A": _Header()}, self._kb(("ZZ", "SOMETHING ELSE", "OUT", "RTN"))
-        )
+    def test_a_condition_neither_feed_knows_is_reported_not_skipped(self) -> None:
+        # This one used to assert the opposite, and the change is the whole
+        # point of the codes-only design. A missing code used to be skipped,
+        # because skipping was the safe thing to do when a "disagreement" meant
+        # "these two feeds word the same condition differently" -- and a
+        # disagreement nobody could defend was worse than silence. What is
+        # compared now is publication, which is a fact about the portal: this
+        # build quotes 1A and the portal does not list it, so the reader is
+        # told. Silence here would be the lie, because it would read as "the
+        # portal publishes everything this build quotes".
+        check = check_restrictions(["1A"], self._kb(("ZZ", "SOMETHING ELSE", "OUT", "RTN")))
+        self.assertEqual(check.status, UNPUBLISHED)
+        self.assertEqual(check.unlisted, ("1A",))
+        self.assertEqual((check.compared, check.listed, check.missing), (1, 0, 1))
+        self.assertFalse(check.verified)
+
+    def test_a_build_quoting_no_condition_at_all_is_unknown(self) -> None:
+        # A page with no restriction codes is not a page the portal has
+        # confirmed anything about, and must not print "all zero of them".
+        check = check_restrictions([], self._kb(("1A", "PEAK", "OUT", "RTN")))
         self.assertEqual(check.status, UNKNOWN)
         self.assertFalse(check.verified)
-        self.assertEqual(check.compared, 0)
-
-    def test_a_code_the_reference_feed_lacks_is_skipped_not_counted_as_conflict(self) -> None:
-        check = check_restrictions(
-            self._headers(),
-            self._kb(("R1", "OTHER", "OUT R1", "RTN R1")),
-        )
-        self.assertEqual(check.status, CHECKED)
-        self.assertEqual(check.compared, 1)
+        self.assertIn("quotes no restriction condition", check.note)
 
 
 class WordingTest(unittest.TestCase):
@@ -305,21 +337,34 @@ class WordingTest(unittest.TestCase):
     def _describe(self, **kwargs) -> str:
         return describe_restriction_check(kb.RestrictionCheck(**kwargs))
 
-    def test_agreement_names_how_many_were_compared(self) -> None:
+    def test_the_confirmed_answer_names_how_many_conditions_it_covered(self) -> None:
         said = self._describe(
-            status=CHECKED, compared=7, agree=7, published="2026-09-26T04:15:00Z"
+            status=CHECKED, compared=7, listed=7, published="2026-09-26T04:15:00Z"
         )
-        self.assertIn("agrees on all 7", said)
+        self.assertIn("still publishes all 7", said)
         self.assertIn("published 2026-09-26", said)
         # And without a date the wording is still a complete sentence, rather
-        # than one with a hole where a claim should be.
-        self.assertNotIn("None", self._describe(status=CHECKED, compared=7, agree=7))
+        # than one with a hole where a claim should be. The portal sends no
+        # Last-Modified on these feeds, so the absent date is the usual case.
+        self.assertNotIn("None", self._describe(status=CHECKED, compared=7, listed=7))
 
-    def test_disagreement_names_the_codes(self) -> None:
+    def test_no_answer_ever_claims_the_two_feeds_agree_about_wording(self) -> None:
+        # The portal compresses what the fares feed spells out. Any wording
+        # here that says the feeds agree, or disagree, would be saying something
+        # the comparison never established.
+        for status, kwargs in (
+            (CHECKED, {"compared": 7, "listed": 7}),
+            (UNPUBLISHED, {"compared": 7, "listed": 6, "missing": 1, "unlisted": ("B3",)}),
+        ):
+            said = self._describe(status=status, **kwargs)
+            self.assertNotIn("agree", said.lower())
+            self.assertNotIn("disagree", said.lower())
+
+    def test_a_missing_condition_names_the_codes(self) -> None:
         said = self._describe(
-            status=DISAGREES, compared=7, agree=6, disagree=1, differing=(("B3", "x"),)
+            status=UNPUBLISHED, compared=7, listed=6, missing=1, unlisted=("B3",)
         )
-        self.assertIn("disagrees on 1 of 7", said)
+        self.assertIn("no longer publishes 1 of the 7", said)
         self.assertIn("B3", said)
 
     def test_absent_and_unknown_say_so_rather_than_being_silent(self) -> None:
@@ -412,7 +457,7 @@ class ParallelPathTest(unittest.TestCase):
         differs = dict(
             shared,
             restriction_reference=RestrictionCheck(
-                status=DISAGREES, compared=3, agree=2, disagree=1
+                status=UNPUBLISHED, compared=3, listed=2, missing=1, unlisted=("B3",)
             ),
         )
         again = dict(shared, restriction_reference=RestrictionCheck(status=ABSENT))
@@ -426,37 +471,51 @@ class ParallelPathTest(unittest.TestCase):
 
 
 class FixtureTest(unittest.TestCase):
-    def test_the_fixture_agrees_and_can_be_made_to_disagree(self) -> None:
-        # The fixture derives its wording from the same RH records the fares
-        # feed carries, so "agrees" here is a fact about the comparison rather
-        # than about two hand-kept copies of a sentence.
+    def _fixture_codes(self) -> list[str]:
         from make_synthetic_feed import _restriction_lines
         from atoc_restrictions import RESTRICTION_OFFSETS
 
-        headers = {}
+        codes: list[str] = []
         for line in _restriction_lines():
             if line[1:3] != "RH":
                 continue
             offsets = RESTRICTION_OFFSETS["RH"]
-            field = lambda name: line[offsets[name][0]:offsets[name][1]].strip()  # noqa: E731
-            if field("restriction_code"):
-                headers[field("restriction_code")] = _Header(
-                    field("description"), field("desc_out"), field("desc_rtn")
-                )
-        self.assertTrue(headers, "the fixture has restriction headers to compare")
+            code = line[offsets["restriction_code"][0] : offsets["restriction_code"][1]].strip()
+            if code:
+                codes.append(code)
+        self.assertTrue(codes, "the fixture has restriction codes to compare")
+        return codes
 
+    def test_the_fixture_lists_every_condition_the_fares_feed_quotes(self) -> None:
+        # The fixture is built from the same restriction records the fares feed
+        # carries, so the codes line up by construction. That is the point: this
+        # asserts the comparison ran and matched, not that two hand-kept copies
+        # of a list agree.
+        codes = self._fixture_codes()
         with tempfile.TemporaryDirectory() as tmp:
-            agreeing = load_ticket_restrictions(
-                build_synthetic_knowledgebase(Path(tmp) / "a", disagree_on=None)
+            loaded = load_ticket_restrictions(
+                build_synthetic_knowledgebase(Path(tmp) / "a", omit=None)
             )
-            self.assertEqual(check_restrictions(headers, agreeing).status, CHECKED)
+            check = check_restrictions(codes, loaded)
+            self.assertEqual(check.status, CHECKED)
+            self.assertEqual((check.compared, check.listed, check.missing), (len(codes), len(codes), 0))
+            self.assertTrue(check.verified)
 
-            disagreeing = load_ticket_restrictions(
-                build_synthetic_knowledgebase(Path(tmp) / "b", disagree_on="1A")
+    def test_a_condition_dropped_from_the_reference_is_reported(self) -> None:
+        # The other direction, and the one the page exists for: a condition the
+        # fares feed still quotes and the reference feed no longer lists. The
+        # fixture omits one code by name, so the case is built rather than
+        # happening to occur.
+        codes = self._fixture_codes()
+        dropped = codes[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            loaded = load_ticket_restrictions(
+                build_synthetic_knowledgebase(Path(tmp) / "a", omit=dropped)
             )
-            check = check_restrictions(headers, disagreeing)
-            self.assertEqual(check.status, DISAGREES)
-            self.assertIn("1A", [code for code, _ in check.differing])
+            check = check_restrictions(codes, loaded)
+            self.assertEqual(check.status, UNPUBLISHED)
+            self.assertEqual(check.unlisted, (dropped,))
+            self.assertEqual(check.missing, 1)
 
 
 if __name__ == "__main__":

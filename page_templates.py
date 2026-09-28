@@ -943,27 +943,33 @@ function renderRestrictionReference() {
   const checkedClause = checked ? ", last checked" + checked : "";
   const text = (() => {
     if (ref.status === "absent") {
-      return "Ticket conditions are quoted from the fares feed. No independent reference feed was checked.";
+      return "Ticket conditions are quoted from the fares feed. No portal reference feed was checked.";
     }
     if (ref.status === "unknown") {
-      return "Ticket conditions are quoted from the fares feed. The independent reference feed could not be checked"
+      return "Ticket conditions are quoted from the fares feed. The portal's own restriction feed could not be checked"
         + (ref.note ? " (" + ref.note + ")" : "")
         + ", so nothing here has been confirmed against it"
         + (published ? "; it was published" + published : "") + ".";
     }
-    if (ref.status === "disagrees") {
-      const codes = (ref.differing || []).map((d) => d.code).join(", ");
-      return "Ticket conditions are quoted from the fares feed. The independent reference feed"
+    if (ref.status === "unpublished") {
+      const codes = (ref.unlisted || []).join(", ");
+      // The comma belongs to the publication clause, so the verb phrase starts
+      // with a space. Built as "feed, published <date>, no longer lists" when
+      // there is a date and "feed no longer lists" when there is not, which is
+      // what the portal actually sends: no Last-Modified on these feeds, so the
+      // clause is usually absent and a leading comma would be a comma splice.
+      return "Ticket conditions are quoted from the fares feed. The National Rail Data Portal's own "
+        + "restriction feed"
         + (published ? ", published" + published : "")
-        + ", disagrees on " + ref.disagree + " of the " + ref.compared
-        + " conditions shown (" + codes + ")" + checkedClause
+        + " no longer lists " + ref.missing + " of the " + ref.compared
+        + " conditions this page's fares carry (" + codes + ")" + checkedClause
         + ". The wording below is the fares feed's, which is the same publication the prices are from.";
     }
     return "Ticket conditions are quoted from the fares feed"
       + (DATA.feedDate ? ", downloaded" + dayPhrase(DATA.feedDate) : "")
-      + ". The independent reference feed"
+      + ". The National Rail Data Portal's own restriction feed"
       + (published ? ", published" + published : "")
-      + ", agrees on all " + ref.compared + " of them"
+      + ", still publishes all " + ref.compared + " conditions this page's fares carry"
       + checkedClause + ".";
   })();
   line.textContent = text;

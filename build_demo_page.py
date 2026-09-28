@@ -44,6 +44,7 @@ from atoc_fares import (
 from atoc_timetable import TimetableDb
 from atoc_knowledgebase import (
     ABSENT,
+    UNPUBLISHED,
     RestrictionCheck,
     check_restrictions,
     load_ticket_restrictions,
@@ -725,9 +726,9 @@ def describe_restriction_check(check: RestrictionCheck) -> str:
 
     The four answers are worded here and nowhere else, so the console line, the
     page and a test all speak about the same check. Each says what was asked and
-    what came back, and none of them says agreement without saying how many
-    codes were compared -- because "agrees" with nothing to agree about is not
-    agreement.
+    what came back, and none of them says the portal still publishes something
+    without saying how many conditions that was -- because "all" with nothing
+    behind it is not a check.
     """
 
     when = f" (published {check.published})" if check.published else ""
@@ -735,21 +736,26 @@ def describe_restriction_check(check: RestrictionCheck) -> str:
         return f"not checked, {check.note}{when}"
     if check.status == "unknown":
         return f"could not be checked, {check.note}{when}"
-    if check.status == "disagrees":
-        codes = ", ".join(code for code, _ in check.differing)
+    if check.status == UNPUBLISHED:
+        codes = ", ".join(check.unlisted)
         return (
-            f"the reference feed disagrees on {check.disagree} of {check.compared} "
-            f"condition(s) shown ({codes}){when}"
+            f"the portal no longer publishes {check.missing} of the {check.compared} "
+            f"condition(s) this build quotes ({codes}){when}"
         )
     return (
-        f"the reference feed agrees on all {check.compared} condition(s) shown{when}"
+        f"the portal still publishes all {check.compared} condition(s) "
+        f"this build quotes{when}"
     )
 
 
 def restriction_check(
-    fares, knowledgebase_path: str | Path | None, manifest: dict | None
+    fares, knowledgebase_path: str | Path | None, manifest: dict | None, *, origin_crs: str | None = None
 ):
-    """Compare the fares feed's restriction wording with the reference feed.
+    """Check the reference feed against the conditions this build quotes.
+
+    *origin_crs* narrows the claim to one station's fares; with no origin the
+    claim covers every fare in the release, which is what a multi-origin build
+    publishes.
 
     Returns the check to publish. It is never ``None``: a page with no
     reference feed has an answer to the reader's question too, and that answer
@@ -759,14 +765,13 @@ def restriction_check(
         return RestrictionCheck(status=ABSENT, note="no reference feed was named")
     kb = load_ticket_restrictions(knowledgebase_path)
     published, checked = knowledgebase_dates(manifest)
-    # Only the codes this page actually shows are compared, so the claim is
-    # about the conditions the reader can see rather than about the feed.
-    shown = {
-        code: header
-        for code, header in fares.restrictions.headers.items()
-        if code and (header.outward_text or header.return_text or header.description)
-    }
-    return check_restrictions(shown, kb, published=published, checked_at=checked)
+    # The codes come from the flows this build can show, not from the feed's
+    # own header list. The real feed holds 841 headers; Grantham's fares carry
+    # 31 of them, and the page puts four on screen. Asking the feed instead
+    # made a station page claim to have checked 628 conditions.
+    return check_restrictions(
+        fares.restriction_codes(origin_crs), kb, published=published, checked_at=checked
+    )
 
 
 def read_feed_metadata(folders: list[Path]) -> dict | None:
@@ -1612,15 +1617,13 @@ def build_payload(
     # The freshness claim for the conditions above. Carried as plain data
     # rather than as a sentence so the page writes it in its own voice, and so
     # a test can assert on the fact rather than on a wording that changes.
-    reference = restriction_reference or check_restrictions({}, None)
+    reference = restriction_reference or check_restrictions([], None)
     restriction_reference_note = {
         "status": reference.status,
         "compared": reference.compared,
-        "agree": reference.agree,
-        "disagree": reference.disagree,
-        "differing": [
-            {"code": code, "referenceText": text} for code, text in reference.differing
-        ],
+        "listed": reference.listed,
+        "missing": reference.missing,
+        "unlisted": list(reference.unlisted),
         "note": reference.note,
         "published": reference.published,
         "checkedAt": reference.checked_at,
@@ -2390,7 +2393,13 @@ def main(argv: list[str] | None = None) -> int:
     # reference feed was checked.
     manifest_for_reference = read_feed_manifest(metadata_folders) or {}
     restriction_reference = restriction_check(
-        fares, args.knowledgebase, manifest_for_reference
+        fares,
+        args.knowledgebase,
+        manifest_for_reference,
+        # A single-origin build quotes one station's conditions; a multi-origin
+        # one quotes every fare in the release, and a claim about one station
+        # printed on 2,700 pages would be a claim none of the others earned.
+        origin_crs=None if args.all_origins else args.origin,
     )
     if args.knowledgebase:
         print(

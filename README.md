@@ -184,43 +184,69 @@ only the outward text — it has no return leg for a return condition to
 constrain. The wording is the fares feed's own, because a price and the
 condition attached to it must come from the same publication.
 
-Because that feed is a snapshot, the page also says what an **independent
-reference feed** was asked and answers it above the table, where a reader
+Because that feed is a snapshot, the page also says what the **portal's own
+restriction feed** was asked and answers it above the table, where a reader
 comparing two prices will read it. The Knowledgebase `ticket-restrictions` feed
 is published on its own schedule, and comparing the two answers a question the
-fares file cannot answer alone: is the condition printed beside this price still
-the condition the reference feed publishes today?
+fares file cannot answer alone: does the portal still publish the conditions
+printed beside these prices?
+
+**What is compared is publication, never wording.** That is not a simplification
+— it is the only thing the feed can honestly be asked, and it was found by
+running the comparison against the real download. The two feeds describe the
+same conditions in different vocabularies:
+
+| code | fares feed | portal's own record |
+|---|---|---|
+| `3V` | `VALID ON ANY TRAIN 0930 OR LATER M-F` | "Not valid to depart the origin station shown on the ticket until 09:30" |
+| `B3` | `VALID AFTER 0859 MON-FRI` | "Not valid on trains timed to depart after 04:29 and before 09:00." |
+
+The same condition, once compressed into the `.RST` field and once written out in
+prose, because the fares text is per-journey and the portal's is per-ticket-type.
+Compare the two texts and every condition differs: word for word, the real feed
+reported **628 of 628 conditions disagreeing** on a feed where nothing at all
+did. A page saying that is crying wolf, and a reader who sees it once stops
+reading the line that tells them what is actually true.
 
 The four answers, and none of them is a fifth:
 
-- **agrees**, with the number of conditions compared and the date the reference
-  feed was published;
-- **disagrees**, naming the codes that differ — the wording shown stays the
+- **still publishes all of them**, with the number of conditions covered and the
+  date the reference feed was published;
+- **no longer lists some**, naming the codes — the wording shown stays the
   fares feed's, because that is the publication the prices come from;
 - **could not be checked**, with the reason;
 - **not checked**, when no reference feed was named.
 
+The count is the conditions *this build's fares carry*, taken from the flows
+rather than from the feed's own header list. The real feed holds 841 headers,
+Grantham's fares carry 32 of them, and the page puts four on screen: a check
+built from the feed's list claims to have covered 628 conditions on a page that
+shows 4.
+
 **The check reports its own uncertainty, and that is the design.** The
 Knowledgebase feeds' exact element names are not published in a form this
-project can verify, and `atoc_knowledgebase.py` has not been run against the
-real feed. Rather than guess a schema and then report agreement it never
-verified, it recognises records by local name from a set of plausible spellings
-and counts what it did not recognise. An unrecognised record, a missing feed, or
-**zero codes compared** all resolve to "could not be checked" — never to
-"agrees". That last one matters most: a reference feed with four hundred
-restrictions and none of them on this page has confirmed nothing about this page.
+project can verify, so the reader recognises records by local name from a set of
+plausible spellings and counts what it did not recognise. An unrecognised
+record, a missing feed, or **zero conditions to check** all resolve to "could
+not be checked" — never to "still publishes all of them". A record whose wording
+the reader could not find is also not a missing condition: a reader that looked
+in the wrong place must not tell a reader the portal retired something it never
+looked at.
 
 The publication date comes from the downloader's recorded `Last-Modified`, not
 from the build's clock. A claim about someone else's data has to rest on their
 date for it; "built today" is a fact about the build, and a page sits on a
-server long enough for that to quietly become false.
+server long enough for that to quietly become false. The portal sends no
+`Last-Modified` on these feeds, so in practice the page says when *we* last
+asked and not when the portal last published — which is the honest half of the
+claim, and all this feed offers.
 
-The fares feed stays the authority. A disagreement is reported to the reader,
-never resolved in either direction.
+The fares feed stays the authority. A condition the portal no longer lists is
+reported to the reader, never resolved in either direction.
 
 **Checking the guess.** The reader matches element names from a set of plausible
-spellings, and that set is a guess. `tools/inspect_knowledgebase.py` is how you
-check it against a real download:
+spellings, and that set was a guess until it was checked against a real
+download. `tools/inspect_knowledgebase.py` is how you check it:
 
 ```
 python dtd_download.py --output-root feeds --kb-only   # needs NRDP credentials
@@ -427,8 +453,9 @@ restore is a miss, not a wrong answer.
    ```
 
    This writes `feeds/knowledgebase/*.xml`. The build reads the
-   `ticket-restrictions` feed as a second opinion on the fares feed's own
-   restriction wording; see below for what it does and does not claim.
+   `ticket-restrictions` feed as a second opinion on whether the portal still
+   publishes the conditions the fares feed quotes; see below for what it does
+   and does not claim.
 5. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
    --origin GRA --budget 20` and read what the count left out.
 6. Check the current DTD/NRE terms, brand treatment, commercial-use permission,
