@@ -2722,6 +2722,65 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     );
   }
 
+  // The NRE source credit, on a page that composes the NRE notice and on no
+  // other page. The Developer Brand Guidelines require the "Powered by National
+  // Rail Enquiries" logo and a link to NRE's site, placed underneath the
+  // information the feed supplied, so all three are read here rather than
+  // assumed from the markup: the mark must be visible, must be legible (it is
+  // dark blue on a fixed fill, so the dark palette could swallow it), and must
+  // carry a name a screen reader reads, because the mark is paths.
+  const credit = await page.evaluate(() => {
+    const node = document.querySelector(".nre-credit");
+    if (!node) return { present: false };
+    const img = node.querySelector('[role="img"]');
+    const link = node.querySelector("a");
+    const mark = node.querySelector("svg");
+    const plate = node.querySelector(".nre-logo");
+    const box = plate ? plate.getBoundingClientRect() : { width: 0, height: 0 };
+    return {
+      present: true,
+      name: img ? img.getAttribute("aria-label") : "",
+      href: link ? link.getAttribute("href") : "",
+      markPaths: mark ? mark.querySelectorAll("path").length : 0,
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+      // Underneath the results, which is the placement the guidelines name for
+      // a feed that is the page's predominant information.
+      belowTable: (() => {
+        const table = document.querySelector("table");
+        if (!table) return true;
+        return table.getBoundingClientRect().top < node.getBoundingClientRect().top;
+      })(),
+    };
+  });
+  const nreNotice = await page.evaluate(() =>
+    [].concat((typeof DATA !== "undefined" && DATA.attribution) || []).some(
+      (notice) => /National Rail Enquiries/.test(notice)
+    )
+  );
+  check(
+    "the NRE credit appears exactly when the page acknowledges NRE as the source",
+    credit.present === nreNotice,
+    `credit: ${credit.present}, NRE notice: ${nreNotice}`
+  );
+  if (credit.present) {
+    check(
+      "the credit shows the Powered by National Rail Enquiries mark",
+      credit.markPaths > 0 && credit.name === "Powered by National Rail Enquiries",
+      `${credit.markPaths} path(s), name "${credit.name}"`
+    );
+    check(
+      "and it links to NRE, as the guidelines ask",
+      /nationalrail\.co\.uk/.test(credit.href),
+      credit.href
+    );
+    check(
+      "and it is legible, sitting on its own plate underneath the information",
+      credit.width > 100 && credit.height >= 24 && credit.belowTable,
+      `${credit.width}x${credit.height}px, below the table: ${credit.belowTable}`
+    );
+  }
+
   // The matrix leaves the page as it found it: the next section drives controls.
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 1280, height: 720 });

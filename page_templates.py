@@ -73,6 +73,18 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      route: a quiet rule above, 44px of touch target for a phone. The height is
      on the anchor itself, not only on a container around it -- a nav that is
      44px tall with a 24px link in it is not a 44px target (C25). */
+  /* The NRE "Powered by" mark is a dark blue (#2E2D7F) on a fixed fill, which
+     the dark palette would swallow whole. The Developer Brand Guidelines
+     require the logo to be legible, so it is given its own light plate rather
+     than being recoloured: an edited mark is not the mark that was licensed. */
+  .nre-credit { margin: 0 0 .7rem; }
+  /* The link is the pointer target, so it has to be as tall as the plate it
+     wraps. Left inline, its box is the line box -- 18px -- while the mark
+     overflows it, and a 24px-target check rightly fails. */
+  .nre-credit a { display: inline-flex; align-items: center; }
+  .nre-logo { display: inline-flex; align-items: center; padding: .3rem .55rem;
+              background: #fff; border-radius: .3rem; }
+  .nre-logo svg { display: block; height: 2rem; width: auto; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .85rem; }
   .footnav { margin-top: 1.5rem; }
@@ -484,6 +496,7 @@ __SYNTHETIC_BANNER__
 </main>
 
 <footer>
+  __NRE_CREDIT__
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
   <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>

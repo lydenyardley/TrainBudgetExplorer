@@ -1978,6 +1978,71 @@ def origin_control(payload: dict) -> str:
     )
 
 
+NRE_LOGO = Path(__file__).resolve().parent / "assets" / "powered-by-national-rail.svg"
+NRE_WEBSITE = "https://www.nationalrail.co.uk/developers/"
+
+
+def wants_nre_credit(attribution: str | list[str] | None) -> bool:
+    """Whether this build asked for the NRE acknowledgement, and so the mark.
+
+    Keyed on the composed notice rather than on the flag, so both ways into a
+    page -- the in-process build and the worker pool -- ask the same question of
+    the same value and cannot come out differently. A build given verbatim
+    ``--attribution`` text is not second-guessed: the operator chose that
+    wording, and the licence question behind it is theirs to answer, not this
+    function's to decide.
+    """
+
+    notices = [attribution] if isinstance(attribution, str) else list(attribution or [])
+    return NOTICES["nre"] in notices
+
+
+def nre_attribution() -> str:
+    """The NRE source credit the portal terms require, logo and all.
+
+    The Developer Brand Guidelines (September 2026) make this specific: the
+    licensee "must acknowledge NRE as the source of information, where
+    possible, by providing a link to the NRE website for more information and
+    by displaying the 'Powered by National Rail Enquiries' logo", and where the
+    feed is "the predominant or standalone information" the attribution is to be
+    "shown directly alongside, above or underneath the Information derived from
+    the feed". The footer's credit block is underneath the table, and the whole
+    page is the information, so this is the placement the guidelines name.
+
+    The logo is inlined rather than linked, because the page is one
+    self-contained file (ADR-0033) and an attribution that needs a second
+    request to appear is an attribution a reader on a train may never see. The
+    mark is the file NRE supplies, byte for byte; the strip below removes only
+    the XML prolog and the generator comment, which cannot appear inside HTML.
+
+    A missing or unreadable mark is a build failure, not a page without a
+    credit: this is the one thing in the footer the licence requires by name.
+    """
+
+    try:
+        svg = NRE_LOGO.read_text(encoding="iso-8859-1").strip()
+    except OSError as error:
+        raise SystemExit(
+            f"the NRE 'Powered by National Rail Enquiries' mark is required by the "
+            f"Developer Brand Guidelines and is missing at {NRE_LOGO}: {error}"
+        ) from error
+    svg = re.sub(r"<\?xml[^>]*\?>", "", svg, count=1).strip()
+    svg = re.sub(r"<!--.*?-->", "", svg, count=1, flags=re.S).strip()
+    # The mark is hidden from the accessibility tree because the span around it
+    # is the image and carries the name: a bare <svg> is exposed as an image of
+    # its own, and an image with no name is a control a screen reader announces
+    # as nothing.
+    svg = re.sub(r"<svg\b", '<svg aria-hidden="true" focusable="false"', svg, count=1)
+    return (
+        '<div class="nre-credit">'
+        f'<a href="{NRE_WEBSITE}" rel="external">'
+        # The mark is paths, so nothing in it is readable: the name a screen
+        # reader gets is the words the guidelines require it to carry.
+        '<span class="nre-logo" role="img" aria-label="Powered by National Rail '
+        f'Enquiries">{svg}</span></a></div>'
+    )
+
+
 def first_use_sentence(payload: dict) -> str:
     """The first-use note, which can only name a control the page has.
 
@@ -2001,7 +2066,13 @@ def first_use_sentence(payload: dict) -> str:
     )
 
 
-def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> str:
+def render_page(
+    payload: dict,
+    *,
+    budget_pounds: int,
+    analytics: str = "",
+    nre_credit: bool = False,
+) -> str:
     """Fill the template from the payload.
 
     ``analytics`` is whatever snippet the owner chose for counting referrers. It
@@ -2039,6 +2110,7 @@ def render_page(payload: dict, *, budget_pounds: int, analytics: str = "") -> st
         .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
         .replace("__ORIGIN_CONTROL__", origin_control(payload))
         .replace("__FIRST_USE__", first_use_sentence(payload))
+        .replace("__NRE_CREDIT__", nre_attribution() if nre_credit else "")
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(initial_budget))
         .replace("__NOTE__", payload["note"])
@@ -2960,7 +3032,12 @@ def main(argv: list[str] | None = None) -> int:
         station_page = out_dir / "from" / index[0]["slug"] / "index.html"
         write_page_atomic(
             station_page,
-            render_page(payload, budget_pounds=20, analytics=analytics),
+            render_page(
+                payload,
+                budget_pounds=20,
+                analytics=analytics,
+                nre_credit=wants_nre_credit(notices_or_attribution(args)),
+            ),
         )
         print(
             f"wrote {station_page} with {len(payload['destinations'])} destinations "

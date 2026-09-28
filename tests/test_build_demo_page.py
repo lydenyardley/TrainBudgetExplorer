@@ -22,6 +22,8 @@ import argparse
 from atoc_fares import LOCATION, FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import (
+    nre_attribution,
+    wants_nre_credit,
     build_payload,
     build_station_index,
     explain_unpriced,
@@ -1589,6 +1591,42 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="destinationTypes"', self.html.split("<script")[0])
         self.assertIn('name="destinationType" value="city"', self.html.split("<script")[0])
         self.assertIn('name="destinationType" value="seaside"', self.html.split("<script")[0])
+
+    def test_the_nre_credit_is_the_mark_the_guidelines_name(self) -> None:
+        # The Developer Brand Guidelines require the "Powered by National Rail
+        # Enquiries" logo and a link to NRE's site, inlined so a self-contained
+        # page still shows it. The mark is paths, so the name a screen reader
+        # reads has to be written out; nothing in an SVG carries it.
+        credit = nre_attribution()
+        self.assertIn('aria-label="Powered by National Rail Enquiries"', credit)
+        self.assertIn("nationalrail.co.uk", credit)
+        self.assertIn("<svg", credit)
+        self.assertGreater(credit.count("<path"), 5)
+        # Inline, not linked: the page is one file and the attribution must not
+        # need a second request to appear.
+        self.assertNotIn("<?xml", credit)
+        self.assertNotIn("Adobe Illustrator", credit)
+        self.assertNotIn("<img", credit)
+        self.assertNotIn('src="', credit)
+
+    def test_the_credit_is_written_only_where_the_page_acknowledges_nre(self) -> None:
+        # Composing the NRE notice is what asks for the mark; a build given
+        # verbatim attribution text is not second-guessed.
+        self.assertTrue(wants_nre_credit([NOTICES["nre"], NOTICES["ogl"]]))
+        self.assertFalse(wants_nre_credit([NOTICES["rdg"], NOTICES["ogl"]]))
+        self.assertFalse(wants_nre_credit("some wording of the operator's own"))
+        self.assertFalse(wants_nre_credit(None))
+        with_credit = render_page(self.payload, budget_pounds=20, nre_credit=True)
+        self.assertIn('class="nre-credit"', with_credit)
+        self.assertNotIn('class="nre-credit"', render_page(self.payload, budget_pounds=20))
+
+    def test_a_missing_nre_mark_is_a_build_failure_not_a_page_without_one(self) -> None:
+        # This is the one thing in the footer the licence names, so a build that
+        # cannot find it stops rather than publishing a page with the credit
+        # quietly absent.
+        with mock.patch.object(build_demo_page, "NRE_LOGO", Path("no-such-mark.svg")):
+            with self.assertRaises(SystemExit):
+                nre_attribution()
 
     def test_a_build_with_nowhere_to_change_to_names_the_station_as_text(self) -> None:
         # A single-origin build writes one station page, so its picker has no
