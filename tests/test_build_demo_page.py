@@ -1035,8 +1035,84 @@ class DemoPageTest(unittest.TestCase):
         # discover on somebody else's site.
         self.assertIn("enter the origin", self.payload["linkNote"])
         self.assertIn("same whichever seller", self.payload["linkNote"])
-        self.assertIn('<p id="linkNote" hidden></p>', self.html)
+        # One element carrying the id, and it is the one the script writes to:
+        # two would leave getElementById and the reader looking at different
+        # paragraphs.
+        self.assertIn('id="linkNote" hidden', self.html)
+        self.assertEqual(self.html.count('id="linkNote"'), 1)
         self.assertIn("DATA.linkNote", self.html)
+
+    def test_the_seller_handoff_and_commission_are_above_the_click(self) -> None:
+        # C03: both were inside the closed "How these prices were calculated"
+        # disclosure, so a reader had to click a ticket link to find out what
+        # the click cost. They are above the table now, and the accordion
+        # carries neither.
+        self.assertIn('id="linkNote" hidden', self.html)
+        self.assertIn('id="disclosure" hidden', self.html)
+        _before, after = self.html.split('<details class="method">', 1)
+        inside = after.split("</details>", 1)[0]
+        for note in ('id="linkNote"', 'id="disclosure"'):
+            self.assertIn(note, self.html, f"{note} is not on the page")
+            self.assertNotIn(note, inside, f"{note} is inside the accordion")
+        # Above the table, which is what "before the first ticket action" means
+        # in a document: a reader scrolling the rows has already passed it.
+        self.assertLess(self.html.index('id="linkNote"'), self.html.index("<table>"))
+        self.assertLess(self.html.index('id="disclosure"'), self.html.index("<table>"))
+        # And nothing in the body is left unhidden by default: both are
+        # revealed by the build's own facts, not shipped as visible prose that
+        # a deep-link build would then be contradicting.
+        self.assertIn("linkNote.hidden = false", self.html)
+        self.assertIn("disclosure.hidden = false", self.html)
+
+    def test_a_tracked_page_puts_its_disclosure_where_the_click_is(self) -> None:
+        payload = build_payload(
+            self.fares,
+            self.timetable,
+            "GRN",
+            network="partnerize",
+            advertiser_id="123456",
+        )
+        self.assertTrue(payload["tracked"])
+        html = render_page(payload, budget_pounds=20)
+        self.assertIn(DISCLOSURE, html)
+        self.assertLess(html.index('id="disclosure"'), html.index("<table>"))
+
+    def test_the_opening_sentence_branches_on_whether_a_timetable_was_loaded(
+        self,
+    ) -> None:
+        # C04: the shipped sentence promised a journey time and a change count
+        # on a build that removes the columns that carry them. The sentence is
+        # written from the payload's own fact now.
+        self.assertIn("function renderIntro()", self.html)
+        self.assertIn("if (!DATA.hasJourneys)", self.html)
+        self.assertIn("no times or changes are shown", self.html)
+        self.assertIn("fastest journey time and the number of changes", self.html)
+        # The static text is the fares-only sentence, so a page that has not
+        # run this script yet cannot be promising times it will not show.
+        intro = re.search(
+            r'<p class="sub" id="pageIntro">(.*?)</p>', self.html, re.S
+        )
+        self.assertIsNotNone(intro)
+        self.assertNotIn("journey time", intro.group(1))
+
+    def test_the_undated_schedule_caveat_sits_with_the_times(self) -> None:
+        # C04: the warning that the times are typical rather than date-specific
+        # was in the closed methodology accordion. A reader is not going to
+        # open that before trusting a time, so it joins the freshness line
+        # above the table.
+        with_timetable_no_date = build_payload(self.fares, self.timetable, "GRN")
+        self.assertIn("every schedule in the feed is read", with_timetable_no_date["dateNote"])
+        dated = build_payload(
+            self.fares, self.timetable, "GRN", day=date(2026, 9, 30)
+        )
+        self.assertIsNone(dated["dateNote"])
+        # A prices-only build has no times for the caveat to qualify.
+        self.assertIsNone(build_payload(self.fares, None, "GRN")["dateNote"])
+        self.assertIn('note.id = "dateNote"', self.html)
+        self.assertIn('note.textContent = DATA.dateNote', self.html)
+        self.assertNotIn(
+            'document.getElementById("railcardNote").after(note)', self.html
+        )
 
     # -- the copy affordance that gives a row back its memory ---------------
 

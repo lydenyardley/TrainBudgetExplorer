@@ -341,7 +341,11 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 <main>
 <h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
-<p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading, with the fastest journey time and the number of changes.</p>
+<!-- C04: the opening sentence is written by renderIntro() once the build has
+     said whether a timetable was loaded. The static text below is the
+     fares-only sentence, because that is the one that cannot overstate what a
+     prices-only build shows; a build with a timetable replaces it. -->
+<p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading.</p>
 <p class="sub" id="firstUse">This page is about one station: <b>Change</b> in the heading moves to another one. Everything below narrows the destinations from here.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
@@ -400,6 +404,12 @@ __SYNTHETIC_BANNER__
 <p class="tag" id="modeNote"></p>  <p class="tag" id="priceSource" hidden></p>
 <p class="tag" id="freshness" hidden></p>
   <p class="tag" id="buildMetadata" hidden></p>
+  <!-- C03: what the ticket action costs, stated before the first ticket action
+       rather than inside a closed disclosure below it. The two paragraphs are
+       the reader's own copy from the build: the seller's handoff and, when the
+       links are tracked, the commission. -->
+  <p class="tag" id="linkNote" hidden></p>
+  <p class="tag" id="disclosure" hidden></p>
 <table>
   <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare</th><th scope="col">Conditions</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
@@ -449,9 +459,7 @@ __SYNTHETIC_BANNER__
     <p id="pricingBasis"></p>
     <p id="feedCoverage" class="tag"></p>
     <p id="railcardNote"></p>
-    <p id="linkNote" hidden></p>
     <p class="tag" id="provenance"></p>
-    <p id="disclosure" hidden></p>
   </details>
   <nav class="footnav"><a href="__BASE__/">All stations</a> <a href="__BASE__/privacy/">Privacy</a></nav>
   <p id="copyStatus" role="status" class="sr-only"></p>
@@ -1407,6 +1415,24 @@ function toggleDetail(row, destination, toggle) {
   toggle.setAttribute("aria-expanded", "true");
 }
 
+// C04: the first sentence of the page promised the fastest journey time and
+// the number of changes, and the script then removed the Time and Changes
+// columns on a prices-only build without revising the sentence. So the
+// sentence is written here, from the build's own fact, rather than shipped as
+// prose that one shape of build is lying about.
+function renderIntro() {
+  const intro = document.getElementById("pageIntro");
+  if (!intro) return;
+  if (!DATA.hasJourneys) {
+    intro.textContent = "Every destination this feed prices for the budget in the heading, " +
+      "with the fare and any conditions that come with it. This build has no timetable, " +
+      "so no times or changes are shown.";
+    return;
+  }
+  intro.textContent = "Every destination reachable by train for the budget in the heading, " +
+    "with the fastest journey time and the number of changes.";
+}
+
 function provenance() {
   // An origin the build could not price is a different page from one whose
   // prices sit outside this budget, so it gets its own first sentence and its
@@ -1474,17 +1500,31 @@ function provenance() {
   renderCoverage();
   renderModeNote();
   renderFreshness();
+  renderIntro();
   document.getElementById("railcardNote").textContent = DATA.railcardNote;
-  // What the reader has to do for themselves when the link is the plain one.
+  // C03: what the reader has to do for themselves when the link is the plain
+  // one, and what the link earns the site. Both sit above the table now, so
+  // they are read before the first ticket action rather than after a click has
+  // already left the page; the technical detail stays in the accordion.
   if (DATA.linkNote) {
     const linkNote = document.getElementById("linkNote");
     linkNote.textContent = DATA.linkNote;
     linkNote.hidden = false;
   }
+  // C04: the undated-schedule caveat is a statement about the times, so it
+  // belongs with the times -- the freshness line, above the table -- and not in
+  // the methodology accordion, which a reader has no reason to open before
+  // trusting a time.
   if (DATA.dateNote) {
     const note = document.createElement("p");
+    note.className = "tag";
+    note.id = "dateNote";
     note.textContent = DATA.dateNote;
-    document.getElementById("railcardNote").after(note);
+    // Straight after the freshness line, whether or not that line has anything
+    // to say: a hidden element still holds its place in the document, so
+    // choosing the anchor by visibility would only move the note around
+    // depending on a fact the reader did not ask about.
+    document.getElementById("freshness").after(note);
   }
   // The licence wording, when there is some. It sits above the note rather than
   // in a comment, because a term that has to be visible is not satisfied by
