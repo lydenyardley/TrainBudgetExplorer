@@ -748,11 +748,21 @@ accuracy-and-liability notice (cl. 3.3.2 with the licence's liability clause).
 They are opt-in because crediting RDG above synthetic prices would be false
 attribution — which is why the demo build carries none.
 
+**Leave `--timetable feeds/timetable` off a real-feed build.** The national
+timetable holds 1.7 million calling points, and the onward one-change search
+turns a single station page into a batch job — a Grantham build with it does not
+finish in ten minutes, and gives no output to say why. Without it the same build
+writes its pages in under ten seconds, and the page says plainly that it prices
+fares only because no timetable was supplied. The deploy workflow builds the
+daily site this way for the same reason; the timetable is audited by
+`dtd_audit.py` but not loaded for every page. Add it when you are deliberately
+building a long job and are watching it.
+
 **4. Build the site.**
 
 ```
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
-  --all-origins --notices rdg,ogl,accuracy --workers 8 --out _site/index.html
+python build_demo_page.py --feed feeds/fares --all-origins \
+  --notices rdg,ogl,accuracy --workers 8 --out _site/index.html
 ```
 
 `--all-origins` writes one page per priceable station plus the chooser; it also
