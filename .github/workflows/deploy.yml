@@ -305,8 +305,54 @@ jobs:
         with:
           path: _site
 
+  # The licence clearance, as its own job, so that it gates publication and
+  # nothing else.
+  #
+  # Audit C01 found this workflow downloading the licensed DTD feeds, building
+  # from them and publishing on any push to main or on the daily schedule, with
+  # no licence decision anywhere near it. Every other gate here is a technical
+  # one -- an audit, a count, a manifest, a test suite -- and all of them can
+  # pass while the one question the publish checklist says blocks everything
+  # else is still open. The attribution wording the workflow supplies is not an
+  # answer to it: a page can carry every required credit and still be a page
+  # nobody has cleared.
+  #
+  # So the decision is a file, licences/release-clearance.md, edited in a pull
+  # request by a person who read the terms. This job refuses the run when the
+  # file does not clear the fares feed the build below publishes.
+  #
+  # It is a job of its own rather than a step, and that placement is the
+  # design: `deploy` needs it, so the publish path stops, while the build, the
+  # test suite and the browser run stay green. A red licence gate on every push
+  # would train people to ignore red. Nothing in build_demo_page.py or run.py
+  # reads this file, so a contributor can still build, test and open a real-feed
+  # page locally with no clearance in sight -- which is what the audit's action
+  # asked to keep ungated.
+  #
+  # The second half of this gate is not code: required reviewers on the
+  # github-pages environment (Settings -> Environments). A workflow cannot
+  # require a person to be present, so the record and the environment review are
+  # both needed, and only one of them is visible in this file.
+  clearance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the release clearance
+        # `fares`, not `fares,timetable`: the build step below deliberately
+        # loads no national timetable, so the Darwin product schedule -- read
+        # as internal business purposes only -- is not published and does not
+        # need clearing. Adding --timetable to that build changes what this
+        # command is allowed to claim, which is the point of passing the shape
+        # here rather than assuming one.
+        run: python tools/check_release_clearance.py --release fares
+
   deploy:
-    needs: build
+    needs: [build, clearance]
     if: needs.build.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment:
