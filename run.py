@@ -17,14 +17,16 @@ Other useful forms:
                                      include the separate single-mode timetable cache
     python run.py --all-origins      one page per priced station
 
-A build from the real fares feed is a public build, so it carries a licence
-notice and somebody to contact. The contact defaults in the builder; the notice
-does not, because only a person who has read the terms can choose the wording:
+A build from the real fares feed is a public build, so it carries the licence
+notices and somebody to contact, and the runner passes both without being asked:
+a real feed gets every notice the builder knows and the project's own contact,
+and --notices is there to *narrow* that, not to grant it. A page you previewed
+without the notices is not the page that ships, and the builder refuses to build
+one anyway, so `python run.py` used to fail outright once the feeds were
+downloaded:
 
-    python run.py --feed feeds/fares --notices nre,rdg,ogl,accuracy
-
-    python run.py --feed feeds/fares --notices nre,rdg,ogl,accuracy \
-                  --privacy-contact privacy@example.org
+    python run.py --notices nre,ogl              a narrower set, if you know why
+    python run.py --privacy-contact privacy@example.org
 
 The server runs until you press Ctrl+C. Nothing is installed and nothing
 outside this folder is touched.
@@ -52,7 +54,7 @@ PORT_DEFAULT = 8741
 # importable; running this file as a script already has it.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from build_demo_page import RELEASE_MANIFEST_NAME  # noqa: E402
+from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME  # noqa: E402
 
 
 def _feed_exists(path: Path) -> bool:
@@ -60,6 +62,21 @@ def _feed_exists(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() == ".zip" or (
         path.is_dir() and any(path.iterdir())
     )
+
+
+def _is_synthetic(path: Path) -> bool:
+    """Is this the project's own invented fares rather than a downloaded one?
+
+    Resolved before comparing, because the same folder arrives as ``_demo_feed``
+    on the command line and as an absolute path from the default, and the two
+    must not take different sides of the question below. The answer decides
+    whether the page credits NRE for prices NRE did not supply, which is false
+    attribution rather than a missing one.
+    """
+    try:
+        return path.resolve() == (ROOT / "_demo_feed").resolve()
+    except OSError:
+        return False
 
 
 def build(args: argparse.Namespace) -> int:
@@ -88,15 +105,29 @@ def build(args: argparse.Namespace) -> int:
         cmd += ["--all-origins"]
     if args.base_path:
         cmd += ["--base-path", args.base_path]
-    # A real feed is a public build, and the builder refuses one that carries
-    # no licence notice and no way to be told about a problem with the page.
-    # Both conditions were reachable only by calling the builder by hand, which
-    # made the double-click path -- the one a first-time user actually takes --
-    # the path that could not build a real feed at all. The privacy contact
-    # itself now defaults in the builder, so --privacy-contact is for pointing
+    # A real feed is a public build, and the builder refuses one that carries no
+    # licence notice and no way to be told about a problem with the page. The
+    # contact now defaults in the builder, so --privacy-contact is for pointing
     # the page somewhere other than the project's own address.
-    if args.notices:
-        cmd += ["--notices", args.notices]
+    #
+    # The notices used to have to be passed by hand, and that was a lie about
+    # the entry point: main() swaps the default feed for the downloaded one the
+    # moment it exists, so `python run.py` produced a public build the runner
+    # then refused to pass the notices for. The build died with "this build
+    # cannot be published as configured" on the documented double-click path.
+    # So a real feed carries every notice by default, read from the builder's
+    # own table rather than repeated here: adding a notice there cannot leave
+    # this list behind. --notices still wins, and it wins exactly, which is the
+    # direction that matters -- a person can narrow what the page claims, never
+    # widen it past what the builder offers. The default therefore applies only
+    # when the flag is absent: `--notices ""` asks for no notice at all and is
+    # handed on as such, so the builder's refusal is what answers it rather than
+    # this line quietly supplying the set the person just declined.
+    notices = args.notices
+    if notices is None and not _is_synthetic(args.feed):
+        notices = ",".join(NOTICES)
+    if notices:
+        cmd += ["--notices", notices]
     if args.privacy_contact:
         cmd += ["--privacy-contact", args.privacy_contact]
 
@@ -198,8 +229,8 @@ def main() -> int:
     parser.add_argument("--base-path", default=None,
                         help="path prefix if the site will not sit at the domain root")
     parser.add_argument("--notices", default=None,
-                        help="licence and attribution notices for a real-feed build, "
-                             "e.g. nre,rdg,ogl,accuracy; a public build is refused without them")
+                        help="which licence and attribution notices to carry; a real-feed "
+                             "build takes all of them by default, and this narrows the set")
     parser.add_argument("--privacy-contact", default=None,
                         help="who to contact about a problem with the page; overrides "
                              "the project's own contact in build_demo_page.py")
