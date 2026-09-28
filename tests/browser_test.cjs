@@ -1785,6 +1785,20 @@ async function runPage(browser, index, given, file, body, base) {
         // out here would be an undefined reference that aborts the whole run
         // rather than failing one check.
         unlisted: ref && ref.unlisted ? ref.unlisted.slice() : [],
+        // The codes this page's own rows carry, collected from the page's own
+        // data. The check reports on what is here, so the invariant can be
+        // asserted here rather than compared against a number this suite would
+        // have to be told.
+        shownCodes: (() => {
+          const codes = new Set();
+          for (const key of ["destinations", "singleDestinations", "anytimeDestinations"]) {
+            for (const row of DATA[key] || []) {
+              const code = (row.restrictionCode || "").trim().toUpperCase();
+              if (code) codes.add(code);
+            }
+          }
+          return [...codes].sort();
+        })(),
         above: line
           ? Boolean(line.compareDocumentPosition(document.getElementById("rows")) &
               Node.DOCUMENT_POSITION_FOLLOWING)
@@ -1804,6 +1818,15 @@ async function runPage(browser, index, given, file, body, base) {
     check(
       "no date in it is unrenderable",
       !/undefined|NaN|\[object|null/.test(reference.text),
+      reference.text
+    );
+    // The portal sends no Last-Modified on these feeds, so the sentence has to
+    // read properly with no publication date -- the usual case, not the edge
+    // one. Joining a clause that is not there with a comma leaves "restriction
+    // feed, still publishes", which is what a reader of the real page saw.
+    check(
+      "the sentence still reads when the portal gives no publication date",
+      !/feed, (still|no longer)\b/.test(reference.text),
       reference.text
     );
     check(
@@ -1830,6 +1853,25 @@ async function runPage(browser, index, given, file, body, base) {
       "the portal is only credited with publishing when conditions were compared",
       !claimsAll || reference.compared > 0,
       `${reference.text} (compared: ${reference.compared})`
+    );
+    // The count has to be the conditions on this page's own rows, not every
+    // code the origin's flows could carry. Those differ on the real feed -- 32
+    // against 10 -- and a page reporting on conditions it does not show is
+    // asking a reader to take on trust the one claim they cannot look up.
+    check(
+      "the conditions it reports on are the ones this page's rows carry",
+      reference.status !== "checked" && reference.status !== "unpublished"
+        ? true
+        : reference.compared === reference.shownCodes.length,
+      `compared: ${reference.compared}, on the page: ${reference.shownCodes.join(", ")}`
+    );
+    // And when it names a condition the portal has retired, the reader has to
+    // be able to find that condition here. A named code the page does not show
+    // is an alarm about somebody else's paperwork.
+    check(
+      "and every condition it names is one the reader can find here",
+      reference.unlisted.every((code) => reference.shownCodes.includes(code)),
+      `unlisted: ${reference.unlisted.join(", ")}, on the page: ${reference.shownCodes.join(", ")}`
     );
     check(
       "an unchecked reference feed says so rather than reading as confirmation",

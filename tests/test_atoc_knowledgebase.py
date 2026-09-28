@@ -33,7 +33,13 @@ from atoc_knowledgebase import (
     check_restrictions,
     load_ticket_restrictions,
 )
-from build_demo_page import _iso_day, describe_restriction_check, knowledgebase_dates
+from build_demo_page import (
+    _iso_day,
+    describe_restriction_note,
+    knowledgebase_dates,
+    reference_fingerprint,
+    restriction_codes_shown,
+)
 from make_synthetic_feed import build_synthetic_knowledgebase
 
 
@@ -335,7 +341,22 @@ class WordingTest(unittest.TestCase):
     """The four answers are worded once; these hold that wording to its facts."""
 
     def _describe(self, **kwargs) -> str:
-        return describe_restriction_check(kb.RestrictionCheck(**kwargs))
+        # The console sentence reads the note the page carries, so the test
+        # carries one too. That is the property being kept: what an operator
+        # reads in the terminal and what a reader sees cannot be two different
+        # answers about the same conditions.
+        note = {
+            "status": ABSENT,
+            "compared": 0,
+            "listed": 0,
+            "missing": 0,
+            "unlisted": [],
+            "note": "",
+            "published": "",
+            "checkedAt": "",
+        }
+        note.update(kwargs)
+        return describe_restriction_note(note)
 
     def test_the_confirmed_answer_names_how_many_conditions_it_covered(self) -> None:
         said = self._describe(
@@ -434,17 +455,40 @@ class ParallelPathTest(unittest.TestCase):
     contradicted a single-page build of the same feed.
     """
 
-    def test_the_worker_path_receives_the_parents_check(self) -> None:
+    def test_the_worker_path_receives_the_parents_parsed_feed(self) -> None:
+        # The feed is delivered once per process rather than re-read per page,
+        # and the answer is worked out inside the worker from the page's own
+        # rows -- so the worker needs the feed itself, not a verdict.
         import build_workers
 
         source = Path(build_workers.__file__).read_text(encoding="utf-8")
-        self.assertIn(
-            "restriction_reference=_WORKER.get(\"restriction_reference\")", source
-        )
+        self.assertIn("reference=_WORKER.get(\"reference\")", source)
+        self.assertIn('_WORKER["reference"] = reference', source)
+
+    def test_both_ways_into_a_page_are_given_the_same_state(self) -> None:
+        # The pool initialiser and the in-process build both have to hand the
+        # worker its reference feed. Only the pool path did, so a
+        # --workers 1 --all-origins build with --knowledgebase told every page
+        # that no reference feed had been named while the same build across
+        # several processes checked every one of them. Asserted on the source
+        # because the failure is a missing call on one of two paths, which is
+        # invisible to any test that builds a page one way.
+        import build_demo_page as bdp
+        import build_workers
+
+        worker_source = Path(build_workers.__file__).read_text(encoding="utf-8")
+        build_source = Path(bdp.__file__).read_text(encoding="utf-8")
+        self.assertIn("def configure_worker(shared: dict", worker_source)
+        # The initialiser delegates to it rather than duplicating it...
+        self.assertIn("configure_worker(shared, reference)", worker_source)
+        # ...and so does the in-process branch.
+        self.assertIn("configure_worker(shared, reference)", build_source)
+        # Neither path may clear and refill the worker state on its own again.
+        self.assertNotIn("_WORKER.clear()", build_source)
 
     def test_the_resumable_signature_distinguishes_two_different_answers(self) -> None:
         # Otherwise a resumed build could keep pages built against a reference
-        # feed that has since disagreed, mixing two answers inside one release.
+        # feed that has since changed, mixing two answers inside one release.
         import build_demo_page as bdp
 
         shared = {
@@ -453,14 +497,9 @@ class ParallelPathTest(unittest.TestCase):
             "adults": 2, "network": None, "advertiser_id": None, "publisher_id": "",
             "departures": 5, "index": [], "feed": "f", "timetable": None, "analytics": None,
         }
-        absent = dict(shared, restriction_reference=RestrictionCheck(status=ABSENT))
-        differs = dict(
-            shared,
-            restriction_reference=RestrictionCheck(
-                status=UNPUBLISHED, compared=3, listed=2, missing=1, unlisted=("B3",)
-            ),
-        )
-        again = dict(shared, restriction_reference=RestrictionCheck(status=ABSENT))
+        absent = dict(shared, reference_fingerprint="absent")
+        differs = dict(shared, reference_fingerprint="2026-09-26|2026-09-26|abc123")
+        again = dict(shared, reference_fingerprint="absent")
         self.assertNotEqual(
             bdp.resumable_signature(absent, []), bdp.resumable_signature(differs, [])
         )
@@ -468,6 +507,40 @@ class ParallelPathTest(unittest.TestCase):
         self.assertEqual(
             bdp.resumable_signature(absent, []), bdp.resumable_signature(again, [])
         )
+
+    def test_the_fingerprint_is_stable_for_one_feed_and_moves_with_it(self) -> None:
+        # The signature is JSON-serialised, so the fingerprint has to be a
+        # value with a stable serialised form. A parsed feed's repr carries an
+        # address: serialising the feed itself would give every run a different
+        # signature, and a build that never resumes is a build that rebuilds
+        # 2,700 pages for nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            loaded = load_ticket_restrictions(
+                build_synthetic_knowledgebase(Path(tmp) / "a", omit=None)
+            )
+            dropped = load_ticket_restrictions(
+                build_synthetic_knowledgebase(Path(tmp) / "b", omit="1A")
+            )
+            one = reference_fingerprint(loaded, "2026-09-26", "2026-09-26")
+            self.assertEqual(one, reference_fingerprint(loaded, "2026-09-26", "2026-09-26"))
+            self.assertNotEqual(one, reference_fingerprint(dropped, "2026-09-26", "2026-09-26"))
+            self.assertNotEqual(one, reference_fingerprint(loaded, "2026-09-27", "2026-09-26"))
+            self.assertEqual(reference_fingerprint(None, "", ""), "absent")
+
+    def test_the_claim_is_about_the_rows_on_the_page(self) -> None:
+        # The check reports on the conditions a reader can find on the page.
+        # Asking the feed for every code the origin's flows could carry made a
+        # station page report on 32 conditions while showing 4, naming codes a
+        # reader could not see anywhere on it.
+        rows = [
+            {"restrictionCode": "3V"},
+            {"restrictionCode": "B3"},
+            {"restrictionCode": ""},
+            {"restrictionCode": None},
+            {"restrictionCode": "3V"},
+        ]
+        self.assertEqual(restriction_codes_shown(rows), {"3V", "B3"})
+        self.assertEqual(restriction_codes_shown([]), set())
 
 
 class FixtureTest(unittest.TestCase):

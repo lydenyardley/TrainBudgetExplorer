@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from atoc_fares import FaresDb
+from atoc_knowledgebase import Knowledgebase
 from atoc_timetable import TimetableDb
 
 from build_demo_page import build_payload, render_page, with_base
@@ -25,9 +26,37 @@ from build_demo_page import build_payload, render_page, with_base
 _WORKER: dict = {}
 
 
-def init_worker(feed: str, timetable: str | None, shared: dict) -> None:
+def configure_worker(shared: dict, reference: Knowledgebase | None = None) -> None:
+    """Fill a process's worker state from the build config.
+
+    Both ways into a page -- the pool initialiser and the in-process build --
+    come through here, so the two cannot drift. They did once: the reader was
+    handed to the initialiser alone, and a ``--workers 1 --all-origins`` build
+    with ``--knowledgebase`` then told every one of its pages that no reference
+    feed had been named, while the same build across several processes checked
+    every one of them. The in-process branch injects live databases rather than
+    paths, but that is the only difference between the two, so it is the only
+    thing it sets afterwards.
+
+    The parsed feed travels beside the config rather than inside it: the config
+    dict is what the parent serialises into the resume signature, and a parsed
+    feed's repr carries an address, which would make every run a different
+    build. It is delivered once per process, like the feeds, and never pickled
+    per job.
+    """
+
     _WORKER.clear()
     _WORKER.update(shared)
+    _WORKER["reference"] = reference
+
+
+def init_worker(
+    feed: str,
+    timetable: str | None,
+    shared: dict,
+    reference: Knowledgebase | None = None,
+) -> None:
+    configure_worker(shared, reference)
     # Parallel builds persist the shared fare metadata and one index per
     # origin first (audit B1), so a worker restores the slice it is about to
     # render instead of re-parsing all 8.5M flow lines. Without those keys the
@@ -73,12 +102,14 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         publisher_id=_WORKER["publisher_id"],
         departure_limit=_WORKER["departures"],
         built_at=_WORKER.get("built_at"),
-        # The parent's one check, handed down. It is a single comparison
-        # against a single reference document, so it is made once for the run
-        # rather than per page: recomputing it per origin would re-parse the
-        # same XML up to 2,700 times, and would let two pages of one release
-        # disagree about what the reference feed said.
-        restriction_reference=_WORKER.get("restriction_reference"),
+        # The parent's parsed reference feed, handed down so each page answers
+        # from its own rows without any worker re-reading the XML. The answer
+        # differs per page by design: it is about the conditions that page
+        # shows, and a claim about one station printed on 2,700 pages would be a
+        # claim none of the others earned.
+        reference=_WORKER.get("reference"),
+        reference_published=_WORKER.get("reference_published", ""),
+        reference_checked=_WORKER.get("reference_checked", ""),
     )
     base_path = _WORKER["base_path"]
     payload["stations"] = [

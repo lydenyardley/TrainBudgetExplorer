@@ -376,9 +376,10 @@ def check_restrictions(
     published: str = "",
     checked_at: str = "",
 ) -> RestrictionCheck:
-    """Whether the portal still publishes every condition this build quotes.
+    """Whether the portal still publishes every condition the claim covers.
 
-    *codes* is the set of restriction codes the build's own fares carry.
+    *codes* is the set of restriction codes the claim is about. For a page that
+    is the codes its own rows show, which is the set a reader can check.
 
     What is compared is *publication*, not wording, and that is not a
     simplification -- it is the only thing this feed can honestly be asked. Run
@@ -433,7 +434,7 @@ def check_restrictions(
     if compared == 0:
         return RestrictionCheck(
             status=UNKNOWN,
-            note="this build quotes no restriction condition the reference feed could speak to",
+            note="this page quotes no restriction condition the reference feed could speak to",
             published=published,
             checked_at=checked_at,
         )

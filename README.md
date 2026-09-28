@@ -217,11 +217,17 @@ The four answers, and none of them is a fifth:
 - **could not be checked**, with the reason;
 - **not checked**, when no reference feed was named.
 
-The count is the conditions *this build's fares carry*, taken from the flows
-rather than from the feed's own header list. The real feed holds 841 headers,
-Grantham's fares carry 32 of them, and the page puts four on screen: a check
-built from the feed's list claims to have covered 628 conditions on a page that
-shows 4.
+The count is the conditions **the page's own rows carry**, gathered from those
+rows rather than from the feed's header list or from the origin's flows. All
+three have been the wrong answer at some point, and the real feed shows why: it
+holds 841 headers, Grantham's flows carry 32 codes between them, and the page's
+rows show 10. A check built from the feed's list claimed to have covered 628
+conditions on a page that shows 10; a check built from the flows named `2H` and
+`HR` as retired while the page displayed neither. The count spans the ticket
+modes the page offers, because all of them are on it: on Grantham's page four
+codes sit in the all-returns mode and eight in the singles mode, and the default
+reviewed Anytime Day Return set carries none at all — which is what that set is
+for.
 
 **The check reports its own uncertainty, and that is the design.** The
 Knowledgebase feeds' exact element names are not published in a form this
