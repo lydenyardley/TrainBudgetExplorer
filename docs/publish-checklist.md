@@ -63,13 +63,12 @@ selection. The endpoint examples and the current terms are recorded in
 - [x] Read the current DTD/NRE terms, not only the older marketplace schedules —
       **28 September 2026**, from the copy in `licences/` (footer dated
       24/09/2026). They grant publication and commercial exploitation outright
-- [ ] Read the **Developer Guidelines / brand pack** the terms name.
-      `nationalrail.co.uk/static/documents/Developer_Guidelines.pdf` returns 404
-      (28 September 2026), and the live NRE developer pages say only that
-      attribution "should be demonstrated in line with the NR Brand Guidelines
-      and Logos" and that brand materials are "subject to permission from
-      National Rail". The exact "Powered by National Rail Enquiries" treatment
-      is therefore **unverified**, and nothing has been invented to fill the gap
+- [x] Read the **Developer Guidelines / brand pack** the terms name. The URL
+      they give (`nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`)
+      returns 404, but the document is published: the developer page links the
+      **Developer Brand Guidelines** PDF inside a ZIP with the logos, and it
+      was read on 28 September 2026. What it requires is quoted verbatim in
+      `docs/dtd-licensing-and-data-access.md`
 - [x] Recorded the answers below, in writing, with the date read
 - [x] Re-read the Darwin timetable product — **read 22 September 2026**, see below
 - [x] The fares data has a reviewed selector, not the broad query: `publishable_destinations_within`
@@ -97,7 +96,7 @@ analogy.
 | Knowledgebase Ticket Types data feed | Data Sharing Agreement | **yes** — "freely available or otherwise distributed to third parties" | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Knowledgebase Ticket Restrictions data feed | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Fare Locations Reference Data v1.3 | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
-| **NRDP/DTD fares and timetable** (RSPS5045 fares and public timetable ZIPs) | NRDP terms, read from the filed copy | **yes** — "copy, publish, distribute and transmit", and commercial exploitation in an End User Product | NRE source credit (done, `--notices nre`); the **Powered by National Rail Enquiries** treatment/logo the terms' Developer Guidelines govern is unverified — the guidelines 404 | **nil** — the charging document confines charges to Darwin Webservice feeds, which this build never calls | 28 Sep 2026 |
+| **NRDP/DTD fares and timetable** (RSPS5045 fares and public timetable ZIPs) | NRDP terms, read from the filed copy | **yes** — "copy, publish, distribute and transmit", and commercial exploitation in an End User Product | NRE source credit, the **Powered by National Rail Enquiries** logo and a link to NRE (both done, `--notices nre`) | **nil** — the charging document confines charges to Darwin Webservice feeds, which this build never calls | 28 Sep 2026 |
 
 The licences themselves are in `licences/`, one PDF per product, with the register that
 these rows are drawn from and a test that keeps the two in step.
@@ -126,11 +125,19 @@ answered, and answered as nil.
 - [x] **NRE is acknowledged as source** in the footer of every generated route,
       in the terms' own words (`--notices nre`), in the template so no
       regeneration can drop it
-- [ ] The required **Powered by National Rail Enquiries** treatment/logo is
-      visible in the generated page. The Developer Guidelines that fix the
-      wording are not published, so this is not inventable; it needs the
-      guidelines, or written permission from National Rail for the brand
-      materials, which their own developer pages say it requires
+- [x] The required **Powered by National Rail Enquiries** treatment/logo is
+      visible in the generated page. The Developer Guidelines are published
+      from `nationalrail.co.uk/developers/` — not from the URL the terms name,
+      which 404s — and were read on 28 September 2026. The mark is the file they
+      supply, inlined so the self-contained page still shows it, linked to
+      NRE's site, and placed underneath the information, which is what they
+      require where the feed is the page's predominant information
+- [ ] The **Darwin-consistency** requirement is still unanswered. The
+      guidelines do not define a "forecasted" time for a licensee, and the terms
+      require published times to be consistent with Darwin forecasts while this
+      page computes them from a static schedule. The Developer Pack is evidence
+      that the static feed carries no live movements and that Darwin's forecasts
+      are something it computes, which is an argument rather than an answer
 - [ ] **The privacy contact is confirmed for a public service.** The build now
       carries a real address so a real-feed build works locally without an
       operator having to supply one: `lydenyardley+trainbudgetexplorer@example.net`,

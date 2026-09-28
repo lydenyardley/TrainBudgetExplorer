@@ -249,6 +249,62 @@ returned their files, so the account holds it. The Knowledgebase feeds, a
 separate entitlement, were downloaded on 28 September 2026 and are **not** the
 evidence for this one.
 
+## The Developer Brand Guidelines, read 28 September 2026
+
+The terms name `nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`,
+which returns 404. The document they mean is published from
+<https://www.nationalrail.co.uk/developers/>, which links a **Developer Brand
+Guidelines** PDF inside a ZIP with the logos — "Use of these logos and brand
+materials are subject to permission from National Rail" refers to the other
+brand materials, not to this attribution, which the guidelines themselves
+instruct. Both were downloaded on 28 September 2026:
+
+- `DEVELOPERS_BRAND_GUIDELINES_AND_LOGOS_SEPTEMBER_2026.zip` → "FB-6184
+  Developer Brand Guidelines - National Rail .pdf" and
+  `National Rail Logos/Powered by National Rail.svg` (8.3KB, paths only, no
+  fonts or external references).
+- `NRE_Feeds_Developer_Pack_v.01-05.pdf` — a technical description of the feeds,
+  last updated 11 October 2019. It carries no attribution requirement, so it is
+  not the document the terms name.
+
+**Licence condition, verbatim:** "You must acknowledge National Rail as the
+source of Information in accordance with this document, including Developer
+brand Guidelines".
+
+**Attribution, verbatim:** "The user of NRE feeds (You) must acknowledge NRE as
+the source of information, where possible, by providing a link to the NRE
+website for more information and by displaying the 'Powered by National Rail
+Enquiries' logo in accordance with the Brand Guidelines and the following
+conditions", followed by:
+
+- "Where an NRE feed is displayed as the predominant or standalone information
+  in Your product or service, NRE attribution should be shown directly
+  alongside, above or underneath the Information derived from the feed";
+- "Where an NRE feed is combined with other data feeds and/or is not the primary
+  information being displayed, NRE branding may be shown on an attribution page";
+- "Where NRE feeds are displayed on a dot matrix screen, the words 'Powered by
+  National Rail Enquiries' should be used as static or scrolling text";
+- "The logo must be sized appropriately to the screen displaying information and
+  must be legible to viewers";
+- an exemption route: where the recommendations cannot be followed, or would
+  harm the end user's experience, contact
+  `NationalRailDatafeeds@raildeliverygroup.com` to discuss alternatives or an
+  exemption.
+
+This page's fares and times *are* the predominant information, so the first
+condition applies and an attribution page would not do: the mark sits in the
+footer, directly underneath the results, with the link to NRE beside it. The
+`Powered by` mark is used, not the National Rail wordmark, because the
+wordmark is the brand's own and this page is not National Rail's.
+
+Two things the guidelines do not answer, and which no attribution can: whether
+a static computed time is a "forecasted" time under the terms, and how
+Time-Bound Data must be displayed. The Developer Pack is evidence on the first
+— it describes the Darwin Timetable feed as republished schedules that "do not
+include any information about live train movements or delays", and separately
+describes Darwin as *forecasting* the remainder of each schedule from matched
+external forecasts — which is an argument, not an answer.
+
 ## The charging document, read 28 September 2026
 
 The Usage Charging Document v06-01 recorded in the sources list above is
@@ -279,28 +335,10 @@ this one.
 The charging document is the basis for the zero-cost conclusion, and it now
 answers the question rather than leaving it open: see "The charging document,
 read 28 September 2026" below. The current NRE developer terms also require
-acknowledgement of NRE as the source. Where an NRE feed is the predominant or
-standalone data source, the brand treatment this project has recorded is:
-
-> Powered by National Rail Enquiries
-
-**That exact wording is not verifiable from any document NRE currently
-publishes.** The Developer Guidelines the terms name
-(`nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`) returned 404 on
-28 September 2026, and the NRE developer pages that are live say only that
-attribution "should be demonstrated in line with the NR Brand Guidelines and
-Logos" and that brand materials are "subject to permission from National Rail".
-The wording above is this project's record of what the brand pack is said to
-ask for, kept because dropping it would lose the requirement; it is not
-authority for it, and it has not been used in the page.
-
-The page therefore carries the acknowledgement the terms actually require
-(`--notices nre`) and no logo, because inventing a brand treatment NRE has not
-granted is worse than omitting one. If NRE supplies the guidelines, the logo
-must be included with the static HTML output (inlined or otherwise included in
-the self-contained page), alongside, above, or below the relevant information as
-the pack requires. Do not imply that RDG/NRE endorses the page. If commission is
-enabled, the page must also disclose the affiliate relationship.
+acknowledgement of NRE as the source, and the Developer Brand Guidelines that
+the terms point to are published — not at the URL the terms name, which 404s,
+but from the developer page. What they require is set out verbatim in "The
+Developer Brand Guidelines" below, and the page now carries it.
 
 The broad OGL wording in a Darwin document does not override a product-specific
 schedule. This is why the implementation treats the DTD terms and current
@@ -349,16 +387,15 @@ Before a real-data page is published:
 
 - [x] DTD fares and timetable downloads both succeed with the same account —
       `feeds/download-manifest.json`, 24 September 2026.
-- [x] The current DTD/NRE terms have been reread, **28 September 2026**; the
-      Developer Guidelines and the brand pack they name return 404, and the
-      exact **Powered by National Rail Enquiries** treatment could not be
-      verified from any published NRE document.
+- [x] The current DTD/NRE terms have been reread, **28 September 2026**, and the
+      Developer Brand Guidelines they point to have been found and read — they
+      are published from `nationalrail.co.uk/developers/` rather than from the
+      URL the terms name, which 404s.
 - [x] The page visibly acknowledges NRE as source — `--notices nre`, in the
       footer of every generated route, unprompted and without a click.
-- [ ] The **Powered by National Rail Enquiries** treatment/logo is in the page.
-      Not inventable while the guidelines are unpublished: the wording is
-      recorded above as a requirement, not as authority, and the page carries
-      the acknowledgement the terms require instead.
+- [x] The **Powered by National Rail Enquiries** logo is in the page, inlined
+      from the file NRE supplies, linked to NRE's site, placed underneath the
+      information the feed supplied, and legible in both palettes.
 - [x] KB-derived station/ticket-reference data is credited to **Rail Delivery
       Group, via Rail Data Marketplace** — `--notices rdg`, worded to the
       Knowledgebase and fare-locations products it actually covers.
