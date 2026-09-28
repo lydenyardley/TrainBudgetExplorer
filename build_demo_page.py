@@ -1396,11 +1396,18 @@ def build_payload(
             "offPeak": one.off_peak,
             "restrictionCode": one.restriction_code,
             "routeCode": one.route_code,
+            # C08: a code says which condition, not what it permits. The
+            # description is the feed's own wording for the code, and the
+            # fallback says plainly that the feed has none, so a reader is
+            # never told to "check the seller" as if that were a decoded rule.
             "restrictionDescription": (
                 fares.restrictions.headers[one.restriction_code].description
                 if one.restriction_code in fares.restrictions.headers
                 else (
-                    "Feed restriction details; confirm the conditions before buying"
+                    "This fare carries restriction "
+                    + one.restriction_code
+                    + ", which this feed does not describe, so the condition has to be read "
+                    "from the seller's own terms"
                     if one.restriction_code
                     else ""
                 )
@@ -1444,6 +1451,25 @@ def build_payload(
         destination_row(crs, one, quality="unrestricted Anytime Day Return")
         for crs, one in sorted(anytime_tickets.items(), key=lambda item: item[1].best_pence)
     ]
+
+    # C08: the feed's own outward and return validity for each restriction
+    # code these rows carry. Keyed by code and held once, because the rows
+    # already carry the code: repeating the wording on every row would put the
+    # same sentence on a page 1,678 times, which is what the railcard rule map
+    # below already had to be fixed for.
+    restriction_validity: dict[str, dict[str, str]] = {}
+    for collection in (destinations, single_destinations, anytime_destinations):
+        for row in collection:
+            code = row["restrictionCode"]
+            header = fares.restrictions.headers.get(code) if code else None
+            if header is None or code in restriction_validity:
+                continue
+            if not (header.outward_text or header.return_text):
+                continue
+            restriction_validity[code] = {
+                "outwardText": header.outward_text,
+                "returnText": header.return_text,
+            }
 
     excluded_codes = sorted({row.ticket_code for row in excluded_itx})
     unpriced_note = (
@@ -1554,6 +1580,10 @@ def build_payload(
         "railcardEligibleCount": railcard_eligible_count,
         "railcardAvailable": railcard_eligible_count > 0,
         "railcardRules": railcard_rules,
+        # C08: the reader-facing validity behind a restriction code, once per
+        # code. The page resolves a row's code against this rather than each
+        # row repeating the same strings.
+        "restrictionValidity": restriction_validity,
         "railcardParty": railcard_party,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
