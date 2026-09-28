@@ -858,6 +858,17 @@ carries no controls; it is a route every footer on the site links to, and the
 deploy workflow now drives it (audit suggestion S41; ADR-0027 for the suite
 itself).
 
+**The reader picks the palette, and dark is the default.** The page is read at
+night, on a phone, on a train, so it paints dark unless the reader says otherwise,
+and the switch in the top right says "Dark theme" with the state a screen reader
+reads. The choice is remembered per browser and applied before the first paint,
+so no visit flashes the other palette. Each colour token is written once as a
+`light-dark()` pair with its plain light value in front of it, which is what an
+older browser falls back to; a token cannot be added to one palette and forgotten
+in the other. The control ships hidden and the script reveals it, because a
+button that cannot work without JavaScript is a control that lies
+(`adr/ADR-0037-the-reader-chooses-the-palette.md`).
+
 **A phone gets the journey, not the table.** Below 44rem the budget slider
 stays open, the results stay beneath it, and the three refinements — ticket
 type, party, destination type — fold behind one control whose label states what

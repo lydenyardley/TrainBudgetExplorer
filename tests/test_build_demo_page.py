@@ -108,6 +108,25 @@ def tearDownModule() -> None:
         shutil.rmtree(cache, ignore_errors=True)
 
 
+
+def page_script(html: str) -> str:
+    """The page's own script, which is the last one in the file.
+
+    The theme block is injected into the head so the palette is decided before
+    the first paint, so the *first* script is no longer the page's script, and a
+    test reading that slice is reading the theme block. The page's own script
+    is the last one, and this says so in one place instead of at fourteen.
+    """
+    return html.split("<script>")[-1].split("</script>")[0]
+
+
+def page_markup(html: str) -> str:
+    """The page's markup: everything before the page's own script opens."""
+    if "<script>" not in html:
+        return html
+    return html[: html.rindex("<script>")]
+
+
 class DemoPageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -883,7 +902,7 @@ class DemoPageTest(unittest.TestCase):
             railcardEligibleCount=0,
         )
         html = render_page(payload, budget_pounds=20)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn('help.textContent = ""', script)
         self.assertIn("help.hidden = true", script)
         self.assertIn("railcardChoice.hidden = true", script)
@@ -916,7 +935,7 @@ class DemoPageTest(unittest.TestCase):
         # loaded the Time and Changes columns do not exist at all.
         payload = build_payload(self.fares, None, "GRN")
         html = render_page(payload, budget_pounds=20)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn("if (!DATA.hasJourneys)", script)
         self.assertIn("nth-child(3), thead th:nth-child(4)", script)
         # The detail rows must span whatever the table actually has.
@@ -925,7 +944,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("no timetable loaded", html)
 
     def test_a_page_with_times_keeps_all_six_columns(self) -> None:
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         self.assertIn("const columnCount", script)
         self.assertIn("duration(destination.minutes)", script)
 
@@ -1337,12 +1356,32 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn("__SHARED_CSS__", template, f"{name} shipped the placeholder")
         # One palette, one focus ring, one footer -- each stated once in the
         # source, and present in all three rendered routes.
-        # C14: --warn is defined in both schemes, which is the whole point --
-        # a token only the light block sets is a token the dark palette never
-        # redefines, and that was the defect.
-        self.assertIn("--warn: #9a6700;", SHARED_CSS)
-        self.assertIn("--warn: #f0b35b;", SHARED_CSS)
-        self.assertEqual(SHARED_CSS.count(":root {"), 2, "a token block and its dark counterpart")
+        # C14 again, in the new shape: a token with a light value but no
+        # light-dark() counterpart is a token the dark palette never sets, and
+        # that was the defect. The plain value first is deliberate -- it is what
+        # a browser without light-dark() falls back to -- so both are required.
+        for token in ("--bg", "--fg", "--line", "--muted", "--accent", "--ochre", "--warn", "--field", "--logo-plate"):
+            with self.subTest(token=token):
+                self.assertIn(f"{token}: ", SHARED_CSS)
+                self.assertIn(f"{token}: light-dark(", SHARED_CSS, f"{token} has no dark counterpart")
+        self.assertEqual(SHARED_CSS.count(":root {"), 1, "one token block, both schemes in it")
+        self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', SHARED_CSS)
+        self.assertIn(':root[data-theme="light"] { color-scheme: light; }', SHARED_CSS)
+        self.assertNotIn("prefers-color-scheme: dark", SHARED_CSS, "the scheme is chosen, not inherited")
+        # The switch, on every route, hidden until the script that wires it has
+        # run: a control that cannot work without JavaScript must not be on the
+        # page for a reader who has none.
+        for name, template in (("chooser", CHOOSER_TEMPLATE), ("station", TEMPLATE), ("privacy", PRIVACY)):
+            with self.subTest(route=name):
+                self.assertIn('id="themeToggle"', template)
+                self.assertIn('role="switch"', template)
+                self.assertIn("hidden>", template.split('id="themeToggle"')[1][:120])
+                self.assertIn("toggle.hidden = false", template)
+                self.assertIn('localStorage.getItem("tbe-theme")', template)
+                # Dark is the default, so the very first thing the script does
+                # with an empty store is choose dark.
+                self.assertIn("var dark = true;", template)
+                self.assertIn('document.documentElement.dataset.theme = dark ? "dark" : "light";', template)
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", SHARED_CSS)
         chooser = build_demo_page.render_chooser([], budget_pounds=60)
         privacy = build_demo_page.render_privacy(
@@ -1352,7 +1391,12 @@ class DemoPageTest(unittest.TestCase):
         )
         for name, page in (("chooser", chooser), ("station", self.html), ("privacy", privacy)):
             self.assertIn("--accent: #14509b;", page, f"{name} lost the shared palette")
-            self.assertIn("prefers-color-scheme: dark", page, f"{name} lost the dark palette")
+            # The dark palette is a light-dark() pair now, not a media query, so
+            # what a route has to carry is both values of one token.
+            self.assertIn(
+                "--accent: light-dark(#14509b, #7db4f5);", page, f"{name} lost the dark palette"
+            )
+            self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', page, f"{name} cannot be told to paint dark")
             # C25: the shared block holds the 44px minimum on the anchor, not
             # only on a container around it, so the privacy page's single
             # navigation link is a 44px target rather than a 24px one that
@@ -1399,7 +1443,8 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("routes in the accessibility matrix", suite)
         # The two page defects the matrix found are fixed in the page itself,
         # so the numbers above are the ones the suite measures.
-        self.assertIn("--muted: #a7b2c0", self.html)
+        # The dark value of --muted, as the second half of its light-dark() pair.
+        self.assertIn("--muted: light-dark(#5b6472, #a7b2c0)", self.html)
         self.assertIn(".synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }", self.html)
         self.assertIn(".feed-record summary { display: inline-flex; align-items: center; min-height: 24px;", self.html)
 
@@ -1507,7 +1552,7 @@ class DemoPageTest(unittest.TestCase):
         )
         html = render_page(payload, budget_pounds=20)
         self.assertIn('id="unpriced"', html)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn("We couldn't price any journeys from", script)
         # The way forward is the chooser, as a real link, and it honours the
         # site's base path like every other internal link.
@@ -1539,7 +1584,7 @@ class DemoPageTest(unittest.TestCase):
             stations=[],
         )
         html = render_page(payload, budget_pounds=20)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn("Nothing was priced from any station", script)
         # No chooser exists, so no way-forward link is offered either.
         self.assertIn('if (DATA.stations && DATA.stations.length)', script)
@@ -1553,7 +1598,7 @@ class DemoPageTest(unittest.TestCase):
             unpricedNote="The feed reaches 2 destinations, cheapest fare an ITX placeholder.",
         )
         html = render_page(payload, budget_pounds=20)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn('unpriced.append(intro + why + " ", link, ".");', script)
         self.assertIn('unpriced.textContent = intro + why + " Nothing was priced', script)
         self.assertEqual(embedded_payload(html)["unpricedNote"], payload["unpricedNote"])
@@ -1588,9 +1633,9 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn('aria-label="Change starting station"', self.html)
         # The options are real anchors, not a custom listbox.
         self.assertIn('link.href = station.href', self.html)
-        self.assertIn('id="destinationTypes"', self.html.split("<script")[0])
-        self.assertIn('name="destinationType" value="city"', self.html.split("<script")[0])
-        self.assertIn('name="destinationType" value="seaside"', self.html.split("<script")[0])
+        self.assertIn('id="destinationTypes"', page_markup(self.html))
+        self.assertIn('name="destinationType" value="city"', page_markup(self.html))
+        self.assertIn('name="destinationType" value="seaside"', page_markup(self.html))
 
     def test_the_nre_credit_is_the_mark_the_guidelines_name(self) -> None:
         # The Developer Brand Guidelines require the "Powered by National Rail
@@ -1666,7 +1711,7 @@ class DemoPageTest(unittest.TestCase):
                 for row in self.payload.get(mode, [])
             ]
         html = render_page(payload, budget_pounds=50)
-        head = html.split("<script>")[0]
+        head = page_markup(html)
         self.assertIn('name="destinationType" value="city"', head)
         self.assertNotIn('name="destinationType" value="seaside"', head)
         self.assertNotIn('name="destinationType" value="university"', head)
@@ -1692,14 +1737,14 @@ class DemoPageTest(unittest.TestCase):
             dict(row, destinationTypes=["city", "heritage"], destinationType="city")
             for row in self.payload["singleDestinations"]
         ]
-        head = render_page(payload, budget_pounds=50).split("<script>")[0]
+        head = page_markup(render_page(payload, budget_pounds=50))
         self.assertIn('name="destinationType" value="heritage"', head)
 
     def test_the_chips_are_narrowed_for_the_mode_on_screen(self) -> None:
         # The narrowing reads the active list rather than all three, and runs
         # before the filter is asked what is checked: a chip the list cannot
         # support must not be part of what matchesType is matching.
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         self.assertIn("function syncDestinationTypeChips()", script)
         sync = script.split("function syncDestinationTypeChips()")[1].split("\n}")[0]
         self.assertIn("activeDestinations()", sync)
@@ -1724,7 +1769,7 @@ class DemoPageTest(unittest.TestCase):
         # prices one place -- it caps the budget at that destination's adult
         # fare, and the "Two adults" control shows nothing at any budget the
         # page allows. Found by sweeping a published two-station site.
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         ceiling = script.split("function budgetCeiling()")[1].split("\n}")[0]
         self.assertIn('unit() === "party"', ceiling)
         self.assertIn("d.partyPence : d.adultPence", ceiling)
@@ -1742,7 +1787,7 @@ class DemoPageTest(unittest.TestCase):
         # all just been hidden -- a filter that looks broken rather than a
         # mode that is empty. The mode now clears the table, says what
         # happened, and says where the fares this origin does have are.
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         render = script.split("function render(")[1].split("\nfunction ")[0]
         self.assertNotIn("if (!available.length) return;", render)
         branch = render.split("if (!available.length) {")[1].split("\n  }")[0]
@@ -1806,7 +1851,7 @@ class DemoPageTest(unittest.TestCase):
         # can terminate a JavaScript literal and take the whole page down. The
         # no-match wording quotes the reader's own input, so it is written with
         # single quotes inside double-quoted literals and must arrive intact.
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         self.assertIn("We don't have prices from '", script)
         self.assertNotIn('from \\"', script)
 
@@ -1912,7 +1957,7 @@ class DemoPageTest(unittest.TestCase):
 
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
         html = render_chooser([], budget_pounds=20)
-        script = html.split("<script>")[1].split("</script>")[0]
+        script = page_script(html)
         self.assertIn("if (!STATIONS.length) {", script)
         self.assertIn("Nothing is priced from any station in this build", script)
         # The no-match wording quotes typed input; it must never address an
@@ -2005,7 +2050,7 @@ class DemoPageTest(unittest.TestCase):
         # left the times button still announcing "expanded" over content that
         # had gone, and the next click on it removed the copy box. One owner per
         # row, keyed weakly so a re-render's detached rows are collectable.
-        script = self.html.split("<script>")[1].split("</script>")[0]
+        script = page_script(self.html)
         self.assertNotIn("nextElementSibling", script.split("function toggleDetail")[1].split("\nfunction ")[0])
         self.assertNotIn("nextElementSibling", script.split("function showCopyBox")[1].split("\nfunction ")[0])
         for closer in ("function closeRegion", "function rowRegions"):

@@ -2441,7 +2441,18 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
 
   // ------------------------------------------- contrast, targets, reflow, per scheme
   for (const scheme of ["light", "dark"]) {
+    // The page's own control decides the palette now, not the OS preference, so
+    // the scheme is set the way a reader sets it: by pressing the switch. The
+    // media query is still emulated, because a reader whose system says light
+    // and who has chosen dark must get dark, and the system default is only
+    // the default.
     await page.emulateMedia({ colorScheme: scheme });
+    const theme = await setTheme(page, scheme);
+    check(
+      `the switch takes the page to the ${scheme} palette`,
+      theme === scheme,
+      `switch says ${theme}, asked for ${scheme}`
+    );
     // The scheme has to change the page, or the dark pass is the light pass
     // wearing a different name and every check below it proves nothing.
     const painted = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -2450,6 +2461,56 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       scheme === "light" ? isLight(painted) : !isLight(painted),
       painted
     );
+
+    // The plate the NRE mark sits on follows the palette; the mark does not,
+    // because the mark is the file NRE supplies and an edited mark is not that.
+    // So legibility is the one thing here that has to be measured rather than
+    // assumed, in each scheme: the guidelines require the logo to be legible,
+    // and its ink is a fixed dark blue on whatever plate it is given.
+    // Read from the page rather than from the credit read further down, so
+    // this does not depend on which half of the matrix runs first.
+    if (await page.locator(".nre-credit").count()) {
+      const legibility = await page.evaluate(() => {
+        const plate = document.querySelector(".nre-logo");
+        const path = plate && plate.querySelector("svg path");
+        const toRgb = (value) => (value || "").match(/[\d.]+/g)?.slice(0, 3).map(Number) || [];
+        const luminance = (rgb) =>
+          rgb
+            .map((channel) => {
+              const c = channel / 255;
+              return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+            })
+            .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+        const ratio = (a, b) => {
+          const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        const ink = toRgb(path ? getComputedStyle(path).fill : "");
+        const plateColour = toRgb(plate ? getComputedStyle(plate).backgroundColor : "");
+        const bodyColour = toRgb(getComputedStyle(document.body).backgroundColor);
+        const border = plate ? getComputedStyle(plate) : null;
+        const borderColour = toRgb(border ? border.borderTopColor : "");
+        return {
+          plate: plateColour.join(","),
+          markOnPlate: ink.length === 3 && plateColour.length === 3 ? ratio(ink, plateColour) : 0,
+          plateOnPage: plateColour.length === 3 && bodyColour.length === 3 ? ratio(plateColour, bodyColour) : 0,
+          // A white plate on a white page is only a plate because of its edge.
+          // The first version had no border, so in the light palette the mark
+          // sat on the page with nothing around it and the plate measured
+          // 1.00:1 against the background.
+          edge: border ? parseFloat(border.borderTopWidth) >= 1 && borderColour.length === 3 &&
+            (borderColour.join(",") !== plateColour.join(",") || borderColour.join(",") !== bodyColour.join(",")) : false,
+        };
+      });
+      // 3:1 is the non-text contrast floor for the mark itself; the plate has
+      // to be findable, which in the light palette means the edge rather than
+      // a different fill.
+      check(
+        `the NRE mark stays legible in ${scheme}`,
+        legibility.markOnPlate >= 3 && (legibility.plateOnPage >= 1.05 || legibility.edge),
+        `on plate ${legibility.plate}: ${legibility.markOnPlate.toFixed(1)}:1 against the mark, ${legibility.plateOnPage.toFixed(2)}:1 against the page, edged: ${legibility.edge}`
+      );
+    }
 
     const contrast = await page.evaluate(() => {
       // Any CSS colour the browser understands, read as pixels: color-mix(),
@@ -2722,6 +2783,65 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     );
   }
 
+  // The theme switch. A reader who cannot change the palette has a page built
+  // for one person, so the control is read from the page: it is there, it is a
+  // switch with a name, and the state it holds is the palette the page is
+  // actually painting. The default is checked on a first visit with the
+  // storage emptied, because "dark unless the reader says otherwise" is a claim
+  // about a reader who has never pressed anything.
+  await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* nothing stored */ } });
+  await page.reload();
+  const themeControl = await page.evaluate(() => {
+    const toggle = document.getElementById("themeToggle");
+    if (!toggle) return { present: false };
+    return {
+      present: true,
+      role: toggle.getAttribute("role"),
+      checked: toggle.getAttribute("aria-checked"),
+      theme: document.documentElement.dataset.theme,
+      name: (toggle.textContent || "").trim(),
+      hidden: toggle.hidden,
+      box: (() => {
+        const r = toggle.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height) };
+      })(),
+    };
+  });
+  check(
+    "the page offers a theme switch",
+    themeControl.present && !themeControl.hidden,
+    themeControl.present ? (themeControl.hidden ? "rendered but hidden" : "shown") : "no #themeToggle"
+  );
+  if (themeControl.present) {
+    check(
+      "the theme switch is a named switch whose state is the page's palette",
+      themeControl.role === "switch" &&
+        Boolean(themeControl.name) &&
+        themeControl.checked === String(themeControl.theme === "dark"),
+      `role ${themeControl.role}, name "${themeControl.name}", checked ${themeControl.checked}, theme ${themeControl.theme}`
+    );
+    check(
+      "and a reader with no stored choice gets the dark palette",
+      themeControl.theme === "dark" && themeControl.checked === "true",
+      `first visit painted ${themeControl.theme}`
+    );
+    check(
+      "and the switch is a pointer target of at least 44px",
+      themeControl.box.w >= 44 && themeControl.box.h >= 44,
+      `${themeControl.box.w}x${themeControl.box.h}px`
+    );
+    // The choice has to outlive the visit, or it is not a choice.
+    await page.locator("#themeToggle").click();
+    const chosen = await page.evaluate(() => document.documentElement.dataset.theme);
+    await page.reload();
+    const afterReload = await page.evaluate(() => document.documentElement.dataset.theme);
+    check(
+      "and the reader's choice survives a reload",
+      chosen === "light" && afterReload === "light",
+      `pressed to ${chosen}, reloaded as ${afterReload}`
+    );
+  }
+
   // The NRE source credit, on a page that composes the NRE notice and on no
   // other page. The Developer Brand Guidelines require the "Powered by National
   // Rail Enquiries" logo and a link to NRE's site, placed underneath the
@@ -2783,8 +2903,27 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
 
   // The matrix leaves the page as it found it: the next section drives controls.
   await page.emulateMedia({ colorScheme: "light" });
+  await setTheme(page, "light");
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(url);
+}
+
+/**
+ * Press the page's theme switch until it holds the asked-for scheme, and report
+ * what it holds afterwards. Driving the real control rather than setting the
+ * attribute is the point: a switch that reads right and does nothing is the
+ * defect this suite exists to catch, and setting the attribute by hand would
+ * never notice.
+ */
+async function setTheme(page, scheme) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const now = await page.evaluate(() => document.documentElement.dataset.theme);
+    if (now === scheme) return now;
+    const toggle = page.locator("#themeToggle");
+    if (!(await toggle.count()) || (await toggle.isHidden())) return now || "no control";
+    await toggle.click();
+  }
+  return page.evaluate(() => document.documentElement.dataset.theme);
 }
 
 /** Is a painted background the light one? Used only to prove the scheme landed. */
