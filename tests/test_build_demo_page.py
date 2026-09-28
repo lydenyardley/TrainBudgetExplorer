@@ -3534,6 +3534,70 @@ class RouteManifestTest(unittest.TestCase):
             self.assertEqual(build_demo_page.manifest_problems(solo, one), [])
 
 
+class RunnerPassthroughTest(unittest.TestCase):
+    """What `python run.py` can reach on the builder.
+
+    The runner assembles a fixed argument list, so a flag the builder
+    understands is a flag the double-click path cannot pass. That is how the
+    licence notice and the privacy contact became unreachable from the entry
+    point a first-time user actually takes: a real feed could only be built by
+    calling the builder by hand. These assert the argument list, because that
+    is the whole of the passthrough -- the build itself is covered elsewhere.
+    """
+
+    def _command(self, **overrides) -> list[str]:
+        captured: list[str] = []
+
+        class _Result:
+            returncode = 0
+
+        def fake_run(cmd, cwd=None):
+            captured.extend(cmd)
+            return _Result()
+
+        values = {
+            "feed": Path("feeds/fares"),
+            "origin": "GRA",
+            "timetable": None,
+            "with_single_timetable": False,
+            "date": None,
+            "all_origins": False,
+            "base_path": None,
+            "notices": None,
+            "privacy_contact": None,
+        }
+        values.update(overrides)
+        args = argparse.Namespace(**values)
+        with mock.patch.object(run, "ROOT", Path(__file__).parent.parent), mock.patch.object(
+            run, "_feed_exists", return_value=True
+        ), mock.patch.object(run.subprocess, "run", fake_run), contextlib.redirect_stdout(
+            io.StringIO()
+        ):
+            run.build(args)
+        return captured
+
+    def test_the_notice_and_contact_flags_reach_the_builder(self) -> None:
+        command = self._command(
+            notices="rdg,ogl,accuracy", privacy_contact="me@example.org"
+        )
+        self.assertIn("--notices", command)
+        self.assertEqual(command[command.index("--notices") + 1], "rdg,ogl,accuracy")
+        self.assertEqual(command[command.index("--privacy-contact") + 1], "me@example.org")
+
+    def test_neither_flag_is_passed_when_neither_was_given(self) -> None:
+        # Passing an empty --notices would satisfy the builder's "is it
+        # present" test with nothing in it, so an absent flag has to stay
+        # absent rather than become an empty one.
+        command = self._command()
+        self.assertNotIn("--notices", command)
+        self.assertNotIn("--privacy-contact", command)
+
+    def test_a_real_feed_builds_through_the_runner_with_only_the_notice(self) -> None:
+        # The contact now defaults in the builder, so the notice is the only
+        # thing a real-feed build needs the runner to carry.
+        self.assertIn("--notices", self._command(notices="rdg"))
+
+
 class SingleOriginRunnerTidyTest(unittest.TestCase):
     """What `python run.py` leaves behind after a single-origin build.
 
