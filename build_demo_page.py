@@ -665,13 +665,44 @@ def prune_fare_index_caches(*used: Path, keep: int = FARE_INDEX_CACHE_KEEP) -> i
     return deleted
 
 
+def _iso_day(value: object) -> str:
+    """A date as ``YYYY-MM-DD``, from an ISO timestamp or an HTTP-date.
+
+    ``Last-Modified`` arrives as ``Tue, 29 Sep 2026 04:15:00 GMT``, which is the
+    portal's word for its own vintage but is not the ``YYYY-MM-DD`` the page's
+    date formatting reads. Normalising here means the page never has to know
+    which shape it was handed -- and a value in neither shape becomes the empty
+    string, so a date the build could not read is left out of the page rather
+    than printed as whatever ``undefined`` renders to.
+    """
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text:
+        return ""
+    # Validated rather than pattern-matched: "2026-13-45" has the right shape
+    # and is not a date, and a shape that passes would reach the page's
+    # formatter and render as a month that does not exist.
+    try:
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError:
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+
+        return parsedate_to_datetime(text).date().isoformat()
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return ""
+
+
 def knowledgebase_dates(manifest: dict | None, name: str = "ticket-restrictions") -> tuple[str, str]:
     """When a Knowledgebase feed says it was published, and when it was confirmed.
 
     The first is the portal's own ``Last-Modified`` for the file -- its word for
     its own vintage, which is the only date a freshness claim about someone
     else's data can honestly rest on. The second is when this project's
-    downloader last downloaded or revalidated it.
+    downloader last downloaded or revalidated it. Both come back as
+    ``YYYY-MM-DD``.
 
     Reading it from the manifest rather than the clock is deliberate. "Today"
     would mean the day the page was *built*, which is a fact about the build and
@@ -682,11 +713,9 @@ def knowledgebase_dates(manifest: dict | None, name: str = "ticket-restrictions"
     for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, dict) or entry.get("name") != name:
             continue
-        published = entry.get("last_modified")
-        checked = entry.get("checked_at") or entry.get("downloaded_at")
         return (
-            published.strip() if isinstance(published, str) else "",
-            checked.strip() if isinstance(checked, str) else "",
+            _iso_day(entry.get("last_modified")),
+            _iso_day(entry.get("checked_at") or entry.get("downloaded_at")),
         )
     return "", ""
 

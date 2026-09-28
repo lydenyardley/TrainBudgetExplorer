@@ -28,7 +28,7 @@ from atoc_knowledgebase import (
     check_restrictions,
     load_ticket_restrictions,
 )
-from build_demo_page import describe_restriction_check, knowledgebase_dates
+from build_demo_page import _iso_day, describe_restriction_check, knowledgebase_dates
 from make_synthetic_feed import build_synthetic_knowledgebase
 
 
@@ -156,6 +156,30 @@ class ReaderTest(unittest.TestCase):
             loaded = load_ticket_restrictions(feed)
             self.assertTrue(loaded.usable, loaded.summary())
             self.assertEqual(dict(loaded.unrecognised), {})
+
+    def test_a_feed_of_codes_and_no_wording_is_not_usable(self) -> None:
+        # The case the inspector found: a feed in a vocabulary this reader
+        # half-understands. The codes come out, so a parse succeeded, and
+        # "usable" would have been true -- while the page would go on to have
+        # nothing to compare. A feed that parses is not a feed that confirms.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _write(
+                _xml(
+                    "<FareRestriction><RestrictionCode>B3</RestrictionCode>"
+                    "<RestrictionOutwardDescription>VALID AFTER 0859</RestrictionOutwardDescription>"
+                    "</FareRestriction>"
+                ),
+                tmp,
+            )
+            loaded = load_ticket_restrictions(feed)
+            self.assertEqual(sorted(loaded.restrictions), ["B3"])
+            self.assertEqual(loaded.records_understood, 1)
+            self.assertFalse(loaded.usable)
+            check = check_restrictions({"B3": _Header("EARLY", "OUT", "RTN")}, loaded)
+            self.assertEqual(check.status, UNKNOWN)
+            # And the reason names what was found, so a reader is not sent to
+            # look for records the tool has already read.
+            self.assertIn("none carried a description", check.note)
 
     def test_a_reference_record_with_no_wording_cannot_be_a_disagreement(self) -> None:
         # If the real feed nests its text one element deeper than this reader
@@ -321,8 +345,25 @@ class ManifestDateTest(unittest.TestCase):
             ]
         }
         published, checked = knowledgebase_dates(manifest)
-        self.assertEqual(published, "Fri, 26 Sep 2026 04:15:00 GMT")
-        self.assertEqual(checked, "2026-09-28T03:18:00Z")
+        # Normalised to YYYY-MM-DD. Left as the raw HTTP-date it was, the page
+        # sliced the first ten characters -- "Fri, 26 Se" -- and shipped
+        # "published undefined undefined NaN" to a real reader.
+        self.assertEqual(published, "2026-09-26")
+        self.assertEqual(checked, "2026-09-28")
+
+    def test_a_date_in_either_shape_normalises_and_anything_else_becomes_nothing(self) -> None:
+        self.assertEqual(_iso_day("2026-09-26T04:15:00Z"), "2026-09-26")
+        self.assertEqual(_iso_day("Fri, 26 Sep 2026 04:15:00 GMT"), "2026-09-26")
+        self.assertEqual(_iso_day("Friday, 26-Sep-26 04:15:00 GMT"), "2026-09-26")
+        # An unreadable date is left out of the page, not printed as whatever
+        # the formatter makes of it.
+        for value in ("", "   ", "not a date", None, 17, "2026/09/26", "2026-13-45"):
+            self.assertEqual(_iso_day(value), "", value)
+        # And a manifest carrying one leaves the whole claim unsaid, not wrong.
+        self.assertEqual(
+            knowledgebase_dates({"downloads": [{"name": "ticket-restrictions", "last_modified": "?"}]}),
+            ("", ""),
+        )
 
     def test_an_absent_or_unusable_manifest_yields_no_dates_rather_than_guesses(self) -> None:
         self.assertEqual(knowledgebase_dates(None), ("", ""))
