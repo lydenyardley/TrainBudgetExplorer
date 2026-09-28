@@ -175,6 +175,49 @@ will appear on one. `adr/ADR-0006-timetable-layer.md` and
 `adr/ADR-0008-date-aware-services.md` list every approximation and what removes
 it.
 
+## What the ticket conditions are, and what checks them
+
+A restricted fare's Conditions cell carries the feed's own wording: the
+restriction's description, and the outward and return validity it permits
+(`VALID AFTER 0859 MON-FRI`, `NOT VALID TO ARR KGX BEFORE 1000`). A single shows
+only the outward text — it has no return leg for a return condition to
+constrain. The wording is the fares feed's own, because a price and the
+condition attached to it must come from the same publication.
+
+Because that feed is a snapshot, the page also says what an **independent
+reference feed** was asked and answers it above the table, where a reader
+comparing two prices will read it. The Knowledgebase `ticket-restrictions` feed
+is published on its own schedule, and comparing the two answers a question the
+fares file cannot answer alone: is the condition printed beside this price still
+the condition the reference feed publishes today?
+
+The four answers, and none of them is a fifth:
+
+- **agrees**, with the number of conditions compared and the date the reference
+  feed was published;
+- **disagrees**, naming the codes that differ — the wording shown stays the
+  fares feed's, because that is the publication the prices come from;
+- **could not be checked**, with the reason;
+- **not checked**, when no reference feed was named.
+
+**The check reports its own uncertainty, and that is the design.** The
+Knowledgebase feeds' exact element names are not published in a form this
+project can verify, and `atoc_knowledgebase.py` has not been run against the
+real feed. Rather than guess a schema and then report agreement it never
+verified, it recognises records by local name from a set of plausible spellings
+and counts what it did not recognise. An unrecognised record, a missing feed, or
+**zero codes compared** all resolve to "could not be checked" — never to
+"agrees". That last one matters most: a reference feed with four hundred
+restrictions and none of them on this page has confirmed nothing about this page.
+
+The publication date comes from the downloader's recorded `Last-Modified`, not
+from the build's clock. A claim about someone else's data has to rest on their
+date for it; "built today" is a fact about the build, and a page sits on a
+server long enough for that to quietly become false.
+
+The fares feed stays the authority. A disagreement is reported to the reader,
+never resolved in either direction.
+
 ## Why the onward search stops at 200 departures
 
 A one-change journey is found by looking for an onward train at every place the
@@ -352,6 +395,16 @@ restore is a miss, not a wrong answer.
 4. Run `python fuzz_feed.py --feed feeds/fares --rounds 500` and read anything it
    reports. It is the only thing that will exercise the real feed's encodings and
    record shapes against a parser written without them.
+5. Add the Knowledgebase reference feeds. They are a different subscription from
+   the DTD fares and timetable, so the same credentials do not prove entitlement:
+
+   ```bash
+   python dtd_download.py --output-root feeds --kb
+   ```
+
+   This writes `feeds/knowledgebase/*.xml`. The build reads the
+   `ticket-restrictions` feed as a second opinion on the fares feed's own
+   restriction wording; see below for what it does and does not claim.
 5. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
    --origin GRA --budget 20` and read what the count left out.
 6. Check the current DTD/NRE terms, brand treatment, commercial-use permission,

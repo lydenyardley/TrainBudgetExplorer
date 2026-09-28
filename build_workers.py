@@ -73,6 +73,12 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         publisher_id=_WORKER["publisher_id"],
         departure_limit=_WORKER["departures"],
         built_at=_WORKER.get("built_at"),
+        # The parent's one check, handed down. It is a single comparison
+        # against a single reference document, so it is made once for the run
+        # rather than per page: recomputing it per origin would re-parse the
+        # same XML up to 2,700 times, and would let two pages of one release
+        # disagree about what the reference feed said.
+        restriction_reference=_WORKER.get("restriction_reference"),
     )
     base_path = _WORKER["base_path"]
     payload["stations"] = [

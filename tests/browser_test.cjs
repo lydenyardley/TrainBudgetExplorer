@@ -1742,6 +1742,72 @@ async function runPage(browser, index, given, file, body, base) {
     check("the page says how old its numbers are", fresh.shown && fresh.text.length > 20, fresh.text);
     check("the timetable sentence carries the feed's own service window", fresh.window, `${fresh.text} (${JSON.stringify(fresh.window)})`);
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
+
+    // 7f. The conditions in the table are the fares feed's own wording; the
+    // page says what an independent reference feed was asked and answered, and
+    // says it ABOVE the table, because a condition that has since changed is
+    // what a reader needs before choosing between two prices, not after.
+    //
+    // The dangerous case is the one that reads best: a build that checked
+    // nothing and reported agreement. So each branch is judged against what the
+    // payload actually holds, and "agrees" is only accepted when codes were
+    // compared.
+    const reference = await page.evaluate(() => {
+      const line = document.getElementById("restrictionReference");
+      const ref = DATA.restrictionReference;
+      return {
+        shown: line ? !line.hidden : false,
+        text: line ? line.textContent : "",
+        status: ref ? ref.status : null,
+        compared: ref ? ref.compared : null,
+        // Collected inside the page: DATA lives in the browser, and reading it
+        // out here would be an undefined reference that aborts the whole run
+        // rather than failing one check.
+        differing: ref && ref.differing ? ref.differing.map((d) => d.code) : [],
+        above: line
+          ? Boolean(line.compareDocumentPosition(document.getElementById("rows")) &
+              Node.DOCUMENT_POSITION_FOLLOWING)
+          : false,
+      };
+    });
+    check(
+      "the page says what the reference feed was asked and answered",
+      reference.shown && reference.text.length > 20,
+      reference.text
+    );
+    check(
+      "and says it before the table it qualifies",
+      reference.above,
+      `${reference.text} (above: ${reference.above})`
+    );
+    // The invariant is about the WORDED claim, not the status value: a build
+    // that compared nothing must not be allowed to read as agreeing. Tested
+    // against the sentence a reader actually sees, because that is the thing
+    // that can mislead. Deliberately not matched on exact wording -- pinning
+    // the check to one phrasing would make it a test of this project's prose
+    // rather than of the claim, and would break for the wrong reason whenever
+    // the sentence is improved.
+    const claimsAgreement = /agrees on all/i.test(reference.text);
+    check(
+      "agreement is only claimed when codes were actually compared",
+      !claimsAgreement || reference.compared > 0,
+      `${reference.text} (compared: ${reference.compared})`
+    );
+    check(
+      "an unchecked reference feed says so rather than reading as agreement",
+      reference.status === "absent" || reference.status === "unknown"
+        ? !claimsAgreement && /not been checked|not checked|could not be checked|no .*feed was checked/i.test(reference.text)
+        : true,
+      `${reference.text} (status: ${reference.status})`
+    );
+    if (reference.status === "disagrees") {
+      check(
+        "a disagreement names the codes that differ",
+        reference.differing.length > 0 &&
+          reference.differing.every((code) => reference.text.includes(code)),
+        `${reference.text} (differing: ${reference.differing.join(", ")})`
+      );
+    }
     check("and it sits beside the result count, not in the footer", fresh.underSummary, fresh.text);
     if (fresh.prices === null) {
       // A synthetic feed has no download date, so there is nothing to measure.

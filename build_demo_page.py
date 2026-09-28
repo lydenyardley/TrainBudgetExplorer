@@ -42,6 +42,12 @@ from atoc_fares import (
     location_lookup_candidates,
 )
 from atoc_timetable import TimetableDb
+from atoc_knowledgebase import (
+    ABSENT,
+    RestrictionCheck,
+    check_restrictions,
+    load_ticket_restrictions,
+)
 from destination_coverage import UnsourcedReport, unnameable_from_tally
 from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import (
@@ -659,6 +665,81 @@ def prune_fare_index_caches(*used: Path, keep: int = FARE_INDEX_CACHE_KEEP) -> i
     return deleted
 
 
+def knowledgebase_dates(manifest: dict | None, name: str = "ticket-restrictions") -> tuple[str, str]:
+    """When a Knowledgebase feed says it was published, and when it was confirmed.
+
+    The first is the portal's own ``Last-Modified`` for the file -- its word for
+    its own vintage, which is the only date a freshness claim about someone
+    else's data can honestly rest on. The second is when this project's
+    downloader last downloaded or revalidated it.
+
+    Reading it from the manifest rather than the clock is deliberate. "Today"
+    would mean the day the page was *built*, which is a fact about the build and
+    not about the data, and a claim that ages into a falsehood the longer the
+    page sits on a server is not a claim at all.
+    """
+    entries = manifest.get("downloads") if isinstance(manifest, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or entry.get("name") != name:
+            continue
+        published = entry.get("last_modified")
+        checked = entry.get("checked_at") or entry.get("downloaded_at")
+        return (
+            published.strip() if isinstance(published, str) else "",
+            checked.strip() if isinstance(checked, str) else "",
+        )
+    return "", ""
+
+
+def describe_restriction_check(check: RestrictionCheck) -> str:
+    """One sentence saying what the reference feed was asked and answered.
+
+    The four answers are worded here and nowhere else, so the console line, the
+    page and a test all speak about the same check. Each says what was asked and
+    what came back, and none of them says agreement without saying how many
+    codes were compared -- because "agrees" with nothing to agree about is not
+    agreement.
+    """
+
+    when = f" (published {check.published})" if check.published else ""
+    if check.status == "absent":
+        return f"not checked, {check.note}{when}"
+    if check.status == "unknown":
+        return f"could not be checked, {check.note}{when}"
+    if check.status == "disagrees":
+        codes = ", ".join(code for code, _ in check.differing)
+        return (
+            f"the reference feed disagrees on {check.disagree} of {check.compared} "
+            f"condition(s) shown ({codes}){when}"
+        )
+    return (
+        f"the reference feed agrees on all {check.compared} condition(s) shown{when}"
+    )
+
+
+def restriction_check(
+    fares, knowledgebase_path: str | Path | None, manifest: dict | None
+):
+    """Compare the fares feed's restriction wording with the reference feed.
+
+    Returns the check to publish. It is never ``None``: a page with no
+    reference feed has an answer to the reader's question too, and that answer
+    is "not checked" rather than silence.
+    """
+    if knowledgebase_path is None:
+        return RestrictionCheck(status=ABSENT, note="no reference feed was named")
+    kb = load_ticket_restrictions(knowledgebase_path)
+    published, checked = knowledgebase_dates(manifest)
+    # Only the codes this page actually shows are compared, so the claim is
+    # about the conditions the reader can see rather than about the feed.
+    shown = {
+        code: header
+        for code, header in fares.restrictions.headers.items()
+        if code and (header.outward_text or header.return_text or header.description)
+    }
+    return check_restrictions(shown, kb, published=published, checked_at=checked)
+
+
 def read_feed_metadata(folders: list[Path]) -> dict | None:
     """The first readable metadata.json found in the feed folders.
 
@@ -953,6 +1034,16 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
     parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
     parser.add_argument(
+        "--knowledgebase",
+        default=None,
+        help=(
+            "Knowledgebase reference feed folder, holding the ticket-restrictions "
+            "XML. Read as a second opinion on the fares feed's own restriction "
+            "wording, never as its replacement; omit it and the page says the "
+            "reference feed was not checked"
+        ),
+    )
+    parser.add_argument(
         "--with-single-timetable",
         action="store_true",
         help="also load/cache journey times for the larger outbound-single destination set",
@@ -1181,6 +1272,7 @@ def build_payload(
     departure_limit: int = DEPARTURE_LIMIT,
     built_at: str | None = None,
     published_routes: list[dict] | None = None,
+    restriction_reference: "RestrictionCheck | None" = None,
 ) -> dict:
     """Every publishable destination from the origin, at both party prices.
 
@@ -1488,6 +1580,23 @@ def build_payload(
             }
 
     excluded_codes = sorted({row.ticket_code for row in excluded_itx})
+    # The freshness claim for the conditions above. Carried as plain data
+    # rather than as a sentence so the page writes it in its own voice, and so
+    # a test can assert on the fact rather than on a wording that changes.
+    reference = restriction_reference or check_restrictions({}, None)
+    restriction_reference_note = {
+        "status": reference.status,
+        "compared": reference.compared,
+        "agree": reference.agree,
+        "disagree": reference.disagree,
+        "differing": [
+            {"code": code, "referenceText": text} for code, text in reference.differing
+        ],
+        "note": reference.note,
+        "published": reference.published,
+        "checkedAt": reference.checked_at,
+        "verified": reference.verified,
+    }
     unpriced_note = (
         explain_unpriced(
             len(raw_destinations), len(excluded_itx), excluded_codes, raw_tally
@@ -1600,6 +1709,7 @@ def build_payload(
         # code. The page resolves a row's code against this rather than each
         # row repeating the same strings.
         "restrictionValidity": restriction_validity,
+        "restrictionReference": restriction_reference_note,
         "railcardParty": railcard_party,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
@@ -2244,12 +2354,29 @@ def main(argv: list[str] | None = None) -> int:
     else:
         note = DEFAULT_NOTE if price_source == DEFAULT_PRICE_SOURCE else ""
 
+    # The restriction second opinion, computed once for the whole run. It is
+    # the same comparison for every origin because the reference feed is one
+    # document; recomputing it per page would parse the same XML up to 2,700
+    # times, and would let two pages of one release disagree about whether the
+    # reference feed was checked.
+    manifest_for_reference = read_feed_manifest(metadata_folders) or {}
+    restriction_reference = restriction_check(
+        fares, args.knowledgebase, manifest_for_reference
+    )
+    if args.knowledgebase:
+        print(
+            "restriction reference: "
+            + describe_restriction_check(restriction_reference),
+            flush=True,
+        )
+
     single_timetable = None
     single_cache: Path | None = None
     if args.with_single_timetable:
         if not args.timetable:
             print("--with-single-timetable requires --timetable", file=sys.stderr)
             return 2
+
         single_focus = {
             row.crs
             for row in fares.page_single_destinations_within(
@@ -2307,6 +2434,7 @@ def main(argv: list[str] | None = None) -> int:
             publisher_id=args.publisher_id,
             departure_limit=args.departures,
             built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            restriction_reference=restriction_reference,
         )
     except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
@@ -2438,6 +2566,12 @@ def main(argv: list[str] | None = None) -> int:
             "index": index,
             "feed": args.feed,
             "timetable": args.timetable,
+            # The restriction second opinion, computed once in the parent and
+            # handed to every worker. Without this a --all-origins site would
+            # claim no reference feed was checked while a single-page build of
+            # the same feed reported a disagreement -- two answers to one
+            # question, from one build.
+            "restriction_reference": restriction_reference,
         }
         jobs = []
         for crs in origins:

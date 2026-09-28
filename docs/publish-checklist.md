@@ -13,14 +13,23 @@ answer, and "I think that's fine" is not an answer.
 the deploy workflow refuses to publish anything it does not clear. Run
 
 ```
-python tools/check_release_clearance.py --release fares
+python tools/check_release_clearance.py --release fares,timetable
 ```
 
 to see where the project stands today. It currently fails, which is correct: §1
-below is unfinished, so the fares route is not cleared and the workflow will not
-publish. Nothing in `build_demo_page.py` or `run.py` reads the record, so a
+below is unfinished, and the shape the workflow now publishes is `fares,timetable`
+because the daily build loads the national timetable to show times and changes.
+Two things are therefore not cleared — the DTD fares product, and the Darwin
+timetable product schedule, which this project reads as internal business
+purposes only. Nothing in `build_demo_page.py` or `run.py` reads the record, so a
 contributor can still build, test and open a real-feed page locally with no
 clearance in sight.
+
+The shape is not chosen by hand. `tools/check_release_clearance.py` refuses a
+`--release` it does not recognise, and a test compares the shape the workflow
+declares against the flags the build step actually passes — so a build that
+gained `--timetable` without a matching clearance is a red test, not a release
+that quietly widened its own permission.
 
 The two halves of the gate, because neither is enough alone:
 
@@ -91,6 +100,13 @@ publish until the account terms and brand pack have been checked.
       `docs/dtd-licensing-and-data-access.md`
 - [ ] Confirmed that the account subscription includes **Fares, Routeing Guide and
       Timetable data**, not only the Knowledgebase feeds
+- [ ] **The Darwin timetable product schedule is read for the pages that now
+      show times.** The daily build loads the national timetable, so this
+      project's reading of that schedule as "internal business purposes only" is
+      no longer a description of something the site does not publish — it is
+      the answer that has to change, or the decision that the published times
+      stay switched off. `python tools/check_release_clearance.py --release
+      fares,timetable` names it as outstanding.
 - [ ] Read the current DTD/NRE terms and recorded the public-use/attribution answer
 - [ ] **NRE is acknowledged as source** and the required **Powered by National Rail
       Enquiries** treatment/logo is visible in the generated page
