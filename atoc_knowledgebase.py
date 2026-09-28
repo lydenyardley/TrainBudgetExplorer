@@ -128,10 +128,13 @@ class Knowledgebase:
     def usable(self) -> bool:
         """Whether the comparison can be made at all.
 
-        True only when the feed parsed, at least one record was understood, and
-        nothing was left unrecognised. A partially understood feed is not a
-        feed that agrees; it is a feed whose agreement is unknown for the part
-        it did not understand.
+        True only when the feed parsed, at least one record was understood,
+        nothing was left unrecognised, and at least one record actually
+        carried wording. That last condition is the one a code-only parse
+        fails: a feed whose records yield restriction codes and no description
+        and no validity text has been read successfully and tells us nothing
+        about whether the wording the fares feed prints is still current. It is
+        a feed this reader cannot compare, and saying so is the whole point.
         """
 
         return (
@@ -139,6 +142,7 @@ class Knowledgebase:
             and self.problem is None
             and self.records_understood > 0
             and not self.unrecognised
+            and any(carries_wording(record) for record in self.restrictions.values())
         )
 
     def summary(self) -> dict[str, object]:
@@ -291,7 +295,7 @@ def _restriction_from(element: ET.Element) -> KnowledgebaseRestriction | None:
     )
 
 
-def _carries_wording(reference: KnowledgebaseRestriction) -> bool:
+def carries_wording(reference: KnowledgebaseRestriction) -> bool:
     """Whether a reference record says anything at all about its condition."""
     return bool(
         reference.description.strip() or reference.outward_text.strip() or reference.return_text.strip()
@@ -354,6 +358,15 @@ def check_restrictions(
         if not detail and kb.unrecognised:
             names = ", ".join(sorted(kb.unrecognised))
             detail = f"{sum(kb.unrecognised.values())} record(s) were not understood ({names})"
+        if not detail and kb.records_understood:
+            # Codes were read and the wording was not. The feed was parsed
+            # successfully, which is exactly the case where a reader might
+            # report agreement, so the note has to say what was actually found
+            # rather than blame the file.
+            detail = (
+                f"{kb.records_understood} restriction record(s) were read but none carried a "
+                "description or validity text, so there is nothing to compare against"
+            )
         if not detail:
             detail = "the reference feed held no restriction records this reader recognises"
         return RestrictionCheck(status=UNKNOWN, note=detail, published=published, checked_at=checked_at)
@@ -370,7 +383,7 @@ def check_restrictions(
             # is what the claim is made from.
             continue
         compared += 1
-        if not _carries_wording(reference):
+        if not carries_wording(reference):
             # A reference record with no wording is not a claim about this
             # condition, so it cannot be compared and cannot be said to
             # disagree. Treating it as a disagreement would be the worst
