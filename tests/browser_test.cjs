@@ -552,6 +552,72 @@ async function runPage(browser, index, given, file, body, base) {
     const initial = await rows();
     check("renders priced rows", initial > 0, `${initial} rows; ${facts.destinations} destinations in the feed`);
 
+    // C04: the opening sentence has to be true of this build. A page with no
+    // timetable must not promise a journey time, and a page with one should
+    // say what the times are; both are read off the payload, not off a
+    // hardcoded sentence.
+    const opening = await page.evaluate(() => ({
+      intro: (document.getElementById("pageIntro") || {}).textContent || "",
+      hasJourneys: DATA.hasJourneys,
+      timeColumns: document.querySelectorAll("thead th[data-label='Time']").length,
+      headers: Array.from(document.querySelectorAll("thead th")).map((th) => th.textContent),
+    }));
+    check(
+      "the opening sentence matches whether a timetable was loaded",
+      opening.hasJourneys
+        ? /fastest journey time/.test(opening.intro)
+        : !/journey time/.test(opening.intro) && /no timetable/i.test(opening.intro),
+      JSON.stringify(opening)
+    );
+    check(
+      "the times columns exist exactly when the sentence promises times",
+      opening.hasJourneys
+        ? opening.headers.includes("Time") && opening.headers.includes("Changes")
+        : !opening.headers.includes("Time") && !opening.headers.includes("Changes"),
+      opening.headers.join(" ")
+    );
+
+    // C03: the cost of the ticket action, and what the link earns, stated above
+    // the table rather than inside the closed methodology disclosure. Measured
+    // by position in the document, not by visibility alone: an element that is
+    // only hidden until the accordion is opened is exactly the defect.
+    const handoff = await page.evaluate(() => {
+      const where = (selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        return {
+          text: el.textContent.trim(),
+          inMethod: Boolean(el.closest(".method")),
+          beforeTable: Boolean(
+            el.compareDocumentPosition(document.querySelector("table")) &
+              Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+          hidden: el.hidden,
+        };
+      };
+      return {
+        linkNote: where("#linkNote"),
+        disclosure: where("#disclosure"),
+        wanted: { linkNote: Boolean(DATA.linkNote), disclosure: Boolean(DATA.tracked) },
+      };
+    });
+    for (const key of ["linkNote", "disclosure"]) {
+      // Only a page that has the note is checked for it: a page whose links
+      // fill the journey in has no handoff to explain, and an untracked page
+      // has no commission to disclose.
+      if (!handoff.wanted[key]) continue;
+      const found = handoff[key];
+      check(
+        `${key === "linkNote" ? "the seller handoff" : "the commission disclosure"} is above the table and outside the closed disclosure`,
+        Boolean(found) &&
+          found.text.length > 20 &&
+          !found.inMethod &&
+          found.beforeTable &&
+          !found.hidden,
+        JSON.stringify(found)
+      );
+    }
+
     // 2. Dragging the budget slider to the floor empties the list.
     const startBudget = (await page.inputValue("#budgetNumber")).trim();
     const track = await page.locator("#budget").boundingBox();

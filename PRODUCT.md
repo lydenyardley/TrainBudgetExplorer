@@ -91,9 +91,13 @@ conversion would not make those moves.
 resolving to the station's page); budget slider; destination filter by name or code;
 party switch (one adult, or two adults at two Anytime Day Returns); per
 destination a price, the fastest journey time, the number of changes, the fare type
-code, an expander holding the next few departures, and one ticket link on the row;
-date-aware schedules when the page is built with a date, and an explicit note that
-every schedule was read when it is not.
+code, the travel condition the feed states for a restricted fare, an expander
+holding the next few departures, and one ticket link on the row; date-aware
+schedules when the page is built with a date, and an explicit note that every
+schedule was read when it is not. A build with no timetable says so in its opening
+sentence and stands the times columns down rather than describing them. Above the
+results — not in a closed disclosure — the page states what the ticket link costs
+the reader, and, where links are tracked, what it earns the site.
 
 **Hard constraints.**
 
