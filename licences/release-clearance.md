@@ -13,8 +13,9 @@ release publishes is `cleared` below. Local builds do not read this file at all:
 and open a real-feed page with no licence clearance in sight. The gate applies to
 publication, and only to publication.
 
-The product list is read from the licence PDFs filed in this folder plus the DTD
-portal route, so a PDF dropped in here cannot be filed and forgotten — it needs a
+The product list is read from the licence PDFs filed in this folder, plus the two
+questions that are not a filed PDF — the DTD portal route and the privacy
+contact — so a PDF dropped in here cannot be filed and forgotten: it needs a
 decision before it can be published. That is the same failure
 `tests/test_licences.py` prevents on the register side.
 
@@ -61,13 +62,75 @@ either:
 ## dtd
 
 - state: excluded
-- reason: the account subscription selection, the current DTD/NRE public-use terms and the NRE brand treatment are all unconfirmed, per docs/publish-checklist.md §1
+- reason: permission is not the open question — the current terms grant publication and commercial exploitation, and the fee is nil by a published charging document — but two of the terms' requirements are unanswered, and neither is a footer
+
+The terms were read on 28 September 2026, from the copy filed in this folder,
+whose footer is dated 24/09/2026 and names `opendata.nationalrail.co.uk/terms`.
+They are not ambiguous about permission: "You are free to: copy, publish,
+distribute and transmit the Information", and to "exploit the Information
+commercially ... by including it in Your own product or application ("End User
+Product")". The account holds the entitlement the build needs: the fares and
+timetable were downloaded from `opendata.nationalrail.co.uk/api/staticfeeds/2.0/fares`
+and `.../3.0/timetable` on 24 September 2026, and those endpoints are gated on
+the Fares, Routeing Guide and Timetable selection
+(`feeds/download-manifest.json`). The Knowledgebase feeds the user downloaded on
+28 September are a separate entitlement and are not evidence of this one.
+
+What is open is compliance, and none of it can be written in a footer. One of
+the three requirements is met — the acknowledgement, by `--notices nre` — and the
+other two are not:
+
+- The terms require the publisher to "acknowledge NRE as the source of
+  Information in accordance with this agreement and the Developer Guidelines",
+  and the Developer Guidelines are not published at the URL the terms name
+  (404 on 28 September 2026). `--notices nre` carries a plain acknowledgement,
+  which satisfies the requirement as the terms word it. The mandated wording and
+  the "Powered by National Rail Enquiries" treatment are not invented here: the
+  brand materials are, in NRE's words, "subject to permission from National Rail".
+- The terms require that "all forecasted arrival and departure times, provided by
+  Your End User Product(s), are consistent with Darwin forecasts". The page
+  computes its times from the static timetable download, not from Darwin. Whether
+  a published static time is a "forecasted" time in the terms' sense is the
+  question, and it is the one that decides whether times may go out at all.
+- The terms require that "all Time-Bound Data, used in Your End User Product(s),
+  are displayed as directed in the Information, as per the Developer Guidelines",
+  and the guidelines are the same unpublished document.
+- Charges arise only above NRE's High Volume Usage threshold, and the Usage
+  Charging Document (v06-01, read 28 September 2026) confines that model to the
+  Darwin **Webservice** feeds: 5 million enquiries per user per 28-day railway
+  period at 0.042p each, with Darwin **Push** feeds `N/A` throughout. This build
+  downloads two static ZIPs a day and makes no Webservice enquiry, so no fee
+  applies to it. That is a published document rather than a conclusion from
+  volume, and it is the one requirement of these terms this release answers
+  outright.
+
+The registration is in scope too. The portal asks what the data is for and where
+it will be used, and the terms require that information to be true: if the
+registered purpose does not name a public page carrying an affiliate link, that
+is a defect in the account rather than in this build.
 
 This is the source the published build actually reads, and it is the one the
 audit found the workflow downloading with no licence decision anywhere near it.
 It is a portal subscription rather than a marketplace product schedule, so it
 has no PDF in this folder and no product id — which is precisely why it needed a
 section of its own.
+
+## privacy contact
+
+- state: excluded
+- reason: the address the build uses by default has not been confirmed as monitored, so the promise every route makes to its reader is unbacked
+
+Every generated route carries a contact, and the privacy page tells a reader
+that somebody is at the end of it. `PROJECT_PRIVACY_CONTACT` in
+`build_demo_page.py` holds the project's own address so that a real-feed build
+works locally without an operator having to supply one, and it was chosen for a
+local build. Nothing has confirmed that anybody reads it, that it is an address
+appropriate to publish, or that it will outlast the project.
+
+Clearing this means: the address to publish, the date it was confirmed, and who
+confirmed it. An operator who has a monitored address should override it on the
+build — `PRIVACY_CONTACT`, or `--privacy-contact` — rather than publish the
+default, and record that override here.
 
 The register records a documented zero-cost working conclusion from the public
 charging material, not a signed entitlement, and the letter to RDG is drafted at

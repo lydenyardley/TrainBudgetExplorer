@@ -72,6 +72,16 @@ PRODUCT_ID = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 # actually reads, and the thing the audit found the workflow downloading.
 DTD = "dtd"
 
+# The privacy contact is not a licence, and it is on this list for the same
+# reason the DTD route is: it is a question only a person can answer before
+# anything is published, and the build cannot answer it. Every generated route
+# promises its reader that somebody is at the end of the address, so a contact
+# nobody has confirmed is a promise this project has not made good on. The build
+# already refuses a real-feed page with no contact at all; this refuses to
+# publish one whose contact nobody has vouched for, and says which address the
+# answer is about.
+PRIVACY = "privacy contact"
+
 # The build shapes `--release` accepts. Naming the shape rather than a free list
 # of products is deliberate: a typo becomes a refusal instead of a scope that
 # matches nothing and therefore clears everything.
@@ -100,7 +110,11 @@ def products_needed(releasing: list[str], folder: Path = LICENCES) -> tuple[list
         ]
     # The empty shape is the report-only mode: it says what the record does and
     # does not clear, and requires nothing.
-    needed = [DTD] if shape else []
+    #
+    # The privacy contact is needed by every release that publishes anything,
+    # not by a shape in particular: a published page with an unconfirmed contact
+    # is the same defect whichever feeds it is built from.
+    needed = [DTD, PRIVACY] if shape else []
     if "timetable" in shape:
         found = [p for p, path in products(folder).items() if path and path.match(TIMETABLE_GLOB)]
         if len(found) != 1:
@@ -145,10 +159,11 @@ def digest(path: Path) -> str:
 def products(folder: Path = LICENCES) -> dict[str, Path | None]:
     """Every product a clearance has to speak about, and the file it was read from.
 
-    ``None`` is a product with no filed PDF: the DTD portal subscription. It is
-    in the list because the release it blocks is the one this gate exists for.
+    ``None`` is a product with no filed PDF: the DTD portal subscription, and
+    the privacy contact. They are in the list because the releases they hold
+    back are the ones this gate exists for.
     """
-    return {**product_digests(folder), DTD: None}
+    return {**product_digests(folder), DTD: None, PRIVACY: None}
 
 
 def parse_sections(text: str) -> dict[str, dict[str, str]]:
@@ -362,9 +377,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    problems = clearance_problems(
-        path.read_text(encoding="utf-8"), releasing=releasing, today=date.today()
-    )
+    text = path.read_text(encoding="utf-8")
+    problems = clearance_problems(text, releasing=releasing, today=date.today())
     for problem in problems:
         print(problem, file=sys.stderr)
     if problems:
@@ -376,6 +390,28 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+    if arguments.report_only and not releasing:
+        # Reading the record is the whole point of this mode, and the line below
+        # was not it: the empty shape requires nothing, so an excluded product
+        # produced no problem and the report said "cleared ... as it stands" over
+        # a record that blocks publication twice. A product with no section at
+        # all counts as outstanding, because unrecorded is not cleared.
+        sections = parse_sections(text)
+        outstanding = [
+            name
+            for name in products()
+            if (sections.get(name, {}).get("state") or "").strip().lower() != "cleared"
+        ]
+        if outstanding:
+            print(
+                f"the record leaves {len(outstanding)} product(s) outstanding, "
+                "none of it answered here and none of it gating a build:"
+            )
+            for name in outstanding:
+                print(f"  {name}")
+        else:
+            print(f"every one of the {len(products())} products the record names is cleared.")
+        return 0
     print(
         "cleared for "
         + (", ".join(releasing) if releasing else "the record as it stands")
