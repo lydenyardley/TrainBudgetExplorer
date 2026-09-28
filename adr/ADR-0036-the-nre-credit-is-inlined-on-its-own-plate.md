@@ -34,14 +34,17 @@ follow, and each has a way of being got wrong.
 references, so it inlines cleanly. A linked `<img>` would be simpler and wrong
 in the way this project keeps refusing — the page is one self-contained file
 (ADR-0033), and an attribution that needs a second request to appear is an
-attribution a reader on a train may never see.
-
-**The mark is dark blue on a fixed fill, and the page has a dark palette.** The
+attribution a reader on a train may never see.**The mark is dark blue on a fixed fill, and the page has a dark palette.** The
 brand is #2E2D7F; on this page's dark background it would be invisible, and the
 guidelines require the logo to be "legible to viewers". Recolouring the mark to
 fit a background is not an option — an edited mark is not the mark that was
 licensed — so it is given a white plate to sit on, which is legible in both
 palettes and leaves the artwork untouched.
+
+*(As later amendments record, the brand pack ships no reversed asset, so this
+was a choice between a white plate and an illegible mark rather than between an
+unaltered mark and an edited one. The decision below is kept as it was made,
+and amended twice.)*
 
 **The mark is paths, so it reads as nothing.** An SVG's paths carry no text, so
 a screen reader announcing the image would announce an unlabelled graphic. The
@@ -83,6 +86,37 @@ plate, underneath the results.**
   page computes from a static schedule are the "forecasted arrival and departure
   times" the terms require to stay consistent with Darwin is still unanswered,
   and is recorded as such in `docs/publish-checklist.md` §1.
+
+**Amended 28 September 2026, again.** The white plate is gone. The mark is
+reversed onto a dark one — `--nre-plate: #141b3d`, with a light rendering of
+NRE's own blue as the ink, `--nre-ink: #cdd6ff` — and the plate is the same in
+both palettes, so the credit looks identical either way and its contrast does
+not have to be re-earned per theme. A white box in a dark footer was legible
+and still wrong: it read as a hole in the page rather than as part of the design.
+
+This reverses a decision this record made twice, so it is worth being exact
+about what changed and what did not. The file did not change:
+`assets/powered-by-national-rail.svg` is still NRE's, byte for byte, and the
+page inlines it unchanged. The reversal happens at paint time, in the page's own
+stylesheet, which is why the rule needs `!important` — Illustrator wrote
+`fill:#2E2D7F` into a `style` attribute on each of the mark's 22 shapes, and a
+style attribute outranks any stylesheet rule however specific, so a plain
+selector lost silently and the mark stayed NRE's blue on a dark plate at 1.4:1.
+That number is not folklore: it is what the browser suite measured on the page
+before the `!important` went in, and it is what the suite fails on if the rule
+ever loses again.
+
+What did change is the claim. "An edited mark is not the mark that was licensed"
+was a reason not to do this, and the reason it gave way is that NRE's brand pack
+ships no reversed asset at all: the ZIP holds one #2E2D7F `Powered by
+National Rail.svg` and one #2e2d7f wordmark, and nothing else. So "the mark
+unaltered" was never available on a dark page — only "reversed" or "illegible",
+and the guidelines require the logo to be legible. The page is therefore
+carrying a rendering NRE has not approved; their developer page says brand
+materials are subject to their permission, and the exemption route they name
+(`NationalRailDatafeeds@raildeliverygroup.com`) has not been asked. That is
+recorded as an open question in `licences/release-clearance.md`, because it is a
+licence question and not a design one.
 
 **Amended 28 September 2026.** The plate is a token now, `--logo-plate`, rather
 than a fixed white, because the page can be told to paint dark (ADR-0037) and a

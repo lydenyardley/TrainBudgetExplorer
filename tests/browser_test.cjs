@@ -2462,18 +2462,47 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       painted
     );
 
-    // The plate the NRE mark sits on follows the palette; the mark does not,
-    // because the mark is the file NRE supplies and an edited mark is not that.
-    // So legibility is the one thing here that has to be measured rather than
-    // assumed, in each scheme: the guidelines require the logo to be legible,
-    // and its ink is a fixed dark blue on whatever plate it is given.
+    // The credit is NRE's mark reversed onto a dark plate, painted by the
+    // page's own stylesheet rather than by editing the artwork, and the plate is
+    // the same in both palettes. Legibility is therefore not a thing to argue
+    // from the CSS: the guidelines require the logo to be legible, so the
+    // painted ink is measured against the plate it is painted on, in each
+    // scheme, and the plate is measured against the page it sits on. Reading it
+    // off the computed style is what makes this a check of the page: drop the
+    // rule that reverses the mark and the ink falls back to the file's own
+    // #2E2D7F, which on a dark plate is 1.4:1 and fails here.
     // Read from the page rather than from the credit read further down, so
     // this does not depend on which half of the matrix runs first.
     if (await page.locator(".nre-credit").count()) {
       const legibility = await page.evaluate(() => {
         const plate = document.querySelector(".nre-logo");
-        const path = plate && plate.querySelector("svg path");
-        const toRgb = (value) => (value || "").match(/[\d.]+/g)?.slice(0, 3).map(Number) || [];
+        // A colour, as the pixels a reader would see: painted onto a canvas over
+        // whatever is behind it. Not a regex over the computed string, because
+        // the border here is a color-mix() with an alpha in it, and the browser
+        // reports such a colour in a notation whose numbers are not channels --
+        // color(srgb .8 .84 1 / .22) rather than rgba(205, 214, 255, .22). A
+        // checker that reads the numbers out of that string reads 0.8 as a
+        // channel and measures a colour nobody is looking at.
+        const probe = document.createElement("canvas");
+        probe.width = probe.height = 1;
+        const painter = probe.getContext("2d");
+        const asColour = (rgb) => "rgb(" + rgb.join(", ") + ")";
+        const paint = (value, backdrop) => {
+          // Both arguments have to be colours the canvas understands. A
+          // [r, g, b] array assigned to fillStyle is not one: the assignment is
+          // ignored and the previous fillStyle survives, so an earlier call in
+          // this same function left the backdrop as whatever it last painted.
+          // That is not a hypothetical -- it is what made this check pass a
+          // plate whose border was transparent, because the "edge" it measured
+          // was the ink from the shape before it.
+          painter.clearRect(0, 0, 1, 1);
+          painter.fillStyle = typeof backdrop === "string" ? backdrop : asColour(backdrop);
+          painter.fillRect(0, 0, 1, 1);
+          painter.fillStyle = value;
+          painter.fillRect(0, 0, 1, 1);
+          const pixel = painter.getImageData(0, 0, 1, 1).data;
+          return [pixel[0], pixel[1], pixel[2]];
+        };
         const luminance = (rgb) =>
           rgb
             .map((channel) => {
@@ -2485,30 +2514,46 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
           const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
           return (hi + 0.05) / (lo + 0.05);
         };
-        const ink = toRgb(path ? getComputedStyle(path).fill : "");
-        const plateColour = toRgb(plate ? getComputedStyle(plate).backgroundColor : "");
-        const bodyColour = toRgb(getComputedStyle(document.body).backgroundColor);
-        const border = plate ? getComputedStyle(plate) : null;
-        const borderColour = toRgb(border ? border.borderTopColor : "");
+        const painted = plate ? getComputedStyle(plate) : null;
+        const bodyColour = paint(getComputedStyle(document.body).backgroundColor, "#fff");
+        const plateColour = painted ? paint(painted.backgroundColor, bodyColour) : bodyColour;
+        // Every shape the mark is drawn from, and the worst of them rather than
+        // the first: 20 of the mark's 22 shapes are paths and two are rects, so
+        // a rule that caught the paths alone would leave two rectangles in
+        // NRE's blue, and a checker that read one path would not notice. The
+        // clip-path rect in <defs> is filtered out because it is never painted,
+        // and it is black by default, so counting it would fail every page.
+        const shapes = plate
+          ? Array.from(plate.querySelectorAll("svg path, svg rect, svg polygon, svg circle, svg ellipse"))
+              .filter((shape) => {
+                const box = shape.getBoundingClientRect();
+                return box.width > 0 && box.height > 0;
+              })
+          : [];
+        const inks = shapes.map((shape) => paint(getComputedStyle(shape).fill, plateColour));
+        // The plate has to be findable: a dark chip on a dark page is a plate
+        // only because of the line round it. An earlier version compared the
+        // border's colour string to the plate's, which every border passed,
+        // visible or not -- "rgba(0, 0, 0, 0)" differs from everything by
+        // string alone. This composites the border over the plate it is drawn
+        // on and measures what is left, so 1.5:1 is the line.
+        const edgeInk = painted ? paint(painted.borderTopColor, plateColour) : plateColour;
+        const borderWide = painted ? parseFloat(painted.borderTopWidth) >= 1 : false;
         return {
           plate: plateColour.join(","),
-          markOnPlate: ink.length === 3 && plateColour.length === 3 ? ratio(ink, plateColour) : 0,
-          plateOnPage: plateColour.length === 3 && bodyColour.length === 3 ? ratio(plateColour, bodyColour) : 0,
-          // A white plate on a white page is only a plate because of its edge.
-          // The first version had no border, so in the light palette the mark
-          // sat on the page with nothing around it and the plate measured
-          // 1.00:1 against the background.
-          edge: border ? parseFloat(border.borderTopWidth) >= 1 && borderColour.length === 3 &&
-            (borderColour.join(",") !== plateColour.join(",") || borderColour.join(",") !== bodyColour.join(",")) : false,
+          shapes: inks.length,
+          markOnPlate: inks.length ? Math.min(...inks.map((ink) => ratio(ink, plateColour))) : 0,
+          plateOnPage: ratio(plateColour, bodyColour),
+          edge: borderWide ? ratio(edgeInk, plateColour) : 0,
         };
       });
-      // 3:1 is the non-text contrast floor for the mark itself; the plate has
-      // to be findable, which in the light palette means the edge rather than
-      // a different fill.
+      // 3:1 is the non-text contrast floor for the mark itself. The plate has
+      // to be findable, which in the dark palette means the edge rather than a
+      // fill that differs from the page: #141b3d on #14181d is 1.06:1.
       check(
         `the NRE mark stays legible in ${scheme}`,
-        legibility.markOnPlate >= 3 && (legibility.plateOnPage >= 1.05 || legibility.edge),
-        `on plate ${legibility.plate}: ${legibility.markOnPlate.toFixed(1)}:1 against the mark, ${legibility.plateOnPage.toFixed(2)}:1 against the page, edged: ${legibility.edge}`
+        legibility.markOnPlate >= 3 && (legibility.plateOnPage >= 1.05 || legibility.edge >= 1.5),
+        `${legibility.shapes} shapes, ink on plate ${legibility.plate}: ${legibility.markOnPlate.toFixed(1)}:1, plate on page ${legibility.plateOnPage.toFixed(2)}:1, edge ${legibility.edge.toFixed(2)}:1`
       );
     }
 

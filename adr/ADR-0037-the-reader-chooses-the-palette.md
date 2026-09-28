@@ -67,6 +67,18 @@ unless the reader says otherwise.**
    edge — without one it measured 1.00:1 against the background and was not a
    plate at all, which the legibility check caught.
 
+   **Amended 28 September 2026.** `--logo-plate` is gone. The credit is dark in
+   both palettes — `--nre-plate: #141b3d` with `--nre-ink: #cdd6ff` — because
+   following the palette was solving the wrong problem: a plate that changes
+   colour with the theme is a plate that has to be re-earned in each theme, and
+   the light one was a white box on a white page, held together only by its
+   edge. One chip that is dark everywhere is one thing, it is legible at 12.4:1
+   instead of at whatever the page behind it happens to be, and it reads as
+   part of the design rather than as a hole in the footer. It is the one pair of
+   colours in the palette that is deliberately not a `light-dark()` pair, and the
+   test says so. The mark is reversed to achieve it (ADR-0036, amended twice),
+   which is an open question with NRE rather than a settled one.
+
 ## Consequences
 
 - The palette is one list, so a token cannot be added to the light page and
@@ -77,9 +89,16 @@ unless the reader says otherwise.**
   control a reader uses instead of a media query. Five new checks: the control
   exists and is shown, it is a named switch whose `aria-checked` is the palette
   the page is painting, a first visit with empty storage is dark, the target is
-  44px, and the choice survives a reload. The mark's legibility is now measured
-  in each scheme — 3:1 for the mark on its plate, and the plate has to be
-  findable.
+  44px, and the choice survives a reload. The mark's legibility is measured in
+  each scheme — 3:1 for the mark on its plate, and the plate has to be findable.
+  Measuring it properly took two attempts and found two defects: the check first
+  read colours out of the computed string, which silently misreads a
+  `color-mix()` border because the browser reports those in a notation whose
+  numbers are not channels; and it then passed an array to `fillStyle`, which is
+  not a colour, so the canvas kept the previous one and a plate with a
+  transparent border passed. Both were found by tampering with the built page and
+  running the suite against the tampered copy, which is now the standing way to
+  show a browser check has teeth.
 - One test-side consequence worth recording: the theme block is a script in the
   head, so "the page's script" stopped being the first `<script>` in the file.
   Fourteen call sites read that slice and were reading the theme block. They now
