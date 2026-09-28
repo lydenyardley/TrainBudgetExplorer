@@ -16,17 +16,52 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      external asset, because this block is part of the HTML it is written into.
      A route that needs to differ sets a token (--page-max, --page-pad, --h1)
      in its own :root rather than restating the rule. */
+  /* The palette, in one list, both schemes at once.
+     Each colour token is written twice: the plain light value first, so a
+     browser without light-dark() paints the light page rather than resolving
+     an invalid value to nothing, and light-dark() after it, so a browser that
+     has it takes both palettes from one declaration and the switcher's only
+     job is to say which one. :root asks for "light dark", so a reader with no
+     stored choice still gets their system preference; the reader's own choice
+     overrides it through the attribute below. The system default is dark --
+     this is a page read at night, on a phone, on a train. */
   :root {
-    --bg: #fff; --fg: #11161d; --line: #d0d5dd; --muted: #5b6472; --accent: #14509b;
-    --ochre: #a65d00; --best: rgba(20, 80, 155, .07); --field: #fff;
-    --warn: #9a6700;
+    color-scheme: light dark;
+    --bg: #fff; --bg: light-dark(#fff, #14181d);
+    --fg: #11161d; --fg: light-dark(#11161d, #e7ebf0);
+    --line: #d0d5dd; --line: light-dark(#d0d5dd, #3a424c);
+    --muted: #5b6472; --muted: light-dark(#5b6472, #a7b2c0);
+    --accent: #14509b; --accent: light-dark(#14509b, #7db4f5);
+    --ochre: #a65d00; --ochre: light-dark(#a65d00, #f0b35b);
+    --best: rgba(20, 80, 155, .07); --best: light-dark(rgba(20, 80, 155, .07), rgba(125, 180, 245, .12));
+    --field: #fff; --field: light-dark(#fff, #1c2127);
+    --warn: #9a6700; --warn: light-dark(#9a6700, #f0b35b);
+    /* The plate the NRE mark sits on. The mark is dark blue on a fixed fill,
+       so the plate has to stay light in both schemes for the mark to be
+       legible, as the Developer Brand Guidelines require; in the dark palette
+       it is a near-white rather than pure white so it reads as a chip instead
+       of a hole in the footer. */
+    --logo-plate: #fff; --logo-plate: light-dark(#fff, #f2f0ec);
     --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #14181d; --fg: #e7ebf0; --line: #3a424c; --muted: #a7b2c0; --accent: #7db4f5;
-            --ochre: #f0b35b; --best: rgba(125, 180, 245, .12); --field: #1c2127;
-            --warn: #f0b35b; }
-  }
+  /* The reader's choice, which beats the system preference: the tokens are
+     already resolved by light-dark(), so naming the scheme is the whole of it,
+     and it also moves the form controls, the scrollbars and the canvas. */
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  /* The theme control, at the top right of the page and in the flow rather
+     than pinned to the corner. A fixed control in the corner sits on top of
+     whatever the reader scrolls there: on a phone the filter chips land under
+     it, and a tap that should have chosen a destination type chooses the
+     palette instead. 44px, because that is the promise the accessibility
+     matrix holds every control to. */
+  #themeToggle { display: flex; align-items: center; justify-content: center;
+                 margin: 0 0 .5rem auto; width: 2.75rem; height: 2.75rem; padding: .4rem;
+                 border: 1px solid var(--line); border-radius: .6rem;
+                 background: var(--field); color: var(--fg); font: inherit; cursor: pointer; }
+  #themeToggle:hover { background: var(--best); }
+  #themeToggle .glyph { font-size: 1.1rem; line-height: 1; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; padding: var(--page-pad); max-width: var(--page-max);
@@ -83,7 +118,8 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      overflows it, and a 24px-target check rightly fails. */
   .nre-credit a { display: inline-flex; align-items: center; }
   .nre-logo { display: inline-flex; align-items: center; padding: .3rem .55rem;
-              background: #fff; border-radius: .3rem; }
+              background: var(--logo-plate); border: 1px solid var(--line);
+              border-radius: .3rem; }
   .nre-logo svg { display: block; height: 2rem; width: auto; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .85rem; }
@@ -110,6 +146,7 @@ _PRIVACY_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+__SHARED_THEME__
 <title>Privacy</title>
 <style>
 __SHARED_CSS__
@@ -126,6 +163,7 @@ __SHARED_CSS__
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
 <nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
+__THEME_TOGGLE__
 <main>
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
@@ -161,6 +199,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+__SHARED_THEME__
 <title>Where can we go from __ORIGIN__ for up to &pound;__BUDGET__?</title>
 <style>
 __SHARED_CSS__
@@ -375,6 +414,7 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
+__THEME_TOGGLE__
 <main>
 <h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
@@ -2165,6 +2205,7 @@ _CHOOSER_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+__SHARED_THEME__
 <title>Where can we go for &pound;__BUDGET__? Pick your station</title>
 <style>
 __SHARED_CSS__
@@ -2187,6 +2228,7 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
+__THEME_TOGGLE__
 <main>
 <h1 id="chooserHeading">Where can we go for up to &pound;<span id="chooserBudgetFigure">__BUDGET__</span>?</h1>
 <p class="brand">Rail Budget</p>
@@ -2316,20 +2358,80 @@ __ANALYTICS__
 """
 
 
-def with_shared_css(template: str) -> str:
-    """Inline the shared stylesheet into one route template.
+# The theme, before the first paint and on every route. The choice is read here
+# and written to the root element rather than left to CSS, because a page that
+# paints light and then repaints dark is a flash every reader sees on every
+# visit. localStorage can throw -- a private window, a file:// page with storage
+# blocked -- and then the reader simply gets the default, which is the point of
+# having a default.
+SHARED_THEME = """<meta name="color-scheme" content="light dark">
+<script>
+  // The one thing this page does before it renders anything: say which palette
+  // it is, so there is no flash of the other one. Dark unless the reader has
+  // chosen otherwise, on this device, in this browser.
+  (function () {
+    var dark = true;
+    try {
+      var stored = localStorage.getItem("tbe-theme");
+      if (stored) dark = stored === "dark";
+    } catch (e) { /* storage blocked: the default stands */ }
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  })();
+  // The control, wired once the body exists. It ships hidden and is revealed
+  // here: a button that cannot do anything without this script is a control
+  // that lies, which is the same defect as the Change button this replaced.
+  document.addEventListener("DOMContentLoaded", function () {
+    var root = document.documentElement;
+    var toggle = document.getElementById("themeToggle");
+    if (!toggle) return;
+    var glyph = toggle.querySelector(".glyph");
+    function paint(dark) {
+      root.dataset.theme = dark ? "dark" : "light";
+      toggle.setAttribute("aria-checked", String(dark));
+      if (glyph) glyph.textContent = dark ? "\\u263E" : "\\u2600";
+    }
+    paint(root.dataset.theme === "dark");
+    toggle.hidden = false;
+    toggle.addEventListener("click", function () {
+      var dark = root.dataset.theme !== "dark";
+      paint(dark);
+      try { localStorage.setItem("tbe-theme", dark ? "dark" : "light"); } catch (e) { /* remembered for this page only */ }
+    });
+  });
+</script>"""
+
+# The control itself, identical on every route, and outside <main> so it cannot
+# join the page's one content landmark. The name is the state it holds and the
+# glyph is decorative, so a screen reader says "Dark theme, switch, on" and a
+# sighted reader sees a moon.
+THEME_TOGGLE = (
+    '<button id="themeToggle" type="button" role="switch" aria-checked="true" hidden>'
+    '<span class="glyph" aria-hidden="true">\\u263E</span>'
+    '<span class="sr-only">Dark theme</span></button>'
+)
+
+
+def with_shared(template: str) -> str:
+    """Inline the shared stylesheet, theme block and control into one route.
 
     The site's promise is one file per route with no external asset, so the
-    shared block is substituted at import time rather than fetched. A template
-    that still holds the placeholder is a bug, so this says so rather than
-    shipping a page with unstyled text.
+    shared blocks are substituted at import time rather than fetched. A template
+    that still holds a placeholder is a bug, so this says so rather than
+    shipping a page with unstyled text or an unwired control.
     """
     filled = template.replace("__SHARED_CSS__", SHARED_CSS)
     if "__SHARED_CSS__" in filled:
         raise ValueError("the shared stylesheet was not inlined into this template")
+    for placeholder, block, what in (
+        ("__SHARED_THEME__", SHARED_THEME, "theme block"),
+        ("__THEME_TOGGLE__", THEME_TOGGLE, "theme control"),
+    ):
+        filled = filled.replace(placeholder, block)
+        if placeholder in filled:
+            raise ValueError(f"the shared {what} was not inlined into this template")
     return filled
 
 
-PRIVACY = with_shared_css(_PRIVACY_TEMPLATE)
-TEMPLATE = with_shared_css(_TEMPLATE)
-CHOOSER_TEMPLATE = with_shared_css(_CHOOSER_TEMPLATE)
+PRIVACY = with_shared(_PRIVACY_TEMPLATE)
+TEMPLATE = with_shared(_TEMPLATE)
+CHOOSER_TEMPLATE = with_shared(_CHOOSER_TEMPLATE)

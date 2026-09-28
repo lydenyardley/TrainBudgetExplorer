@@ -83,3 +83,13 @@ plate, underneath the results.**
   page computes from a static schedule are the "forecasted arrival and departure
   times" the terms require to stay consistent with Darwin is still unanswered,
   and is recorded as such in `docs/publish-checklist.md` §1.
+
+**Amended 28 September 2026.** The plate is a token now, `--logo-plate`, rather
+than a fixed white, because the page can be told to paint dark (ADR-0037) and a
+pure-white chip in a dark footer reads as a hole in the page. The mark's own
+colours still never move: the plate is white in the light palette and a
+near-white in the dark one. The light case needed a second thing — white on a
+white page is not a plate at all, and the plate measured 1.00:1 against the
+background, which the new legibility check caught — so it carries a 1px edge.
+What the guidelines ask, legible in both palettes, is now measured rather than
+argued: 3:1 between the mark's ink and its plate, in each scheme.
