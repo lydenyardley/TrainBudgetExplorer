@@ -135,3 +135,17 @@ and the page that ships is one a browser drove. The remaining gap is the
 unchanged-feed run, where the site was not rebuilt and there is no published
 page to drive; the demo page still runs there, and the next build drives its
 own output.
+
+**Amended 28 September 2026.** The paragraph above decides that which outcome a
+check the page cannot exercise gets "depends on the run", and that `--sweep`
+chooses. That was right for a suite whose only page was a demo page built to be
+big, and wrong the moment the suite was pointed at the published site: a
+one-origin build has no second station to change to and no destination without
+a journey, so five checks it honestly cannot run were five failures and the
+page went untested altogether. The teeth were never in the failure — they are
+in the skip budget, which is enforced in every mode and names the page. So a
+check with nothing to exercise is now a skip in every mode, `--sweep` is
+accepted and stripped but decides nothing, and one standard covers a single page
+and a station set. The "never ran that assertion" worry this record was written
+against is answered by the budget rather than by the exit code, which is the
+same worry the budget was added for.

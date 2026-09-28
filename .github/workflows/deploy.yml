@@ -343,11 +343,11 @@ jobs:
         # skipped, and a run in which no page was one fails rather than
         # passing having checked nothing.
         #
-        # --sweep is what makes a station set sweepable: a check a page has
-        # nothing to exercise (no UNESCO destination, one option in the picker)
-        # is a skip in a sweep and a failure in the single-page gate, so the
-        # gate keeps its teeth and the sweep does not fail every small station
-        # for being small. The run reports how many checks it skipped, and
+        # --sweep marks a station set, and no longer changes the standard: a
+        # check a page has nothing to exercise (no UNESCO destination, one
+        # option in the picker, no second station) is a skip in every mode, and
+        # the skip budget is what stops a page that has nothing to exercise
+        # from reading as a pass. The run reports how many checks it skipped, and
         # fails when that count is more than a stated fraction of the checks
         # the pages could have run -- so a sweep whose pages have stopped
         # exercising the suite cannot read as a pass, which is what reporting

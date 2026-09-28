@@ -159,6 +159,10 @@ __SHARED_CSS__
                    border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
                    border-radius: .15rem .15rem 0 0; cursor: text; }
   .heading-field:focus-within { background: var(--best); border-bottom-style: solid; }
+  /* The currency sign is read, not decorative. It was aria-hidden, so the
+     heading's accessible name was "for up to 20" while the page said 20
+     pounds everywhere else; the number field keeps its own label, so nothing
+     is announced twice. */
   .budget-prefix { user-select: none; }
   #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
@@ -169,7 +173,11 @@ __SHARED_CSS__
                   border-radius: .15rem .15rem 0 0; background: transparent; color: var(--accent);
                   font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
   #changeOrigin:hover, #changeOrigin:focus-visible { background: var(--best); border-bottom-style: solid; }
-  #changeOrigin::after { content: "↕"; font-size: .5em; opacity: .65; }
+  /* The swap arrow is an affordance, not a word. It was CSS generated
+     content, which the browser does read inside the heading's accessible name
+     -- "from Change starting station: GRANTHAM ↕" -- so it is a real element
+     hidden from the name instead (the same call made for the pound sign). */
+  .origin-swap { font-size: .5em; opacity: .65; }
   .filter-bar { display: grid; grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr);
                 gap: 1.25rem 2rem; align-items: start; padding: 1.1rem 1.25rem 1.25rem;
                 border: 1px solid var(--line); border-radius: .7rem; background: color-mix(in srgb, var(--field) 75%, transparent); }
@@ -356,13 +364,18 @@ __SHARED_CSS__
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
 <main>
-<h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix" aria-hidden="true">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from <button id="changeOrigin" type="button" aria-expanded="false" aria-controls="originPicker" aria-label="Change starting station"><span>__ORIGIN__</span></button></h1>
+<h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
      prices-only build shows; a build with a timetable replaces it. -->
 <p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading.</p>
-<p class="sub" id="firstUse">This page is about one station: <b>Change</b> in the heading moves to another one. Everything below narrows the destinations from here.</p>
+<!-- The first-use note is written by first_use_sentence() per build, because
+     the one thing a first-time reader cannot guess -- what the Change control
+     in the heading does -- only exists on a build that wrote another
+     station's page. A one-station build points the reader at a control it does
+     not have. -->
+<p class="sub" id="firstUse">__FIRST_USE__</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
