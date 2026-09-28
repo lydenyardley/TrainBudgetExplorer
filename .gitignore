@@ -4,6 +4,10 @@ __pycache__/
 _demo_feed/
 _bench_feed/
 
+# The synthetic Knowledgebase reference feed the browser suite's demo build
+# reads. Output of `make_synthetic_feed.py --knowledgebase`, never input.
+_demo_kb/
+
 # Credentials. The marketplace issues a consumer key and secret per API product,
 # and a secret in a tracked file is a secret that has to be rotated. Keep them in
 # the environment, or in .env, which is ignored here on purpose.
@@ -30,6 +34,13 @@ _site/
 _cache/
 _browser_demo.html
 _browser_feed/
+
+# The synthetic demo site the browser suite drives, and a base-path variant of
+# a build. Both are output, never input: each is written afresh by
+# `make_synthetic_feed.py` plus a `build_demo_page.py` run, so leaving one
+# around only makes `git status` report it as untracked work.
+_demo_site/
+_site_base/
 
 # The station classification cache a build writes beside the feed it read.
 location-types.json
