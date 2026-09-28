@@ -259,12 +259,42 @@ python dtd_audit.py
 
 The downloader writes each ZIP atomically and records its non-secret URL, size,
 and hash in `feeds/download-manifest.json`; the audit then checks the archive
-before the page build reads it. Nothing in the repository schedules this. There is
-no server and no cron job: the refresh is a deliberate manual run (or the CI
-workflow, which rebuilds from a feed artifact when one is supplied), and a rebuild
-is the only step that changes the published pages. The page's own provenance line
-comes from the feed's `metadata.json`, so a refreshed build says which download it
-was built from.
+before the page build reads it. The deploy workflow runs this on a daily
+schedule (`17 3 * * *` UTC) as well as on every push, so the published pages
+follow the feed without anyone running anything. A rebuild is the only step that
+changes the published pages. The page's own provenance line comes from the feed's
+`metadata.json`, so a refreshed build says which download it was built from.
+
+**A daily refresh does not re-fetch 125 MB to be told nothing changed.** A
+national fares and timetable pair is large and is re-requested every run whether
+or not the portal has published a new one, so the downloader asks conditionally:
+when the manifest holds an `ETag` or `Last-Modified` from the last run, and the
+file it describes is still on disk, the request carries `If-None-Match` /
+`If-Modified-Since` and a `304` keeps the archive. A portal that ignores those
+headers answers `200` and the download proceeds exactly as before, so this
+cannot break against one that does not support it. A `304` never advances
+`downloaded_at` — the page measures the age of its prices against that field,
+and a feed the portal last republished a month ago must keep saying so however
+many `304`s it has answered since. It records `checked_at` instead, which is
+the moment the portal was asked rather than the moment data arrived.
+
+A `304` is believed only if the file on disk still matches the record that
+asked the question: its size and its SHA-256 are re-checked first, and a
+truncated, replaced or half-written file is fetched in full rather than
+carried forward. That turns the manifest's central claim from one this run
+inherited into one it verified, and it costs a fraction of a second against the
+network transfer it saves. `--no-conditional` skips the question entirely, which
+is the escape hatch when a local file has gone bad underneath the downloader.
+
+**A transient failure is retried; a refusal is not.** A timeout, a reset
+connection, a `429` or a `5xx` on an unattended daily job used to fail the whole
+run for a reason that would be gone in a minute. Those are retried up to
+`--retries` times (3 by default) with a pause that doubles and is capped.
+A `4xx` is not retried: a portal that has refused the subscription or the
+credentials will refuse them again, and asking again only spends the run's
+time. A response that is the wrong shape — an HTML error page behind a `200` —
+is not retried either, because that is a fault to be read, not weather to wait
+out.
 
 1. Set `NRDP_USERNAME` and `NRDP_PASSWORD` in the local environment. Do not put
    either value in a command, source file, or chat message. The `.env` pattern is
@@ -280,6 +310,13 @@ was built from.
    `--dtd timetable` while confirming entitlement, and `--kb` to download the
    supplied Knowledgebase XML feeds as well. The downloader never replaces an
    existing good archive with an error page, empty ZIP, or non-ZIP response.
+
+   `--print-fingerprint <manifest>` prints a digest of what a manifest says the
+   feeds *are* and exits, needing no credentials. Compare that rather than the
+   manifest's bytes to decide whether a rebuild is warranted: the manifest also
+   records when a download was last *checked*, which moves on a day the portal
+   republished nothing, and a byte comparison would read that as a new feed
+   every day.
 3. Validate and audit the real pair:
 
    ```bash

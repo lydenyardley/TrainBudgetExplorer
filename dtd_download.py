@@ -36,6 +36,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -54,6 +55,12 @@ DTD_FARES_URL = "https://opendata.nationalrail.co.uk/api/staticfeeds/2.0/fares"
 DTD_TIMETABLE_URL = "https://opendata.nationalrail.co.uk/api/staticfeeds/3.0/timetable"
 
 DEFAULT_TIMEOUT = 60.0
+# How many extra attempts a transient failure gets. Three retries means at most
+# four requests and about 30 seconds of waiting, which is a long time for a
+# daily job to lose and short enough not to look like a hang.
+DEFAULT_RETRIES = 3
+RETRY_BASE_SECONDS = 2.0
+RETRY_MAX_SECONDS = 20.0
 CHUNK_SIZE = 1024 * 1024
 MAX_AUTH_BYTES = 1024 * 1024
 # A national feed can be large, but a response larger than this is much more
@@ -148,7 +155,17 @@ FEEDS_BY_NAME = {feed.name: feed for feed in ALL_FEEDS}
 
 
 class DownloadError(RuntimeError):
-    """Base class for errors safe to show on a command line."""
+    """Base class for errors safe to show on a command line.
+
+    ``status`` is the HTTP status when there was one, and ``None`` for a
+    failure that never got a response -- a timeout, a reset connection. It is
+    what separates "the portal is briefly unwell, ask again" from "the portal
+    said no, and asking again will not change its mind".
+    """
+
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class AuthenticationError(DownloadError):
@@ -161,6 +178,14 @@ class EntitlementError(DownloadError):
 
 class FeedValidationError(DownloadError):
     """A successful HTTP response was not the expected feed format."""
+
+
+class _NotModified(Exception):
+    """The portal answered a conditional request with 304.
+
+    Deliberately not a ``DownloadError``: it is not a failure, and the code
+    that turns it into a result has to run before anything that reports one.
+    """
 
 
 @dataclass(frozen=True)
@@ -176,6 +201,16 @@ class DownloadResult:
     content_type: str
     downloaded_at: str
     members: tuple[str, ...] = ()
+    # The validators the portal returned, kept so the next run can ask whether
+    # anything changed instead of re-downloading a national feed to find out.
+    etag: str = ""
+    last_modified: str = ""
+    # When the portal last confirmed this feed unchanged, which is a different
+    # fact from when it was downloaded. The page's freshness line reads
+    # ``downloaded_at`` and must never read this: a 304 must not make a
+    # month-old feed look like today's download.
+    checked_at: str = ""
+    unchanged: bool = False
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -239,6 +274,16 @@ def _open_response(
     try:
         response = client(request, timeout=timeout)
     except urllib.error.HTTPError as error:
+        # 304 is the answer to a conditional request and carries no body, so it
+        # arrives here like any other error status. It is not an error: it is
+        # the cheapest possible answer to "has this changed?".
+        if error.code == 304:
+            # Still close it: an HTTPError holds a file object, and the 304
+            # path is the one that most easily leaks one.
+            close = getattr(error, "close", None)
+            if callable(close):
+                close()
+            raise _NotModified() from None
         # Never include error.read(): an upstream error page can contain
         # account or diagnostic information and is not needed to act on it.
         close = getattr(error, "close", None)
@@ -246,7 +291,9 @@ def _open_response(
             close()
         raise _http_error(error.code, request.full_url, authenticating=authenticating) from None
     except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as error:
-        raise DownloadError(f"request to {request.full_url} failed ({type(error).__name__})") from None
+        raise DownloadError(
+            f"request to {request.full_url} failed ({type(error).__name__})"
+        ) from None
     try:
         yield response
     finally:
@@ -266,7 +313,7 @@ def _http_error(status: int | None, url: str, *, authenticating: bool) -> Downlo
             "(select 'Fares, Routeing Guide and Timetable data') or the token may have expired"
         )
     shown_status = f"HTTP {status}" if status is not None else "an HTTP error"
-    return DownloadError(f"request to {url} failed with {shown_status}")
+    return DownloadError(f"request to {url} failed with {shown_status}", status=status)
 
 
 def _check_status(response: object, url: str, *, authenticating: bool = False) -> None:
@@ -633,23 +680,129 @@ def download_one(
     timeout: float = DEFAULT_TIMEOUT,
     allowed_hosts: set[str] | None = None,
     max_bytes: int = MAX_DOWNLOAD_BYTES,
+    previous: dict[str, object] | None = None,
+    retries: int = DEFAULT_RETRIES,
+    sleep: Callable[[float], None] | None = None,
 ) -> DownloadResult:
-    """Download one feed, validating it before an atomic replacement."""
+    """Download one feed, validating it before an atomic replacement.
+
+    Two things make a daily refresh cheap and an unattended one survive a bad
+    moment, and both are here rather than in the workflow because every caller
+    gets them.
+
+    **Conditional.** A national fares or timetable ZIP is large and is
+    re-requested on every run whether or not the portal has published a new
+    one. When a previous record for this feed carries a validator and the file
+    is still on disk, the request asks "has this changed?" with
+    ``If-None-Match``/``If-Modified-Since``, and a 304 keeps the file. A server
+    that ignores the headers answers 200 and the download happens exactly as
+    before, so this cannot break against a portal that does not support it.
+
+    A 304 is only ever believed when there is a file to keep. The record says a
+    download happened once; if the file has been deleted since, "unchanged"
+    would leave nothing to build from, so the validators are withheld and the
+    full download runs.
+
+    **Retrying.** A timeout or a 502 on an unattended daily job used to fail the
+    whole run for a reason that would be gone in a minute. Transient failures
+    are retried with a growing pause; a 4xx is not, because a portal that has
+    refused the subscription or the credentials will refuse them again.
+    """
+
+    attempt_errors: list[DownloadError] = []
+    # Resolved here rather than as a default argument, so that `time.sleep` is
+    # still the module's at the moment of the call and not the one captured
+    # when this line was first imported.
+    wait = time.sleep if sleep is None else sleep
+    for attempt in range(max(0, retries) + 1):
+        try:
+            return _download_once(
+                spec,
+                destination,
+                token,
+                opener=opener,
+                timeout=timeout,
+                allowed_hosts=allowed_hosts,
+                max_bytes=max_bytes,
+                previous=previous,
+            )
+        except _NotModified:
+            # A 304 is a claim about a file. Believe it only if the file is
+            # still the one that claim was made about.
+            problem = _disagrees_with_record(destination, previous)
+            if problem is None:
+                return _unchanged_result(spec, destination, previous)
+            # The portal says the feed is unchanged and the disk says otherwise.
+            # The disk is the evidence we build from, so it wins: fetch it again
+            # and ask no question.
+            # Note it on stderr rather than swallowing it: a feed that keeps
+            # needing a full download is a fact an operator wants in the log.
+            print(
+                f"{spec.name}: the portal reports it unchanged but {problem}; "
+                "downloading it in full",
+                file=sys.stderr,
+            )
+            try:
+                return _download_once(
+                    spec,
+                    destination,
+                    token,
+                    opener=opener,
+                    timeout=timeout,
+                    allowed_hosts=allowed_hosts,
+                    max_bytes=max_bytes,
+                    previous=None,
+                )
+            except _NotModified:
+                # No question was asked, so a 304 here is the portal refusing to
+                # send the file at all. Left alone it would escape as something
+                # the command loop does not catch, and the run would end in a
+                # traceback instead of naming the feed that could not be had.
+                raise DownloadError(
+                    f"{spec.name}: the portal answered 304 to a request that asked "
+                    "no question, so the feed could not be downloaded"
+                ) from None
+        except DownloadError as error:
+            attempt_errors.append(error)
+            if attempt >= retries or not _is_transient(error):
+                raise
+            wait(_backoff_seconds(attempt))
+    # Unreachable: the loop either returns or raises on its last attempt.
+    raise attempt_errors[-1]  # pragma: no cover
+
+
+def _download_once(
+    spec: FeedSpec,
+    destination: str | Path,
+    token: str,
+    *,
+    opener: Opener | None,
+    timeout: float,
+    allowed_hosts: set[str] | None,
+    max_bytes: int,
+    previous: dict[str, object] | None,
+) -> DownloadResult:
+    """One download attempt, with no retry of its own."""
 
     if not isinstance(token, str) or not token.strip():
         raise DownloadError("an NRDP token is required for a feed download")
     hosts = {NRDP_HOST} if allowed_hosts is None else set(allowed_hosts)
     _validate_url(spec.url, hosts)
     destination = Path(destination)
-    request = urllib.request.Request(
-        spec.url,
-        method="GET",
-        headers={
-            "X-Auth-Token": token,
-            "Accept": "application/zip, application/xml, application/octet-stream",
-            "User-Agent": "TrainBudgetExplorer/1.0 (static feed downloader)",
-        },
-    )
+    headers = {
+        "X-Auth-Token": token,
+        "Accept": "application/zip, application/xml, application/octet-stream",
+        "User-Agent": "TrainBudgetExplorer/1.0 (static feed downloader)",
+    }
+    # The validators only travel when there is a file they could be about.
+    if previous is not None and destination.is_file():
+        etag = str(previous.get("etag") or "").strip()
+        modified = str(previous.get("last_modified") or "").strip()
+        if etag:
+            headers["If-None-Match"] = etag
+        if modified:
+            headers["If-Modified-Since"] = modified
+    request = urllib.request.Request(spec.url, method="GET", headers=headers)
     fd, temporary = _safe_temp_path(destination)
     os.close(fd)
     try:
@@ -658,6 +811,8 @@ def download_one(
             _validate_final_url(response, hosts)
             content_type = _header(response, "Content-Type").split(";", 1)[0].strip()
             size, digest = _read_chunks(response, temporary, max_bytes)
+            etag = _header(response, "ETag").strip()
+            modified = _header(response, "Last-Modified").strip()
         info = validate_download(temporary, spec)
         os.replace(temporary, destination)
         members = tuple(str(member) for member in info.get("members", ()))
@@ -671,6 +826,8 @@ def download_one(
             content_type=content_type,
             downloaded_at=_now(),
             members=members,
+            etag=etag,
+            last_modified=modified,
         )
     except (FeedValidationError, DownloadError):
         raise
@@ -678,6 +835,112 @@ def download_one(
         raise DownloadError(f"could not save {spec.name} safely ({type(error).__name__})") from None
     finally:
         _remove_temp(temporary)
+
+
+def _unchanged_result(
+    spec: FeedSpec, destination: Path, previous: dict[str, object]
+) -> DownloadResult:
+    """The previous record, carried forward, for a feed the portal says is the same.
+
+    Every field the manifest holds is copied through untouched. That includes
+    ``downloaded_at``, which is the one that matters: the page measures the age
+    of its prices against it, and a feed the portal last changed a month ago
+    must keep saying so however many 304s it has answered since.
+
+    Only reached once ``_disagrees_with_record`` has confirmed the record
+    describes the file on disk, so every field copied here is a claim this run
+    has just verified rather than one it inherited.
+    """
+    return DownloadResult(
+        name=spec.name,
+        source=spec.source,
+        url=spec.url,
+        path=str(destination),
+        bytes=_as_int(previous.get("bytes")),
+        sha256=str(previous.get("sha256") or ""),
+        content_type=str(previous.get("content_type") or ""),
+        downloaded_at=str(previous.get("downloaded_at") or ""),
+        members=tuple(str(member) for member in previous.get("members", ()) or ()),
+        etag=str(previous.get("etag") or ""),
+        last_modified=str(previous.get("last_modified") or ""),
+        checked_at=_now(),
+        unchanged=True,
+    )
+
+
+def _disagrees_with_record(destination: Path, previous: dict[str, object] | None) -> str | None:
+    """Describe how *destination* fails to match *previous*, or ``None``.
+
+    The point is not to be paranoid about the portal. It is that the manifest
+    is a provenance record: if the file on disk is truncated, replaced or
+    half-written and the manifest still asserts a digest for it, then a record
+    that is checkable has become a record that is merely believed -- and a
+    304 would keep asserting it daily, indefinitely, for a portal that may not
+    republish for a month.
+
+    Hashing costs a fraction of a second against ~125 MB, which is less time
+    than the request it saved, and it turns the manifest's central claim into
+    one this run actually verified rather than one it inherited.
+    """
+
+    if not previous:
+        # A 304 to a request that asked no question. There is no claim to check
+        # and nothing to carry forward, so the only honest reading is that the
+        # feed is not known to be here and must be fetched.
+        return "the request asked no question"
+    try:
+        actual = destination.stat().st_size
+    except OSError:
+        return "the file is not on disk"
+    recorded = _as_int(previous.get("bytes"))
+    if recorded and actual != recorded:
+        return f"it is {actual} bytes on disk and {recorded} in the record"
+    recorded_digest = str(previous.get("sha256") or "")
+    if not recorded_digest:
+        return "the record has no digest to check it against"
+    digest = hashlib.sha256()
+    with destination.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            digest.update(chunk)
+    if digest.hexdigest() != recorded_digest:
+        return "its contents do not match the digest in the record"
+    return None
+
+
+def _as_int(value: object) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+
+
+# Statuses worth asking again about. Everything else -- 401, 403, 404, 400 --
+# is the portal answering a question, not failing to answer it, and asking the
+# same question again only spends the run's time.
+TRANSIENT_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def _is_transient(error: DownloadError) -> bool:
+    if isinstance(error, (AuthenticationError, EntitlementError, FeedValidationError)):
+        return False
+    if error.status is None:
+        # No response at all: a timeout, a reset, a DNS failure. The request may
+        # well succeed on a second attempt.
+        return True
+    return error.status in TRANSIENT_STATUS
+
+
+def _backoff_seconds(attempt: int) -> float:
+    """A pause that grows and then stops growing.
+
+    Capped, because a run that waits five minutes for the same 503 is no longer
+    a retry. The jitter is a fixed fraction of the delay rather than random, so
+    the wait is reproducible in a test and in a log.
+    """
+    return min(RETRY_BASE_SECONDS * (2**attempt), RETRY_MAX_SECONDS)
 
 
 _MANIFEST_FIELDS = (
@@ -690,6 +953,11 @@ _MANIFEST_FIELDS = (
     "content_type",
     "downloaded_at",
     "members",
+    # Carried so the next run can ask the portal whether anything changed.
+    "etag",
+    "last_modified",
+    "checked_at",
+    "unchanged",
 )
 
 
@@ -722,8 +990,67 @@ def _existing_manifest_entries(target: Path) -> list[dict[str, object]]:
         entry = {field: raw[field] for field in _MANIFEST_FIELDS if field in raw}
         if "members" in entry and not isinstance(entry["members"], list):
             entry.pop("members")
+        # A validator read from JSON is only usable as a string; anything else
+        # is dropped rather than str()'d into a header that will not match.
+        for field in ("etag", "last_modified"):
+            if field in entry and not isinstance(entry[field], str):
+                entry.pop(field)
         entries.append(entry)
     return entries
+
+
+def previous_records(output_root: str | Path) -> dict[str, dict[str, object]]:
+    """The previous download records for a manifest, keyed by feed name.
+
+    Read before any download in a run, so every feed in that run asks its
+    conditional question against the record the *last* run wrote rather than
+    against whatever this run has just replaced.
+    """
+
+    root = Path(output_root)
+    return {
+        entry["name"]: entry
+        for entry in _existing_manifest_entries(root / "download-manifest.json")
+        if isinstance(entry.get("name"), str)
+    }
+
+
+# What makes a feed a *different* feed: its identity and its bytes.
+# Deliberately not included are `checked_at` and `unchanged`, which record that
+# a download was attempted and found unnecessary. A portal that answers 304 has
+# published nothing new, and byte-comparing a manifest that carries the time of
+# the check would report a change every single day -- and then rebuild, retest
+# and republish the identical site every single day.
+_FINGERPRINT_FIELDS = (
+    "name",
+    "source",
+    "url",
+    "sha256",
+    "bytes",
+    "downloaded_at",
+    "members",
+    "etag",
+    "last_modified",
+)
+
+
+def feed_fingerprint(manifest_path: str | Path) -> str:
+    """A digest of what the manifest says the feeds *are*.
+
+    Compare this, not the manifest's bytes, to decide whether a rebuild is
+    needed. An absent or unreadable manifest fingerprints as the empty string
+    rather than raising, so a first run is a change and a damaged cache is a
+    change too -- never a silent "nothing to do".
+    """
+
+    records = _existing_manifest_entries(Path(manifest_path))
+    identity = [
+        {field: entry[field] for field in _FINGERPRINT_FIELDS if field in entry}
+        for entry in sorted(records, key=lambda item: str(item.get("name")))
+    ]
+    return hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def write_manifest(results: Iterable[DownloadResult], output_root: str | Path) -> Path:
@@ -775,9 +1102,13 @@ def download_specs(
     timeout: float = DEFAULT_TIMEOUT,
     allowed_hosts: set[str] | None = None,
     write_metadata: bool = True,
+    retries: int = DEFAULT_RETRIES,
 ) -> list[DownloadResult]:
     """Download a sequence of specs, stopping before a bad response is saved."""
 
+    # Read once, before anything is written, so a feed refreshed earlier in the
+    # run cannot be asked to revalidate against a record it has already replaced.
+    previous = previous_records(output_root)
     results: list[DownloadResult] = []
     for spec in specs:
         results.append(
@@ -788,6 +1119,8 @@ def download_specs(
                 opener=opener,
                 timeout=timeout,
                 allowed_hosts=allowed_hosts,
+                previous=previous.get(spec.name),
+                retries=retries,
             )
         )
     if write_metadata and results:
@@ -852,8 +1185,31 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--output-root", type=Path, default=Path("feeds"))
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=DEFAULT_RETRIES,
+        help=(
+            "extra attempts for a transient failure (timeout, connection reset, "
+            f"5xx, 429); default {DEFAULT_RETRIES}. A 4xx is never retried"
+        ),
+    )
+    parser.add_argument(
+        "--no-conditional",
+        action="store_true",
+        help="always download in full, ignoring any ETag or Last-Modified from the last run",
+    )
     parser.add_argument("--no-manifest", action="store_true", help="do not write download-manifest.json")
     parser.add_argument("--list-feeds", action="store_true", help="list configured feed names and URLs")
+    parser.add_argument(
+        "--print-fingerprint",
+        metavar="MANIFEST",
+        help=(
+            "print a digest of what a download manifest says the feeds are, and "
+            "exit; this needs no credentials and is what a build should compare "
+            "to decide whether the feeds changed"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -875,8 +1231,16 @@ def main(argv: list[str] | None = None) -> int:
         for spec in ALL_FEEDS:
             print(f"{spec.name}\t{spec.source}\t{spec.url}")
         return 0
+    if arguments.print_fingerprint:
+        # Deliberately before authentication: a build compares fingerprints and
+        # must not need the portal's credentials to find out it has nothing new.
+        print(feed_fingerprint(arguments.print_fingerprint))
+        return 0
     if arguments.timeout <= 0:
         print("--timeout must be greater than zero", file=sys.stderr)
+        return 2
+    if arguments.retries < 0:
+        print("--retries cannot be negative", file=sys.stderr)
         return 2
 
     try:
@@ -887,6 +1251,9 @@ def main(argv: list[str] | None = None) -> int:
 
     results: list[DownloadResult] = []
     failed = False
+    # ``--no-conditional`` is a deliberate way to fetch in full, which is also
+    # what a corrupted local file looks like from the portal's point of view.
+    previous = {} if arguments.no_conditional else previous_records(arguments.output_root)
     for spec in _selected_specs(arguments):
         destination = _destination(arguments.output_root, spec)
         try:
@@ -895,13 +1262,24 @@ def main(argv: list[str] | None = None) -> int:
                 destination,
                 token,
                 timeout=arguments.timeout,
+                previous=previous.get(spec.name),
+                retries=arguments.retries,
             )
         except DownloadError as error:
             failed = True
             print(f"{spec.name}: failed: {error}", file=sys.stderr)
             continue
         results.append(result)
-        print(f"{spec.name}: downloaded {result.bytes} bytes to {result.path}")
+        if result.unchanged:
+            # Said plainly, because "unchanged" must never be mistaken for a
+            # fresh download: the feed on disk is the one the portal last
+            # published, and the page will keep dating it from that day.
+            print(
+                f"{spec.name}: unchanged since {result.downloaded_at or 'an unknown date'}"
+                f" ({result.path})"
+            )
+        else:
+            print(f"{spec.name}: downloaded {result.bytes} bytes to {result.path}")
 
     if results and not arguments.no_manifest:
         manifest = write_manifest(results, arguments.output_root)

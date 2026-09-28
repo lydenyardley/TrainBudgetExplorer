@@ -105,9 +105,16 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .feed-state
-          key: feed-manifest-v2-
+          key: feed-manifest-v3-
 
       - name: Download the licensed DTD feeds
+        # Sends If-None-Match/If-Modified-Since when the restored manifest has a
+        # validator, so a day the portal has republished nothing costs one cheap
+        # request instead of two large archives, and retries a timeout or 5xx
+        # rather than failing the day. A 4xx is never retried: the portal has
+        # answered, and asking again will not change its mind. "unchanged" here
+        # never advances downloaded_at, so the page's age of the prices stays
+        # the age of the data.
         env:
           NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
@@ -119,13 +126,30 @@ jobs:
         run: |
           mkdir -p .feed-state
           INPUTS=$(sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1)
-          if [ -f .feed-state/download-manifest.json ] && cmp -s feeds/download-manifest.json .feed-state/download-manifest.json && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
-            echo "Feed manifest and build inputs are unchanged; keeping the existing site."
+          # Compare what the feeds ARE, not the bytes of the manifest file. The
+          # manifest also records when a download was last *checked*, and that
+          # moves on every run -- including a run where the portal answered 304
+          # and published nothing. A byte comparison would read that as a new
+          # feed every single day, and rebuild, retest and republish the
+          # identical site every single day.
+          CURRENT=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)
+          PREVIOUS=""
+          if [ -f .feed-state/download-manifest.json ]; then
+            PREVIOUS=$(python dtd_download.py --print-fingerprint .feed-state/download-manifest.json)
+          fi
+          if [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
+            echo "Feeds and build inputs are unchanged; keeping the existing site."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Feed manifest or build inputs changed; a full audited build is required."
+            echo "Feeds or build inputs changed; a full audited build is required."
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Fingerprint the feeds
+        # The cache key for the next run, and a number worth having in the log:
+        # two runs with the same fingerprint published the same prices.
+        id: feed_fingerprint
+        run: echo "value=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
 
       - name: Audit downloaded feeds
         if: steps.feed_check.outputs.changed == 'true'
@@ -301,7 +325,12 @@ jobs:
           path: |
             .feed-state/download-manifest.json
             .feed-state/build-inputs.sha256
-          key: feed-manifest-v2-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ hashFiles('feeds/download-manifest.json') }}
+          # Keyed on the feed FINGERPRINT, not on the manifest's bytes, so the
+          # cache entry is replaced only when the feeds really are different.
+          # A key derived from the manifest file itself would produce a new
+          # entry every run for the reason described above, and the restore
+          # would never match a saved state.
+          key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ steps.feed_fingerprint.outputs.value }}
 
       - uses: actions/upload-pages-artifact@v3
         if: steps.feed_check.outputs.changed == 'true'
