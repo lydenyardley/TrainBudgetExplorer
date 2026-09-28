@@ -505,6 +505,14 @@ for what the generated JavaScript *does* — `page_templates.py` deliberately ha
 no unit tests of its own, a decision recorded in
 `adr/ADR-0027-browser-suite-covers-the-template.md`.
 
+A sweep (`--sweep` over a directory of pages) treats a check the page has nothing
+to exercise as a skip rather than a failure, so a small station is not failed for
+being small. Reporting skips is not enough on its own — a fixture can get small
+enough that the suite tests almost nothing and the run still reads as a pass — so
+the run also **fails when more than 5% of the checks on the station and chooser
+pages were skipped**, and names the pages that skipped. A green sweep is a claim
+that the suite exercised the page, not just that nothing it did exercise broke.
+
 ## The real-data build, end to end
 
 When the licensed feeds land, this is the whole path from download to site. Each

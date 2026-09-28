@@ -31,12 +31,16 @@
  * page carries no controls and is reported as 0/0, named at the end of the
  * run, and does not fail it. A run in which no page could be checked at all
  * has tested nothing and does fail, so pointing this at the wrong tree cannot
- * read as a pass.
+ * read as a pass. A sweep in which too much of the suite had nothing to
+ * exercise fails too: skips are reported, and a stated fraction of them is the
+ * most a run may skip, so a fixture that has quietly stopped exercising the
+ * page cannot look green.
  *
- * Exit codes: 0 every page checked behaves, 1 one does not or nothing was
- * checked, 2 playwright is unavailable. A skip is reported loudly and exits 2,
- * because a test that passes quietly on a machine where it never ran is the
- * thing this project keeps refusing to do.
+ * Exit codes: 0 every page checked behaves, 1 one does not, nothing was
+ * checked, or a sweep skipped more than its budget, 2 playwright is
+ * unavailable. A skip is reported loudly and exits 2, because a test that
+ * passes quietly on a machine where it never ran is the thing this project
+ * keeps refusing to do.
  */
 
 const http = require("node:http");
@@ -76,6 +80,21 @@ const SELLER = /^https:\/\/www\.(nationalrail\.co\.uk|thetrainline\.com)\//;
 // their own size. In --sweep they are reported as skips and the run says how
 // many it skipped, so a sweep cannot pass by exercising nothing.
 const NOT_EXERCISED = Symbol("not exercised");
+
+// The skip budget, as a fraction of the checks run on the pages that can
+// produce a skip at all (station and chooser pages).
+//
+// Reporting a skip was never enough on its own. Two station pages in a sweep
+// were once so small that twenty-two checks never ran, the run printed the
+// count, and it read as a pass: the fixture had quietly stopped testing the
+// thing the suite is for. A stated fraction is what stops that -- enough
+// tolerance for a small station to have no UNESCO destination, not enough for
+// a sweep whose pages have nothing to exercise. Exceeding it fails the run.
+//
+// The budget is measured against the station and chooser pages only, because a
+// privacy page has no controls to skip and its accessibility-matrix checks
+// would otherwise dilute the denominator.
+const SKIP_BUDGET = 0.05;
 
 /** A check this page cannot exercise, and why. */
 function notExercised(reason) {
@@ -2412,6 +2431,20 @@ function report(results) {
   const total = counted(() => true);
   const failed = counted((entry) => !entry.ok && !entry.skipped);
   const skipped = counted((entry) => entry.skipped);
+  // The budget is measured over the pages whose checks can be skipped, so the
+  // pages that cannot skip do not make an over-skipped sweep look within it.
+  const skippable = results.filter(
+    (result) => result.kind === "station" || result.kind === "chooser"
+  );
+  const skipTotal = skippable.reduce(
+    (sum, result) => sum + result.checks.length,
+    0
+  );
+  const skipCount = skippable.reduce(
+    (sum, result) => sum + result.checks.filter((entry) => entry.skipped).length,
+    0
+  );
+  const overSkipBudget = skipCount > skipTotal * SKIP_BUDGET;
   const broken = results.filter(
     (result) => result.stopped || result.checks.some((entry) => !entry.ok && !entry.skipped)
   );
@@ -2453,7 +2486,32 @@ function report(results) {
     ? `${broken.length} of ${results.length} page(s) failed: ${total - failed - skipped}/${total - skipped} checks passed (${broken.map((result) => result.given).join(", ")})`
     : `${tested} of ${results.length} page(s) checked, ${total - skipped - failed}/${total - skipped} browser checks passed`;
   console.log(`\n${summary}${skipped ? `, ${skipped} check(s) not exercised by the pages swept` : ""}`);
-  process.exit(failed || broken.length || nothingTested ? 1 : 0);
+  // The budget is stated in the failure as a number, because "too many checks
+  // were skipped" without the fraction and the count is a claim a reader has to
+  // take on trust -- and the whole reason for the budget is that a run which
+  // printed a skip count could still be green.
+  if (overSkipBudget) {
+    // Named per page, because "too many checks were skipped" is only
+    // actionable if it says which page has too little in it.
+    const worst = skippable
+      .map((result) => ({
+        given: result.given,
+        count: result.checks.filter((entry) => entry.skipped).length,
+        of: result.checks.length,
+      }))
+      .filter((entry) => entry.count > 0)
+      .sort((left, right) => right.count - left.count)
+      .map((entry) => `${entry.given} (${entry.count}/${entry.of})`);
+    console.error(
+      `\nOver the skip budget: ${skipCount} of ${skipTotal} checks on the station and ` +
+        `chooser pages were not exercised, which is more than ${Math.round(
+          SKIP_BUDGET * 100
+        )}%.\nThe pages under test have too little in them for the suite to say much ` +
+        `about them; give them destinations, or accept a smaller claim about what the run ` +
+        `proved.\nSkipped by page: ${worst.join(", ")}`
+    );
+  }
+  process.exit(failed || broken.length || nothingTested || overSkipBudget ? 1 : 0);
 }
 
 async function main() {
