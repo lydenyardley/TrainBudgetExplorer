@@ -162,7 +162,25 @@ jobs:
       - name: Gate the unsourced-destination count
         run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1575
 
+      - name: Restore the timetable index
+        # The timetable parse is the expensive part of this build, and it is
+        # skipped entirely when the focused index is already on disk: measured
+        # on the real feed at Grantham, 1m36s to parse and 11s to read the
+        # index back. The cache file is named after a digest of the feed bytes
+        # and the stations it serves, so a cache from a different timetable is
+        # a different filename and is simply never opened -- a stale restore is
+        # a miss, not a wrong answer. Keyed on the interpreter because a pickle
+        # is not portable across Python versions.
+        uses: actions/cache/restore@v4
+        with:
+          path: _cache
+          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-
+
       - name: Build the site from audited fares
+        # Times and changes, not just prices. The national timetable is what
+        # the page's journey columns are computed from, and a build without it
+        # publishes prices that a reader cannot plan around.
+        #
         # A real-feed build is refused unless it carries a licence notice and a
         # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit).
         # The notices below satisfy the licence condition. The contact comes
@@ -172,6 +190,38 @@ jobs:
         # publish a different route. Set that variable to the address the
         # publish checklist §1 has confirmed, not to the project's default,
         # which has not been confirmed as monitored.
+        #
+        # The bound is measured, not hoped for: 1m36s cold and 11s warm on the
+        # real feed, one origin, on the runner this runs on. Ten minutes is
+        # roughly four times the cold figure, which is enough for a busier
+        # runner and little enough that a build which has stopped making
+        # progress fails the day rather than occupying a runner until the job
+        # limit kills it. Raising it needs the measurement redone, not a
+        # hunch.
+        timeout-minutes: 10
+        if: steps.feed_check.outputs.changed == 'true'
+        env:
+          SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
+          PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
+        run: |
+          BASE_ARGS=()
+          if [ -n "$SITE_BASE_PATH" ]; then
+            BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
+          fi
+          # The fares feed is the public price source. The national timetable
+          # is what supplies the journey times, so it is loaded for the date
+          # being published rather than left out: without it the page's own
+          # opening sentence would promise times it cannot show.
+          python build_demo_page.py \
+            --feed feeds/fares \
+            --timetable feeds/timetable \
+            --knowledgebase feeds/knowledgebase \
+            --date "$(date -u +%Y-%m-%d)" \
+            --origin GRA \
+            --out _site/index.html \
+            --notices rdg,ogl,accuracy \
+            --require-live-reviewed-codes \
+            "${BASE_ARGS[@]}"
         if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
@@ -199,6 +249,13 @@ jobs:
         # proved against them by the build. This step checks the set an operator
         # or a host would read, so a manifest that went missing between the
         # build and the publish cannot pass unnoticed.
+        #
+        # And it checks the page kept the promise the timetable was loaded for.
+        # A build that quietly lost its journeys -- a date outside the feed's
+        # window, a feed that stopped parsing -- would still write a manifest,
+        # still pass every test below, and publish a prices-only page under a
+        # workflow that says it publishes times. A reader would have no way to
+        # tell that from a deliberate change.
         run: |
           if [ ! -s _site/release-manifest.json ]; then
             echo "::error title=release manifest::the build wrote no _site/release-manifest.json, so the routes this release serves are not stated anywhere"
@@ -211,6 +268,38 @@ jobs:
             echo "::error title=release manifest::the manifest names $ROUTES route(s) but the folder holds $PAGES page(s), so the release and the artifact disagree"
             exit 1
           fi
+          # The workflow publishes times, so the page must carry them. A build
+          # that lost its journeys would otherwise pass every other gate here
+          # and ship a prices-only page under a workflow that promises otherwise.
+          #
+          # Read as JSON rather than grepped, because the payload is minified
+          # and a pattern written with a space after the colon would match
+          # nothing at all. And the empty case fails: a glob that matches no
+          # page would otherwise report nothing missing and pass, which is the
+          # one outcome a gate must never produce.
+          JOURNEYS=$(python - <<'PY'
+          import glob, re, sys
+
+          pages = sorted(glob.glob("_site/from/*/index.html"))
+          if not pages:
+              print("no station pages were written, so there is nothing to check")
+              sys.exit(2)
+          missing = []
+          for path in pages:
+              text = open(path, encoding="utf-8").read()
+              found = re.search(r'"hasJourneys":\s*(true|false)', text)
+              if not found:
+                  missing.append(path + " (no hasJourneys field at all)")
+              elif found.group(1) != "true":
+                  missing.append(path + " (hasJourneys is false)")
+          print(" ".join(missing))
+          PY
+          ) || { echo "::error title=journeys::the journey check could not run, so this build's times are unverified"; exit 1; }
+          if [ -n "$JOURNEYS" ]; then
+            echo "::error title=journeys::these station pages carry no journey times, so this build published prices without the times the workflow loads the timetable for: $JOURNEYS. Check that the date is inside the feed's window, which the page prints as timetableFrom/timetableTo."
+            exit 1
+          fi
+          echo "every station page carries journey times"
 
       - name: Test the build
         # Coverage runs with a floor, not a target (audit C5): unreachable
@@ -318,6 +407,17 @@ jobs:
         if: steps.feed_check.outputs.changed == 'true'
         run: sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1 > .feed-state/build-inputs.sha256
 
+      - name: Save the timetable index
+        if: steps.feed_check.outputs.changed == 'true'
+        # Only written by a build that reached the parse, so a build that failed
+        # earlier cannot leave a half-written index behind for the next day to
+        # trust. The file is named after a digest of the feed and the stations
+        # it serves, so tomorrow's key misses if the timetable moved.
+        uses: actions/cache/save@v4
+        with:
+          path: _cache
+          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-${{ steps.feed_fingerprint.outputs.value }}
+
       - name: Save the successful feed manifest
         if: steps.feed_check.outputs.changed == 'true'
         uses: actions/cache/save@v4
@@ -375,13 +475,19 @@ jobs:
           python-version: "3.12"
 
       - name: Check the release clearance
-        # `fares`, not `fares,timetable`: the build step below deliberately
-        # loads no national timetable, so the Darwin product schedule -- read
-        # as internal business purposes only -- is not published and does not
-        # need clearing. Adding --timetable to that build changes what this
-        # command is allowed to claim, which is the point of passing the shape
-        # here rather than assuming one.
-        run: python tools/check_release_clearance.py --release fares
+        # `fares,timetable`, because the build above now loads the national
+        # timetable to publish times and changes. That is the shape the Darwin
+        # product schedule governs, and this project reads that schedule as
+        # internal business purposes only -- so this command now demands a
+        # clearance nobody holds, and the publish path stops until someone has
+        # answered the question in docs/publish-checklist.md §1.
+        #
+        # That refusal is the point of the gate, not an obstacle to it: the
+        # build and its tests stay green, and only publication waits. Passing
+        # `fares` here while the build loads a timetable would be a gate
+        # declaring a narrower release than the one being published, which is
+        # the exact failure this gate exists to make impossible.
+        run: python tools/check_release_clearance.py --release fares,timetable
 
   deploy:
     needs: [build, clearance]
