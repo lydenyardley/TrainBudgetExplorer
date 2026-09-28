@@ -656,18 +656,24 @@ class DemoPageTest(unittest.TestCase):
                 )
             self.assertEqual(code, 2)
             self.assertFalse(out.exists(), "a refused build writes no page")
-            self.assertIn("no privacy contact is configured", refused.getvalue())
+            # The project now carries its own contact, so the notice is the
+            # condition this build trips. The contact condition is still real
+            # and is driven by a deliberately blank one below.
             self.assertIn("carries no licence or attribution notice", refused.getvalue())
-            # A notice without a contact is still refused: both are conditions.
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(refused):
-                code = build_demo_page.main(
-                    [
-                        "--feed", str(feed),
-                        "--out", str(out),
-                        "--price-source", "the RSP feed",
-                        "--notices", "rdg,ogl,accuracy",
-                    ]
-                )
+            self.assertNotIn("no privacy contact is configured", refused.getvalue())
+            # A contact that is configured but blank is refused, so the gate is
+            # not satisfied by the mere existence of a default: a build that
+            # sets an empty contact on purpose stops.
+            with mock.patch.dict(os.environ, {"PRIVACY_CONTACT": "   "}, clear=False):
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(refused):
+                    code = build_demo_page.main(
+                        [
+                            "--feed", str(feed),
+                            "--out", str(out),
+                            "--price-source", "the RSP feed",
+                            "--notices", "rdg,ogl,accuracy",
+                        ]
+                    )
             self.assertEqual(code, 2)
             self.assertIn("no privacy contact is configured", refused.getvalue())
             with contextlib.redirect_stdout(io.StringIO()):
@@ -683,6 +689,50 @@ class DemoPageTest(unittest.TestCase):
             self.assertEqual(code, 0)
             privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
             self.assertIn("privacy@b.test", privacy)
+
+    def test_a_real_build_names_the_project_contact_without_being_asked(self) -> None:
+        # The contact is a fact about the project, not a deployment setting, so
+        # a real build has one without an operator having to supply it. Without
+        # this the gate fires on every local real-feed build, and a gate that
+        # fires constantly is a gate people route around.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            out = root / "site" / "index.html"
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--out", str(out),
+                        "--price-source", "the RSP feed",
+                        "--notices", "rdg,ogl,accuracy",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
+            self.assertIn(build_demo_page.PROJECT_PRIVACY_CONTACT, privacy)
+
+    def test_the_project_contact_is_flagged_for_review_before_publication(self) -> None:
+        # An address chosen for a local build is not the same thing as an
+        # address confirmed for a public service. The review has to be written
+        # down where the person who publishes will read it, or it is not a
+        # review -- it is a comment.
+        self.assertIn("@", build_demo_page.PROJECT_PRIVACY_CONTACT)
+        root_dir = Path(__file__).parent.parent
+        source = (root_dir / "build_demo_page.py").read_text(encoding="utf-8")
+        self.assertIn("REVIEW BEFORE GOING LIVE", source)
+        checklist = (root_dir / "docs" / "publish-checklist.md").read_text(encoding="utf-8")
+        self.assertIn(build_demo_page.PROJECT_PRIVACY_CONTACT, checklist)
+        # And it is an open box, not a ticked one: the point is that it has not
+        # been confirmed yet. Matched on the box's own line, because a wrapped
+        # list item puts the address on the next one.
+        box = [
+            line
+            for line in checklist.splitlines()
+            if "privacy contact is confirmed" in line
+        ]
+        self.assertEqual(len(box), 1, f"expected one review box, found {box}")
+        self.assertTrue(box[0].startswith("- [ ] "), box[0])
 
     def test_a_shortlist_is_a_list_of_places_and_not_a_booking(self) -> None:
         # S26: the decision the page exists for is which place, so a reader can

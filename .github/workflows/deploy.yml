@@ -140,11 +140,14 @@ jobs:
 
       - name: Build the site from audited fares
         # A real-feed build is refused unless it carries a licence notice and a
-        # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit), so
-        # this step fails on an unset PRIVACY_CONTACT rather than publishing a
-        # fares page nobody can be asked about. The notices below satisfy the
-        # licence condition; the contact is a repository variable, not a
-        # secret, and it is the operator's monitored route.
+        # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit).
+        # The notices below satisfy the licence condition. The contact comes
+        # from the project itself -- PROJECT_PRIVACY_CONTACT in
+        # build_demo_page.py -- so this build cannot fail for want of one, and
+        # vars.PRIVACY_CONTACT overrides it where an operator would rather
+        # publish a different route. Set that variable to the address the
+        # publish checklist §1 has confirmed, not to the project's default,
+        # which has not been confirmed as monitored.
         if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
