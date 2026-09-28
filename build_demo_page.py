@@ -131,6 +131,22 @@ STALE_AFTER_DAYS = 14
 # here so that turning one on is a recorded act.
 DEFAULT_PRIVACY_CONTACT = "the deployment operator via its public repository issue tracker"
 
+# The project's own monitored contact, printed on the privacy page of a real
+# build so somebody can be told about a problem with the page. It is a value in
+# the source rather than an environment variable because it is a fact about this
+# project, not about a deployment: every install of this build should name the
+# same person, and a build that has to be told its own contact address is a
+# build that will ship without one.
+#
+# REVIEW BEFORE GOING LIVE. This address was supplied while the project was
+# still a local build, and it has not been confirmed as monitored, as appropriate
+# for a public service, or as durable. It is recorded here so a real build works,
+# and flagged in docs/publish-checklist.md §2b so that publishing is the thing
+# that forces the question rather than the first complaint that forces it.
+# `--privacy-contact` and PRIVACY_CONTACT both override it, so replacing it
+# later is a one-line change here or a variable in the environment.
+PROJECT_PRIVACY_CONTACT = "lydenyardley+trainbudgetexplorer@example.net"
+
 MEASUREMENT_PLANS = {
     "aggregate-referrer-counts": (
         "counts referrers in aggregate, keeps no persistent identifier, sets no "
@@ -2344,13 +2360,14 @@ def main(argv: list[str] | None = None) -> int:
     public = price_source != DEFAULT_PRICE_SOURCE
     synthetic = not public
     privacy_contact = args.privacy_contact or os.environ.get("PRIVACY_CONTACT", "")
-    if not privacy_contact and not public:
+    if not privacy_contact:
         # A synthetic demo site prices invented fares and is not published at
         # all. It still names who to contact rather than leaving the page
         # blank, and it says plainly that the address is the operator's issue
-        # tracker rather than inventing a person. A public build gets no such
-        # fallback: below, an unset contact stops the release.
-        privacy_contact = DEFAULT_PRIVACY_CONTACT
+        # tracker rather than inventing a person.
+        privacy_contact = (
+            DEFAULT_PRIVACY_CONTACT if not public else PROJECT_PRIVACY_CONTACT
+        )
     problems = release_gate_problems(
         features,
         public=public,

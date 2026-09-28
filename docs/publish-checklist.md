@@ -94,6 +94,15 @@ publish until the account terms and brand pack have been checked.
 - [ ] Read the current DTD/NRE terms and recorded the public-use/attribution answer
 - [ ] **NRE is acknowledged as source** and the required **Powered by National Rail
       Enquiries** treatment/logo is visible in the generated page
+- [ ] **The privacy contact is confirmed for a public service.** The build now
+      carries a real address so a real-feed build works locally without an
+      operator having to supply one: `lydenyardley+trainbudgetexplorer@example.net`,
+      held as `PROJECT_PRIVACY_CONTACT` in `build_demo_page.py`. It was chosen
+      for a local build and has **not** been confirmed as monitored, as
+      appropriate to publish, or as durable. Read it before the site is public:
+      someone has to read it, and the page promises a reader that there is
+      somebody. Replace it here and in the build, or set `PRIVACY_CONTACT` or
+      `--privacy-contact` to override it.
 - [ ] If RDG quotes a non-zero fee, the project rejects it and keeps the zero-cost
       route rather than silently adding a cost
 

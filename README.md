@@ -588,10 +588,14 @@ host that does not serve the site at its domain root — a GitHub
 Pages project site, most shared hosting — add `--base-path <name>` so every
 internal link resolves.
 
-**A public build is refused until it can answer for itself.** A build whose
+**A public build carries a notice and somebody to contact.** A build whose
 prices come from a real feed (anything but the synthetic default) needs both a
 licence or attribution notice and somebody to contact, and it stops before
-writing a page if either is missing:
+writing a page if either is missing. The contact is the project's own, held as
+`PROJECT_PRIVACY_CONTACT` in `build_demo_page.py`, so a real-feed build works
+locally without an operator having to supply one; it has **not** been confirmed
+as monitored or appropriate to publish (see `docs/publish-checklist.md` §1), and
+either flag overrides it:
 
 ```
 PRIVACY_CONTACT=privacy@example.org python build_demo_page.py \
