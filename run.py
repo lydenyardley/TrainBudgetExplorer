@@ -17,6 +17,15 @@ Other useful forms:
                                      include the separate single-mode timetable cache
     python run.py --all-origins      one page per priced station
 
+A build from the real fares feed is a public build, so it carries a licence
+notice and somebody to contact. The contact defaults in the builder; the notice
+does not, because only a person who has read the terms can choose the wording:
+
+    python run.py --feed feeds/fares --notices rdg,ogl,accuracy
+
+    python run.py --feed feeds/fares --notices rdg,ogl,accuracy \
+                  --privacy-contact privacy@example.org
+
 The server runs until you press Ctrl+C. Nothing is installed and nothing
 outside this folder is touched.
 """
@@ -79,6 +88,17 @@ def build(args: argparse.Namespace) -> int:
         cmd += ["--all-origins"]
     if args.base_path:
         cmd += ["--base-path", args.base_path]
+    # A real feed is a public build, and the builder refuses one that carries
+    # no licence notice and no way to be told about a problem with the page.
+    # Both conditions were reachable only by calling the builder by hand, which
+    # made the double-click path -- the one a first-time user actually takes --
+    # the path that could not build a real feed at all. The privacy contact
+    # itself now defaults in the builder, so --privacy-contact is for pointing
+    # the page somewhere other than the project's own address.
+    if args.notices:
+        cmd += ["--notices", args.notices]
+    if args.privacy_contact:
+        cmd += ["--privacy-contact", args.privacy_contact]
 
     print("Building the site ...")
     result = subprocess.run(cmd, cwd=ROOT)
@@ -177,6 +197,12 @@ def main() -> int:
                         "build is a batch job measured in days (ADR-0024)")
     parser.add_argument("--base-path", default=None,
                         help="path prefix if the site will not sit at the domain root")
+    parser.add_argument("--notices", default=None,
+                        help="licence and attribution notices for a real-feed build, "
+                             "e.g. rdg,ogl,accuracy; a public build is refused without them")
+    parser.add_argument("--privacy-contact", default=None,
+                        help="who to contact about a problem with the page; overrides "
+                             "the project's own contact in build_demo_page.py")
     parser.add_argument("--no-build", action="store_true", help="serve _site/ as it is, without rebuilding")
     parser.add_argument("--origin", default=None, help="origin CRS code; defaults to GRA for real feeds and GRN for the demo")
     parser.add_argument("--date", default=None, help="timetable service date as YYYY-MM-DD; defaults to today")
