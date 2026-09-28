@@ -103,10 +103,18 @@ delete the cache and ask again.
 
 ## The remaining cost is not the parse
 
-One station's payload with journeys takes **over 9 minutes** on the real feed,
-and none of it is loading: ADR-0024 measured the same cost on a synthetic
-network, traced it to the inner loop of `_one_change_journey`, and decided
-that the fix is an indexed search rewrite in a new ADR rather than a tweak.
-The deploy workflow publishes prices-only pages because of it, and that
-decision stands. A build with journeys is now minutes rather than hours, and
-the minutes are the search.
+One station's payload with journeys takes **over 9 minutes** on the real feed
+when the search is given no date and so reads every schedule in it; with a date
+and a cached timetable index the same build takes **48 seconds**. None of the
+cost is loading: ADR-0024 measured the same shape on a synthetic network, traced
+it to the inner loop of `_one_change_journey`, and decided that the fix is an
+indexed search rewrite in a new ADR rather than a tweak. A build with journeys is
+now minutes rather than hours, and the minutes are the search.
+
+**Amended 28 September 2026.** The sentence that stood here -- that the deploy
+workflow publishes prices-only pages, and that the decision stands -- described a
+defect in `deploy.yml`, not a decision. The workflow's timed build was shadowed
+by a stale second `run:` block, so the old prices-only form was what ran, and the
+workflow's own journey gate then failed every run in which the feed had changed.
+The workflow now passes `--timetable` together with the date being published, and
+refuses to publish a station page that came out without journeys.

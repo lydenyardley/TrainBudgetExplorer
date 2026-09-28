@@ -456,12 +456,12 @@ restore is a miss, not a wrong answer.
    `ticket-restrictions` feed as a second opinion on whether the portal still
    publishes the conditions the fares feed quotes; see below for what it does
    and does not claim.
-5. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
+6. Run `python sanity_report.py --feed feeds/fares --timetable feeds/timetable
    --origin GRA --budget 20` and read what the count left out.
-6. Check the current DTD/NRE terms, brand treatment, commercial-use permission,
+7. Check the current DTD/NRE terms, brand treatment, commercial-use permission,
    and affiliate disclosure before publishing. The research and escalation route
    are in `docs/dtd-licensing-and-data-access.md`.
-7. Run the sweep for the Stage 1 count that decides go/no-go.
+8. Run the sweep for the Stage 1 count that decides go/no-go.
 
 The Knowledgebase URLs can be downloaded independently, but they contain
 reference/service information rather than the DTD fares and timetable. A token
@@ -737,7 +737,8 @@ number is the one to investigate.
 **3. Build one origin, and read the page as a reader would.**
 
 ```
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA \
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+  --knowledgebase feeds/knowledgebase --date "$(date -u +%Y-%m-%d)" --origin GRA \
   --notices rdg,ogl,accuracy --out demo.html
 ```
 
@@ -748,15 +749,26 @@ accuracy-and-liability notice (cl. 3.3.2 with the licence's liability clause).
 They are opt-in because crediting RDG above synthetic prices would be false
 attribution — which is why the demo build carries none.
 
-**Leave `--timetable feeds/timetable` off a real-feed build.** The national
-timetable holds 1.7 million calling points, and the onward one-change search
-turns a single station page into a batch job — a Grantham build with it does not
-finish in ten minutes, and gives no output to say why. Without it the same build
-writes its pages in under ten seconds, and the page says plainly that it prices
-fares only because no timetable was supplied. The deploy workflow builds the
-daily site this way for the same reason; the timetable is audited by
-`dtd_audit.py` but not loaded for every page. Add it when you are deliberately
-building a long job and are watching it.
+**A real-feed build takes the timetable *and* a date.** Those are two decisions,
+and the second is the one that decides how long the build runs.
+
+Without `--date` the journey search reads every schedule in the feed rather than
+the ones that run on a given day, and the difference is not marginal. On one
+machine, with the timetable index already cached, Grantham took **7 minutes 9
+seconds** without a date and **48 seconds** with one. The national timetable
+holds 1.7 million calling points, so a full-network build at the undated
+per-origin cost is a multi-day job — which is what `--max-origin-seconds`
+exists to catch, and it fires on the *first* origin, so that is learned in
+minutes rather than in days (ADR-0024). The first build on a machine also parses
+the timetable feed before any of that, which is the slow part; the index is then
+cached in `_cache/` keyed by the feed's own bytes, so later builds skip it.
+
+So `--timetable` on its own is not a long job, and `--date` on its own is not a
+journey: the pair is what produces the times and changes the journey columns
+show. Leaving the timetable off is still a supported build — it writes prices
+without times and says so on the page — but it is not a build the deploy
+workflow will publish. The workflow loads both, and its release-manifest check
+fails the run if the station pages came out without journeys.
 
 **4. Build the site.**
 

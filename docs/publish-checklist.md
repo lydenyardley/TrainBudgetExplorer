@@ -254,6 +254,9 @@ on an assumption is worse than no checklist at all.
    `--release` is allowed to claim, and the Darwin clearance this project does not
    hold is what stops the times going out under a fares-only decision.
 
-The build is deliberately **fares-only**, and the clearance is scoped to match. If
-§5 is ever confirmed to forbid publishing the timetable, the fix is a wider
-clearance for the fares route, not a wider build.
+The build loads the national timetable, so the clearance that matches it is
+`fares,timetable` — deliberately wider than a fares-only decision, because the
+pages now show times and changes. If §5 of the Darwin schedule is confirmed to
+forbid publishing the timetable, the fix is to stop loading it and clear `fares`
+alone: `--timetable` is optional, the builder already renders a prices-only page
+that says so, and the journey columns go while the product stays (ADR-0021).
