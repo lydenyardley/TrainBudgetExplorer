@@ -1775,6 +1775,16 @@ async function runPage(browser, index, given, file, body, base) {
       reference.shown && reference.text.length > 20,
       reference.text
     );
+    // A freshness claim is worse than no claim if the date in it is broken.
+    // The first version sliced the reference feed's HTTP-date header as an ISO
+    // timestamp and shipped "published undefined undefined NaN" to a real
+    // reader, so the line is checked for the failure rather than for its exact
+    // wording, which would break for the wrong reason whenever it improves.
+    check(
+      "no date in it is unrenderable",
+      !/undefined|NaN|\[object|null/.test(reference.text),
+      reference.text
+    );
     check(
       "and says it before the table it qualifies",
       reference.above,
@@ -2472,6 +2482,66 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       `at 320px the text is still the base size in ${scheme}`,
       zoomed.body >= 16,
       `${zoomed.body}px`
+    );
+
+    // The width check above can only judge the text a fixture happens to
+    // contain, and that is how a 36px sideways scroll shipped: the demo
+    // privacy page names a contact made of ordinary words, while the real one
+    // carries an address whose 40 unbroken characters were wider than the
+    // column. The demo page passed and the real page did not.
+    //
+    // So the contract is tested directly rather than waited for: put a run
+    // that cannot break in the page's own text and prove the page still does
+    // not scroll sideways. No fixture can hide it, because the fixture supplies
+    // nothing -- the check brings its own worst case.
+    const injected = await page.evaluate(() => {
+      const long = "A".repeat(160) + "@example.invalid";
+      // The narrowest real container on the page, not the document, because
+      // the document can always look fine while a column inside it is the
+      // thing that actually widened.
+      const targets = [
+        ...document.querySelectorAll("main p, main li, main td, main dd, main h2, p.muted, .tag"),
+      ];
+      if (!targets.length) return { skipped: true };
+      const probe = document.createElement("p");
+      probe.className = "muted";
+      probe.id = "overflow-probe";
+      probe.textContent = long;
+      const host = targets[Math.min(2, targets.length - 1)];
+      host.parentElement.insertBefore(probe, host);
+      // Two ways a reader actually loses text, and only two.
+      //
+      // A column is a fault when it CLIPS: its computed overflow-x is not
+      // visible, so the excess is gone rather than painted outside. The
+      // opposite case is not a fault and was measured here first: a small
+      // button reports a few pixels of scrollWidth past its own box while its
+      // text sits ten pixels inside it on both sides. That is box arithmetic,
+      // and calling it a defect would have sent someone to fix a rendering
+      // that is correct.
+      //
+      // `.sr-only` is excluded by width: a 1px box holding nowrap text is
+      // what that class is FOR -- read by assistive technology, not seen -- so
+      // its scrollWidth says nothing about layout. A real column is hundreds
+      // of pixels wide, so nothing else is skipped by this.
+      const clipped = Math.max(
+        0,
+        ...[...document.querySelectorAll("main *")]
+          .filter((el) => el.clientWidth > 2)
+          .filter((el) => getComputedStyle(el).overflowX !== "visible")
+          .map((el) => el.scrollWidth - el.clientWidth)
+      );
+      const scroll =
+        Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) -
+        window.innerWidth;
+      probe.remove();
+      return { skipped: false, scroll, clipped, tagged: targets.length };
+    });
+    check(
+      `at 320px an unbreakable run does not widen the page in ${scheme}`,
+      injected.skipped || (injected.scroll <= 0 && injected.clipped <= 1),
+      injected.skipped
+        ? "the page has no prose container to measure, so this proves nothing"
+        : `document ${injected.scroll}px, worst clipped column ${injected.clipped}px, from ${injected.tagged} candidate(s)`
     );
   }
 
