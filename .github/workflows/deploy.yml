@@ -242,7 +242,7 @@ jobs:
             --date "$(date -u +%Y-%m-%d)" \
             --origin GRA \
             --out _site/index.html \
-            --notices rdg,ogl,accuracy \
+            --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
 

@@ -749,15 +749,30 @@ number is the one to investigate.
 ```
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
   --knowledgebase feeds/knowledgebase --date "$(date -u +%Y-%m-%d)" --origin GRA \
-  --notices rdg,ogl,accuracy --out demo.html
+  --notices nre,rdg,ogl,accuracy --out demo.html
 ```
 
-`--notices rdg,ogl,accuracy` composes the three licence obligations into the
-footer: the Rail Delivery Group publisher credit (Data Sharing Agreement cl.
-3.3.1), the Open Government Licence sentence (the timetable's licence), and the
-accuracy-and-liability notice (cl. 3.3.2 with the licence's liability clause).
-They are opt-in because crediting RDG above synthetic prices would be false
-attribution — which is why the demo build carries none.
+`--notices nre,rdg,ogl,accuracy` composes the four licence obligations into the
+footer, and which source each one names matters:
+
+- **nre** — the National Rail Data Portal terms require the publisher to
+  "acknowledge NRE as the source of Information". The fares and the timetable
+  come from that portal, so they are NRE's and the credit is NRE's.
+- **rdg** — the Rail Delivery Group credit required by the Data Sharing
+  Agreement (cl. 3.3.1) for the Rail Data Marketplace products: the
+  Knowledgebase reference feeds and the fare-locations data. Not the fares.
+- **ogl** — the Open Government Licence sentence, the fallback attribution the
+  Darwin timetable's own §8 leaves blank.
+- **accuracy** — the accuracy and liability notice for onward distribution
+  (cl. 3.3.2 with the licence's liability clause). It names NRE alongside the
+  Rail Delivery Group, because the fares and the times it covers are NRE's.
+
+They are opt-in because crediting a publisher above synthetic prices would be
+false attribution — which is why the demo build carries none. What the NRDP
+terms require *besides* the acknowledgement — that published times stay
+consistent with Darwin forecasts, and that time-bound data is displayed as the
+feed directs — is not something a footer can satisfy, and both are open
+questions in `docs/publish-checklist.md` §1.
 
 **A real-feed build takes the timetable *and* a date.** Those are two decisions,
 and the second is the one that decides how long the build runs.
@@ -784,7 +799,7 @@ fails the run if the station pages came out without journeys.
 
 ```
 python build_demo_page.py --feed feeds/fares --all-origins \
-  --notices rdg,ogl,accuracy --workers 8 --out _site/index.html
+  --notices nre,rdg,ogl,accuracy --workers 8 --out _site/index.html
 ```
 
 `--all-origins` writes one page per priceable station plus the chooser; it also
@@ -806,7 +821,7 @@ either flag overrides it:
 
 ```
 PRIVACY_CONTACT=privacy@example.org python build_demo_page.py \
-  --feed feeds/fares --origin GRA --notices rdg,ogl,accuracy --out _site/index.html
+  --feed feeds/fares --origin GRA --notices nre,rdg,ogl,accuracy --out _site/index.html
 ```
 
 The refusal names both conditions and the flag or variable that satisfies each,

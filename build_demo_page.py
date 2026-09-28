@@ -98,8 +98,30 @@ SYNTHETIC_BANNER = (
 # --notices for a real-data build, never applied to a synthetic one by
 # default: crediting RDG for invented prices would be false attribution.
 NOTICES = {
+    # The NRDP terms grant copying, publishing, distributing and transmitting
+    # the Information and its commercial exploitation, on three requirements.
+    # One of them is to "acknowledge NRE as the source of Information in
+    # accordance with this agreement and the Developer Guidelines", and the
+    # guidelines are not published at the URL the terms name, so this is the
+    # acknowledgement in the terms' own words: a plain statement that NRE is
+    # the source. It names no product, because a fares-only release would then
+    # be credited with a timetable it does not carry -- the same overstatement
+    # the rest of this table is written to avoid. What the guidelines would
+    # add -- an exact wording, and any brand treatment -- is not invented here;
+    # it is an open item in docs/publish-checklist.md and in the clearance
+    # record.
+    "nre": (
+        "Provided by National Rail Enquiries (NRE), under the National Rail "
+        "Data Portal terms."
+    ),
+    # The Rail Delivery Group credit is the Data Sharing Agreement's, for what
+    # the Rail Data Marketplace publishes: the Knowledgebase reference feeds
+    # and the fare-locations reference data. It is not the credit for the
+    # fares and the timetable, which are NRE's and carry the notice above, and
+    # a page that credited RDG for prices it received from NRE would be
+    # crediting the wrong licensor.
     "rdg": (
-        "Fares and station data: \u00a9 Rail Delivery Group, published through "
+        "Knowledgebase reference data: \u00a9 Rail Delivery Group, published through "
         "the Rail Data Marketplace."
     ),
     "ogl": (
@@ -110,8 +132,9 @@ NOTICES = {
         "The fares and journey times on this page are provided \u2018as is\u2019, with no "
         "representation as to their accuracy or fitness for a purpose, and they "
         "change without notice: always confirm the price with the seller before "
-        "buying. Neither Rail Delivery Group nor Rail Settlement Plan Limited "
-        "accepts liability for any loss arising from reliance on this data."
+        "buying. Neither National Rail Enquiries, Rail Delivery Group nor Rail "
+        "Settlement Plan Limited accepts liability for any loss arising from "
+        "reliance on this data."
     ),
 }
 # What the times on the page are, said near them rather than assumed, because
@@ -1234,9 +1257,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--notices",
         default=None,
-        help="comma-separated preset notices: rdg (publisher credit), ogl (Open "
-        "Government Licence wording), accuracy (as-is accuracy and liability "
-        "notice). Compose them, e.g. --notices rdg,ogl,accuracy",
+        help="comma-separated preset notices: nre (National Rail Enquiries as "
+        "the source, required by the National Rail Data Portal terms), rdg (Rail "
+        "Data Marketplace publisher credit), ogl (Open Government Licence "
+        "wording), accuracy (as-is accuracy and liability notice). Compose them, "
+        "e.g. --notices nre,rdg,ogl,accuracy",
     )
     parser.add_argument(
         "--privacy-contact",

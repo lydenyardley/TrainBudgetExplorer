@@ -21,9 +21,9 @@ A build from the real fares feed is a public build, so it carries a licence
 notice and somebody to contact. The contact defaults in the builder; the notice
 does not, because only a person who has read the terms can choose the wording:
 
-    python run.py --feed feeds/fares --notices rdg,ogl,accuracy
+    python run.py --feed feeds/fares --notices nre,rdg,ogl,accuracy
 
-    python run.py --feed feeds/fares --notices rdg,ogl,accuracy \
+    python run.py --feed feeds/fares --notices nre,rdg,ogl,accuracy \
                   --privacy-contact privacy@example.org
 
 The server runs until you press Ctrl+C. Nothing is installed and nothing
@@ -199,7 +199,7 @@ def main() -> int:
                         help="path prefix if the site will not sit at the domain root")
     parser.add_argument("--notices", default=None,
                         help="licence and attribution notices for a real-feed build, "
-                             "e.g. rdg,ogl,accuracy; a public build is refused without them")
+                             "e.g. nre,rdg,ogl,accuracy; a public build is refused without them")
     parser.add_argument("--privacy-contact", default=None,
                         help="who to contact about a problem with the page; overrides "
                              "the project's own contact in build_demo_page.py")
