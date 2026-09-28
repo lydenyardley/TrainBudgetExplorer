@@ -235,10 +235,12 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tools/test_check_links.py` | Fourteen tests for the link checker's verdicts |
 | `tests/test_fuzzed_feed.py` | Accounting and fuzzer tests |
 | `tools/test_commit_message.py` | Commit-message checker tests |
+| `tools/check_release_clearance.py` | The gate that refuses a public release no licence clearance covers |
 | `tests/test_destination_coverage.py` | Coverage-report tests: dedup, ranking, the summary, and the refusal |
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
 | `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
+| `licences/release-clearance.md` | Which licensed products may be published, each cleared or excluded with a reason; the record the deploy gate reads |
 | `docs/github-pages-deployment.md` | GitHub Pages setup, safe Actions secrets, scheduled deployment, and troubleshooting |
 | `docs/launch-checklist.md` | Where the page goes, how the result is measured, and what the October review reads |
 | `docs/glossary.md` | Domain terms |
@@ -714,6 +716,37 @@ runs the tests, and publishes to GitHub Pages, with the deploy step isolated so
 any other host can consume the same artifact. It builds from the licensed feeds
 only if they are supplied as a repository artifact (`FEEDS_ARTIFACT`); otherwise
 it ships the demo feed, and the pages say so.
+
+**Publication is gated on a licence clearance, and the gate is not code alone.**
+A separate `clearance` job runs `tools/check_release_clearance.py --release
+fares`, and the `deploy` job needs it, so a release that nobody has cleared stops
+at the publish step while the build, the tests and the browser run stay green —
+a red licence gate on every push would only teach people to ignore red. The
+decision itself lives in `licences/release-clearance.md`: which licensed products
+may be published, each answered `cleared` or `excluded` with a reason, a named
+approver, a date and an expiry, changed in a pull request so the review *is* the
+approval. The record is currently all exclusions, which is the project's true
+position, so the workflow will not publish until someone answers §1 of
+`docs/publish-checklist.md`.
+
+Two things that gate deliberately is not:
+
+- **Not the attribution wording.** The build supplies every required credit, and
+  that is a different question from being permitted to publish at all.
+- **Not permanent, and not scope-free.** `expires` is enforced, the licence file's
+  SHA-256 is recorded with the clearance so a replaced licence voids it, and a
+  fares-only clearance does not authorise a build that also loads the national
+  timetable — which is the shape whose licence this project reads as
+  internal-only.
+
+Local builds are untouched by any of this: `build_demo_page.py` and `run.py` do
+not read the record, so the real-feed path can be built, tested and opened
+locally with no clearance in sight.
+
+```
+python tools/check_release_clearance.py --release fares   # what may be published
+python tools/check_release_clearance.py --print          # blocks to fill in
+```
 
 ## Run it
 

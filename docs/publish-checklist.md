@@ -7,6 +7,32 @@ that cannot be undone by regenerating a file.
 Nothing here is a formality. Every box is something a person has to look at and
 answer, and "I think that's fine" is not an answer.
 
+## 0. The gate that enforces this page
+
+**`licences/release-clearance.md` is the machine-checked form of §1 and §6**, and
+the deploy workflow refuses to publish anything it does not clear. Run
+
+```
+python tools/check_release_clearance.py --release fares
+```
+
+to see where the project stands today. It currently fails, which is correct: §1
+below is unfinished, so the fares route is not cleared and the workflow will not
+publish. Nothing in `build_demo_page.py` or `run.py` reads the record, so a
+contributor can still build, test and open a real-feed page locally with no
+clearance in sight.
+
+The two halves of the gate, because neither is enough alone:
+
+| | what it is | where it lives |
+|---|---|---|
+| the record | a written, dated, scoped decision, reviewed like any other change | `licences/release-clearance.md`, changed in a pull request |
+| the presence | a person who must click approve before a release | required reviewers on the `github-pages` environment |
+
+The second half is repository settings, not code, and a workflow cannot require a
+person. Set it once under **Settings → Environments → github-pages**; until then
+the record is the only gate, and the pull-request review is the only approval.
+
 ## 1. The licence — this blocks everything else
 
 **Where:** the National Rail Data Portal (NRDP/DTD) account for fares and
@@ -185,3 +211,24 @@ term to get past it.
 
 Anything left unverified stays recorded as unverified in the ADR. A checklist ticked
 on an assumption is worse than no checklist at all.
+
+## 7. How a cleared release gets published
+
+1. Work §1–§5 above. Every answer lands in the matching block of
+   `licences/release-clearance.md`, with `state: cleared`, `answer: yes`, the
+   date the terms were read, who approved it, when, and when it expires.
+2. `python tools/check_release_clearance.py --print` prints the blocks with each
+   licence PDF's SHA-256 already filled in. The digest is what stops a clearance
+   outliving the licence file it was made from: replace the PDF and the standing
+   clearance is void until it is made again.
+3. Open a pull request. **That review is the approval.** There is nowhere else for
+   approval to happen, which is the point.
+4. Merge. The next push builds, tests, and passes the clearance gate.
+5. Publication stops, rather than the tests going red, if a later release widens
+   what it publishes. Adding `--timetable` to the build step changes what
+   `--release` is allowed to claim, and the Darwin clearance this project does not
+   hold is what stops the times going out under a fares-only decision.
+
+The build is deliberately **fares-only**, and the clearance is scoped to match. If
+§5 is ever confirmed to forbid publishing the timetable, the fix is a wider
+clearance for the fares route, not a wider build.
