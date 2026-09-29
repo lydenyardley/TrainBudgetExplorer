@@ -170,11 +170,28 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      is typed where the browser can resize a field to its content, and holds a
      sensible width where it cannot; the caret is themed from the palette, like
      every other browser surface this page ships. */
-  .origin-slot #originSearch { width: 9ch; min-width: 4ch; field-sizing: content;
+  /* The field is as wide as the word in it. It shipped at a fixed 9ch, which is
+     wider than "station" at every heading size, so the dashed underline ran on
+     past the word it belongs to and said the field was bigger than the question
+     (finding, 29 September 2026). `field-sizing: content` sizes it to the
+     placeholder while it is empty and to what is being typed as it is typed; the
+     width that used to be fixed is the fallback for a browser that cannot size a
+     field to its content yet, and the cap keeps a long station name from pushing
+     the heading's line past the viewport. Neither half of the cap is a
+     percentage: the slot is shrink-to-fit, so a percentage max-width on its only
+     child is treated as none while the slot decides its own width, and the
+     heading's line then measured the field's content -- 3,047px with sixty
+     characters typed, which scrolled the page 1,739px sideways. ch scales with
+     the heading's own size, so 18 of them fit the column on a wide screen, and
+     the viewport share is what fits on a narrow one. */
+  .origin-slot #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
                                padding: .05rem .15rem; border: 0; outline: 0;
                                background: transparent; color: inherit; font: inherit;
                                font-weight: inherit; letter-spacing: inherit;
                                caret-color: var(--accent); }
+  @supports not (field-sizing: content) {
+    .origin-slot #originSearch { width: 9ch; }
+  }
   .origin-slot #originSearch::placeholder { color: var(--muted); opacity: 1; }
   /* One drawn disclosure mark, used by both the refinements control and the
      station slot. Authored rather than a character: a character has no stroke
@@ -421,7 +438,10 @@ __SHARED_CSS__
      colour is only the second cue. */
   .ticket-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; }
   .condition-flag { color: var(--warn); font-size: .85em; white-space: nowrap; }
-  tr.best td { background: var(--best); }
+  /* No row is highlighted. The top row was tinted as the "best" fare, which on
+     a page that refuses to imply a recommendation is a recommendation stated by
+     a colour and never by a word (finding, 29 September 2026). The order the
+     tint stood for is in the count line above the table, in words (ADR-0041). */
   .restriction { font-size: .78rem; color: var(--muted); }
   /* C14: this was a hard-coded #9a6700, which the dark palette never
      redefined -- so the one piece of text a reader must not misread measured
@@ -531,7 +551,6 @@ __SHARED_CSS__
     td.num { text-align: left; }
     td:last-child { margin-left: auto; }
     tr.detail td { flex: 1 1 100%; padding: .5rem 0; }
-    tr.best { background: var(--best); }
   }
 </style>
 </head>
@@ -556,7 +575,7 @@ __THEME_TOGGLE__
 <div id="originPicker" hidden>
   <label class="origin-picker-label" for="originSearch">Start from a different station</label>
   <input id="originSearch" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
-         aria-describedby="originStatus">
+         aria-describedby="originStatus" aria-controls="originPicks">
   <span id="originStatus" class="sr-only" role="status"></span>
   <ul id="originPicks"></ul>
   <p id="originNomatch" hidden></p>
@@ -685,6 +704,7 @@ __THEME_TOGGLE__
 </footer>
 
 <script>
+__LIST_KEYS__
 const DATA = __DATA__;
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
@@ -1375,9 +1395,9 @@ function render() {
   // price on screen is not always that fare -- choosing two adults doubles it,
   // and the railcard replaces it with a per-ticket discounted price that a
   // minimum fare can hold above the adult price -- so the list is re-sorted by
-  // the price actually displayed, and the "best" highlight is the first row of
-  // that. Sorting the displayed number is the only ordering that cannot
-  // contradict the number in the cell beside it.
+  // the price actually displayed, and the count line below says so in words.
+  // Sorting the displayed number is the only ordering that cannot contradict
+  // the number in the cell beside it.
   const wanted = available
     .filter((d) => priceOf(d) <= cap && matchesType(d, wantedTypes))
     .sort((a, b) => priceOf(a) - priceOf(b));
@@ -1392,7 +1412,6 @@ function render() {
   const pageItems = wanted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   for (const destination of pageItems) {
     const row = document.createElement("tr");
-    if (destination === wanted[0]) row.className = "best";
     const cells = [
       [destination.name + " (" + destination.crs + ")", "", "Station"],
       [money(priceOf(destination)), "num", "Price"],
@@ -1444,10 +1463,13 @@ function render() {
   }
 
   const what = unit() === "party" ? "for the two of us" : "each";
+  // ADR-0041: the order belongs to the list, so it is said once, here, rather
+  // than by tinting one row the reader is left to interpret.
+  const order = ", cheapest first";
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
   summary.textContent = available.length && wanted.length
-    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + what
+    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + what + order
     : available.length ? "No destinations for up to " + money(cap) + " " + what : "";
   empty.hidden = wanted.length > 0;
   renderEmpty(available, wanted, cap, what);
@@ -2084,6 +2106,10 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     if (event.key === "Escape") setPicker(false);
   });
   originSearch.addEventListener("input", renderPicks);
+  // The picker is the field's other half -- the same selector, reached from the
+  // heading -- so it answers the same two keys through the same block. The
+  // Escape handler above closes the whole picker; this only adds the way in.
+  wireListKeys(originSearch, originPicks);
 }
 
 // S26: a shortlist of candidate places, and nothing that looks like a
@@ -2437,7 +2463,7 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br><span id="originClause"> from <span class="origin-slot" id="originField"><input id="originSearch" type="search" placeholder="station" autocomplete="off" aria-label="The station you are starting from" aria-describedby="pickStatus"></span></span></h1>
+<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br><span id="originClause"> from <span class="origin-slot" id="originField"><input id="originSearch" type="search" placeholder="station" autocomplete="off" aria-label="The station you are starting from" aria-describedby="pickStatus" aria-controls="picks"></span></span></h1>
 <p class="sub">Type the station you are leaving from, then pick it from the list.</p>
 <p class="sub" id="orderingNote">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
 <ul id="picks"></ul>
@@ -2448,6 +2474,7 @@ __THEME_TOGGLE__
 </main>
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
 <script>
+__LIST_KEYS__
 const STATIONS = __STATIONS__;
 const picks = document.getElementById("picks");
 const nomatch = document.getElementById("nomatch");
@@ -2547,6 +2574,21 @@ if (budgetNumber) {
 // focused rather than merely present: the caret in the heading is what says the
 // page is waiting for a station, without a label above it saying so.
 pick.addEventListener("input", render);
+// The budget slot has been clickable across its whole width since it was
+// written, and the station slot is the other half of the same sentence: both
+// are a gap in the heading that the reader fills in. Clicking the slot -- not
+// the caret inside it, which is the reader placing the caret -- puts the field
+// in focus, so the gap and the field are one target rather than a word beside
+// a field. Nothing is selected: the value here is the reader's own query, and
+// selecting it would lose it on the next keystroke.
+const originField = document.getElementById("originField");
+if (originField) {
+  originField.addEventListener("click", (event) => {
+    if (event.target !== originField) return;
+    pick.focus();
+  });
+}
+wireListKeys(pick, picks);
 syncChooserBudget();
 render();
 pick.focus();
@@ -2573,6 +2615,38 @@ __ANALYTICS__
 # control character and the word "be" on its refinements control. A drawn path
 # cannot be misread by an interpreter, and it is the same shape on every
 # machine.
+# The two arrow keys a reader expects of a field that sits over a list, in one
+# place because two routes now ask for them: the chooser's field over the
+# station list, and a station page's picker over the same list. The options stay
+# real anchors -- focus goes to the anchor itself, so the browser keeps its own
+# naming, its own Enter, and its own open-in-a-new-tab -- which is why this is a
+# dozen lines rather than a combobox implementation.
+LIST_KEYS_JS = """function wireListKeys(field, list) {
+  if (!field || !list) return;
+  const links = () => Array.from(list.querySelectorAll("a"));
+  field.addEventListener("keydown", (event) => {
+    const first = links()[0];
+    if (event.key === "ArrowDown" && first) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  list.addEventListener("keydown", (event) => {
+    const options = links();
+    if (event.key === "Escape" || (event.key === "ArrowUp" && document.activeElement === options[0])) {
+      event.preventDefault();
+      field.focus();
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    const next = options[options.indexOf(document.activeElement) + step];
+    event.preventDefault();
+    if (next) next.focus();
+  });
+}"""
+
+
 CHEVRON = (
     '<svg class="chevron" viewBox="0 0 16 16" width="16" height="16"'
     ' aria-hidden="true" focusable="false">'
@@ -2643,6 +2717,7 @@ def with_shared(template: str) -> str:
         ("__SHARED_THEME__", SHARED_THEME, "theme block"),
         ("__THEME_TOGGLE__", THEME_TOGGLE, "theme control"),
         ("__CHEVRON__", CHEVRON, "disclosure mark"),
+        ("__LIST_KEYS__", LIST_KEYS_JS, "list keyboard block"),
     ):
         filled = filled.replace(placeholder, block)
         if placeholder in filled:
