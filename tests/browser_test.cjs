@@ -1556,6 +1556,11 @@ async function runPage(browser, index, given, file, body, base) {
     // (LONDON KINGS X, NOTTINGHAM), and a one-word pattern rejected the
     // correct answer while accepting a wrong one on the demo feed.
     const rowText = (await page.textContent("#rows tr")).trim();
+    // Copy and Card details wait in the row's own panel (finding 4, 29
+    // September 2026), so the row is opened first: a control a reader reaches
+    // through a disclosure is still a control, and this is where the suite
+    // meets it.
+    await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
     const adultButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
     const journey = await page.evaluate((label) => {
       const name = label.replace("Copy the journey details for ", "");
@@ -1613,6 +1618,11 @@ async function runPage(browser, index, given, file, body, base) {
     const partyReachable = party.cheapest <= party.ceiling;
     if (partyReachable) {
     await page.fill("#budgetNumber", String(Math.max(1, Math.ceil(party.cheapest / 100))));
+    // Copy and Card details wait in the row's own panel (finding 4, 29
+    // September 2026), so the row is opened first: a control a reader reaches
+    // through a disclosure is still a control, and this is where the suite
+    // meets it.
+    await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
     const copyButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
     const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy the journey details for ", "");
     // The railcard note is owed only where the feed prices one, so what the
@@ -2444,6 +2454,20 @@ async function runPage(browser, index, given, file, body, base) {
     // The layout's thesis: the budget leads, and row actions carry real touch
     // targets. Measured, not assumed.
     const layout = await page.evaluate(() => {
+      // The two actions a row keeps beside buying are inside the row's panel, so
+      // a panel is opened for the measurement and closed again: a target this
+      // gate never sees is a promise nobody measured.
+      const copyHitInPanel = (measure) => {
+        const already = document.querySelector("#rows tr.detail button[aria-label^='Copy']");
+        if (already) return measure(already);
+        const expander = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded='false']");
+        if (!expander) return 0;
+        expander.click();
+        const button = document.querySelector("#rows tr.detail button[aria-label^='Copy']");
+        const size = button ? measure(button) : 0;
+        expander.click();
+        return size;
+      };
       const toPx = (v) => parseFloat(v);
       const budgetSize = toPx(getComputedStyle(document.getElementById("budgetNumber")).fontSize);
       const h1Size = toPx(getComputedStyle(document.querySelector("h1")).fontSize);
@@ -2461,7 +2485,7 @@ async function runPage(browser, index, given, file, body, base) {
         secondaryHoldsPartyAndFilter: !!secondary &&
           !!secondary.querySelector('input[name="unit"]') && !!destinationFilter &&
           !!destinationFilter.querySelector('input[name="destinationType"]'),
-        copyHit: hitOf(document.querySelector('#rows button[aria-label^="Copy"]')),
+        copyHit: copyHitInPanel(hitOf),
         buyHit: hitOf(document.querySelector("#rows a.buy"))
       };
     });
@@ -3136,6 +3160,12 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       const underPromised = [];
       const inlineInText = [];
       const seen = [];
+      // The row's own actions are inside the row's panel, so one panel is
+      // opened for the sweep and closed at the end: an unmeasured promise is a
+      // promise nobody checked.
+      const expander = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded='false']");
+      const firstPanel = document.querySelector("#rows tr.detail") ? null : expander;
+      if (firstPanel) firstPanel.click();
       for (const el of document.querySelectorAll(
         "button, a[href], input, select, textarea, summary, [role=button]"
       )) {
@@ -3177,6 +3207,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
           el.id === "moreFiltersToggle" || !!filterControl;
         if (promised && Math.min(box.w, box.h) + 0.5 < PROMISED) underPromised.push(record);
       }
+      if (firstPanel) firstPanel.click();
       return { small, underPromised, inlineInText, seen };
     });
     check(

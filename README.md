@@ -523,12 +523,13 @@ that link and seen a search. What a link never carries, either way: a railcard,
 because no seller documents a parameter for one, and a chosen train, because the
 fare is a walk-up fare valid on all of them.
 
-Because the default link carries nothing, each row offers a **Copy** control that
-puts the four things a seller asks for — from, to, date, and party size — on the
-reader's clipboard, saying that the railcard discount is not included and to tick
-the Two Together box on the seller's site. If the browser refuses clipboard access,
-which it does for a page opened straight from disk, the text appears under the row
-and the button says so instead of the page claiming a copy that did not happen.
+Because the default link carries nothing, each row's own details offer a **Copy**
+control that puts the four things a seller asks for — from, to, date, and party
+size — on the reader's clipboard, saying that the railcard discount is not included
+and to tick the Two Together box on the seller's site. If the browser refuses
+clipboard access, which it does for a page opened straight from disk, the text
+appears under that button and the button says so instead of the page claiming a
+copy that did not happen.
 
 ### One page per station
 
@@ -612,9 +613,14 @@ the reader arrived with. The party switch and the town filter share one quieter
 secondary column: they refine the budget rather than compete with it. On phones the
 panel stacks with the budget first.
 
-Row actions (the departures expander, Copy, and the Tickets link) keep small visible
-marks so they fit beside each other, and reach the 44px touch guideline through
-invisible hit-area padding around each control.
+A row carries three controls and no more: the Tickets link, the departures
+expander, and the shortlist toggle. The two actions that answer a question a reader
+asks once they have decided — the railcard's Card details, and the Copy that
+produces the handoff text — are inside the row's own details, beside the fare's
+condition (ADR-0043); five controls a row, a hundred targets on page one, put the
+price a reader came to compare in a cluster of buttons. What stays on the row keeps
+a small visible mark and reaches the 44px touch guideline through invisible
+hit-area padding around it.
 
 A station the build could not price gets a different page from one whose prices sit
 outside the budget: instead of a slider over an empty table, the page says *"We
