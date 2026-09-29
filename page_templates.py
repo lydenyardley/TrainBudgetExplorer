@@ -52,7 +52,7 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
        and the rule at the bottom of this block out, and giving .nre-logo a
        light background, puts NRE's own colours back. */
     --nre-plate: #141b3d; --nre-ink: #cdd6ff;
-    --page-max: 40rem; --page-pad: 1.5rem; --h1: clamp(2rem, 5vw, 5rem);
+    --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); --h1: clamp(2rem, 6vw, 6rem);
   }
   /* The reader's choice, which beats the system preference: the tokens are
      already resolved by light-dark(), so naming the scheme is the whole of it,
@@ -67,17 +67,31 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      palette instead. 44px, because that is the promise the accessibility
      matrix holds every control to. */
   #themeToggle { display: flex; align-items: center; justify-content: center;
-                 margin: 0 0 .5rem auto; width: 2.75rem; height: 2.75rem; padding: .4rem;
-                 border: 1px solid var(--line); border-radius: .6rem;
-                 background: var(--field); color: var(--fg); font: inherit; cursor: pointer; }
-  #themeToggle:hover { background: var(--best); }
-  #themeToggle .glyph { font-size: 1.1rem; line-height: 1; }
+                 margin: 0 0 .2rem auto; width: 2.75rem; height: 2.75rem; padding: .4rem;
+                 border: 0; border-radius: .6rem;
+                 background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+  #themeToggle:hover { background: var(--field); color: var(--fg); }
+  #themeToggle .glyph { font-size: 1.15rem; line-height: 1; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; padding: var(--page-pad); max-width: var(--page-max);
+  /* The column is centred on the page. It was not: a max-width with no auto
+     margins pinned the whole site to the left edge, so on a wide screen every
+     route sat in the first 40rem of the viewport with the rest of the page
+     empty. The background goes on the root element as well, or the band either
+     side of the column would belong to no design and show the canvas white in
+     a dark page. The text inside the column stays left-aligned: this centres
+     the measure, not the prose. */
+  html { background: var(--bg); }
+  body { margin: 0 auto; padding: var(--page-pad); max-width: var(--page-max);
          background: var(--bg); color: var(--fg);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  h1 { font-size: var(--h1); line-height: 1.35; letter-spacing: -.025em; font-weight: 700; }
+  /* 1.2, not the 1.35 a paragraph wants: at six rem the line box is most of a
+     phone screen, and a display heading that keeps body leading reads as two
+     separate sentences. balance splits the long question into two lines of
+     similar length instead of one long and one short, which is the difference
+     between a heading and a paragraph that happens to be large. */
+  h1 { font-size: var(--h1); line-height: 1.2; letter-spacing: -.025em; font-weight: 700;
+       text-wrap: balance; }
   h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
   p, li { margin: .4rem 0; }
   a { color: var(--accent); }
@@ -102,18 +116,79 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
   ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
   .muted, .tag, .disclosure { color: var(--muted); }
-  .tag { font-size: .8rem; }
+  .tag { font-size: .8rem; margin: .2rem 0; }
   .sub { color: var(--muted); max-width: 75ch; }
-  .brand { color: var(--ochre); font-size: .78rem; font-weight: 750; letter-spacing: .12em;
-           text-transform: uppercase; margin: 0 0 1.25rem; }
   .back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 1rem; }
   input[type=search], input[type=number], select { width: 100%; padding: .5rem; border: 1px solid var(--line);
                                                     border-radius: .35rem; font: inherit; color: var(--fg);
                                                     background: var(--field); }
+  /* The two slots a reader edits inside the page's own sentence: the budget,
+     and the station they are starting from. They are one component on every
+     route -- same accent, same dashed underline, same focus wash -- because
+     they are the same two gaps in the same question, and a reader who has met
+     one has met the other. The underline is the whole affordance: it is the
+     shape a browser draws under a text field, so it says "this part of the
+     sentence is yours" without a label floating above it.
+
+     Before a station has been chosen the second slot is a real text field, so
+     the caret in it is the browser's own and blinks, and the word in it is a
+     placeholder rather than a value. That word is muted: the reader's answer is
+     what belongs in the accent, not the page's suggestion. */
+  .heading-field, .origin-slot { display: inline-flex; align-items: baseline; color: var(--accent);
+                                 border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+                                 border-radius: .15rem .15rem 0 0; }
+  /* Focus is carried by the underline and by the caret, never by a wash. At
+     heading size a background box turns a word in a sentence into a form
+     field, which is the one thing this component exists to avoid -- and the
+     caret is already sitting in the slot, blinking, which no other affordance
+     can say. A keyboard reader gets the page's own focus ring on top, because
+     :focus-visible is a different question from :focus-within. */
+  .heading-field:focus-within, .origin-slot:focus-within { border-bottom-style: solid; border-bottom-width: 2px; }
+  .heading-field { cursor: text; }
+  /* The currency sign is read, not decorative. It was aria-hidden, so the
+     heading's accessible name was "for up to 20" while the page said 20 pounds
+     everywhere else; the number field keeps its own label, so nothing is
+     announced twice. */
+  .budget-prefix { user-select: none; }
+  /* The dot between the heading's three parts. Muted, because it is
+     punctuation rather than one of the two things the reader came to set:
+     at six rem a separator in the text colour is as loud as the words it is
+     separating. aria-hidden, because the three parts are one sentence to a
+     reader, and "middle dot" is not a word the page means to say. */
+  .heading-sep { color: var(--muted); font-size: .38em; padding: 0 .45em; vertical-align: middle; }
+  /* The amount and the separator after it, in one box that cannot wrap. A
+     break opportunity sits at the edge of an inline field whatever follows
+     it, so without this the second line starts with the dot -- a separator
+     opening a line reads as a bullet, and the dot belongs to the phrase
+     before it. */
+  .heading-slot { white-space: nowrap; }
+  #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
+                  background: transparent; color: inherit; font: inherit; font-weight: inherit;
+                  letter-spacing: inherit; appearance: textfield; }
+  #budgetNumber::-webkit-inner-spin-button { appearance: none; }
+  /* The station slot on the route that has no station yet. It grows with what
+     is typed where the browser can resize a field to its content, and holds a
+     sensible width where it cannot; the caret is themed from the palette, like
+     every other browser surface this page ships. */
+  .origin-slot #originSearch { width: 9ch; min-width: 4ch; field-sizing: content;
+                               padding: .05rem .15rem; border: 0; outline: 0;
+                               background: transparent; color: inherit; font: inherit;
+                               font-weight: inherit; letter-spacing: inherit;
+                               caret-color: var(--accent); }
+  .origin-slot #originSearch::placeholder { color: var(--muted); opacity: 1; }
+  /* One drawn disclosure mark, used by both the refinements control and the
+     station slot. Authored rather than a character: a character has no stroke
+     weight of its own, is styled differently by every font, and the one this
+     replaced was written as a CSS escape inside a Python string -- where
+     Python read it first, so "\\25be" shipped as a control character followed
+     by the letters "be" on every station page. */
+  .chevron { width: 1em; height: 1em; flex: none; align-self: center;
+             transition: transform .18s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
   /* C29: one main landmark per route, so landmark navigation works. It wraps
      the route's own content only; the back link and the footer stay outside it
      as the navigation landmarks they are. */
-  main { display: block; }
+  main { display: block; padding-top: .5rem; }
   /* The footer, the back link and the footer nav are the same shape on every
      route: a quiet rule above, 44px of touch target for a phone. The height is
      on the anchor itself, not only on a container around it -- a nav that is
@@ -169,10 +244,11 @@ __SHARED_THEME__
 <style>
 __SHARED_CSS__
   /* C30: a policy page is read, not skimmed past. The shared --h1 scales to
-     5rem for the fare page's budget heading; here it is sized for a document
-     title, and the brand line that used to sit above it is gone -- a small
-     uppercase eyebrow above a large heading reads as a marketing hero and
-     competes with the document's own title. */
+     6rem for the pages whose heading is the question a reader came to answer;
+     here it is sized for a document title, and the brand line that used to sit
+     above it is gone -- a small uppercase eyebrow above a large heading reads
+     as a marketing hero and competes with the document's own title. The same
+     argument is why the chooser no longer carries one. */
   :root { --h1: 2rem; --page-max: 42rem; }
   h1 { margin: 0 0 1rem; }
   h2 { font-size: 1.15rem; }
@@ -218,62 +294,61 @@ _TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 __SHARED_THEME__
-<title>Where can we go from __ORIGIN__ for up to &pound;__BUDGET__?</title>
+<title>Train fares up to &pound;__BUDGET__ from __ORIGIN__</title>
 <style>
 __SHARED_CSS__
-  /* The one thing this route changes: it is a wide page with a table, not a
-     single column of prose. */
-  :root { --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); }
-  .heading-field { display: inline-flex; align-items: baseline; color: var(--accent);
-                   border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-                   border-radius: .15rem .15rem 0 0; cursor: text; }
-  .heading-field:focus-within { background: var(--best); border-bottom-style: solid; }
-  /* The currency sign is read, not decorative. It was aria-hidden, so the
-     heading's accessible name was "for up to 20" while the page said 20
-     pounds everywhere else; the number field keeps its own label, so nothing
-     is announced twice. */
-  .budget-prefix { user-select: none; }
-  #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
-                  background: transparent; color: inherit; font: inherit; font-weight: inherit;
-                  letter-spacing: inherit; appearance: textfield; }
-  #budgetNumber::-webkit-inner-spin-button { appearance: none; }
-  #changeOrigin { display: inline-flex; align-items: baseline; gap: .4rem; padding: .05rem .15rem;
-                  border: 0; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-                  border-radius: .15rem .15rem 0 0; background: transparent; color: var(--accent);
+  /* No width of its own: the column, the padding and the heading size are the
+     shared ones, so a station page and the chooser are the same page with
+     different content. The table simply uses the width it is given. */
+  /* The station slot wears the shared .origin-slot skin, so the same underline
+     sits under a name that navigates here and under one that is typed into on
+     the chooser. This rule only takes the browser's own button chrome off it:
+     border-bottom is left to the class, because the border shorthand here
+     would win on specificity and erase the affordance. The mark is the shared
+     drawn chevron -- an affordance, not a word, and aria-hidden so it is not
+     read out as part of the heading's name. */
+  #changeOrigin { display: inline-flex; align-items: baseline; gap: .35rem; padding: .05rem .15rem;
+                  border-top: 0; border-right: 0; border-left: 0;
+                  background: transparent; color: var(--accent);
                   font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
-  #changeOrigin:hover, #changeOrigin:focus-visible { background: var(--best); border-bottom-style: solid; }
-  /* The swap arrow is an affordance, not a word. It was CSS generated
-     content, which the browser does read inside the heading's accessible name
-     -- "from Change starting station: GRANTHAM ↕" -- so it is a real element
-     hidden from the name instead (the same call made for the pound sign). */
-  .origin-swap { font-size: .5em; opacity: .65; }
-  .filter-bar { display: grid; grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr);
-                gap: 1.25rem 2rem; align-items: start; padding: 1.1rem 1.25rem 1.25rem;
-                border: 1px solid var(--line); border-radius: .7rem; background: color-mix(in srgb, var(--field) 75%, transparent); }
+  #changeOrigin:hover, #changeOrigin:focus-visible { border-bottom-style: solid; }
+  #changeOrigin:hover .chevron, #changeOrigin:focus-visible .chevron { opacity: 1; }
+  #changeOrigin .chevron { width: .8em; height: .8em; opacity: .75; }
+  /* One control that is always there and one block that folds away, at every
+     width rather than below a breakpoint. Live at 1440px this bar put four
+     controls a reader had not asked for -- a budget slider, three ticket
+     types, three party choices and six destination chips -- above a list that
+     was the reason they came. The budget stays outside the disclosure because
+     it is the page's question rather than a refinement of it, and the toggle
+     carries what is currently narrowed, so a folded bar is never a hidden
+     filter. Nothing here depends on a viewport width or on a resize event. */
+  /* No panel around them. The bar was a bordered, tinted card holding two
+     controls, so the page had a box for a slider and a box for the button
+     inside it -- and the box did not say anything the two controls do not
+     say themselves. What is left is the budget under the heading's own
+     budget, then the one control that folds the rest away. */
+  .filter-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
   .filter-bar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
-  /* S42: the refinements travel as one block on a phone. Above the phone
-     breakpoint the block is not a disclosure at all: the wrapper and the panel
-     are display: contents, so the three fieldsets are the filter bar's own
-     grid items exactly as they were before, and the toggle is not rendered.
-     Nothing about a desktop reader's layout depends on a resize event arriving
-     -- only on CSS, which cannot be late. */
-  .more-filters, .more-filters-panel { display: contents; }
-  .more-filters-toggle { display: none; }
+  .budget-track { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; }
+  /* Capped rather than stretched: a range input at the full width of a 78rem
+     table is a long thin rule with a thumb somewhere on it, and the reader
+     has to find the control inside it. At a control's own width the note
+     beside it stays beside it. */
+  .budget-track #budget { flex: 1 1 12rem; max-width: 34rem; min-width: 0; }
+  .more-filters { display: block; }
+  .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem;
+                          width: 100%; min-height: 44px; padding: .5rem .6rem;
+                          border: 1px solid var(--line); border-radius: .45rem;
+                          background: var(--field); color: var(--fg); font: inherit; text-align: left;
+                          cursor: pointer; }
+  .more-filters-toggle:hover { border-color: var(--accent); }
   .more-filters-label { font-weight: 700; }
-  @media (max-width: 44rem) {
-    .more-filters { display: block; }
-    .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem;
-                            width: 100%; min-height: 44px; padding: .5rem .6rem; margin-bottom: .75rem;
-                            border: 1px solid var(--line); border-radius: .45rem;
-                            background: var(--field); color: var(--fg); font: inherit; text-align: left;
-                            cursor: pointer; }
-    .more-filters-toggle::after { content: "\25be"; color: var(--accent); }
-    .more-filters[data-open="true"] .more-filters-toggle { margin-bottom: .9rem; border-color: var(--accent); }
-    .more-filters[data-open="true"] .more-filters-toggle::after { content: "\25b4"; }
-    .more-filters-panel { display: none; }
-    .more-filters[data-open="true"] .more-filters-panel { display: grid; grid-template-columns: 1fr;
-                                                             gap: 1.1rem; align-items: start; }
-  }
+  .more-filters-toggle .chevron { margin-left: auto; color: var(--accent); }
+  .more-filters[data-open="true"] .more-filters-toggle { margin-bottom: .9rem; border-color: var(--accent); }
+  .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
+  .more-filters-panel { display: none; }
+  .more-filters[data-open="true"] .more-filters-panel { display: grid; grid-template-columns: 1fr;
+                                                          gap: 1.1rem; align-items: start; }
   .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
                                       text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
@@ -407,14 +482,8 @@ __SHARED_CSS__
   /* 44rem, not 40: measured, the six-column table needs ~700px before its three
      row actions stop wrapping onto a second line, so the stacked layout keeps
      the band between 640 and 704px that the table cannot hold. */
-  @media (max-width: 62rem) {
-    .filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .destination-filter { grid-column: 1 / -1; }
-  }
   @media (max-width: 44rem) {
     body { padding: 1rem .75rem; }
-    .filter-bar { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
-    .destination-filter { grid-column: auto; }
     table, tbody { display: block; }
     thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
              clip-path: inset(50%); white-space:nowrap; border:0; }
@@ -434,7 +503,7 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Where can we go for up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span> from __ORIGIN_CONTROL__</h1>
+<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>from __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
@@ -469,6 +538,7 @@ __THEME_TOGGLE__
             aria-expanded="false" aria-controls="moreFiltersPanel">
       <span class="more-filters-label">Narrow this list</span>
       <span class="tag" id="filterState"></span>
+      __CHEVRON__
     </button>
     <div class="more-filters-panel" id="moreFiltersPanel">
   <fieldset class="ticket-filter">
@@ -595,31 +665,22 @@ const railcardClose = document.getElementById("railcardClose");
 const clearTypes = document.getElementById("clearTypes");
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
-const filterState = document.getElementById("filterState");
-// S42: a phone shows the budget and the results, and keeps the refinements
-// behind one control. The control is a button carrying aria-expanded, so a
-// screen reader announces the state without any of this JavaScript; the
-// stylesheet decides what a viewport shows, and this only decides where a
-// phone starts and follows the viewport when a reader rotates the device.
-const wideEnough = window.matchMedia("(min-width: 44.01rem)");
-function setFiltersOpen(open) {
-  if (!moreFilters) return;
-  moreFilters.dataset.open = open ? "true" : "false";
-  if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
-}
-function followViewport() {
-  setFiltersOpen(wideEnough.matches);
-}
-if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
-  setFiltersOpen(moreFilters.dataset.open !== "true");
-});
-wideEnough.addEventListener("change", followViewport);
-// The resize listener is a second road to the same place, not a second rule:
-// some engines deliver the media-query change late or not at all, and a reader
-// who rotates their phone must not be left with refinements they can neither
-// see nor open.
-window.addEventListener("resize", followViewport);
-followViewport();
+const filterState = document.getElementById("filterState");  // The refinements are folded at every width, and the reader is the only thing
+  // that opens them. The control is a button carrying aria-expanded, so the
+  // state is announced without any of this: the markup opens folded and this
+  // only flips that. There used to be a second road in -- a media query and a
+  // resize listener that opened the panel above the phone breakpoint and closed
+  // it below -- which meant the state a reader had chosen could be overwritten
+  // by rotating a device, and meant the fold was a different thing at each
+  // width. Both are gone: one control, one state, one place it changes.
+  function setFiltersOpen(open) {
+    if (!moreFilters) return;
+    moreFilters.dataset.open = open ? "true" : "false";
+    if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
+    setFiltersOpen(moreFilters.dataset.open !== "true");
+  });
 
 // What is narrowed, said in the summary, so a reader who has collapsed the
 // refinements on a phone can still see that a filter is on.
@@ -1222,7 +1283,7 @@ function render() {
   // dragged the budget and then looked at the tab list had no way to tell two
   // searches apart. Before the early returns, because a page with nothing
   // priced still names its origin and its budget.
-  document.title = "Where can we go from " + DATA.origin.name + " for up to £" + budgetNumber.value + "?";
+  document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;
   const available = activeDestinations();
   // Before any price is read: the railcard changes the price of every row, and
   // a card ticked for a party of one is a number no reader could buy.
@@ -2224,23 +2285,36 @@ _CHOOSER_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 __SHARED_THEME__
-<title>Where can we go for &pound;__BUDGET__? Pick your station</title>
+<title>Train fares up to &pound;__BUDGET__ &middot; pick your station</title>
 <style>
 __SHARED_CSS__
-  /* A single column: the chooser is a search over a list, not a table. */
-  :root { --h1: 1.5rem; }
-  h1 { margin: 0 0 .25rem; }
-  .sub { margin: 0 0 1.25rem; }
-  label.caption { display: block; font-size: .8rem; text-transform: uppercase;
-                  letter-spacing: .04em; color: var(--muted); margin-bottom: .35rem; }
-  #picks { list-style: none; margin: .5rem 0 0; padding: 0; }
-  #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .5rem .4rem;
+  /* The same heading over the same sentence as a station page. The only thing
+     this route lacks is the station, so its slot is a field to type one into
+     rather than a name to click, and it is the same slot in the same place --
+     which is what makes the two pages read as one product.
+     Nothing else here is a control, so this route has no filter bar: the two
+     things a reader can change are the two gaps in the heading, and the list
+     below answers them. */
+  /* No width of its own either: see the token in the shared block. */
+  h1 { margin: 0 0 .7rem; }
+  .sub { margin: 0 0 .3rem; }
+  #orderingNote { margin: 0 0 1.6rem; }
+  /* One cell per station, as many across as the column holds: at 78rem a
+     single row per station put a station's own count most of a screen away
+     from its name, so the three facts of a row stopped being one thing. The
+     cells are a fixed measure rather than a share of the width, so one
+     station does not stretch to fill the page and a full-network build reads
+     as columns of names rather than a very long list. */
+  #picks { list-style: none; margin: 0; padding: 0;
+           display: grid; grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+           gap: 0 1.5rem; }
+  #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .55rem .4rem;
              color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #picks a:hover, #picks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #picks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
   #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap; }
-  #nomatch { color: var(--muted); margin-top: .5rem; }
-  #chooserBudget { padding: .6rem; margin-bottom: 1rem; }
+  #nomatch { color: var(--muted); margin-top: .75rem; }
+  #capMessage { margin-top: .75rem; }
   p.tag { margin-top: 2rem; }
 </style>
 </head>
@@ -2248,19 +2322,13 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="chooserHeading">Where can we go for up to &pound;<span id="chooserBudgetFigure">__BUDGET__</span>?</h1>
-<p class="brand">Rail Budget</p>
-<p class="sub">Pick the station you are starting from, and see every destination reachable by train for up to the budget in the heading.</p>
-<p class="sub">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
-<label class="caption" for="chooserBudget">Starting budget</label>
-<input id="chooserBudget" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric">
-<label class="caption" for="pick">Your station</label>
-<input id="pick" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
-       aria-describedby="pickStatus">
-<span id="pickStatus" class="sr-only" role="status"></span>
+<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br><span id="originClause"> from <span class="origin-slot" id="originField"><input id="originSearch" type="search" placeholder="station" autocomplete="off" aria-label="The station you are starting from" aria-describedby="pickStatus"></span></span></h1>
+<p class="sub">Type the station you are leaving from, then pick it from the list.</p>
+<p class="sub" id="orderingNote">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
-<p id="capMessage" class="tag" hidden></p>
+<p id="capMessage" hidden></p>
+<span id="pickStatus" class="sr-only" role="status"></span>
 <p class="tag">__NOTE__</p>
 </main>
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
@@ -2269,8 +2337,9 @@ const STATIONS = __STATIONS__;
 const picks = document.getElementById("picks");
 const nomatch = document.getElementById("nomatch");
 const status = document.getElementById("pickStatus");
-const pick = document.getElementById("pick");
-const chooserBudget = document.getElementById("chooserBudget");
+const pick = document.getElementById("originSearch");
+const budgetNumber = document.getElementById("budgetNumber");
+const originClause = document.getElementById("originClause");
 const capMessage = document.getElementById("capMessage");
 const CHOOSER_LIMIT = 40;
 function matches(station, needle) {
@@ -2278,33 +2347,30 @@ function matches(station, needle) {
   return station.name.toLowerCase().includes(needle) ||
     station.crs.toLowerCase().startsWith(needle);
 }
-if (chooserBudget) {
+if (budgetNumber) {
   const storedBudget = new URLSearchParams(window.location.search).get("budget");
-  if (storedBudget && Number(storedBudget) > 0) chooserBudget.value = storedBudget;
+  if (storedBudget && Number(storedBudget) > 0) budgetNumber.value = storedBudget;
 }
-// C15: the heading is the page's most prominent promise and it was frozen at
-// the build's budget while the field, the tab title and every outgoing link
-// moved. It is written from the same resolved value as those three, so the
-// sentence a reader reads, the title their tab list shows, and the budget the
-// next page is opened with cannot disagree.
-const chooserBudgetFigure = document.getElementById("chooserBudgetFigure");
+// C15: the heading is the page's most prominent promise, and it is written from
+// the same resolved budget as the field, the tab title and every outgoing link,
+// so the sentence a reader reads, the title their tab list shows, and the budget
+// the page they open next is given cannot disagree.
 function resolvedBudget() {
-  return Math.max(1, Number(chooserBudget.value) || 1);
+  return Math.max(1, Number(budgetNumber.value) || 1);
 }
 function syncChooserBudget() {
   const value = resolvedBudget();
-  if (chooserBudgetFigure) chooserBudgetFigure.textContent = String(value);
-  document.title = "Where can we go for up to £" + value + "? Pick your station";
+  document.title = "Train fares up to £" + value + " · pick your station";
   return value;
 }
 
 function render() {
-  // A build that priced no stations has nothing to search over, so the field
-  // stands down and the page says so, rather than addressing a typed input
-  // the reader never made.
+  // A build that priced no stations has nothing to search over. The station
+  // slot is the one thing on this page that cannot tell the truth here -- a
+  // field that finds nothing is a control that lies -- so the whole "from ..."
+  // clause leaves the heading and the page says why underneath it.
   if (!STATIONS.length) {
-    pick.hidden = true;
-    document.querySelector("label[for='pick']").hidden = true;
+    if (originClause) originClause.hidden = true;
     picks.replaceChildren();
     nomatch.textContent = "Nothing is priced from any station in this build, so there is nothing to explore yet. " +
       "When the build prices journeys, this page lists every station it can start from.";
@@ -2313,13 +2379,13 @@ function render() {
     return;
   }
   const needle = pick.value.trim().toLowerCase();
-  const wanted = STATIONS.filter((station) => !needle || matches(station, needle));
+  const wanted = STATIONS.filter((station) => matches(station, needle));
   picks.replaceChildren();
   for (const station of wanted.slice(0, CHOOSER_LIMIT)) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = station.href;
-    if (chooserBudget) {
+    if (budgetNumber) {
       const url = new URL(link.href, window.location.href);
       url.searchParams.set("budget", resolvedBudget());
       link.href = url.pathname + url.search + url.hash;
@@ -2356,15 +2422,15 @@ function render() {
   status.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
 }
 
-if (chooserBudget) {
-  chooserBudget.addEventListener("input", () => {
+if (budgetNumber) {
+  budgetNumber.addEventListener("input", () => {
     syncChooserBudget();
     render();
   });
 }
-// The field the whole page exists for. It had no listener, so a typed name or
-// code changed nothing on screen while the list below sat there looking like a
-// search result.
+// The field the whole page exists for, and the one a reader arrives at. It is
+// focused rather than merely present: the caret in the heading is what says the
+// page is waiting for a station, without a label above it saying so.
 pick.addEventListener("input", render);
 syncChooserBudget();
 render();
@@ -2382,6 +2448,24 @@ __ANALYTICS__
 # visit. localStorage can throw -- a private window, a file:// page with storage
 # blocked -- and then the reader simply gets the default, which is the point of
 # having a default.
+# The one drawn mark the chrome uses: a chevron that says "there is more behind
+# this". It is authored SVG rather than a character for three reasons, and the
+# third is the one that bit: a character has no stroke weight of its own and is
+# styled differently by every installed font; it is not an element a stylesheet
+# can size against the text it sits beside; and this mark used to be written as
+# a CSS escape inside a Python string, where Python reads it first -- "\\25be"
+# is octal 0o25 followed by the letters "be", so every station page rendered a
+# control character and the word "be" on its refinements control. A drawn path
+# cannot be misread by an interpreter, and it is the same shape on every
+# machine.
+CHEVRON = (
+    '<svg class="chevron" viewBox="0 0 16 16" width="16" height="16"'
+    ' aria-hidden="true" focusable="false">'
+    '<path d="M4 6.25 8 10.25l4-4" fill="none" stroke="currentColor"'
+    ' stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
+
+
 SHARED_THEME = """<meta name="color-scheme" content="light dark">
 <script>
   // The one thing this page does before it renders anything: say which palette
@@ -2424,7 +2508,7 @@ SHARED_THEME = """<meta name="color-scheme" content="light dark">
 # sighted reader sees a moon.
 THEME_TOGGLE = (
     '<button id="themeToggle" type="button" role="switch" aria-checked="true" hidden>'
-    '<span class="glyph" aria-hidden="true">\\u263E</span>'
+    '<span class="glyph" aria-hidden="true">&#9790;</span>'  # the moon, as an entity: HTML has no backslash escapes
     '<span class="sr-only">Dark theme</span></button>'
 )
 
@@ -2443,6 +2527,7 @@ def with_shared(template: str) -> str:
     for placeholder, block, what in (
         ("__SHARED_THEME__", SHARED_THEME, "theme block"),
         ("__THEME_TOGGLE__", THEME_TOGGLE, "theme control"),
+        ("__CHEVRON__", CHEVRON, "disclosure mark"),
     ):
         filled = filled.replace(placeholder, block)
         if placeholder in filled:

@@ -160,7 +160,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
         # The title is the heading's sentence, so a reader with two tabs open
         # can tell the two searches apart.
-        self.assertIn('document.title = "Where can we go from " + DATA.origin.name + " for up to £" + budgetNumber.value + "?";', self.html)
+        self.assertIn('document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;', self.html)
 
     def test_the_chooser_says_what_its_order_is_and_is_not(self) -> None:
         # S10: a cold-start order that does not name its measure reads as a
@@ -187,7 +187,7 @@ class DemoPageTest(unittest.TestCase):
         # S12: the navigation-versus-filter distinction, said once, where it is
         # true.
         self.assertIn('id="firstUse"', self.html)
-        self.assertIn("<b>Change</b>", self.html)
+        self.assertIn("<b>the station name</b>", self.html)
 
     def test_a_picker_option_carries_the_readers_search(self) -> None:
         # S06: changing origin corrects where they leave from, not the search
@@ -519,6 +519,41 @@ class DemoPageTest(unittest.TestCase):
         for line in serialised_callback_lines(suite):
             if doubled in line and line.strip() not in deliberate:
                 self.fail(f"a doubled escape inside a page callback: {line.strip()}")
+
+    def test_no_escape_that_html_cannot_read_reaches_the_page(self) -> None:
+        # The same family as the doubled escape above, and the same reason for
+        # a test: a backslash escape is read in a script and is only text
+        # everywhere else, so the mistake is invisible in the source and
+        # visible in the product. The theme switch's moon was written as the
+        # escape the script beside it needs, and shipped as the five
+        # characters it is in markup. Both halves are checked: no escape in
+        # the markup, and none in CSS either, where a \uXXXX sequence is not the
+        # escape the author meant.
+        escape = re.compile(r"\\u[0-9a-fA-F]{4}")
+        marker = chr(92) + "u"
+        features = build_demo_page.site_features(
+            analytics=False, link_mode="fallback", network=None, disclosure=None
+        )
+        pages = {
+            "station": self.html,
+            "chooser": build_demo_page.render_chooser([], budget_pounds=20),
+            "privacy": build_demo_page.render_privacy("note", "", "a@b.test", features),
+        }
+        for name, page in pages.items():
+            markup = re.sub(r"<script\b.*?</script>", "", page, flags=re.DOTALL | re.IGNORECASE)
+            for match in escape.finditer(markup):
+                self.fail(
+                    f"{name} states a script escape in its markup: "
+                    f"{markup[max(0, match.start() - 40):match.end() + 10]!r}"
+                )
+            styles = " ".join(
+                re.findall(r"<style\b.*?</style>", page, flags=re.DOTALL | re.IGNORECASE)
+            )
+            self.assertNotIn(marker, styles, f"{name} writes an escape CSS does not read")
+        # And the one drawn character in the chrome is that character, so a
+        # reader sees a moon rather than a backslash on whichever route they
+        # opened.
+        self.assertIn("&#9790;", self.html)
 
     def test_the_freshness_claim_is_judged_against_the_builds_own_date(self) -> None:
         # The suite reports the page's own feedDate and judges the sentence
@@ -1305,8 +1340,10 @@ class DemoPageTest(unittest.TestCase):
         # behaviour is "up to", not "under". An exactly-at-the-ceiling fare is
         # shown, and a page that says "under" while showing it is describing
         # itself. Asserted negatively so the word cannot creep back in.
-        self.assertIn("Where can we go for up to", self.html)
-        self.assertNotIn("Where can we go for under", self.html)
+        heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
+        self.assertIn("Train fares", heading)
+        self.assertIn("up to", heading)
+        self.assertNotIn("under", heading)
         # The other two places that name the cap. "Within" is not "under", but
         # it reads the same way beside a fare that lands exactly on the ceiling,
         # and a summary saying "3 destinations within £20" under a heading that
@@ -1332,8 +1369,12 @@ class DemoPageTest(unittest.TestCase):
 
     # -- the layout: budget leads, the rest refines ------------------------
 
-    def test_the_filter_bar_uses_horizontal_space_without_a_duplicate_budget_field(self) -> None:
-        self.assertIn("grid-template-columns: minmax(16rem, 1.1fr) minmax(18rem, 1.3fr) minmax(17rem, 1fr)", self.html)
+    def test_the_filter_bar_is_one_column_and_keeps_one_budget_field(self) -> None:
+        # The bar is the budget and one folded block now, so it is a single
+        # column rather than three tracks side by side. At 1440px the
+        # three-track version laid the refinements out as though a reader
+        # wanted all of them at once, above the list they came for.
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", self.html)
         self.assertIn('<section class="filter-bar"', self.html)
         self.assertIn('id="budget" type="range"', self.html)
         self.assertIn('id="budgetNumber" type="number"', self.html.split("<h1", 1)[1].split("</h1>", 1)[0])
@@ -1415,10 +1456,18 @@ class DemoPageTest(unittest.TestCase):
                 page,
                 f"{name} restated the footer nav",
             )
-        # The chooser and the station page state their width or heading size as
-        # a token, rather than restating the rule the shared block sets.
-        self.assertIn(":root { --h1: 1.5rem; }", chooser)
-        self.assertIn("--page-max: 78rem", self.html)
+        # One column for the whole site. The chooser used to state a width of
+        # its own -- 56rem against the station page's 78 -- and the same
+        # heading that fit two lines on one route took three on the other,
+        # which is most of what made them read as two products. The policy
+        # page is the one exception, and deliberately: a document is read in
+        # a measure, not in the width of a table.
+        for name, page in (("chooser", chooser), ("station", self.html)):
+            own = page.split(SHARED_CSS, 1)[1]
+            self.assertNotIn("--page-max", own, f"{name} states a width of its own")
+            self.assertNotIn("--page-pad", own, f"{name} states its own padding")
+        self.assertIn(":root { --h1: 2rem; --page-max: 42rem; }", privacy)
+        self.assertIn("--page-max: 78rem", SHARED_CSS)
 
     def test_accessibility_is_a_route_matrix_and_not_one_happy_path(self) -> None:
         # S41: the AA commitment was evidenced from one station page. The
@@ -1457,12 +1506,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(".synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }", self.html)
         self.assertIn(".feed-record summary { display: inline-flex; align-items: center; min-height: 24px;", self.html)
 
-    def test_a_phone_keeps_the_budget_and_folds_the_refinements(self) -> None:
-        # S42: the phone reflows around the journey rather than around the
-        # table. The budget stays open, the refinements travel as one
-        # disclosure that says what is currently narrowed, and the summary is
-        # rewritten on every state change so it cannot describe a filter the
-        # reader has since cleared.
+    def test_the_budget_is_kept_and_the_refinements_fold_at_every_width(self) -> None:
+        # The fold was a phone-only disclosure driven by a media query and a
+        # resize listener: two roads to one state, so rotating a device could
+        # discard the fold a reader had chosen, and the same control meant two
+        # different things at two widths. It is one control and one state now,
+        # with no viewport term anywhere near it.
         self.assertIn('<div class="more-filters" id="moreFilters" data-open="false">', self.html)
         self.assertIn('id="moreFiltersToggle"', self.html)
         self.assertIn('aria-controls="moreFiltersPanel"', self.html)
@@ -1475,29 +1524,26 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("more-filters-panel", folded)
         for group in ("ticket-filter", "party-filter", "destination-filter"):
             self.assertIn(group, folded, f"{group} is outside the disclosure")
-        # Above the phone breakpoint the block is not a disclosure at all: the
-        # toggle is not rendered and the panel is displayed, so a missed resize
-        # event cannot leave a reader with controls they can neither see nor
-        # open. Below it, the panel is displayed only while data-open says so.
-        self.assertIn(".more-filters, .more-filters-panel { display: contents; }", self.html)
-        self.assertIn(".more-filters-toggle { display: none; }", self.html)
+        # The panel is closed until data-open says otherwise, and the summary
+        # is written from that same state, so the two cannot disagree.
         self.assertIn(".more-filters { display: block; }", self.html)
-        self.assertIn("@media (max-width: 44rem) {", self.html)
+        self.assertIn(".more-filters-panel { display: none; }", self.html)
         self.assertIn('.more-filters[data-open="true"] .more-filters-panel { display: grid;', self.html)
         self.assertIn('moreFilters.dataset.open = open ? "true" : "false";', self.html)
         self.assertIn('moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");', self.html)
+        self.assertNotIn("display: contents", self.html)
+        self.assertNotIn("matchMedia", self.html)
+        self.assertNotIn("followViewport", self.html)
         # The state is written from the page's own controls, on every render
         # and on the path that stands the whole panel down.
         self.assertIn("function filterStateText()", self.html)
-        self.assertIn('window.matchMedia("(min-width: 44.01rem)")', self.html)
-        self.assertIn("wideEnough.addEventListener(\"change\", followViewport)", self.html)
-        self.assertIn('window.addEventListener("resize", followViewport)', self.html)
         self.assertIn("renderFilterState();", self.html)
         self.assertGreaterEqual(self.html.count("renderFilterState();"), 2)
 
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
-        self.assertIn("Where can we go for up to", heading)
+        self.assertIn("Train fares", heading)
+        self.assertIn("up to", heading)
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
         self.assertIn("h1 { font-size: var(--h1);", self.html)
@@ -1507,7 +1553,7 @@ class DemoPageTest(unittest.TestCase):
         # field keeps its own aria-label, so nothing is announced twice.
         self.assertIn('<span class="budget-prefix">&pound;</span>', heading)
         self.assertNotIn('<span class="budget-prefix" aria-hidden="true">', heading)
-        self.assertIn("--h1: clamp(2rem, 5vw, 5rem)", self.html)
+        self.assertIn("--h1: clamp(2rem, 6vw, 6rem)", self.html)
         self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.html)
         self.assertNotIn("max-width: 32ch", self.html)
         self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
@@ -1634,11 +1680,15 @@ class DemoPageTest(unittest.TestCase):
         # through aria-label: an aria-label replaces the text the heading's
         # accessible name is read from, so the heading announced "from Change
         # starting station" and never said which station. The swap arrow is
-        # likewise a real hidden element, because the browser reads CSS
-        # generated content inside the heading's name.
+        # likewise drawn rather than written into the heading's name: the
+        # chevron is inline SVG and aria-hidden, because the browser reads
+        # CSS generated content inside a heading as text, so a decoration
+        # made that way is announced as a word the page never meant to say.
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn('<span class="sr-only">Change starting station: </span>', heading)
-        self.assertIn('class="origin-swap" aria-hidden="true"', heading)
+        self.assertIn('class="origin-slot" type="button"', heading)
+        self.assertIn('<svg class="chevron"', heading)
+        self.assertNotIn("origin-swap", self.html)
         self.assertNotIn('aria-label="Change starting station"', self.html)
         # The options are real anchors, not a custom listbox.
         self.assertIn('link.href = station.href', self.html)
@@ -1711,11 +1761,14 @@ class DemoPageTest(unittest.TestCase):
             budget_pounds=20,
         ).split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn('<span class="origin-name">A &amp; B &lt;rail&gt;</span>', named)
-        # The first-use note names the Change control, so it cannot be static
-        # text on a build that has no such control.
+        # The first-use note names the heading's station control, so it cannot
+        # be static text on a build that has no such control -- and it has to
+        # name the control the page actually shows. It said "Change" until the
+        # Change button became the station's own name with a chevron beside it,
+        # which left the sentence pointing at a word that was no longer there.
         self.assertNotIn("Change", render_page(payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0])
         with_control = render_page(self.payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0]
-        self.assertIn("<b>Change</b>", with_control)
+        self.assertIn("<b>the station name</b>", with_control)
 
     def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
         # A chip that can only ever return nothing reads as a broken control,
@@ -1887,10 +1940,17 @@ class DemoPageTest(unittest.TestCase):
             [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
             budget_pounds=20,
         )
-        self.assertIn('id="chooserBudget"', chooser)
+        # The budget is the heading's own inline field, the same one a
+        # station page carries, rather than a labelled input above the list.
+        self.assertIn('id="budgetNumber"', chooser)
         self.assertIn('url.searchParams.set("budget"', chooser)
-        self.assertIn('min-height: 44px', chooser)
-        self.assertIn("Rail Budget", chooser)
+        self.assertIn("min-height: 44px", chooser)
+        # The station slot is the one thing this route has that a station
+        # page does not: a field holding the word station, waiting to be
+        # typed in, so the page reads as a question with its answer missing.
+        self.assertIn('id="originSearch"', chooser)
+        self.assertIn('placeholder="station"', chooser)
+        self.assertNotIn("Rail Budget", chooser)
 
     def test_the_chooser_explains_a_truncated_match_list(self) -> None:
         chooser = render_chooser([], budget_pounds=20)
@@ -1925,7 +1985,7 @@ class DemoPageTest(unittest.TestCase):
             {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5},
         ]
         html = render_chooser(index, budget_pounds=20)
-        self.assertIn("Pick the station you are starting from", html)
+        self.assertIn("Type the station you are leaving from", html)
         self.assertNotIn("const DATA", html)  # no fares payload on the chooser
         self.assertIn("/from/nottingham/", html)
         self.assertIn('"destinations":6', html.replace(" ", ""))
