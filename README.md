@@ -177,7 +177,8 @@ it.
 
 ## What the ticket conditions are, and what checks them
 
-A restricted fare's Conditions cell carries the feed's own wording: the
+A restricted fare's row carries the feed's own ticket code, and the wording
+that code stands for is in that row's own disclosure, beside the times: the
 restriction's description, and the outward and return validity it permits
 (`VALID AFTER 0859 MON-FRI`, `NOT VALID TO ARR KGX BEFORE 1000`). A single shows
 only the outward text — it has no return leg for a return condition to
@@ -504,8 +505,12 @@ python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
 ```
 
-Each destination carries a link to a ticket seller and an expander listing the
-next few journeys. **By default that link is the seller's own search page**, with
+Each destination carries a link to a ticket seller and one expander per row, holding
+the next few journeys with the fare in words, the condition it carries, the
+validity the feed states for it and the feed's own record. What is on the row
+itself is the fare's code plus one word when the fare is one a reader should
+open — `advance` or `restricted` — because the column that sentence used to
+occupy said the same thing on all twenty rows (ADR-0040). **By default that link is the seller's own search page**, with
 no journey on it, because no seller's parameterised link is known to land on a
 search (ADR-0017) and a reader sent to "No matching journeys found" does not
 conclude that the seller is broken. The page says what the reader has to fill in,
