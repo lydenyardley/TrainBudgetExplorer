@@ -1294,7 +1294,7 @@ class DemoPageTest(unittest.TestCase):
     def test_every_row_offers_to_copy_its_journey_details(self) -> None:
         self.assertIn('copy.textContent = "Copy"', self.html)
         self.assertIn('copy.setAttribute("aria-label", "Copy the journey details for "', self.html)
-        self.assertIn("copyJourney(row, destination, copy)", self.html)
+        self.assertIn("copyJourney(destination, copy, tools)", self.html)
 
     def test_the_copied_text_names_the_things_a_seller_asks_for(self) -> None:
         for label in ('"From: "', '"To: "', '"Date: "', '"Passengers: "'):
@@ -2175,35 +2175,56 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("const times = destination.departures.length;", self.html)
         self.assertIn('toggle.textContent = times ? times + " times" : "Fare details";', self.html)
 
-    def test_a_row_has_one_state_machine_for_the_region_underneath_it(self) -> None:
+    def test_a_row_has_one_panel_and_one_control_that_owns_it(self) -> None:
         # C28: the times list and the manual-copy box both insert the row that
         # follows the data row, and each used to remove whatever was there by
-        # reaching for nextElementSibling. Copying while the times were open
-        # left the times button still announcing "expanded" over content that
-        # had gone, and the next click on it removed the copy box. One owner per
-        # row, keyed weakly so a re-render's detached rows are collectable.
+        # reaching for nextElementSibling. The distill pass leaves one panel per
+        # row -- the copy text lands inside it, under the button that asked for
+        # it -- so the state machine is one region with one owner, keyed weakly
+        # so a re-render's detached rows are collectable.
         script = page_script(self.html)
         self.assertNotIn("nextElementSibling", script.split("function toggleDetail")[1].split("\nfunction ")[0])
-        self.assertNotIn("nextElementSibling", script.split("function showCopyBox")[1].split("\nfunction ")[0])
-        for closer in ("function closeRegion", "function rowRegions"):
-            self.assertIn(closer, script)
-        self.assertIn("rowRegions.cache = new WeakMap();", script)
-        # The two openings each close what is already in the slot, and the
-        # control that owns a region is the control whose state is written back.
+        self.assertNotIn("nextElementSibling", script.split("function showCopyText")[1].split("\nfunction ")[0])
+        self.assertIn("function closePanel", script)
+        self.assertIn("const rowPanel = new WeakMap();", script)
+        # The two-region machinery went with the second panel: one region cannot
+        # be mis-opened over another, which is the bug C28 was written for.
+        for gone in ("closeRegion", "rowRegions", "nextRegionId"):
+            self.assertNotIn(gone, script)
         opening_times = script.split("function toggleDetail")[1].split("\nfunction ")[0]
-        self.assertIn('closeRegion(row, "copy");', opening_times)
+        self.assertIn('closePanel(row);', opening_times)
         self.assertIn('toggle.setAttribute("aria-controls", detail.id);', opening_times)
-        opening_copy = script.split("function showCopyBox")[1].split("\nfunction ")[0]
-        self.assertIn('closeRegion(row, "times");', opening_copy)
-        self.assertIn('closeRegion(row, "copy");', opening_copy)
-        closer = script.split("function closeRegion")[1].split("\nfunction ")[0]
-        self.assertIn('region.control.removeAttribute("aria-describedby")', closer)
-        self.assertIn('region.control.setAttribute("aria-expanded", "false")', closer)
-        self.assertIn("regions[kind] = null", closer)
+        self.assertIn('toggle.setAttribute("aria-expanded", "true");', opening_times)
+        closer = script.split("function closePanel")[1].split("\nfunction ")[0]
+        self.assertIn('panel.control.setAttribute("aria-expanded", "false")', closer)
+        self.assertIn("rowPanel.delete(row)", closer)
         # C09: the copied journey has to say which ticket it is, or a handoff to
         # a seller can silently become a different one.
         journey = script.split("function journeyText")[1].split("\nfunction ")[0]
         self.assertIn('"Ticket: " + modeLabels()[ticketMode()],', journey)
+
+    def test_the_row_keeps_the_action_and_the_panel_holds_the_rest(self) -> None:
+        # Finding 4 of the 29 September review: five controls in every row is a
+        # hundred targets on page one, and four of them were things a reader
+        # wants after deciding rather than while deciding. The row keeps the
+        # ticket link, the expander and the shortlist toggle.
+        script = page_script(self.html)
+        row_cell = script.split("function cellWithLinks")[1].split("function rowActions")[0]
+        self.assertIn('link.textContent = "Tickets"', row_cell)
+        self.assertIn("toggle.textContent = times", row_cell)
+        self.assertIn('save.className = "toggle shortlist-toggle"', row_cell)
+        for moved in ("Card details", "Copy the journey details", "copyJourney("):
+            self.assertNotIn(moved, row_cell)
+        # ... and the panel builds them, in one box, with the copy text landing
+        # in that same box when the clipboard is refused.
+        actions = script.split("function rowActions")[1].split("function showRailcardDetails")[0]
+        self.assertIn('cardDetails.textContent = "Card details"', actions)
+        self.assertIn('copy.textContent = "Copy"', actions)
+        self.assertIn("copyJourney(destination, copy, tools)", actions)
+        copy_path = script.split("function copyJourney")[1].split("function showCopyText")[0]
+        self.assertIn("showCopyText(host, text, button)", copy_path)
+        manual = script.split("function showCopyText")[1].split("\nfunction ")[0]
+        self.assertIn("host.append(box);", manual)
 
     def test_the_departure_list_is_capped_and_configurable(self) -> None:
         payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)

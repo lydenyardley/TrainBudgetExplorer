@@ -501,6 +501,15 @@ __SHARED_CSS__
   #more { color: var(--muted); font-size: .9rem; }
   .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
+  /* The two actions a row keeps beside buying, inside the row's own panel: the
+     railcard eligibility and the handoff text. They sat on the row itself until
+     the distill pass measured five controls on every row and a hundred targets
+     on page one (finding 4, 29 September 2026). The ticket link and the
+     expander stay on the row, because buying is the action and the expander is
+     the way in; everything a reader asks for after deciding waits one click in,
+     beside the condition it explains. */
+  .row-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .6rem; }
+  .row-actions .toggle { margin-left: 0; }
   #originPicker { margin: .75rem 0 1rem; }
   .origin-picker-label { display: block; margin-bottom: .35rem; font-size: .8rem;
                          text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -858,8 +867,8 @@ function syncRailcardParty() {
       " adults travelling together";
     help.textContent = applies
       ? covers + ", so it prices a journey for the party rather than for one reader. " +
-        DATA.railcardEligibleCount + " destinations receive a lower price with it; Card details on any row " +
-        "shows the minimum fare and the conditions."
+        DATA.railcardEligibleCount + " destinations receive a lower price with it; open a row's own " +
+        "details for its Card details, the minimum fare and the conditions."
       : covers + ", so it prices a journey for the party rather than for one reader. " +
         "Choose “Two adults” to use it.";
   }
@@ -1615,9 +1624,14 @@ function feedRecord(destination) {
 }
 
 function cellWithLinks(row, destination, wanted) {
-  // The ticket link sits on the row rather than inside the expander: buying is
-  // the action, and hiding it behind a second click loses the click. The
-  // expander carries the journeys, which are what a reader checks first.
+  // Two controls on the row and no more: the ticket link, because buying is the
+  // action and hiding it behind a second click loses the click; and the
+  // expander, because the journeys are what a reader checks first and the
+  // panel behind it is where the fare, the condition, the railcard drawer and
+  // the handoff text live. This cell used to carry five controls on every row,
+  // which is a hundred targets on page one (finding 4, 29 September 2026); the
+  // shortlist toggle stays, because comparing places is a thing a reader does
+  // while scanning the list rather than after opening a row.
   const cell = document.createElement("td");
   cell.dataset.label = "Tickets";
   const link = document.createElement("a");
@@ -1650,23 +1664,6 @@ function cellWithLinks(row, destination, wanted) {
     (times ? times + " times and fare details for " : "Fare details for ") + destination.name);
   toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
   cell.append(toggle);
-  // The ticket link is the plain one by default and carries no journey, so the
-  // row hands the reader the four things the seller will ask for (ADR-0018).
-  const cardDetails = document.createElement("button");
-  cardDetails.className = "toggle";
-  cardDetails.type = "button";
-  cardDetails.textContent = "Card details";
-  cardDetails.setAttribute("aria-label", "Two Together eligibility for " + destination.name);
-  cardDetails.addEventListener("click", () => showRailcardDetails(destination));
-  cell.append(cardDetails);
-  const copy = document.createElement("button");
-  copy.className = "toggle";
-  copy.type = "button";
-  copy.textContent = "Copy";
-  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
-  copy.title = "Copy the from, to, date and party size for this row";
-  copy.addEventListener("click", () => copyJourney(row, destination, copy));
-  cell.append(copy);
   // S26: saving a place to compare later. A toggle with its pressed state
   // announced, not a link, because nothing is booked and nothing navigates.
   const save = document.createElement("button");
@@ -1677,6 +1674,32 @@ function cellWithLinks(row, destination, wanted) {
   save.addEventListener("click", () => toggleShortlist(destination.crs));
   cell.append(save);
   row.append(cell);
+}
+
+// The row's two secondary actions, built into the panel rather than onto the
+// row. Both take the reader somewhere the row has no space for: the railcard
+// drawer, which is the one fare question the feed answers with a rule, and the
+// copied handoff text, which is what a reader pastes to a seller or a friend
+// (ADR-0018). The copy text of a refused clipboard lands in this same panel,
+// under the button that asked for it.
+function rowActions(row, destination) {
+  const tools = document.createElement("div");
+  tools.className = "row-actions";
+  const cardDetails = document.createElement("button");
+  cardDetails.className = "toggle";
+  cardDetails.type = "button";
+  cardDetails.textContent = "Card details";
+  cardDetails.setAttribute("aria-label", "Two Together eligibility for " + destination.name);
+  cardDetails.addEventListener("click", () => showRailcardDetails(destination));
+  const copy = document.createElement("button");
+  copy.className = "toggle";
+  copy.type = "button";
+  copy.textContent = "Copy";
+  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
+  copy.title = "Copy the from, to, date and party size for this row";
+  copy.addEventListener("click", () => copyJourney(destination, copy, tools));
+  tools.append(cardDetails, copy);
+  return tools;
 }
 
 function showRailcardDetails(destination) {
@@ -1705,51 +1728,30 @@ railcardDrawer.addEventListener("click", (event) => {
   if (event.target === railcardDrawer) railcardDrawer.close();
 });
 
-// C28: two disclosures can want the same slot under a row -- the times list and
-// the manual-copy box -- and each used to remove whatever sat there without
-// telling the other control. Copying while the times were open left that
-// button announcing "expanded" over content that had gone, and the next click
-// removed the copy box instead. Each disclosure now owns an identified region,
-// and the two are tracked separately: opening one closes the other, and each
-// control's own state is set from the region it owns.
+// C28: one panel per row, and one owner for it. It used to be two -- the times
+// list and the manual-copy box each removed whatever sat under the row -- so
+// opening one silently emptied the other and left its control announcing a
+// state that had gone. The copy text now lands inside the panel the button that
+// asked for it is already in, which leaves one region per row and one control
+// whose state is written back when it closes.
 let regionSeq = 0;
-function nextRegionId(kind, crs) {
-  regionSeq += 1;
-  return "detail-" + kind + "-" + (crs || "x") + "-" + regionSeq;
-}
-function rowRegions(row) {
-  let regions = rowRegions.cache.get(row);
-  if (!regions) {
-    regions = { times: null, copy: null };
-    rowRegions.cache.set(row, regions);
-  }
-  return regions;
-}
 // Keyed on the row element, not its station code: every render replaces the
 // rows, so a code-keyed map would keep detached rows and their panels alive
 // and let one render's state answer for another's row.
-rowRegions.cache = new WeakMap();
-function closeRegion(row, kind) {
-  const regions = rowRegions(row);
-  const region = regions[kind];
-  if (!region) return false;
-  region.row.remove();
-  if (region.control) {
-    if (region.describes) region.control.removeAttribute("aria-describedby");
-    else region.control.setAttribute("aria-expanded", "false");
-  }
-  regions[kind] = null;
+const rowPanel = new WeakMap();
+function closePanel(row) {
+  const panel = rowPanel.get(row);
+  if (!panel) return false;
+  panel.row.remove();
+  if (panel.control) panel.control.setAttribute("aria-expanded", "false");
+  rowPanel.delete(row);
   return true;
 }
 function toggleDetail(row, destination, toggle) {
-  const regions = rowRegions(row);
-  if (regions.times) {
-    closeRegion(row, "times");
+  if (rowPanel.get(row)) {
+    closePanel(row);
     return;
   }
-  // The copy box shares this slot. Replacing it, not joining it: the two
-  // panels say different things and only one can occupy the row beneath.
-  closeRegion(row, "copy");
   const detail = document.createElement("tr");
   detail.className = "detail";
   const cell = document.createElement("td");
@@ -1766,12 +1768,13 @@ function toggleDetail(row, destination, toggle) {
   }
   // The fare in words and its condition, in the panel the row already had. A
   // build with no timetable has no times to list and still has a fare to
-  // explain, which is why the toggle exists on every row.
-  cell.append(fareDetails(destination));
+  // explain, which is why the toggle exists on every row. The row's two
+  // secondary actions live at the end of the same panel.
+  cell.append(fareDetails(destination), rowActions(row, destination));
   detail.append(cell);
-  detail.id = nextRegionId("times", destination.crs);
+  detail.id = "detail-times-" + destination.crs + "-" + (regionSeq += 1);
   row.after(detail);
-  regions.times = { row: detail, control: toggle };
+  rowPanel.set(row, { row: detail, control: toggle });
   toggle.setAttribute("aria-controls", detail.id);
   toggle.setAttribute("aria-expanded", "true");
 }
@@ -1849,7 +1852,7 @@ function provenance() {
       help.hidden = true;
       if (railcardChoice) railcardChoice.hidden = true;
     } else {
-      help.textContent = DATA.railcardEligibleCount + " destinations receive a lower Two Together price; Card details show RR conditions.";
+      help.textContent = DATA.railcardEligibleCount + " destinations receive a lower Two Together price; a row's details carry its Card details and RR conditions.";
       help.hidden = false;
       if (railcardChoice) railcardChoice.hidden = false;
     }
@@ -1987,39 +1990,29 @@ function journeyText(destination) {
   return lines.join("\\n");
 }
 
-function showCopyBox(row, text, button) {
-  // Opening the manual-copy box closes the times list, and says so through the
-  // times control, rather than leaving it expanded over content that is gone.
-  closeRegion(row, "times");
-  closeRegion(row, "copy");
-  const detail = document.createElement("tr");
-  detail.className = "detail";
-  const cell = document.createElement("td");
-  cell.colSpan = columnCount();
+// The manual copy. The text is put where the reader is already looking, inside
+// the panel the button is in, rather than in a panel of its own that would have
+// taken the row's one slot from the details the reader opened to get here.
+function showCopyText(host, text, button) {
+  // A second manual copy replaces the first rather than stacking under it: the
+  // button describes one box, and the panel grows no copy of the same text.
+  for (const stale of host.querySelectorAll("textarea.copybox")) stale.remove();
   const box = document.createElement("textarea");
   box.className = "copybox";
   box.readOnly = true;
   box.rows = 5;
   box.value = text;
+  box.id = "copy-text-" + (regionSeq += 1);
   box.setAttribute("aria-label", "Journey details to copy");
-  cell.append(box);
-  detail.append(cell);
-  detail.id = nextRegionId("copy", row.dataset.crs);
-  row.after(detail);
+  host.append(box);
   // The copy control is not a disclosure -- it has no collapsed state to speak
-  // of -- so it names the region it filled rather than claiming to control it.
-  // It is set, not appended to: a second manual copy would otherwise leave the
-  // button pointing at a region that has been removed.
-  if (button) button.setAttribute("aria-describedby", detail.id);
-  // "describes", not "discloses": the copy control has no expanded state, and
-  // closeRegion uses the difference to drop the right attribute rather than
-  // writing aria-expanded="false" onto a button that never had one.
-  rowRegions(row).copy = { row: detail, control: button || null, describes: true };
+  // of -- so it names the text it filled rather than claiming to control it.
+  if (button) button.setAttribute("aria-describedby", box.id);
   box.focus();
   box.select();
 }
 
-async function copyJourney(row, destination, button) {
+async function copyJourney(destination, button, host) {
   const text = journeyText(destination);
   const status = document.getElementById("copyStatus");
   const done = () => {
@@ -2032,8 +2025,8 @@ async function copyJourney(row, destination, button) {
   // reader is shown the text instead of being told it is on their clipboard.
   const manual = () => {
     button.textContent = "Select below";
-    status.textContent = "Could not copy automatically. The details are shown under the row.";
-    showCopyBox(row, text, button);
+    status.textContent = "Could not copy automatically. The details are shown under the button.";
+    showCopyText(host, text, button);
   };
   if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();
   try {
