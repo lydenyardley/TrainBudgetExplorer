@@ -528,11 +528,19 @@ and the button says so instead of the page claiming a copy that did not happen.
 ### One page per station
 
 The origin is the artifact's identity (ADR-0019): each page is *about* one station,
-and choosing a different one is navigation, not a filter. Every page carries a
-**Change** control beside the heading that opens a search over the other priced
-stations — by name or three-letter code — and each option links to that station's
-own page at a readable address (`/from/nottingham/`). The root address of a full
-build is the chooser itself, ranked by how many destinations each station's build
+and choosing a different one is navigation, not a filter. The heading is the page's
+own sentence — *Train fares · up to £20 · from GRANTHAM* — and the station in it is
+the control: the name wears the same accent and dashed underline as the budget
+beside it, a drawn chevron says a list is behind it, and opening it searches the
+other priced stations by name or three-letter code. On a build with one origin the
+name stands as plain text instead, because a control that opens nothing is a
+control that lies. The chooser is the same heading with the name replaced by a
+field holding the word *station*, so the two routes read as one page
+(`adr/ADR-0038-the-heading-names-the-mode.md` for the wording,
+`adr/ADR-0039-the-chooser-and-a-station-page-are-one-page.md` for the rest). Each
+option links to that station's own page at a readable address
+(`/from/nottingham/`). The root address of a full build is the chooser itself,
+ranked by how many destinations each station's build
 actually priced. Nothing is stored: the URL is the only memory, which also makes it
 the shareable address a community post can carry.
 
@@ -869,16 +877,21 @@ in the other. The control ships hidden and the script reveals it, because a
 button that cannot work without JavaScript is a control that lies
 (`adr/ADR-0037-the-reader-chooses-the-palette.md`).
 
-**A phone gets the journey, not the table.** Below 44rem the budget slider
-stays open, the results stay beneath it, and the three refinements — ticket
-type, party, destination type — fold behind one control whose label states what
-is currently narrowed ("Anytime Day Return · One adult · all types"), so a reader who has
-not opened it can still see that a filter is on. Above that width the wrapper
-and its panel are `display: contents`, so the filter bar's layout is the same
-three columns it has always been and depends on no JavaScript at all. The
-control is a button carrying `aria-expanded`, and the panel's visibility is a
-stylesheet fact rather than a state a missed event can strand (audit suggestion
-S42; the phone checks are in `tests/browser_test.cjs`).
+**The budget never folds; the refinements are the reader's to open.** The budget
+slider and its note share a line under the heading whose budget it is, and the
+results stay beneath it, so the page's own question is never behind a control.
+The three refinements — ticket type, party, destination type — fold behind one
+control whose label states what is currently narrowed ("Anytime Day Return ·
+One adult · all types"), so a reader who has not opened it can still see that a
+filter is on. The fold is the reader's at *every* width rather than a phone
+behaviour: one control, one `data-open`, no media query and no resize listener,
+because a fold driven by a viewport width means two things at two widths and a
+single rotation can overwrite the choice. The control is a button carrying
+`aria-expanded`, the panel's visibility is a stylesheet fact rather than a state
+a missed event can strand, and the summary is rewritten from the page's own
+controls on every render, so it cannot describe a filter that has since been
+cleared (audit suggestion S42, amended by ADR-0039; the checks are in
+`tests/browser_test.cjs`).
 
 **A synthetic build says so above the content.** Every generated route -- the
 chooser, each station page, the privacy page -- carries a banner naming the
