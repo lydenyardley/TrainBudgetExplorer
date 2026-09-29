@@ -375,13 +375,22 @@ __SHARED_CSS__
   .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; }
   .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
   .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
-  /* Generous after the controls, tight onto its table: the summary belongs to
-     the list below it, not to the panel above. */
-  #summary { margin: 1.75rem 0 .5rem; font-weight: 600; }
+  /* Tight onto its table, which is the only thing it belongs to: the count
+     now sits directly above the first row with the provenance above it
+     (finding, 29 September 2026). The 1.75rem this used to carry separated it
+     from a block of six paragraphs, and that margin is part of why the first
+     fare sat below the fold on a laptop. */
+  #summary { margin: .6rem 0 .3rem; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   td[data-label]::before { content: none; }
-  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  /* A column's width is not the header's to decide. Measured on the real
+     Grantham page, the Price column was 56px wide and CHANGES wrapped
+     mid-word in 72px, and the two are one bug: the header was setting the
+     width and the number paid for it. Neither half of this table wraps now,
+     so each column is as wide as the widest number in it (finding, 29
+     September 2026). */
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
             border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
             margin-left: .75rem; cursor: pointer; position: relative; }
@@ -395,7 +404,23 @@ __SHARED_CSS__
   tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
   tr.detail ul { margin: 0; padding-left: 1.1rem; }
   tr.detail li { font-variant-numeric: tabular-nums; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* The fare in words and the condition that goes with it, where the FARE and
+     CONDITIONS columns put them except on the row the reader is reading
+     (finding, 29 September 2026). The condition keeps the muted .restriction
+     voice it had in the cell: same sentence, same measured contrast. */
+  tr.detail .fare-line { margin: .55rem 0 0; font-weight: 600; }
+  tr.detail .condition { margin: .15rem 0 0; }
+  /* £10.10 painted as "£10.1" over "0" on 13 of the first 20 rows: a wrapped
+     price is not a cramped column, it is a different number, and the reader
+     comparing it with the row above has been told something false. */
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* The fare's own code, where the sentence used to be repeated on every row,
+     and one word beside it when the fare is one a reader should open. The
+     condition itself is in the row's disclosure; a reader who never opens it
+     still has to know there is one to read, so the word is the signal and the
+     colour is only the second cue. */
+  .ticket-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; }
+  .condition-flag { color: var(--warn); font-size: .85em; white-space: nowrap; }
   tr.best td { background: var(--best); }
   .restriction { font-size: .78rem; color: var(--muted); }
   /* C14: this was a hard-coded #9a6700, which the dark palette never
@@ -473,6 +498,17 @@ __SHARED_CSS__
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   .method { margin-top: 1rem; }
   .method summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); cursor: pointer; }
+  /* What the ticket link does, and how this page was built, are one fold above
+     the table. The line a reader sees says what is inside it; only the wording
+     waits. Those two paragraphs plus the build line were 57px of the 205px
+     between the count and the table on the real Grantham page, which is what
+     put the first fare below the fold on a laptop (finding, 29 September
+     2026). */
+  .link-terms { margin: 0; }
+  .link-terms summary { min-height: 24px; display: inline-flex; align-items: center;
+                        color: var(--muted); cursor: pointer; }
+  .link-terms summary:hover, .link-terms summary:focus-visible { color: var(--accent); }
+  .link-terms p { margin: .35rem 0 0; }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
      pushes the ticket action off-screen (ADR-0019). The markup stays a real
@@ -569,7 +605,6 @@ __THEME_TOGGLE__
   </div>
 </section>
 
-<p id="summary" role="status" aria-live="polite"></p>
 <p class="tag" id="modeNote"></p>  <p class="tag" id="priceSource" hidden></p>
 <!-- The conditions in the table are the fares feed's own wording. This is the
      second opinion on it, and the reader gets it before the table rather than
@@ -577,15 +612,24 @@ __THEME_TOGGLE__
      comparing two prices needs to know before, not after, they choose. -->
 <p class="tag" id="restrictionReference" hidden></p>
 <p class="tag" id="freshness" hidden></p>
-  <p class="tag" id="buildMetadata" hidden></p>
-  <!-- C03: what the ticket action costs, stated before the first ticket action
-       rather than inside a closed disclosure below it. The two paragraphs are
-       the reader's own copy from the build: the seller's handoff and, when the
-       links are tracked, the commission. -->
-  <p class="tag" id="linkNote" hidden></p>
-  <p class="tag" id="disclosure" hidden></p>
+  <!-- C03, as ADR-0040 leaves it: what the ticket action costs is still
+       stated above the first ticket action, because the line a reader sees is
+       the fold's own summary and it names both what the link does and, when
+       the links are tracked, that this site is paid. Only the wording waits.
+       These two paragraphs plus the build line were 57px of the 205px between
+       the count and the table on the real page (finding, 29 September 2026). -->
+  <details class="link-terms" id="linkTerms">
+    <summary id="linkTermsSummary">About the ticket link, and how this page was built</summary>
+    <p class="tag" id="linkNote" hidden></p>
+    <p class="tag" id="disclosure" hidden></p>
+    <p class="tag" id="buildMetadata" hidden></p>
+  </details>
+<!-- The count line belongs to the table below it, not to the panel above: on
+     the real Grantham page it sat 205px above the first row, with six
+     provenance paragraphs between them (finding, 29 September 2026). -->
+<p id="summary" role="status" aria-live="polite"></p>
 <table>
-  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare</th><th scope="col">Conditions</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare code</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <section id="shortlist" aria-labelledby="shortlistHeading">
@@ -1362,25 +1406,14 @@ function render() {
       cells.push([missing ? "No service" : duration(destination.minutes), tone, "Time"]);
       cells.push([missing ? "Unknown" : String(destination.changes), tone, "Changes"]);
     }
-    // An Advance single is train-specific whatever the feed calls it, so it
-    // replaces the other labels rather than qualifying them: a reader must not
-    // read a walk-up label on a price that only exists on one train.
-    // C07: a restricted fare's conditions are printed in the Conditions column
-    // on the same row, so the label points there rather than sending the
-    // reader to a seller to find out what the price they are comparing is.
-    const fareLabel = destination.isAdvance
-      ? "Advance single — choose a qualifying train; price and availability can change"
-      : destination.restrictionCode
-        ? "Restricted fare — conditions in the next column"
-        : destination.quality === "outbound single"
-          ? "Standard outbound single"
-          : destination.quality === "unrestricted Anytime Day Return"
-            ? "Unrestricted Anytime Day Return"
-            : "Standard return fare";
-    // S19: the reader needs the fare in words beside the price. The codes are
-    // the feed's own vocabulary, so they move into the expandable record below
-    // rather than competing with the sentence in the cell.
-    cells.push([fareLabel, "", "Fare"]);
+    // The FARE and CONDITIONS columns are gone as columns (finding, 29
+    // September 2026): on the reviewed page all 20 rows repeated "Unrestricted
+    // Anytime Day Return" and "No travel conditions on this fare in the feed."
+    // -- 40 cells restating the mode the reader had already chosen with the
+    // mode control, and between them the reason every row stood two lines
+    // tall. Neither sentence is dropped; both are in the row's own disclosure,
+    // beside the times. The row carries the fare's code instead, which is the
+    // part that differs between fares and the part a seller asks for.
     row.dataset.crs = destination.crs;
     for (const [text, className, label] of cells) {
       const cell = document.createElement("td");
@@ -1405,28 +1438,7 @@ function render() {
       }
       row.append(cell);
     }
-    const restriction = document.createElement("td");
-    restriction.className = "restriction";
-    restriction.dataset.label = "Conditions";
-    const restricted = Boolean(destination.restrictionCode);
-    restriction.dataset.status = restricted ? "restricted" : "unrestricted";
-    // S19: what the reader has to know to rule the fare in or out, in
-    // sentences. The code, the ticket and the route are below it, folded away.
-    const readable = document.createElement("span");
-    readable.className = "condition";
-    readable.textContent = restricted
-      ? (destination.restrictionDescription || "This fare carries a restriction code; check the seller's conditions before buying.")
-      : "No travel conditions on this fare in the feed.";
-    restriction.title = restricted
-      ? (destination.restrictionDescription || "This fare has a restriction code; check the seller before buying.")
-      : "No fare restriction code is attached to this fare.";
-    const validity = validityNote(destination);
-    restriction.append(readable);
-    // append() would stringify a null argument into the word "null", so the
-    // optional note is added only when there is one to add.
-    if (validity) restriction.append(validity);
-    restriction.append(feedRecord(destination));
-    row.append(restriction);
+    row.append(fareCodeCell(destination));
     cellWithLinks(row, destination, wanted);
     rows.append(row);
   }
@@ -1446,6 +1458,85 @@ function render() {
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
   renderShortlist();
+}
+
+// The row's fare, as a cell of its own: the feed's own code, and one word
+// when the fare is one a reader should open. Nothing is said here about what
+// every row has in common, because the mode control above the table says it
+// once (finding, 29 September 2026).
+function fareCodeCell(destination) {
+  const cell = document.createElement("td");
+  cell.className = "code";
+  cell.dataset.label = "Fare code";
+  const code = document.createElement("span");
+  code.className = "ticket-code";
+  code.textContent = destination.ticket || "Not stated";
+  if (!destination.ticket) cell.classList.add("missing");
+  cell.append(code);
+  const flag = fareFlag(destination);
+  if (flag) {
+    const mark = document.createElement("span");
+    mark.className = "condition-flag";
+    mark.textContent = flag;
+    cell.append(" ", mark);
+  }
+  cell.title = fareSummary(destination);
+  return cell;
+}
+
+// The one word beside the code, and only where the row differs from its
+// neighbours: a fare that needs a second look says so, and a fare that does not
+// stays quiet rather than repeating a sentence the mode note already made.
+function fareFlag(destination) {
+  if (destination.isAdvance) return "advance";
+  if (destination.restrictionCode) return "restricted";
+  return "";
+}
+
+// The fare in words, inside the row's own disclosure. The pointer C07 asked
+// for is kept, because it is still true: a restricted fare's condition is the
+// next thing in this same panel, not a column away.
+function fareSentence(destination) {
+  if (destination.isAdvance) return "Advance single — choose a qualifying train; price and availability can change";
+  if (destination.restrictionCode) return "Restricted fare — condition below";
+  if (destination.quality === "outbound single") return "Standard outbound single";
+  if (destination.quality === "unrestricted Anytime Day Return") return "Unrestricted Anytime Day Return";
+  return "Standard return fare";
+}
+
+// What the row's title attribute says, in the same voice as the sentence: the
+// flag explained without repeating the panel behind it.
+function fareSummary(destination) {
+  if (destination.isAdvance) return "Advance single: valid only on a qualifying train, and the price and availability can change.";
+  if (destination.restrictionCode) return destination.restrictionDescription || "This fare has a restriction code; the condition is in this row's details.";
+  return "No fare restriction code is attached to this fare.";
+}
+
+// The FARE and CONDITIONS columns, moved into the panel the row already had
+// rather than deleted: the condition is the reader's, the twenty repetitions of
+// it were not (finding, 29 September 2026).
+function fareDetails(destination) {
+  const panel = document.createElement("div");
+  panel.className = "restriction";
+  const restricted = Boolean(destination.restrictionCode);
+  panel.dataset.status = restricted ? "restricted" : "unrestricted";
+  const fare = document.createElement("p");
+  fare.className = "fare-line";
+  fare.textContent = fareSentence(destination);
+  // S19: what the reader has to know to rule the fare in or out, in sentences.
+  const readable = document.createElement("p");
+  readable.className = "condition";
+  readable.textContent = restricted
+    ? (destination.restrictionDescription || "This fare carries a restriction code; check the seller's conditions before buying.")
+    : "No travel conditions on this fare in the feed.";
+  panel.append(fare, readable);
+  // append() would stringify a null argument into the word "null", so the
+  // optional note is added only when there is one to add.
+  const validity = validityNote(destination);
+  if (validity) readable.append(validity);
+  panel.append(feedRecord(destination));
+  panel.title = fareSummary(destination);
+  return panel;
 }
 
 // C08: what the condition actually permits, in the feed's own words. A code
@@ -1521,15 +1612,22 @@ function cellWithLinks(row, destination, wanted) {
   link.title = "Tickets for " + destination.name + " — " +
     destination.link.label + " search for " + destination.crs;
   cell.append(link);
-  if (destination.departures.length) {
-    const toggle = document.createElement("button");
-    toggle.className = "toggle";
-    toggle.type = "button";
-    toggle.textContent = destination.departures.length + " times";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
-    cell.append(toggle);
-  }
+  // One disclosure per row, on every row. It used to exist only where the
+  // build had times, which left a fare's condition unreachable on a
+  // prices-only page; the label still counts the times where there are times
+  // to count.
+  const times = destination.departures.length;
+  const toggle = document.createElement("button");
+  toggle.className = "toggle";
+  toggle.type = "button";
+  toggle.textContent = times ? times + " times" : "Fare details";
+  toggle.setAttribute("aria-expanded", "false");
+  // WCAG 2.5.3: the accessible name contains the visible label, so "5 times"
+  // is still what a reader using voice control has to say to reach it.
+  toggle.setAttribute("aria-label",
+    (times ? times + " times and fare details for " : "Fare details for ") + destination.name);
+  toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
+  cell.append(toggle);
   // The ticket link is the plain one by default and carries no journey, so the
   // row hands the reader the four things the seller will ask for (ADR-0018).
   const cardDetails = document.createElement("button");
@@ -1634,14 +1732,20 @@ function toggleDetail(row, destination, toggle) {
   detail.className = "detail";
   const cell = document.createElement("td");
   cell.colSpan = columnCount();
-  const list = document.createElement("ul");
-  for (const option of destination.departures) {
-    const item = document.createElement("li");
-    item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive, " +
-      (option.changes ? option.changes + " change(s)" : "no change");
-    list.append(item);
+  if (destination.departures.length) {
+    const list = document.createElement("ul");
+    for (const option of destination.departures) {
+      const item = document.createElement("li");
+      item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive, " +
+        (option.changes ? option.changes + " change(s)" : "no change");
+      list.append(item);
+    }
+    cell.append(list);
   }
-  cell.append(list);
+  // The fare in words and its condition, in the panel the row already had. A
+  // build with no timetable has no times to list and still has a fare to
+  // explain, which is why the toggle exists on every row.
+  cell.append(fareDetails(destination));
   detail.append(cell);
   detail.id = nextRegionId("times", destination.crs);
   row.after(detail);
@@ -1797,6 +1901,17 @@ function provenance() {
     const disclosure = document.getElementById("disclosure");
     disclosure.textContent = DATA.disclosure;
     disclosure.hidden = false;
+  }
+  // ADR-0040: the fold above the first ticket action has to say what it holds,
+  // and one of the facts in it must not be a click away -- when the links are
+  // tracked, the line names the payment. A fold holding nothing is hidden
+  // rather than left as a control that opens onto nothing.
+  const linkTerms = document.getElementById("linkTerms");
+  if (linkTerms) {
+    document.getElementById("linkTermsSummary").textContent = DATA.tracked && DATA.disclosure
+      ? "About the ticket link, and how this site is paid"
+      : "About the ticket link, and how this page was built";
+    linkTerms.hidden = !Array.from(linkTerms.querySelectorAll("p")).some((p) => !p.hidden);
   }
 }
 

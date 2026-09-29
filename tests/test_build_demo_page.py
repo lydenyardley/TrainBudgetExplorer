@@ -1225,6 +1225,19 @@ class DemoPageTest(unittest.TestCase):
         # a deep-link build would then be contradicting.
         self.assertIn("linkNote.hidden = false", self.html)
         self.assertIn("disclosure.hidden = false", self.html)
+        # ADR-0040: the two notes and the build line are one fold above the
+        # table, so the block between the count and the table is one line rather
+        # than three. What a reader meets is the fold's summary, so the summary
+        # has to name what it holds -- and, when the links are tracked, the one
+        # fact that must not be a click away.
+        self.assertIn('<details class="link-terms" id="linkTerms">', self.html)
+        self.assertIn('id="linkTermsSummary"', self.html)
+        for note in ('id="linkNote"', 'id="disclosure"', 'id="buildMetadata"'):
+            self.assertLess(self.html.index('<details class="link-terms"'), self.html.index(note))
+            self.assertLess(self.html.index(note), self.html.index("<table>"))
+        self.assertIn("About the ticket link, and how this page was built", self.html)
+        self.assertIn('"About the ticket link, and how this site is paid"', self.html)
+        self.assertIn("linkTerms.hidden =", self.html)
 
     def test_a_tracked_page_puts_its_disclosure_where_the_click_is(self) -> None:
         payload = build_payload(
@@ -1560,12 +1573,20 @@ class DemoPageTest(unittest.TestCase):
 
     def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
-        self.assertIn('cell.dataset.label = label', self.html)
-        self.assertIn('restriction.dataset.label = "Conditions"', self.html)
-        # C07: the conditions are printed in the next column of the same row, so
-        # the label points there rather than sending the reader to a seller to
-        # find out what the price they are comparing actually permits.
-        self.assertIn("Restricted fare — conditions in the next column", self.html)
+        self.assertIn("cell.dataset.label = label", self.html)
+        # Finding, 29 September 2026: the FARE and CONDITIONS columns repeated
+        # one sentence on all 20 rows, so the row carries the fare's own code
+        # and the sentence moved into the row's disclosure. The label on the
+        # new cell is what the phone reflow reads out.
+        self.assertIn('cell.dataset.label = "Fare code"', self.html)
+        # And the panel those cells open carries the token the warn colour
+        # hangs off, which is what the phone reflow and C14 both read.
+        self.assertIn('panel.dataset.status = restricted ? "restricted" : "unrestricted";', self.html)
+        self.assertIn('readable.className = "condition";', self.html)
+        # C07: the condition is still on the same row, one disclosure away, so
+        # the pointer is kept rather than dropped -- and it now points at the
+        # thing it names instead of at a column that no longer exists.
+        self.assertIn("Restricted fare — condition below", self.html)
 
     def test_the_page_opens_in_the_reviewed_fare_set(self) -> None:
         # C07: PRODUCT.md promises reviewed unrestricted Anytime Day Returns, so
@@ -1900,12 +1921,38 @@ class DemoPageTest(unittest.TestCase):
 
     def test_table_headers_name_their_columns_and_scope(self) -> None:
         # "Ticket" and "Tickets" as adjacent headers read as one column twice,
-        # and "Fare code" described a column that now reads in sentences, so
-        # the headers name what the cells hold.
-        self.assertIn('<th scope="col">Fare</th>', self.html)
-        self.assertIn('<th scope="col">Conditions</th>', self.html)
+        # and "Fare code" was rejected while that column read in sentences. The
+        # column holds the feed's own code again, so the name is right again:
+        # it is the fare's code, not a second ticket action beside the Tickets
+        # column (finding, 29 September 2026).
+        self.assertIn('<th scope="col">Fare code</th>', self.html)
+        self.assertIn('<th scope="col">Tickets</th>', self.html)
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
-        self.assertEqual(self.html.count('<th scope="col"'), 7)
+        self.assertNotIn('<th scope="col">Fare</th>', self.html)
+        self.assertNotIn('<th scope="col">Conditions</th>', self.html)
+        self.assertEqual(self.html.count('<th scope="col"'), 6)
+
+    def test_no_numeric_column_can_wrap(self) -> None:
+        # Measured on the real Grantham page: the Price column was 56px wide
+        # and 13 of the first 20 prices painted as two lines -- £10.10 read as
+        # "£10.1" over "0", which is a different number rather than a tighter
+        # column. The header word was deciding the width, so neither half of
+        # the table wraps, and the browser suite measures the painted lines.
+        self.assertIn("color: var(--muted); white-space: nowrap; }", self.html)
+        self.assertIn("font-variant-numeric: tabular-nums; white-space: nowrap; }", self.html)
+        self.assertIn(".ticket-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; }",
+                      self.html)
+
+    def test_the_count_line_sits_on_its_table(self) -> None:
+        # Finding, 29 September 2026: on the real page the count sat 205px above
+        # the first row with six provenance paragraphs between them, so the
+        # first fare was below the fold on a laptop. The count belongs to the
+        # table it counts, and the provenance that used to sit between them is
+        # one fold away.
+        self.assertLess(self.html.index('<p id="summary" role="status"'), self.html.index("<table>"))
+        between = self.html[self.html.index('<p id="summary" role="status"'):self.html.index("<table>")]
+        for moved in ('id="buildMetadata"', 'id="linkNote"', 'id="disclosure"'):
+            self.assertNotIn(moved, between)
 
     def test_keyboard_focus_is_visible_everywhere(self) -> None:
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.html)
@@ -2121,7 +2168,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('link.target = "_blank"', self.html)
 
     def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
-        self.assertIn("destination.departures.length + \" times\"", self.html)
+        # The toggle exists on every row now, because the row's fare and its
+        # condition are in the panel it opens and a prices-only build has no
+        # times to hang a toggle on (finding, 29 September 2026). The count is
+        # still the label where there is a count to give.
+        self.assertIn("const times = destination.departures.length;", self.html)
+        self.assertIn('toggle.textContent = times ? times + " times" : "Fare details";', self.html)
 
     def test_a_row_has_one_state_machine_for_the_region_underneath_it(self) -> None:
         # C28: the times list and the manual-copy box both insert the row that

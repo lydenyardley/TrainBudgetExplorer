@@ -739,28 +739,134 @@ async function runPage(browser, index, given, file, body, base) {
       opening.headers.join(" ")
     );
 
-    // C03: the cost of the ticket action, and what the link earns, stated above
-    // the table rather than inside the closed methodology disclosure. Measured
-    // by position in the document, not by visibility alone: an element that is
-    // only hidden until the accordion is opened is exactly the defect.
+    // Finding, 29 September 2026: on the real page the Price column measured
+    // 56px and 13 of the first 20 prices painted as two lines -- £10.10 read as
+    // "£10.1" over "0" -- while CHANGES wrapped mid-word in a 72px column. A
+    // wrapped price is not a cramped column, it is a different number, and the
+    // header word was deciding the width. So this is measured as painted line
+    // boxes rather than read off the CSS: getClientRects() over a cell's own
+    // contents returns one rect per line, and the distinct tops are the lines.
+    const measure = await page.evaluate(() => {
+      const lines = (el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+      };
+      const cells = [
+        ...document.querySelectorAll("thead th"),
+        ...document.querySelectorAll("#rows td.num, #rows .ticket-code"),
+      ];
+      const wrapped = [];
+      for (const el of cells) {
+        if (!el.getBoundingClientRect().height) continue;
+        const count = lines(el);
+        if (count > 1) {
+          wrapped.push({
+            text: el.textContent.trim(),
+            lines: count,
+            width: Math.round(el.getBoundingClientRect().width),
+          });
+        }
+      }
+      // The second half of the same finding: the count line sat 205px above the
+      // first row, with six provenance paragraphs between them, so the first
+      // fare was below the fold on a laptop. Measured as the distance itself,
+      // because how tall the heading and the intro are is a fact about the
+      // build and not about this.
+      const summary = document.getElementById("summary");
+      const table = document.querySelector("table");
+      const first = document.querySelector("#rows tr:not(.detail)");
+      const box = (el) => (el ? el.getBoundingClientRect() : null);
+      const isBetween = (el, from, to) =>
+        Boolean(
+          from.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING &&
+            el.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+      const between = (from) =>
+        Array.from(document.querySelectorAll("main > *"))
+          .filter((el) => isBetween(el, from, table))
+          .map((el) => el.id || el.tagName.toLowerCase());
+      return {
+        cells: cells.length,
+        wrapped,
+        priceWidth: Math.round((box(document.querySelector("#rows td.num")) || { width: 0 }).width),
+        countToTable: box(summary) && box(table) ? Math.round(box(table).top - box(summary).bottom) : null,
+        countToFirstRow:
+          box(summary) && box(first) ? Math.round(box(first).top - box(summary).top) : null,
+        afterCount: summary ? between(summary) : [],
+        afterProvenance: document.getElementById("freshness") ? between(document.getElementById("freshness")) : [],
+        tabular: document.querySelector("#rows td.num")
+          ? getComputedStyle(document.querySelector("#rows td.num")).fontVariantNumeric
+          : "",
+      };
+    });
+    check(
+      "no price, number or column heading wraps onto a second line",
+      measure.cells === 0
+        ? notExercised("this page has no results table to measure")
+        : measure.wrapped.length === 0,
+      measure.wrapped.length
+        ? JSON.stringify(measure.wrapped.slice(0, 6))
+        : `${measure.cells} cells measured, price column ${measure.priceWidth}px, tabular-nums ${measure.tabular}`
+    );
+    check(
+      "the count line sits on the table it counts",
+      measure.countToTable === null
+        ? notExercised("this page shows no count and no table")
+        : measure.countToTable <= 12 && measure.afterCount.length === 0,
+      `count to table ${measure.countToTable}px; between: ${measure.afterCount.join(", ") || "nothing"}`
+    );
+    check(
+      "and nothing but the count and the fold stands between the provenance and the first row",
+      measure.countToFirstRow === null
+        ? notExercised("this page shows no count and no first row")
+        : measure.countToFirstRow <= 100 &&
+          measure.afterProvenance.every((id) => ["dateNote", "linkTerms", "summary"].includes(id)),
+      `count to first row ${measure.countToFirstRow}px; after the provenance: ${measure.afterProvenance.join(", ") || "nothing"}`
+    );
+
+    // C03, as ADR-0040 leaves it: what the ticket action costs, and what the
+    // link earns, are still in front of the first ticket action -- and the line
+    // a reader meets before the table is the fold's own summary, so that is
+    // what is measured as rendered. Only the wording waits behind it: those two
+    // paragraphs plus the build line were 57px of the 205px between the count
+    // and the table on the real page (finding, 29 September 2026), which is
+    // what put the first fare below the fold on a laptop.
+    //
+    // Measuring the notes' position alone would pass with them folded and
+    // unread, which is the defect this check exists for -- so each note has to
+    // be inside the fold, and the rendered line has to name what is in it.
     const handoff = await page.evaluate(() => {
-      const where = (selector) => {
+      const terms = document.getElementById("linkTerms");
+      const note = (selector) => {
         const el = document.querySelector(selector);
         if (!el) return null;
         return {
           text: el.textContent.trim(),
+          inTerms: Boolean(el.closest("#linkTerms")),
           inMethod: Boolean(el.closest(".method")),
-          beforeTable: Boolean(
-            el.compareDocumentPosition(document.querySelector("table")) &
-              Node.DOCUMENT_POSITION_FOLLOWING
-          ),
           hidden: el.hidden,
         };
       };
+      const summary = terms ? terms.querySelector("summary") : null;
+      const box = summary ? summary.getBoundingClientRect() : null;
       return {
-        linkNote: where("#linkNote"),
-        disclosure: where("#disclosure"),
-        wanted: { linkNote: Boolean(DATA.linkNote), disclosure: Boolean(DATA.tracked) },
+        linkNote: note("#linkNote"),
+        disclosure: note("#disclosure"),
+        wanted: {
+          linkNote: Boolean(DATA.linkNote),
+          disclosure: Boolean(DATA.tracked),
+          build: Boolean(DATA.builtAt),
+        },
+        summary: summary
+          ? { text: summary.textContent.trim(), rendered: Boolean(box.width && box.height) }
+          : null,
+        beforeTable: Boolean(
+          terms &&
+            terms.compareDocumentPosition(document.querySelector("table")) &
+              Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+        inMethod: Boolean(terms && terms.closest(".method")),
       };
     });
     for (const key of ["linkNote", "disclosure"]) {
@@ -770,15 +876,23 @@ async function runPage(browser, index, given, file, body, base) {
       if (!handoff.wanted[key]) continue;
       const found = handoff[key];
       check(
-        `${key === "linkNote" ? "the seller handoff" : "the commission disclosure"} is above the table and outside the closed disclosure`,
-        Boolean(found) &&
-          found.text.length > 20 &&
-          !found.inMethod &&
-          found.beforeTable &&
-          !found.hidden,
+        `${key === "linkNote" ? "the seller handoff" : "the commission disclosure"} is stated above the table`,
+        Boolean(found) && found.text.length > 20 && found.inTerms && !found.inMethod,
         JSON.stringify(found)
       );
     }
+    check(
+      "the fold above the first ticket action says what it holds",
+      !(handoff.wanted.linkNote || handoff.wanted.disclosure || handoff.wanted.build)
+        ? notExercised("this page has no link terms and no build metadata to fold")
+        : Boolean(handoff.summary) &&
+            handoff.summary.rendered &&
+            handoff.summary.text.length > 10 &&
+            handoff.beforeTable &&
+            !handoff.inMethod &&
+            (!handoff.wanted.disclosure || /paid|earn|commission/i.test(handoff.summary.text)),
+      `${JSON.stringify(handoff.summary)} beforeTable=${handoff.beforeTable} inMethod=${handoff.inMethod}`
+    );
 
     // 2. Dragging the budget slider to the floor empties the list.
     const startBudget = (await page.inputValue("#budgetNumber")).trim();
@@ -840,17 +954,42 @@ async function runPage(browser, index, given, file, body, base) {
     );
     await page.locator('.ticket-filter label').filter({ hasText: "Single" }).click();
     // An advance single is train-specific whatever the feed calls it, so the
-    // label is asserted against the rows the payload says are advance singles
-    // in this mode, at this budget -- and against their absence when there are
-    // none, so a page cannot pass by never showing one.
-    const advance = await page.evaluate(() =>
-      TYPES.list().filter((d) => d.isAdvance && d.adultPence <= TYPES.cap()).length
-    );
-    const singleText = await page.textContent("#rows");
+    // flag is asserted against the rows the payload says are advance singles in
+    // this mode, at this budget -- and against their absence when there are
+    // none, so a page cannot pass by never showing one. Finding, 29 September
+    // 2026: the sentence moved into the row's own disclosure and the row
+    // carries the fare's code, so what is on the row is the word "advance" and
+    // the sentence is read where a reader now reads it.
+    const advance = await page.evaluate(() => {
+      const wanted = TYPES.list().filter((d) => d.isAdvance && d.adultPence <= TYPES.cap()).length;
+      const rows = Array.from(document.querySelectorAll("#rows tr:not(.detail)"));
+      const flagged = rows.filter(
+        (row) => ((row.querySelector(".condition-flag") || {}).textContent || "").trim() === "advance"
+      );
+      const sentences = flagged.map((row) => {
+        const toggle = row.querySelector(".toggle[aria-expanded=false]");
+        if (toggle) toggle.click();
+        const detail =
+          row.nextElementSibling && row.nextElementSibling.classList.contains("detail")
+            ? row.nextElementSibling
+            : null;
+        const text = detail ? detail.textContent : "";
+        if (toggle) toggle.click();
+        return text;
+      });
+      return { wanted, rows: rows.length, flagged: flagged.length, sentences };
+    });
     check(
-      "an advance single is labelled as train-specific, and only when one is shown",
-      advance === 0 ? !/Advance single/.test(singleText) : /Advance single/.test(singleText),
-      `${advance} advance singles in this mode at this budget; ${singleText.slice(0, 160)}`
+      "an advance single is flagged on its row, and only when one is shown",
+      advance.wanted === 0 ? advance.flagged === 0 : advance.flagged > 0,
+      `${advance.wanted} advance singles in this mode at this budget, ${advance.flagged} flagged of ${advance.rows} rows`
+    );
+    check(
+      "and every flagged row says train-specific, one disclosure away",
+      advance.flagged === 0
+        ? advance.wanted === 0
+        : advance.sentences.every((text) => /Advance single/.test(text)),
+      `${advance.flagged} flagged; ${(advance.sentences[0] || "").slice(0, 160)}`
     );
     // The chips follow the mode, so the heritage destinations this page has
     // must now be offered, and a page whose only heritage destination was the
@@ -1631,27 +1770,48 @@ async function runPage(browser, index, given, file, body, base) {
       });
     }
 
-    // S19: the condition is a sentence beside the price, and the feed's own
-    // vocabulary is one disclosure away rather than in the way.
-    const conditions = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("#rows td.restriction")).map((cell) => ({
-        readable: (cell.querySelector(".condition") || {}).textContent || "",
-        validity: (cell.querySelector(".validity") || {}).textContent || "",
-        restricted: cell.dataset.status === "restricted",
-        record: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
-        summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
-      }))
+    // S19, with the finding of 29 September 2026 on top: the condition is
+    // still a sentence rather than a bare code, and the feed's own vocabulary
+    // is still folded away -- but on the real page that same sentence stood in
+    // all 20 rows, 40 cells restating the mode the mode control had already
+    // named. The row carries the fare's code now and the sentence is one
+    // disclosure away on the row the reader is reading. Measured by opening
+    // every row, because a panel that never opens is not a disclosure.
+    const conditions = await page.evaluate(() => {
+      const toggles = Array.from(
+        document.querySelectorAll("#rows tr:not(.detail) .toggle[aria-expanded=false]")
+      );
+      for (const toggle of toggles) toggle.click();
+      const found = Array.from(document.querySelectorAll("#rows .restriction")).map((cell) => {
+        const row = cell.closest("tr.detail").previousElementSibling;
+        return {
+          readable: (cell.querySelector(".condition") || {}).textContent || "",
+          validity: (cell.querySelector(".validity") || {}).textContent || "",
+          restricted: cell.dataset.status === "restricted",
+          record: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
+          summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
+          code: (row.querySelector(".ticket-code") || {}).textContent || "",
+        };
+      });
+      // Put the rows back: a later check that found twenty panels open would be
+      // measuring a page nobody is looking at.
+      for (const toggle of toggles) toggle.click();
+      return { found, rows: document.querySelectorAll("#rows tr:not(.detail)").length, toggles: toggles.length };
+    });
+    check(
+      "every row states its fare conditions in a sentence, one disclosure away",
+      conditions.rows > 0 &&
+        conditions.toggles === conditions.rows &&
+        conditions.found.length === conditions.rows &&
+        conditions.found.every((cell) => cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)),
+      JSON.stringify(conditions.found[0] || null) +
+        ` rows=${conditions.rows} toggles=${conditions.toggles}`
     );
     check(
-      "every row states its fare conditions in a sentence",
-      conditions.length > 0 &&
-        conditions.every((cell) => cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)),
-      JSON.stringify(conditions[0] || null)
-    );
-    check(
-      "and the codes sit in a disclosure beside it, not in the sentence",
-      conditions.every((cell) => cell.summary && cell.record.length >= 2),
-      JSON.stringify(conditions[0] || null)
+      "and the row carries the fare's code while the feed's codes stay folded",
+      conditions.found.length > 0 &&
+        conditions.found.every((cell) => cell.summary && cell.record.length >= 2 && cell.code.length > 0),
+      JSON.stringify(conditions.found[0] || null)
     );
     // C08: where the feed states what a restriction permits, the row prints it
     // beside the condition rather than leaving the reader with a code. Judged
@@ -1682,7 +1842,13 @@ async function runPage(browser, index, given, file, body, base) {
         if (!input) continue;
         input.checked = true;
         render();
-        const shown = Array.from(document.querySelectorAll("#rows td.restriction"))
+        // The condition, its validity and the record are one disclosure away on
+        // the row, so every row is opened before it is read. The render() that
+        // restores the reader's mode below clears them again.
+        for (const toggle of document.querySelectorAll("#rows tr:not(.detail) .toggle[aria-expanded=false]")) {
+          toggle.click();
+        }
+        const shown = Array.from(document.querySelectorAll("#rows .restriction"))
           .filter((cell) => cell.dataset.status === "restricted")
           .map((cell) => ({
             // The record is Ticket, Restriction, Route -- so the code is the
@@ -1728,9 +1894,21 @@ async function runPage(browser, index, given, file, body, base) {
         return cell && cell.dataset.label === "Time";
       });
       if (!row) return null;
+      // The feed's record is in the row's disclosure, and this is the row whose
+      // toggle has no times to count: it reads "Fare details", and it exists on
+      // every row precisely so that this one has somewhere to put its record.
+      const toggle = row.querySelector(".toggle[aria-expanded=false]");
+      if (toggle) toggle.click();
+      const detail =
+        row.nextElementSibling && row.nextElementSibling.classList.contains("detail")
+          ? row.nextElementSibling
+          : null;
       return {
         cells: Array.from(row.querySelectorAll("td.missing")).map((cell) => cell.textContent),
-        record: Array.from(row.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
+        record: detail
+          ? Array.from(detail.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent)
+          : [],
+        label: toggle ? toggle.textContent : "",
       };
     });
     check(
@@ -1897,8 +2075,16 @@ async function runPage(browser, index, given, file, body, base) {
               ? /has ended/.test(line.textContent)
               : /includes today/.test(line.textContent))
           : /prices fares only/.test(line.textContent),
-        underSummary: Boolean(line.compareDocumentPosition(document.getElementById("summary")) &
-          Node.DOCUMENT_POSITION_PRECEDING),
+        // Finding, 29 September 2026: the count line now sits directly on its
+        // table, so the age of the numbers is stated above the count rather
+        // than below it. The promise is unchanged -- it is beside the numbers
+        // and above the first row, not in the footer -- so what is measured is
+        // the company it keeps.
+        beforeSummary: Boolean(line.compareDocumentPosition(document.getElementById("summary")) &
+          Node.DOCUMENT_POSITION_FOLLOWING),
+        beforeTable: Boolean(line.compareDocumentPosition(document.querySelector("table")) &
+          Node.DOCUMENT_POSITION_FOLLOWING),
+        inFooter: Boolean(line.closest("footer") || line.closest(".method")),
       };
     });
     check("the page says how old its numbers are", fresh.shown && fresh.text.length > 20, fresh.text);
@@ -2038,7 +2224,11 @@ async function runPage(browser, index, given, file, body, base) {
         `${reference.text} (unlisted: ${reference.unlisted.join(", ")})`
       );
     }
-    check("and it sits beside the result count, not in the footer", fresh.underSummary, fresh.text);
+    check(
+      "and it sits beside the result count, not in the footer",
+      fresh.beforeSummary && fresh.beforeTable && !fresh.inFooter,
+      `${fresh.text} beforeSummary=${fresh.beforeSummary} beforeTable=${fresh.beforeTable} inFooter=${fresh.inFooter}`
+    );
     if (!fresh.feedDate) {
       // A synthetic feed has no download date, so there is nothing to measure.
       // The sentence that is missing is the honest one: the page does not
@@ -2773,6 +2963,13 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         [".method summary", "the method disclosure"],
         ["#empty", "an empty result"],
       ];
+      // The condition and its validity are one disclosure away on the row, so
+      // the first row is opened for the measuring and closed again afterwards.
+      // A contrast check that only measured what happened to be unfolded is how
+      // the warn token regressed before (C14): the sentence a reader must not
+      // misread would simply have stopped being measured.
+      const rowToggle = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded=false]");
+      if (rowToggle) rowToggle.click();
       const measured = [];
       for (const [selector, what] of SELECTORS) {
         const el = document.querySelector(selector);
@@ -2787,6 +2984,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         const value = ratio(toRgba(style.color).slice(0, 3), behind(el).slice(0, 3));
         measured.push({ what, selector, value: Math.round(value * 100) / 100, needed, size });
       }
+      if (rowToggle) rowToggle.click();
       return measured;
     });
     const failures = contrast.filter((entry) => entry.value < entry.needed);
@@ -2795,6 +2993,18 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       contrast.length >= 4 && failures.length === 0,
       `${contrast.length} measured, worst ${contrast.reduce((low, e) => Math.min(low, e.value / e.needed), 99).toFixed(2)}x of what it needs` +
         (failures.length ? " -- " + failures.map((f) => `${f.what} ${f.value}:1 needs ${f.needed}:1`).join("; ") : "")
+    );
+
+    // The condition a reader must not misread is now one disclosure away, so
+    // the probe above opens the first row before it measures. That is the whole
+    // of the C14 regression cover, and a probe that stopped opening it would
+    // report every condition as 0x0 and skip it in silence -- so the measurement
+    // is a check in its own right on every route that has rows.
+    check(
+      `the row's fare condition is measured for contrast in ${scheme}`,
+      contrast.some((entry) => entry.selector === ".condition") ||
+        (await page.locator("#rows .toggle").count()) === 0,
+      contrast.map((entry) => entry.selector).join(" ")
     );
 
     // ------------------------------------------------------------- the targets
