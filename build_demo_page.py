@@ -53,7 +53,7 @@ from atoc_knowledgebase import (
     load_ticket_restrictions,
 )
 from destination_coverage import UnsourcedReport, unnameable_from_tally
-from page_templates import CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
+from page_templates import CHEVRON, CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 from retailer import (
     AFFILIATE_NETWORKS,
     DEFAULT_PROVIDER,
@@ -1969,12 +1969,17 @@ def origin_control(payload: dict) -> str:
 
     name = html.escape(payload["origin"]["name"])
     if not payload.get("stations"):
+        # Plain text, not the shared slot: the slot's underline is the promise
+        # that this part of the sentence can be changed, and on a build with
+        # nowhere to go that promise would be a lie. The browser suite checks
+        # this direction too -- it fails a page that renders a control which
+        # opens nothing.
         return f'<span class="origin-name">{name}</span>'
     return (
-        '<button id="changeOrigin" type="button" aria-expanded="false"'
+        '<button id="changeOrigin" class="origin-slot" type="button" aria-expanded="false"'
         ' aria-controls="originPicker">'
         '<span class="sr-only">Change starting station: </span>'
-        f'<span>{name}</span><span class="origin-swap" aria-hidden="true">↕</span></button>'
+        f'<span>{name}</span>{CHEVRON}</button>'
     )
 
 
@@ -2046,12 +2051,18 @@ def nre_attribution() -> str:
 def first_use_sentence(payload: dict) -> str:
     """The first-use note, which can only name a control the page has.
 
-    The one thing a first-time reader cannot guess is what the Change control
-    in the heading does, so this sentence used to spend its first clause on it.
+    The one thing a first-time reader cannot guess is what the station slot in
+    the heading does, so this sentence spends its first clause on it. It named
+    a "Change" button until that button became the station's own name with a
+    chevron beside it, at which point the sentence pointed at a word the page
+    no longer showed; it names what is on the page instead -- the name in the
+    heading, which is also the accessible name's own words, so the sentence and
+    the control agree for a reader using either.
+
     On a one-origin build there is no such control -- the same condition
-    ``origin_control`` writes for -- so the sentence pointed a reader at a
-    button that is not there. It keeps the half that is still true either way:
-    everything below the heading narrows the destinations.
+    ``origin_control`` writes for -- so the sentence points at nothing and
+    keeps the half that is still true either way: everything below the heading
+    narrows the destinations.
     """
 
     if not payload.get("stations"):
@@ -2061,8 +2072,9 @@ def first_use_sentence(payload: dict) -> str:
             "reachable from it."
         )
     return (
-        "This page is about one station: <b>Change</b> in the heading moves to "
-        "another one. Everything below narrows the destinations from here."
+        "This page is about one station: <b>the station name</b> in the heading "
+        "opens a list of the others. Everything below narrows the destinations "
+        "from here."
     )
 
 

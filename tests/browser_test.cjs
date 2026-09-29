@@ -225,16 +225,104 @@ function daysSince(iso) {
  */
 async function checkChooser(page, url, check) {
   const listed = await page.evaluate(() => STATIONS.map((s) => ({ name: s.name, crs: s.crs, href: s.href })));
-  const budget = await page.inputValue("#chooserBudget");
+  const budget = await page.inputValue("#budgetNumber");
   check("the chooser has stations to choose from", listed.length > 0, `${listed.length} stations`);
-  const heading = ((await page.textContent("h1")) || "").trim();
+  // The heading is a station page's heading with a field where the station's
+  // name goes: the same question, the same two slots, and the slot this route
+  // has no answer for is a text field rather than a name to click. Read out of
+  // the page rather than matched against a sentence written here, because the
+  // point is that the two routes have not drifted apart. C15 and C21: the
+  // figure in the heading is written from the same resolved budget as the
+  // field, the tab title and every outgoing link, and the wording is the
+  // inclusive one.
+  const heading = await page.evaluate(() => {
+    const el = document.getElementById("pageHeading");
+    // The sentence a reader sees, which is not the heading's textContent: an
+    // input carries no text, so reading textContent alone compares against a
+    // sentence with both the budget and the station missing from it. Each
+    // field's value is written where the field sits, and the hidden text that
+    // exists only for a screen reader's name is left out.
+    const seen = (node) => {
+      let out = "";
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) out += child.textContent;
+        else if (child.nodeType === Node.ELEMENT_NODE && !child.classList.contains("sr-only")) {
+          out += child.tagName === "INPUT" ? child.value : seen(child);
+        }
+      }
+      return out;
+    };
+    return {
+      text: seen(el).replace(/\u2060/g, "").replace(/\s+/g, " ").trim(),
+      field: (document.getElementById("budgetNumber") || {}).value || "",
+      slot: Boolean(el.querySelector(".origin-slot")),
+      placeholder: (document.getElementById("originSearch") || {}).placeholder || "",
+    };
+  });
   check(
-    "the heading is the budget question and nothing else",
-    // C15 and C21: the figure in the heading is written from the same
-    // resolved budget as the field, the title and the outgoing links, and the
-    // wording is the inclusive one.
-    new RegExp("^Where can we go for up to £" + budget + "\?").test(heading),
+    "the heading is the sentence a station page carries, with a field where its name goes",
+    new RegExp("^Train fares\\s*\\u00b7\\s*up to £" + heading.field + "\\s*\\u00b7\\s*from$").test(heading.text),
     JSON.stringify(heading)
+  );
+  check(
+    "and the station it has no answer for is a field holding the word station",
+    heading.slot && heading.placeholder === "station",
+    JSON.stringify(heading)
+  );
+  // A placeholder is text a reader has to read, so it is measured like text:
+  // muted is the design call, and still meeting AA is the floor under it. The
+  // colour is painted onto a canvas over the page rather than parsed out of
+  // the computed string, so whatever notation the browser reports it in, this
+  // measures the pixels a reader sees.
+  const placeholderInk = await page.evaluate(() => {
+    const input = document.getElementById("originSearch");
+    const probe = document.createElement("canvas");
+    probe.width = probe.height = 1;
+    const painter = probe.getContext("2d");
+    const paint = (value, backdrop) => {
+      painter.clearRect(0, 0, 1, 1);
+      painter.fillStyle = "rgb(" + backdrop.join(", ") + ")";
+      painter.fillRect(0, 0, 1, 1);
+      painter.fillStyle = value;
+      painter.fillRect(0, 0, 1, 1);
+      const pixel = painter.getImageData(0, 0, 1, 1).data;
+      return [pixel[0], pixel[1], pixel[2]];
+    };
+    const luminance = (rgb) =>
+      rgb
+        .map((channel) => {
+          const c = channel / 255;
+          return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        })
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (a, b) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const behind = paint(getComputedStyle(document.body).backgroundColor, [255, 255, 255]);
+    const placeholder = paint(getComputedStyle(input, "::placeholder").color, behind);
+    return {
+      ratio: ratio(placeholder, behind),
+      ink: placeholder.join(","),
+      behind: behind.join(","),
+    };
+  });
+  check(
+    "the placeholder is muted and still meets AA",
+    placeholderInk.ratio >= 4.5,
+    `${placeholderInk.ratio.toFixed(1)}:1, ${placeholderInk.ink} on ${placeholderInk.behind}`
+  );
+  // The reader's own answer belongs in the accent colour, and the caret in the
+  // slot is what says the page is waiting for one.
+  const slotState = await page.evaluate(() => ({
+    focused: document.activeElement === document.getElementById("originSearch"),
+    caret: getComputedStyle(document.getElementById("originSearch")).caretColor,
+    empty: document.getElementById("originSearch").value === "",
+  }));
+  check(
+    "the empty station slot holds the caret on arrival",
+    slotState.focused && slotState.empty,
+    JSON.stringify(slotState)
   );
   const options = await page.locator("#picks a").count();
   // A published site prices thousands of stations and the page caps the list,
@@ -277,7 +365,7 @@ async function checkChooser(page, url, check) {
   // The search, judged against the page's own list rather than a fixture name.
   const first = listed[0];
   const query = first.name.split(/[\s(]+/)[0].slice(0, 4);
-  await page.fill("#pick", query);
+  await page.fill("#originSearch", query);
   const narrowed = await page.locator("#picks a").count();
   check(
     "typing narrows the list",
@@ -291,34 +379,34 @@ async function checkChooser(page, url, check) {
     `${query} -> ${narrowed} of ${options}`
   );
   const code = listed[1] ? listed[1].crs : first.crs;
-  await page.fill("#pick", code);
+  await page.fill("#originSearch", code);
   check(
     "a three-letter code finds its station",
     (await page.locator("#picks a").count()) === 1 && (await page.textContent("#picks")).includes(code),
     code
   );
-  await page.fill("#pick", "zzzz");
+  await page.fill("#originSearch", "zzzz");
   const noMatch = await page.locator("#nomatch").isVisible();
   check("a query with no answer says so", noMatch && (await page.locator("#picks a").count()) === 0, await page.textContent("#nomatch"));
   check("and it names the code route", /three-letter code/.test(await page.textContent("#nomatch")));
-  await page.fill("#pick", "");
+  await page.fill("#originSearch", "");
 
   // The budget is the reader's, and it is the one thing the root page can carry
   // into the station page it opens (S05).
   const next = Math.min(500, Number(budget) + 7);
-  await page.fill("#chooserBudget", String(next));
+  await page.fill("#budgetNumber", String(next));
   check("changing the budget retitles the page", new RegExp("£" + next + "\?").test(await page.title()), await page.title());
   const carried = await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"));
   check("and the station links carry it", carried === String(next), String(carried));
 
   // A shared link: the budget a reader was given is the budget they get back.
   await page.goto(url + "?budget=42");
-  check("a budget in the link opens the page at that budget", (await page.inputValue("#chooserBudget")) === "42", await page.inputValue("#chooserBudget"));
+  check("a budget in the link opens the page at that budget", (await page.inputValue("#budgetNumber")) === "42", await page.inputValue("#budgetNumber"));
   check(
     "and the station links carry it on",
     (await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"))) === "42"
   );
-  check("the search field takes focus on arrival", (await page.evaluate(() => document.activeElement && document.activeElement.id)) === "pick");
+  check("the station field takes focus on arrival", (await page.evaluate(() => document.activeElement && document.activeElement.id)) === "originSearch");
   // S10: a cold-start order that does not say what it is looks like a
   // recommendation. The page has to name the measure and deny the two things
   // a reader would otherwise assume it means.
@@ -326,13 +414,20 @@ async function checkChooser(page, url, check) {
   check(
     "the chooser says what its order is, and what it is not",
     /how many destinations/i.test(ranking) && /not by how busy/i.test(ranking),
-    (await page.locator(".sub").nth(1).textContent()) || ""
+    (await page.textContent("#orderingNote")) || ""
+  );
+  // The route has no filter bar, and that is a design decision rather than an
+  // omission: the only two things a reader can change here are the two slots in
+  // the heading, and this is what says so if one is ever added back.
+  check(
+    "the chooser carries no filter bar",
+    (await page.locator(".filter-bar").count()) === 0 && (await page.locator("#moreFilters").count()) === 0
   );
   // S11: a code fragment is what somebody who knows the network types.
   // Lowercased to match the page, which lowercases what the reader typed
   // before comparing: a code in the address bar is upper case.
   const fragment = (listed[1] || first).crs.slice(0, 2).toLowerCase();
-  await page.fill("#pick", fragment);
+  await page.fill("#originSearch", fragment);
   const byFragment = await page.evaluate(() =>
     Array.from(document.querySelectorAll("#picks a")).map((a) => ({
       code: (a.querySelector(".code") || {}).textContent || "",
@@ -345,7 +440,7 @@ async function checkChooser(page, url, check) {
       byFragment.every((row) => row.code.toLowerCase().startsWith(fragment) || row.name.toLowerCase().includes(fragment)),
     `${fragment} -> ${byFragment.map((row) => row.code).join(" ") || "nothing"}`
   );
-  await page.fill("#pick", "");
+  await page.fill("#originSearch", "");
   const privacy = await page.evaluate(() => (document.querySelector(".footnav a") || {}).getAttribute
     ? document.querySelector(".footnav a").getAttribute("href")
     : null);
@@ -518,6 +613,21 @@ async function runPage(browser, index, given, file, body, base) {
     await page.goto(url);
     await installReader();
     pageSize = await page.evaluate(() => PAGE_SIZE);
+  // The refinements are folded on every route and at every width, so a
+  // navigation always arrives with them closed and every step that drives a
+  // chip, a ticket mode or a party choice has to open them first. One place,
+  // or a step that forgets is a step that fails on a control that is on the
+  // page and merely closed -- and the reader opens it by pressing the control,
+  // which is what this does rather than setting the state behind their back.
+  const openFilters = async () => {
+    const toggle = page.locator("#moreFiltersToggle");
+    if (!(await toggle.count())) return;
+    const open = await page.evaluate(
+      () => (document.getElementById("moreFilters") || {}).dataset.open === "true"
+    );
+    if (!open) await toggle.click();
+  };
+    await openFilters();
     if (budget !== undefined) await page.fill("#budgetNumber", String(budget));
   };
   // What a type means on this page, in the mode and at the budget on screen:
@@ -581,7 +691,7 @@ async function runPage(browser, index, given, file, body, base) {
       // C21: the filter includes a fare exactly at the budget (price <= cap),
       // so the sentence says "up to". "Under" would describe a page that
       // excludes a row it actually shows.
-      /Where can we go for up to/.test(heading) && heading.includes(facts.origin.toUpperCase()),
+      /Train fares/.test(heading) && /up to/.test(heading) && heading.includes(facts.origin.toUpperCase()),
       heading.trim()
     );
     check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");
@@ -783,6 +893,117 @@ async function runPage(browser, index, given, file, body, base) {
         notExercised("no destination on this page carries a UNESCO property")
       );
     }
+    // 3d. The refinements fold away on every route and at every width, and
+    // the reader is the only thing that opens them. Driven the way a reader
+    // drives it -- press the control, narrow something, press it again --
+    // because a disclosure that only works when it is forced open is not a
+    // disclosure. The budget is deliberately outside it: that is the page's
+    // question, and a reader should never have to open a drawer to answer it.
+    // A fresh navigation, because this is about what the page arrives as.
+    await page.goto(url);
+    await installReader();
+    await page.fill("#budgetNumber", String(facts.affordable));
+    const folded = await page.evaluate(() => {
+      const details = document.getElementById("moreFilters");
+      const toggle = document.getElementById("moreFiltersToggle");
+      const budget = document.getElementById("budget");
+      const firstRow = document.querySelector("#rows tr");
+      return {
+        open: details ? details.dataset.open === "true" : null,
+        expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
+        summaryVisible: toggle ? getComputedStyle(toggle).display !== "none" : false,
+        budgetVisible: !!budget && budget.getBoundingClientRect().height > 0,
+        resultsVisible: !!firstRow && firstRow.getBoundingClientRect().height > 0,
+        state: (document.getElementById("filterState") || {}).textContent || "",
+      };
+    });
+    check("the refinements arrive folded and the plate says so", folded.open === false, JSON.stringify(folded));
+    check("and the folded plate says what is narrowed", /\bReturn\b/.test(folded.state) && /adult/.test(folded.state), folded.state);
+    check("the budget stays out of the fold", folded.budgetVisible, JSON.stringify(folded));
+    check("the results are on screen without opening anything", folded.resultsVisible, JSON.stringify(folded));
+    check("the control that opens them is on screen", folded.summaryVisible, JSON.stringify(folded));
+    check(
+      "the toggle announces whether the refinements are open",
+      folded.open === false ? folded.expanded === "false" : folded.expanded === "true",
+      String(folded.expanded)
+    );
+    if (folded.open === false && folded.summaryVisible) {
+      await page.click("#moreFiltersToggle");
+      const opened = await page.evaluate(() => {
+        const details = document.getElementById("moreFilters");
+        const panel = document.getElementById("moreFiltersPanel");
+        return {
+          open: details.dataset.open === "true",
+          expanded: document.getElementById("moreFiltersToggle").getAttribute("aria-expanded"),
+          panelVisible: panel.getBoundingClientRect().height > 0,
+        };
+      });
+      check(
+        "one tap opens the refinements",
+        opened.open === true && opened.expanded === "true" && opened.panelVisible,
+        JSON.stringify(opened)
+      );
+      const chipValue = await page.evaluate(() => {
+        // A chip whose count is zero inside the current budget empties the
+        // list by design, and the page says so on the chip before the press.
+        // This check is about the disclosure keeping whatever the reader
+        // narrowed to, so it presses a chip that has something to narrow to;
+        // a page where no chip does is reported rather than failed.
+        const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
+        const withRows = boxes.filter((box) => {
+          const count = document.querySelector(`[data-count-for="${box.value}"]`);
+          return count && Number(count.textContent.replace(/\D/g, "")) > 0;
+        });
+        const input = withRows[0] || boxes[0] || null;
+        if (!input) return { pressed: false, rows: 0, label: "", name: "", noneLeft: true };
+        const name = input.parentElement.querySelector("span").textContent.trim();
+        const before = document.querySelectorAll("#rows tr").length;
+        input.click();
+        return {
+          pressed: input.checked,
+          name,
+          before,
+          // A small page can press a chip and keep every row it had, so the
+          // row count is reported rather than asserted: what has to change is
+          // the state the reader can see.
+          after: document.querySelectorAll("#rows tr").length,
+          label: (document.getElementById("filterState") || {}).textContent || "",
+        };
+      });
+      check(
+        "a refinement pressed inside the disclosure is applied and says so",
+        // The chip took the press, and the summary now names that chip rather
+        // than the state it read before the tap.
+        !chipValue.noneLeft && chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== folded.state,
+        JSON.stringify(chipValue)
+      );
+      await page.click("#moreFiltersToggle");
+      const closed = await page.evaluate(() => {
+        const details = document.getElementById("moreFilters");
+        const row = document.querySelector("#rows tr");
+        return {
+          open: details.dataset.open === "true",
+          rows: document.querySelectorAll("#rows tr").length,
+          rowVisible: !!row && row.getBoundingClientRect().height > 0,
+          state: (document.getElementById("filterState") || {}).textContent || "",
+        };
+      });
+      check(
+        "closing it again keeps the narrowed results",
+        closed.open === false && closed.rows > 0 && closed.rowVisible,
+        JSON.stringify(closed)
+      );
+      check("and the summary still names what is narrowed", closed.state.trim().length > 0, closed.state);
+      // Put the chips back, then hand the rest of the run a desktop viewport:
+      // the checks below exercise every control, which on a phone means
+      // opening the disclosure each time, and that is what section 7a is for.
+      await page.evaluate(() => {
+        for (const input of document.querySelectorAll('#destinationTypes input[type="checkbox"]')) {
+          if (input.checked) input.click();
+        }
+      });
+    }
+
     // 3b. A ticket mode the feed has nothing for says so. An Anytime Day
     // Return is sold on a few interurban routes, so most real origins have
     // none, and the page used to return from render() before it wrote
@@ -1221,123 +1442,23 @@ async function runPage(browser, index, given, file, body, base) {
     check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
     check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
 
-    // 7a. The phone reflows around the journey, not around the table (S42):
-    // the budget is the one control that stays open, the refinements fold into
-    // one disclosure that says what is currently narrowed, and the results are
-    // on screen without touching either. Driven the way a reader would drive
-    // it -- open the disclosure, press a chip, close it again -- because a
-    // disclosure that only works when it is forced open is not a disclosure.
-    // A viewport change reaches the page's own listener on a later tick than
-    // the resize call returns, so the fold is waited for rather than read
-    // immediately: a page that never folds away must fail this, not race it.
-    await page
-      .waitForFunction(
-        () => document.getElementById("moreFilters").dataset.open === "false",
-        null,
-        { timeout: 2000 }
-      )
-      .catch(() => {});
-    const phone = await page.evaluate(() => {
-      const details = document.getElementById("moreFilters");
-      const toggle = document.getElementById("moreFiltersToggle");
-      const budget = document.getElementById("budget");
-      const firstRow = document.querySelector("#rows tr");
-      return {
-        open: details ? details.dataset.open === "true" : null,
-        expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
-        summaryVisible: toggle ? getComputedStyle(toggle).display !== "none" : false,
-        budgetVisible: !!budget && budget.getBoundingClientRect().height > 0,
-        resultsVisible: !!firstRow && firstRow.getBoundingClientRect().height > 0,
-        state: (document.getElementById("filterState") || {}).textContent || "",
-      };
-    });
-    check("at 390px the refinements start folded away", phone.open === false, JSON.stringify(phone));
-    check("at 390px the folded refinements say what is narrowed", /\bReturn\b/.test(phone.state) && /adult/.test(phone.state), phone.state);
-    check("at 390px the budget is still on screen", phone.budgetVisible, JSON.stringify(phone));
-    check("at 390px the results are on screen without opening anything", phone.resultsVisible, JSON.stringify(phone));
-    check("at 390px the disclosure is labelled", phone.summaryVisible, JSON.stringify(phone));
-    check(
-      "the toggle announces whether the refinements are open",
-      phone.open === false ? phone.expanded === "false" : phone.expanded === "true",
-      String(phone.expanded)
+    // 7a. A resize is not a fold. The refinements used to open and close with
+    // the viewport -- a media query and a resize listener, two roads to one
+    // state -- which meant a reader who rotated a phone could lose the fold
+    // they had chosen. The fold is theirs now, so a resize has to leave it
+    // exactly where they left it, in both directions.
+    const beforeResize = await page.evaluate(
+      () => (document.getElementById("moreFilters") || {}).dataset.open
     );
-    if (phone.open === false && phone.summaryVisible) {
-      await page.click("#moreFiltersToggle");
-      const opened = await page.evaluate(() => {
-        const details = document.getElementById("moreFilters");
-        const panel = document.getElementById("moreFiltersPanel");
-        return {
-          open: details.dataset.open === "true",
-          expanded: document.getElementById("moreFiltersToggle").getAttribute("aria-expanded"),
-          panelVisible: panel.getBoundingClientRect().height > 0,
-        };
-      });
-      check(
-        "one tap opens the refinements",
-        opened.open === true && opened.expanded === "true" && opened.panelVisible,
-        JSON.stringify(opened)
-      );
-      const chipValue = await page.evaluate(() => {
-        // A chip whose count is zero inside the current budget empties the
-        // list by design, and the page says so on the chip before the press.
-        // This check is about the disclosure keeping whatever the reader
-        // narrowed to, so it presses a chip that has something to narrow to;
-        // a page where no chip does is reported rather than failed.
-        const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
-        const withRows = boxes.filter((box) => {
-          const count = document.querySelector(`[data-count-for="${box.value}"]`);
-          return count && Number(count.textContent.replace(/\D/g, "")) > 0;
-        });
-        const input = withRows[0] || boxes[0] || null;
-        if (!input) return { pressed: false, rows: 0, label: "", name: "", noneLeft: true };
-        const name = input.parentElement.querySelector("span").textContent.trim();
-        const before = document.querySelectorAll("#rows tr").length;
-        input.click();
-        return {
-          pressed: input.checked,
-          name,
-          before,
-          // A small page can press a chip and keep every row it had, so the
-          // row count is reported rather than asserted: what has to change is
-          // the state the reader can see.
-          after: document.querySelectorAll("#rows tr").length,
-          label: (document.getElementById("filterState") || {}).textContent || "",
-        };
-      });
-      check(
-        "a refinement pressed inside the disclosure is applied and says so",
-        // The chip took the press, and the summary now names that chip rather
-        // than the state it read before the tap.
-        !chipValue.noneLeft && chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== phone.state,
-        JSON.stringify(chipValue)
-      );
-      await page.click("#moreFiltersToggle");
-      const closed = await page.evaluate(() => {
-        const details = document.getElementById("moreFilters");
-        const row = document.querySelector("#rows tr");
-        return {
-          open: details.dataset.open === "true",
-          rows: document.querySelectorAll("#rows tr").length,
-          rowVisible: !!row && row.getBoundingClientRect().height > 0,
-          state: (document.getElementById("filterState") || {}).textContent || "",
-        };
-      });
-      check(
-        "closing it again keeps the narrowed results",
-        closed.open === false && closed.rows > 0 && closed.rowVisible,
-        JSON.stringify(closed)
-      );
-      check("and the summary still names what is narrowed", closed.state.trim().length > 0, closed.state);
-      // Put the chips back, then hand the rest of the run a desktop viewport:
-      // the checks below exercise every control, which on a phone means
-      // opening the disclosure each time, and that is what section 7a is for.
-      await page.evaluate(() => {
-        for (const input of document.querySelectorAll('#destinationTypes input[type="checkbox"]')) {
-          if (input.checked) input.click();
-        }
-      });
-    }
     await page.setViewportSize({ width: 1280, height: 800 });
+    const afterResize = await page.evaluate(
+      () => (document.getElementById("moreFilters") || {}).dataset.open
+    );
+    check(
+      "a resize does not move the fold the reader chose",
+      beforeResize === afterResize,
+      `${beforeResize} -> ${afterResize}`
+    );
 
     // 7b. The address is the search (S05). Every control the reader moves has
     // to survive a refresh, a shared link and Back, and the picker has to
@@ -1429,7 +1550,7 @@ async function runPage(browser, index, given, file, body, base) {
           new URL(sharedUrl).searchParams.getAll("types").length,
       sharedUrl
     );
-    check("and the title still names that budget", new RegExp("£" + new URL(sharedUrl).searchParams.get("budget") + "\?").test(await page.title()), await page.title());
+    check("and the title still names that budget", new RegExp("up to £" + new URL(sharedUrl).searchParams.get("budget") + "\\b").test(await page.title()), await page.title());
     // Back is one decision, not a direction the page can only go forwards in.
     await page.goBack();
     const backUrl = await address();
@@ -1445,7 +1566,7 @@ async function runPage(browser, index, given, file, body, base) {
     // The budget is the one thing every reader has, so it is the one thing the
     // heading and the tab must both be saying.
     await open(3);
-    check("the tab title follows the budget", /£3\?$/.test(await page.title()), await page.title());
+    check("the tab title follows the budget", /up to £3\b/.test(await page.title()), await page.title());
 
     // 7c. The party, the fare's conditions, the facets, and what an empty
     // list offers. Every fact is read out of this page's own payload and
@@ -2163,8 +2284,12 @@ async function runPage(browser, index, given, file, body, base) {
       // in the page's own terms, and only on the page where it is true.
       const firstUse = (await page.textContent("#firstUse")) || "";
       check(
-        "the page says Change moves station and the rest filters",
-        /Change/.test(firstUse) && /narrow/i.test(firstUse),
+        "the page says the station name in the heading moves station and the rest filters",
+        // The control is the station's own name with a chevron beside it, so the
+        // sentence has to name the name rather than a button that is no longer
+        // there: it said "Change" for exactly as long as that word was on the
+        // page, which is the whole point of the check.
+        /station name/i.test(firstUse) && /narrow/i.test(firstUse),
         JSON.stringify(firstUse)
       );
       // A list of one cannot be narrowed. That is a fact about the page's own
@@ -2192,9 +2317,9 @@ async function runPage(browser, index, given, file, body, base) {
       check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
       check("and focus returns to the heading station control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
       await pickerButton.click();
-      check("Change reopens the picker", await page.locator("#originPicker").isVisible());
+      check("pressing the station control again reopens the picker", await page.locator("#originPicker").isVisible());
       await pickerButton.click();
-      check("Change closes the picker again", !(await page.locator("#originPicker").isVisible()));
+      check("and it closes it again", !(await page.locator("#originPicker").isVisible()));
       // Keyboard-only reachability of the picker's first option.
       await pickerButton.click();
       const firstOption = page.locator("#originPicks a").first();
@@ -2439,6 +2564,21 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     JSON.stringify({ outlined, before: beforeFocus.self.slice(0, 40), after: focus.self.slice(0, 40), parent: focus.parent.slice(0, 40) })
   );
 
+  // The refinements fold away on every route and at every width, so they are
+  // opened here, once, before anything is measured. A control inside a closed
+  // panel has no box, and both readers below skip an element with no box: the
+  // contrast reader and the target reader would each quietly stop covering the
+  // filter families they exist to hold to AA and to 44px. Opening it is also a
+  // state a reader reaches by pressing the control, so what is measured is a
+  // state the page can really be in.
+  if (await page.locator("#moreFiltersToggle").count()) {
+    await page.evaluate(() => {
+      const details = document.getElementById("moreFilters");
+      const toggle = document.getElementById("moreFiltersToggle");
+      if (details && toggle && details.dataset.open !== "true") toggle.click();
+    });
+  }
+
   // ------------------------------------------- contrast, targets, reflow, per scheme
   for (const scheme of ["light", "dark"]) {
     // The page's own control decides the palette now, not the OS preference, so
@@ -2620,15 +2760,15 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         ["#facetNotice", "a filter-change notice"],
         [".synthetic-banner", "the synthetic-data banner"],
         [".synthetic-banner strong", "the banner's label"],
-        [".brand", "the brand line"],
+        [".origin-slot", "the station slot in the heading"],
+        ["#orderingNote", "the chooser's ordering note"],
         ["legend", "a group label"],
         [".choice-chip", "a destination chip"],
         [".segmented label", "a ticket type"],
         [".railcard-choice", "a party choice"],
         [".toggle", "a button"],
         [".buy", "a ticket link"],
-        ["#moreFiltersToggle", "the phone refinements control"],
-        ["label.caption", "a chooser field label"],
+        ["#moreFiltersToggle", "the refinements control"],
         ["#nomatch", "a no-match message"],
         [".method summary", "the method disclosure"],
         ["#empty", "an empty result"],
