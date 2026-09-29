@@ -446,12 +446,79 @@ async function checkChooser(page, url, check) {
     : null);
   check("the chooser links to the privacy page", privacy !== null && /\/privacy\/$/.test(new URL(privacy, "http://x").pathname), String(privacy));
 
+  // The list the field filters is what the field is for, so the key that means
+  // "down into it" is the way in, and the keys that mean "leave" are the way
+  // back. The options stay real anchors, so focus lands on the anchor itself.
+  const optionCount = await page.locator("#picks a").count();
+  await page.fill("#originSearch", "");
+  await page.focus("#originSearch");
+  await page.keyboard.press("ArrowDown");
+  const entered = await page.evaluate(() => ({
+    isFirst: document.activeElement === document.querySelector("#picks a"),
+    tag: document.activeElement ? document.activeElement.tagName : "",
+  }));
+  check(
+    "ArrowDown from the station field enters its list",
+    optionCount ? entered.isFirst : notExercised("this chooser lists no station to enter"),
+    JSON.stringify({ ...entered, options: optionCount })
+  );
+  await page.keyboard.press("ArrowUp");
+  check(
+    "ArrowUp from the first option returns to the field",
+    optionCount
+      ? await page.evaluate(() => document.activeElement && document.activeElement.id === "originSearch")
+      : notExercised("see above")
+  );
+  if (optionCount > 1) {
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    check(
+      "and ArrowDown again reaches the second option",
+      await page.evaluate(() => document.activeElement === document.querySelectorAll("#picks a")[1]),
+      `${optionCount} options`
+    );
+    await page.keyboard.press("Escape");
+    check(
+      "Escape in the list returns to the field",
+      await page.evaluate(() => document.activeElement && document.activeElement.id === "originSearch")
+    );
+  } else {
+    check("and ArrowDown again reaches the second option", notExercised("this chooser lists one station"));
+    check("Escape in the list returns to the field", notExercised("see above"));
+  }
+
+  // A station name can be pasted from anywhere, and the field sits inside the
+  // heading's own line: an unbounded field takes the page sideways with it.
+  // Sixty characters is longer than any station's name in the feed.
+  const longQuery = "Z".repeat(60);
+  await page.fill("#originSearch", longQuery);
+  const wide = await page.evaluate(() => ({
+    overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+    field: Math.round(document.getElementById("originSearch").getBoundingClientRect().width),
+  }));
+  check(
+    "a sixty-character station name does not push the page sideways",
+    wide.overflow <= 0,
+    `${wide.field}px field, ${wide.overflow}px of sideways scroll`
+  );
+  await page.fill("#originSearch", "");
+
   await page.setViewportSize({ width: 390, height: 720 });
   const overflow = await page.evaluate(() => {
     const html = document.documentElement;
     return Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
   });
   check("at 390px nothing overflows horizontally", overflow <= 0, `${overflow}px`);
+  await page.fill("#originSearch", longQuery);
+  const narrowOverflow = await page.evaluate(() => ({
+    overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+    field: Math.round(document.getElementById("originSearch").getBoundingClientRect().width),
+  }));
+  check(
+    "and not at 390px either",
+    narrowOverflow.overflow <= 0,
+    `${narrowOverflow.field}px field, ${narrowOverflow.overflow}px of sideways scroll`
+  );
 }
 
 async function runPage(browser, index, given, file, body, base) {
@@ -1379,16 +1446,20 @@ async function runPage(browser, index, given, file, body, base) {
     }
     await page.check('input[name="destinationType"][value="all"]');
 
-    // C17: the order and the "best" highlight follow the price actually on
-    // screen, which is not the standard fare once the party or the railcard
-    // changes it. Read in both states, because the defect was only visible in
-    // one of them.
+    // C17: the order follows the price actually on screen, which is not the
+    // standard fare once the party or the railcard changes it. Read in both
+    // states, because the defect was only visible in one of them. The order is
+    // stated in the count line instead of by tinting a row: a page that will not
+    // say which fare is best cannot say it with a colour either. The tint is
+    // judged as paint rather than as a class name, so a row that is highlighted
+    // by any rule at all is caught.
     await open();
     const orderState = () => page.evaluate(() => {
       const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
       return {
         prices: shown.map((r) => Number(r.querySelector("td.num").textContent.replace(/[^0-9.]/g, ""))),
-        bestIndex: shown.findIndex((r) => r.classList.contains("best")),
+        paints: Array.from(new Set(shown.map((r) => getComputedStyle(r.querySelector("td") || r).backgroundColor))),
+        words: (document.getElementById("summary") || {}).textContent || "",
       };
     });
     const adultOrder = await orderState();
@@ -1400,15 +1471,22 @@ async function runPage(browser, index, given, file, body, base) {
       sortedAscending(adultOrder.prices) && sortedAscending(partyOrder.prices),
       `adult ${JSON.stringify(adultOrder.prices.slice(0, 4))}; party ${JSON.stringify(partyOrder.prices.slice(0, 4))}`
     );
-    // A pair's price is double, so a page with one fare can legitimately return
-    // nothing for two adults. The highlight is only judged where there is a
-    // row to highlight.
-    const bestIsFirst = (s) => s.prices.length === 0 || s.bestIndex === 0;
+    // No row carries a tint now, so the check is the absence: a page that
+    // tints the cheapest row and says nothing is recommending with a colour.
+    // The order is judged in the count line's own words, which is where it is
+    // stated, and where an empty list has nothing to state.
+    const onePaint = (s) => s.paints.length <= 1;
+    const saysOrder = (s) => s.prices.length === 0 || /cheapest first/i.test(s.words);
     check(
-      "and the cheapest displayed fare is the highlighted best row",
-      bestIsFirst(adultOrder) && bestIsFirst(partyOrder),
-      `best at index ${adultOrder.bestIndex} of ${adultOrder.prices.length}, ` +
-        `${partyOrder.bestIndex} of ${partyOrder.prices.length} (a party over the budget is an empty list, not a missing highlight)`
+      "no row is painted differently from the rest",
+      onePaint(adultOrder) && onePaint(partyOrder),
+      `adult rows painted ${JSON.stringify(adultOrder.paints)}, ` +
+        `two adults ${JSON.stringify(partyOrder.paints)}`
+    );
+    check(
+      "and the count line says the list is cheapest first",
+      saysOrder(adultOrder) && saysOrder(partyOrder),
+      JSON.stringify(adultOrder.words)
     );
     await page.check('input[name="unit"][value="adult"]');
 
@@ -2518,6 +2596,25 @@ async function runPage(browser, index, given, file, body, base) {
         pickCount
           ? await firstOption.evaluate((el) => el.tagName === "A" && new URL(el.href).pathname.endsWith("/"))
           : notExercised("this page lists no option to focus")
+      );
+      // The same key that enters the chooser's list enters this one: the picker
+      // is that selector reached from the heading, so a reader who has met one
+      // has met the other.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      await page.keyboard.press("ArrowDown");
+      check(
+        "ArrowDown from the picker field enters its list",
+        pickCount
+          ? await page.evaluate(() => document.activeElement === document.querySelector("#originPicks a"))
+          : notExercised("this page lists no option to enter")
+      );
+      await page.keyboard.press("ArrowUp");
+      check(
+        "and ArrowUp comes back to the picker field",
+        pickCount
+          ? await page.evaluate(() => document.activeElement && document.activeElement.id === "originSearch")
+          : notExercised("see above")
       );
       await page.keyboard.press("Escape");
     } else {
