@@ -125,8 +125,10 @@ chip that can only ever return nothing reads as a broken control.
 ## Decided summary
 
 - **What:** Grantham-only demo. Every destination reachable from Grantham under
-  a budget (cheapest reviewed Anytime Day Return per adult), a destination-type filter,
-  and a party total for two adults. Static data, honest disclaimers.
+  a budget (the cheapest fare of any ticket type per adult, the ticket named on
+  the row), a destination-type filter, a ticket-type filter over three named sets,
+  and a party total for two adults on the fare each row names. Static data,
+  honest disclaimers.
 - **Hypothesis:** affiliate lead-gen asset (Trainline, applied post-launch).
 - **Discovery:** communities first (r/uktrains, local FB groups, HN); SEO only
   after a community signal.
@@ -226,9 +228,9 @@ rows show 10. A check built from the feed's list claimed to have covered 628
 conditions on a page that shows 10; a check built from the flows named `2H` and
 `HR` as retired while the page displayed neither. The count spans the ticket
 modes the page offers, because all of them are on it: on Grantham's page four
-codes sit in the all-returns mode and eight in the singles mode, and the default
+codes sit in the all-returns mode and eight in the singles mode, and the
 reviewed Anytime Day Return set carries none at all — which is what that set is
-for.
+for, and why it is a filter beside the opening list rather than the list itself.
 
 **The check reports its own uncertainty, and that is the design.** The
 Knowledgebase feeds' exact element names are not published in a form this
@@ -494,12 +496,16 @@ from an origin, with a budget slider, a settlement and character destination-typ
 and a choice of whether the budget covers one adult or two. The page is generated from
 
 a feed rather than hand-written, so the real feeds replace the synthetic ones
-with no change to the page. The page opens in the reviewed Anytime Day Return
-selector and the builder refuses to run without a clean `.RST` file. A second,
-named "any return" mode carries the broader standard-return set the feed prices,
-restricted off-peak fares included; whichever mode is open, a line above the
-table says what that set contains, because a restricted fare is not
-interchangeable with an unrestricted one.
+with no change to the page. The page opens on **the cheapest fare of any ticket
+type** to each destination, composed in the page from the three sets it already
+carries rather than chosen by the build, so the list answers the budget question
+the reader arrived with; the builder still refuses to run without a clean `.RST`
+file, and the reviewed Anytime Day Return selector, the broader "any return" set
+the feed prices (restricted off-peak fares included) and outbound singles are the
+three filters beside it. Whichever set is open, a line above the table says what
+that set contains, because a restricted fare is not interchangeable with an
+unrestricted one; and a row in the opening list names the ticket it is priced as,
+which is what the count line's mix is counting.
 
 ```
 python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
@@ -897,7 +903,7 @@ button that cannot work without JavaScript is a control that lies
 slider and its note share a line under the heading whose budget it is, and the
 results stay beneath it, so the page's own question is never behind a control.
 The three refinements — ticket type, party, destination type — fold behind one
-control whose label states what is currently narrowed ("Anytime Day Return ·
+control whose label states what is currently narrowed ("Cheapest of any type ·
 One adult · all types"), so a reader who has not opened it can still see that a
 filter is on. The fold is the reader's at *every* width rather than a phone
 behaviour: one control, one `data-open`, no media query and no resize listener,

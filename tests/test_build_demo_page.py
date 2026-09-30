@@ -328,6 +328,89 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="pagination"', self.html)
 
 
+    def test_the_page_opens_on_the_cheapest_fare_of_any_type(self) -> None:
+        # Q4: the list that opens is the cheapest fare of any ticket type, and
+        # the three named sets survive as filters beside it. The checked radio
+        # is what a reader arrives in, which is the part PRODUCT.md promises,
+        # so the checked one is asserted rather than only present.
+        self.assertIn('<input type="radio" name="ticketMode" value="cheapest" checked>', self.html)
+        for other in ("anytime", "return", "single"):
+            self.assertIn('<input type="radio" name="ticketMode" value="%s">' % other, self.html)
+            self.assertNotIn('value="%s" checked' % other, self.html)
+        script = page_script(self.html)
+        self.assertIn('const CHEAPEST_MODE = "cheapest";', script)
+        # Composed in the page, so it costs no payload bytes, and one row per
+        # destination: the cheaper of the fares that destination is priced at.
+        composition = script.split("function cheapestDestinations()")[1].split("\nfunction ")[0]
+        self.assertIn("new Map()", composition)
+        self.assertIn("for (const key of Object.values(MODE_LISTS))", composition)
+        self.assertIn("priceOf(destination) < priceOf(held)", composition)
+        self.assertIn("cheapest.set(destination.crs, destination)", composition)
+        active = script.split("function activeDestinations()")[1].split("\nfunction ")[0]
+        self.assertIn("if (mode === CHEAPEST_MODE) return cheapestDestinations();", active)
+        counted = script.split("function modeCount(")[1].split("\nfunction ")[0]
+        self.assertIn("if (mode === CHEAPEST_MODE) return cheapestDestinations().length;", counted)
+        # Which row is cheapest depends on the card, so the list is composed
+        # after the card is settled -- the card arriving a line later would
+        # leave one render showing a list of the wrong rows.
+        order = script.split("function render(")[1].split("\nfunction ")[0]
+        self.assertLess(order.index("syncRailcardParty();"), order.index("const available = activeDestinations();"))
+
+    def test_the_count_line_names_the_mix_and_what_the_party_is_two_of(self) -> None:
+        script = page_script(self.html)
+        words = script.split("const MIX_WORDS = {")[1].split("};")[0]
+        self.assertIn('"outbound single": "single"', words)
+        self.assertIn('"unrestricted Anytime Day Return": "Anytime Day Return"', words)
+        mix = script.split("function mixPhrase(")[1].split("\nfunction ")[0]
+        self.assertIn("MIX_WORDS[destination.quality] || \"return\"", mix)
+        # Silent on a list of one kind of fare: then the mode already named it.
+        self.assertIn('if (counts.size < 2) return "";', mix)
+        summary = script.split("const what = unit()")[1].split("\nfunction ")[0]
+        self.assertIn('"for the two of us, two of the fare each row names"', summary)
+        self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', summary)
+        self.assertIn("+ order + mix", summary)
+        # A row in this list names its own fare, and the handoff to a seller
+        # names that fare rather than the name of the mode.
+        self.assertIn("function ticketName(destination)", script)
+        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
+        self.assertIn(
+            "ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]",
+            journey,
+        )
+        # The set names itself above the table, in the coverage line and in the
+        # provenance line, so no sentence on the page counts the wrong fares.
+        self.assertIn('cheapest: "The cheapest fare of any ticket type for each destination', script)
+        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", script)
+        self.assertIn('cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed"', script)
+
+    def test_the_warn_token_clears_aa_where_the_cheapest_rows_put_it(self) -> None:
+        # The cheapest list leads with restricted and advance fares, whose words
+        # and marks are the warn token on the row panel's tint, and the browser
+        # matrix holds every kind of text to 4.5:1. The token this replaced came
+        # to 4.36:1 there -- measured here rather than asserted, so the number in
+        # the stylesheet comment and the number in the test cannot drift apart.
+        import re
+
+        def channel(value: float) -> float:
+            v = value / 255
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+        def luminance(rgb) -> float:
+            r, g, b = rgb
+            return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+        warn_hex = re.search(r"--warn: (#[0-9a-f]{6});", self.html)
+        self.assertIsNotNone(warn_hex, "no light --warn token in the shared block")
+        tint = re.search(r"--best:\s*rgba\((\d+), (\d+), (\d+), (\.\d+)\)", self.html)
+        self.assertIsNotNone(tint, "no --best tint in the shared block")
+        self.assertIn("tr.detail td { background: var(--best);", self.html)
+        warn = tuple(int(warn_hex.group(1)[i:i + 2], 16) for i in (1, 3, 5))
+        alpha = float(tint.group(4))
+        panel = tuple(int(part) * alpha + 255 * (1 - alpha) for part in tint.groups()[:3])
+        lighter, darker = sorted((luminance(warn), luminance(panel)), reverse=True)
+        ratio = (lighter + 0.05) / (darker + 0.05)
+        self.assertGreaterEqual(ratio, 4.5, "%s on the row panel is %.2f:1" % (warn_hex.group(1), ratio))
+
     def test_the_cheapest_destination_is_listed_first(self) -> None:
         prices = [row["adultPence"] for row in self.payload["destinations"]]
         self.assertEqual(prices, sorted(prices))
@@ -1640,19 +1723,25 @@ class DemoPageTest(unittest.TestCase):
         # thing it names instead of at a column that no longer exists.
         self.assertIn("Restricted fare — condition below", self.html)
 
-    def test_the_page_opens_in_the_reviewed_fare_set(self) -> None:
-        # C07: PRODUCT.md promises reviewed unrestricted Anytime Day Returns, so
-        # the set the page opens in is that one. The broad set stays available
-        # and named, which is what the second assertion is about.
+    def test_the_page_opens_on_the_cheapest_list_and_every_set_says_what_it_is(self) -> None:
+        # C07 was "the set the page opens in is the one PRODUCT.md promises",
+        # which for a month meant the reviewed Anytime Day Returns. Q4 changes
+        # what the page promises: it opens on the cheapest fare of any type,
+        # because a budget question answered with one ticket type is a question
+        # about the wrong number. The reviewed set is still offered, still
+        # named, and still says what it contains -- the finding C07 recorded is
+        # that a reader must be told what the open set holds, not which set it
+        # has to be.
         checked = re.search(r'<input type="radio" name="ticketMode" value="(\w+)" checked>', self.html)
         self.assertIsNotNone(checked, "no ticket mode is checked in the markup")
-        self.assertEqual("anytime", checked.group(1))
+        self.assertEqual("cheapest", checked.group(1))
         self.assertIn("> Anytime Day Return</label>", self.html)
         self.assertIn("> Any return</label>", self.html)
-        # Each mode says what its fares are, above the table rather than inside
+        self.assertIn("> Cheapest of any type</label>", self.html)
+        # Each set says what its fares are, above the table rather than inside
         # the methodology accordion, so a reader meets the caveat at the moment
         # they compare two prices.
-        for note in ("anytime:", "return:", "single:"):
+        for note in ("cheapest:", "anytime:", "return:", "single:"):
             self.assertIn("  " + note, self.html)
         self.assertIn('id="modeNote"', self.html)
         self.assertIn("renderModeNote();", self.html)
@@ -2314,7 +2403,13 @@ class DemoPageTest(unittest.TestCase):
         # C09: the copied journey has to say which ticket it is, or a handoff to
         # a seller can silently become a different one.
         journey = script.split("function journeyText")[1].split("\nfunction ")[0]
-        self.assertIn('"Ticket: " + modeLabels()[ticketMode()],', journey)
+        # A reader in a named set gets that set's name; a reader in the cheapest
+        # list chose a price rather than a ticket type, so the handoff names the
+        # fare the row is actually priced as (Q4).
+        self.assertIn(
+            '"Ticket: " + (ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]),',
+            journey,
+        )
 
     def test_the_row_keeps_the_action_and_the_panel_holds_the_rest(self) -> None:
         # Finding 4 of the 29 September review: five controls in every row is a

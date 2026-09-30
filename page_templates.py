@@ -35,7 +35,14 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
     --ochre: #a65d00; --ochre: light-dark(#a65d00, #f0b35b);
     --best: rgba(20, 80, 155, .07); --best: light-dark(rgba(20, 80, 155, .07), rgba(125, 180, 245, .12));
     --field: #fff; --field: light-dark(#fff, #1c2127);
-    --warn: #9a6700; --warn: light-dark(#9a6700, #f0b35b);
+    /* The warn token is the restricted fare's own words and the "advance"
+       and "restricted" marks beside a code, and the cheapest list leads with
+       exactly those rows (Q4), so it is measured where the text actually
+       sits: on the row panel's --best tint, which is #eff3f8 in the light
+       palette. #9a6700 came to 4.36:1 there and the matrix holds every
+       kind of text to 4.5:1; #8f5f00 is 4.94:1 on that tint and 5.52:1 on
+       white, and the dark value already cleared it. */
+    --warn: #8f5f00; --warn: light-dark(#8f5f00, #f0b35b);
     /* The NRE credit, reversed. The file in assets/ is NRE's own, byte for
        byte; the reversal is applied here rather than by editing the artwork,
        because an edited file stops being the file the brand supplied and
@@ -612,7 +619,8 @@ __THEME_TOGGLE__
   <fieldset class="ticket-filter">
     <legend>Ticket type</legend>
     <div class="filter-options segmented">
-      <label><input type="radio" name="ticketMode" value="anytime" checked> Anytime Day Return</label>
+      <label><input type="radio" name="ticketMode" value="cheapest" checked> Cheapest of any type</label>
+      <label><input type="radio" name="ticketMode" value="anytime"> Anytime Day Return</label>
       <label><input type="radio" name="ticketMode" value="return"> Any return</label>
       <label><input type="radio" name="ticketMode" value="single"> Single</label>
     </div>
@@ -703,7 +711,7 @@ __THEME_TOGGLE__
   __NRE_CREDIT__
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
-  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
+  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type, and on the list this page opens in the cheapest fare of any ticket type for each destination. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
   <p>The times on this page are options in the timetable, not a booking. Unrestricted fares are valid on the services listed; an Advance single is valid only on a qualifying train, so no train is picked for you.</p>
   <details class="method">
     <summary>How these prices were calculated</summary>
@@ -828,11 +836,59 @@ const MODE_LISTS = {
   single: "singleDestinations",
   anytime: "anytimeDestinations",
 };
+// Q4 (finding 6 of the promise-gap audit): the page opens on the cheapest fare
+// of any ticket type, because "where can I get to for this much" is the
+// question the reader arrived with, and a list of one ticket type answers it
+// with a number that is often not the fare they can buy. The three named sets
+// above stay, as the filters for a reader who wants one kind of fare.
+//
+// The list is composed here rather than in the build, so it costs no payload
+// bytes -- and because which row is cheapest depends on who the price is for,
+// it is composed for the party size and the card on screen rather than once.
+const CHEAPEST_MODE = "cheapest";
+function cheapestDestinations() {
+  const cheapest = new Map();
+  for (const key of Object.values(MODE_LISTS)) {
+    for (const destination of DATA[key] || []) {
+      const held = cheapest.get(destination.crs);
+      if (!held || priceOf(destination) < priceOf(held)) cheapest.set(destination.crs, destination);
+    }
+  }
+  return Array.from(cheapest.values());
+}
 function activeDestinations() {
-  return DATA[MODE_LISTS[ticketMode()]] || [];
+  const mode = ticketMode();
+  if (mode === CHEAPEST_MODE) return cheapestDestinations();
+  return DATA[MODE_LISTS[mode]] || [];
 }
 function modeCount(mode) {
+  if (mode === CHEAPEST_MODE) return cheapestDestinations().length;
   return (DATA[MODE_LISTS[mode]] || []).length;
+}
+// The fare a row is priced as, in the words the build's own price-quality
+// phrases use. The cheapest list holds one fare per place, so this is what
+// names the ticket on a row the reader chose by price rather than by type.
+function ticketName(destination) {
+  if (destination.isAdvance) return "Advance single";
+  if (destination.quality === "unrestricted Anytime Day Return") return "Unrestricted Anytime Day Return";
+  if (destination.quality === "outbound single") return "Standard outbound single";
+  return "Standard return";
+}
+// The mix of ticket types in a list, for the count line. Silent when the list
+// is one kind of fare: then the mode the reader picked already named it.
+const MIX_WORDS = {
+  "outbound single": "single",
+  "unrestricted Anytime Day Return": "Anytime Day Return",
+};
+function mixPhrase(destinations) {
+  const counts = new Map();
+  for (const destination of destinations) {
+    const word = MIX_WORDS[destination.quality] || "return";
+    counts.set(word, (counts.get(word) || 0) + 1);
+  }
+  if (counts.size < 2) return "";
+  return ": " + listWords(Array.from(counts.entries()).map(
+    ([word, count]) => count + " " + (count === 1 ? word : word + "s")));
 }
 function budgetCeiling() {
   // The ceiling is the most the reader can be asked to consider, and the price
@@ -1101,15 +1157,18 @@ function modeLabels() {
 const MODE_WHY = {
   anytime: "An Anytime Day Return is valid on any train, so sellers offer it on only some routes and most stations have none.",
 };
-// C07: the product brief promises reviewed unrestricted Anytime Day Returns,
-// and that is the mode the page opens in. The broader "any return" set is
-// still offered, because a restricted off-peak fare is a real price a reader
-// can buy, but a reader must be told what the set contains *before* they
-// compare two numbers in it: a restricted fare is not interchangeable with an
-// unrestricted one, and the page cannot decode the feed's own validity text.
-// The note sits above the table, not inside the methodology accordion, so it
-// is read at the moment the comparison is made.
+// C07: a reader has to be told what the open set contains *before* they
+// compare two numbers in it, so the note sits above the table rather than
+// inside the methodology accordion, and is read at the moment the comparison
+// is made. Q4 then changed which set is open: the page opens on the cheapest
+// fare of any type, whose caveats are the mix itself and the advance single
+// inside it, and the reviewed set this note was written for is now one of the
+// filters beside it. The wider "any return" set is offered for the same reason
+// it always was -- a restricted off-peak fare is a real price a reader can buy
+// -- and whichever set is open, a restricted fare is not interchangeable with
+// an unrestricted one, and the page cannot decode the feed's own validity text.
 const MODE_NOTE = {
+  cheapest: "The cheapest fare of any ticket type for each destination, so this list mixes: a return to the same place always costs more than a single to it, so most rows are a single. Use the ticket type above to see one kind of fare instead. An advance single is valid on a particular train only and is labelled where it appears; a restricted fare's condition is in the row's details.",
   anytime: "Unrestricted Anytime Day Returns only: these fares are valid on any train on the route, so the prices can be compared with each other directly.",
   return: "Every standard-class return the feed prices, including restricted off-peak and advance fares. A restricted fare is not valid on every train or at every time, so check the Conditions column before treating two prices here as the same thing.",
   single: "Outbound singles rather than returns. An advance single is valid on a particular train only, and is labelled where it appears.",
@@ -1122,7 +1181,7 @@ function renderModeNote() {
 function emptyModeMessage() {
   const labels = modeLabels();
   const mode = ticketMode();
-  const elsewhere = ["return", "single", "anytime"]
+  const elsewhere = [CHEAPEST_MODE, "return", "single", "anytime"]
     .filter((other) => other !== mode && modeCount(other))
     .map((other) => labels[other] + " has " + modeCount(other));
   const why = MODE_WHY[mode] ? " " + MODE_WHY[mode] : "";
@@ -1278,6 +1337,10 @@ function renderCoverage() {
       (DATA.singleJourneyNote ? " " + DATA.singleJourneyNote : "")
     : mode === "anytime"
       ? DATA.anytimeDestinations.length + " reviewed unrestricted Anytime Day Return fares are available in this mode."
+      // Q4: the cheapest list is not one of the three sets, so it has a lead of
+      // its own rather than borrowing a set's sentence and counting its fares.
+      : mode === CHEAPEST_MODE
+        ? modeCount(CHEAPEST_MODE) + " destinations are shown, each on the cheapest fare of any ticket type the feed prices for it" + droppedFromFeed() + "."
       : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed" + droppedFromFeed() + "." +
         (DATA.destinations.length
           ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
@@ -1417,10 +1480,12 @@ function render() {
   // searches apart. Before the early returns, because a page with nothing
   // priced still names its origin and its budget.
   document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;
-  const available = activeDestinations();
   // Before any price is read: the railcard changes the price of every row, and
-  // a card ticked for a party of one is a number no reader could buy.
+  // a card ticked for a party of one is a number no reader could buy. It also
+  // decides which row the cheapest list keeps for a destination, so that list
+  // is composed after this and not before it.
   syncRailcardParty();
+  const available = activeDestinations();
   // Before the filter is read, not after: a chip the active list cannot support
   // must not be part of what the filter is asked to match.
   syncDestinationTypeChips();
@@ -1531,17 +1596,24 @@ function render() {
     rows.append(row);
   }
 
+  // Q4: in the cheapest list every row names its own fare, so the count line
+  // names the mix rather than implying one ticket type, and the party figure
+  // says what it is two of -- on a single row, two singles, not two returns.
   const what = unit() === "party" ? "for the two of us" : "each";
+  const basis = ticketMode() === CHEAPEST_MODE && unit() === "party"
+    ? "for the two of us, two of the fare each row names"
+    : what;
   // ADR-0041: the order belongs to the list, so it is said once, here, rather
   // than by tinting one row the reader is left to interpret.
   const order = ", cheapest first";
+  const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
   summary.textContent = available.length && wanted.length
-    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + what + order
-    : available.length ? "No destinations for up to " + money(cap) + " " + what : "";
+    ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + basis + order + mix
+    : available.length ? "No destinations for up to " + money(cap) + " " + basis : "";
   empty.hidden = wanted.length > 0;
-  renderEmpty(available, wanted, cap, what);
+  renderEmpty(available, wanted, cap, basis);
   more.hidden = true;
   pagination.hidden = pageCount <= 1;
   pageStatus.textContent = "Page " + currentPage + " of " + pageCount + " of " + wanted.length +
@@ -1910,9 +1982,18 @@ function provenance() {
   }
 
   const available = activeDestinations();
+  // The same set names itself here as it does above the table: a provenance
+  // line counting "return destinations" on a page showing the cheapest fare of
+  // any type is the feed's vocabulary, not the reader's.
+  const listed = {
+    cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed",
+    single: "outbound single destinations in the feed",
+    anytime: "unrestricted Anytime Day Return destinations in the feed",
+    return: "return destinations in the feed",
+  };
   const parts = [
     "Origin " + DATA.origin.name + " (" + DATA.origin.crs + ")",
-    available.length + (ticketMode() === "single" ? " outbound single destinations" : ticketMode() === "anytime" ? " unrestricted Anytime Day Return destinations" : " return destinations") + " in the feed",
+    available.length + " " + (listed[ticketMode()] || "destinations in the feed"),
   ];
   if (DATA.hasJourneys) {
     parts.push(DATA.serviceDate ? "services on " + DATA.serviceDate : "typical services in the feed");
@@ -2059,7 +2140,7 @@ function journeyText(destination) {
   const lines = [
     "From: " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     "To: " + destination.name + " (" + destination.crs + ")",
-    "Ticket: " + modeLabels()[ticketMode()],
+    "Ticket: " + (ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]),
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));

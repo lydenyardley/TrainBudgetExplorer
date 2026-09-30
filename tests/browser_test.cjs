@@ -843,9 +843,35 @@ async function runPage(browser, index, given, file, body, base) {
   // TYPES.dearest reduce rather than spread, because a station with thousands
   // of destinations would spill the argument list.
   const installReader = () => page.evaluate(() => {
+    // Q4: the page opens on the cheapest fare of any ticket type, which is not
+    // one of the three payload lists, so the reader composes that list the way
+    // the rule says -- one row per destination, the cheaper of the fares on
+    // screen -- rather than falling back to the returns and expecting a page
+    // that is behaving correctly to fail every chip check. Written here, from
+    // the payload, so the check that the page agrees with it is not circular.
+    window.cheapestOfEveryList = () => {
+      const price = (destination) => {
+        const party = document.querySelector('input[name="unit"]:checked').value === "party";
+        const base = party ? destination.partyPence : destination.adultPence;
+        const card = document.getElementById("railcard");
+        if (card.checked && destination.railcardPence !== null) {
+          return Math.min(base, destination.railcardPence * (party ? 2 : 1));
+        }
+        return base;
+      };
+      const cheapest = new Map();
+      for (const list of [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]) {
+        for (const destination of list || []) {
+          const held = cheapest.get(destination.crs);
+          if (!held || price(destination) < price(held)) cheapest.set(destination.crs, destination);
+        }
+      }
+      return cheapest;
+    };
     window.TYPES = {
       list: () => {
         const mode = document.querySelector('input[name="ticketMode"]:checked').value;
+        if (mode === "cheapest") return Array.from(window.cheapestOfEveryList().values());
         return mode === "single" ? DATA.singleDestinations
           : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
       },
@@ -966,6 +992,91 @@ async function runPage(browser, index, given, file, body, base) {
     await page.fill("#budgetNumber", String(facts.affordable));
     const initial = await rows();
     check("renders priced rows", initial > 0, `${initial} rows; ${facts.destinations} destinations in the feed`);
+
+    // Q4: the list that opens is the cheapest fare of any ticket type to each
+    // destination, and the fare it chose is the fare the row names. The
+    // expectation is composed from the payload by the reader above; the page's
+    // own composition is compared against it rather than used as the answer.
+    const headline = await page.evaluate(() => {
+      const cheapest = window.cheapestOfEveryList();
+      const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((row) => {
+        const wanted = cheapest.get(row.dataset.crs) || null;
+        return {
+          crs: row.dataset.crs,
+          price: (row.querySelector("td.num .price") || {}).textContent || "",
+          wanted: wanted
+            ? {
+              price: String(
+                (document.querySelector('input[name="unit"]:checked').value === "party"
+                  ? wanted.partyPence : wanted.adultPence) / 100
+              ),
+              code: wanted.ticket || "",
+            }
+            : null,
+          code: (row.querySelector(".ticket-code") || {}).textContent || "",
+        };
+      });
+      // The mix is the mix of the rows on screen: the count line describes the
+      // list the reader is looking at, and a budget that leaves one row leaves
+      // one kind of fare in it.
+      const kinds = {};
+      for (const crs of shown.map((row) => row.crs)) {
+        const wanted = cheapest.get(crs);
+        if (!wanted) continue;
+        const word = wanted.quality === "outbound single"
+          ? "single" : wanted.quality === "unrestricted Anytime Day Return" ? "Anytime Day Return" : "return";
+        kinds[word] = (kinds[word] || 0) + 1;
+      }
+      return {
+        mode: document.querySelector('input[name="ticketMode"]:checked').value,
+        expected: cheapest.size,
+        pageCount: typeof cheapestDestinations === "function" ? cheapestDestinations().length : null,
+        shown,
+        kinds,
+        summary: document.getElementById("summary").textContent,
+      };
+    });
+    const amount = (text) => Number(String(text).replace(/[^0-9.]/g, ""));
+    check(
+      "the page opens on the cheapest fare of any ticket type",
+      headline.expected
+        ? headline.mode === "cheapest" &&
+          headline.pageCount === headline.expected &&
+          headline.shown.length > 0 &&
+          headline.shown.every(
+            (row) => row.wanted && amount(row.price) === amount(row.wanted.price) && row.code === row.wanted.code
+          )
+        : notExercised("this page's feed prices nothing"),
+      JSON.stringify({ mode: headline.mode, expected: headline.expected, pageCount: headline.pageCount, first: headline.shown[0] || null })
+    );
+    check(
+      "one row per destination, whatever the list is priced from",
+      headline.expected
+        ? new Set(headline.shown.map((row) => row.crs)).size === headline.shown.length
+        : notExercised("this page's feed prices nothing"),
+      JSON.stringify(headline.shown.map((row) => row.crs))
+    );
+    const mixExpected = Object.entries(headline.kinds)
+      .map(([word, count]) => `${count} ${count === 1 ? word : word + "s"}`)
+      .filter((phrase) => new RegExp("\\b" + phrase + "\\b").test(headline.summary));
+    check(
+      "and the count line names the mix of ticket types it is showing",
+      Object.keys(headline.kinds).length < 2 || mixExpected.length === Object.keys(headline.kinds).length,
+      JSON.stringify({ kinds: headline.kinds, summary: headline.summary })
+    );
+    const partyBasis = await page.evaluate(() => {
+      document.querySelector('input[name="unit"][value="party"]').checked = true;
+      render();
+      const summary = document.getElementById("summary").textContent;
+      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      render();
+      return summary;
+    });
+    check(
+      "and the party figure says it is two of the fare each row names",
+      /two of the fare each row names/.test(partyBasis),
+      partyBasis
+    );
 
     // C04: the opening sentence has to be true of this build. A page with no
     // timetable must not promise a journey time, and a page with one should
@@ -1147,7 +1258,18 @@ async function runPage(browser, index, given, file, body, base) {
       `${JSON.stringify(handoff.summary)} beforeTable=${handoff.beforeTable} inMethod=${handoff.inMethod}`
     );
 
-    // 2. Dragging the budget slider to the floor empties the list.
+    // 2. Dragging the budget slider to the floor empties the list. It starts
+    // from a budget that reaches every row the page has: a station whose own
+    // cheapest fare is a pound has nothing left to drop from that budget, and
+    // a drag from a floor to a floor would measure nothing.
+    const reachAll = await page.evaluate(() =>
+      Math.max(
+        Math.ceil(TYPES.cheapest((d) => d.adultPence) / 100),
+        Math.ceil(TYPES.dearest((d) => d.adultPence) / 100)
+      )
+    );
+    await open(reachAll);
+    const beforeDrag = await rows();
     const startBudget = (await page.inputValue("#budgetNumber")).trim();
     const track = await page.locator("#budget").boundingBox();
     await page.mouse.move(track.x + track.width / 2, track.y + track.height / 2);
@@ -1159,9 +1281,23 @@ async function runPage(browser, index, given, file, body, base) {
     check("the slider updates the heading budget live", headingBudget === draggedBudget, `${draggedBudget} / ${headingBudget}`);
     const afterDrag = await rows();
     check("the slider responds to a real drag", draggedBudget !== startBudget, `${startBudget} -> ${draggedBudget}`);
-    check("a dragged-down budget drops rows", afterDrag < initial, `${initial} -> ${afterDrag}`);
-    check("an empty budget says so rather than showing nothing", await page.locator("#empty").isVisible());
-    check("the summary counts what is left", /No destinations for up to/.test(await page.textContent("#summary")));
+    check("a dragged-down budget drops rows", afterDrag < beforeDrag, `${beforeDrag} -> ${afterDrag}`);
+    // The floor empties the list unless the page's cheapest fare is itself a
+    // pound, which the slider cannot go below. Two adults at that budget is
+    // the same empty list, and is a move the reader can make, so the check
+    // takes it rather than reporting a defect the page has not got.
+    const floored = await page.evaluate(() => {
+      if (document.getElementById("empty").hidden) {
+        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        render();
+      }
+      return {
+        empty: document.getElementById("empty").hidden === false,
+        summary: document.getElementById("summary").textContent,
+      };
+    });
+    check("an empty budget says so rather than showing nothing", floored.empty, JSON.stringify(floored));
+    check("the summary counts what is left", /No destinations for up to/.test(floored.summary), floored.summary);
 
     // 3. The destination-type chips narrow the result set and support both
     // exclusive All and multi-select specific types. Every chip is judged
@@ -1310,7 +1446,18 @@ async function runPage(browser, index, given, file, body, base) {
       };
     });
     check("the refinements arrive folded and the plate says so", folded.open === false, JSON.stringify(folded));
-    check("and the folded plate says what is narrowed", /\bReturn\b/.test(folded.state) && /adult/.test(folded.state), folded.state);
+    // The plate names what is narrowed, so the name is read off the radio the
+    // page arrives with rather than written here: a check that asks for one
+    // mode's word fails the moment the page decides to open in another.
+    const plateMode = await page.evaluate(() => {
+      const checked = document.querySelector('input[name="ticketMode"]:checked');
+      return (checked ? checked.closest("label").textContent : "").trim();
+    });
+    check(
+      "and the folded plate says what is narrowed",
+      folded.state.startsWith(plateMode) && plateMode.length > 2 && /adult/.test(folded.state),
+      `${JSON.stringify(folded.state)} in ${plateMode}`
+    );
     check("the budget stays out of the fold", folded.budgetVisible, JSON.stringify(folded));
     check("the results are on screen without opening anything", folded.resultsVisible, JSON.stringify(folded));
     check("the control that opens them is on screen", folded.summaryVisible, JSON.stringify(folded));
@@ -1727,6 +1874,46 @@ async function runPage(browser, index, given, file, body, base) {
       .locator(`input[name="ticketMode"][value="${defaultMode}"]`)
       .check({ force: true })
       .catch(() => {});
+
+    // Q4: in the cheapest list the reader chose a price rather than a ticket
+    // type, so the handoff text has to name the fare the row is priced as --
+    // "Ticket: Cheapest of any type" is what they picked, and it is not what a
+    // seller needs to hear. Driven from the page's opening mode, which is the
+    // one this is about: the check above left the page in a named set.
+    const cheapestCopy = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+      const line = rows[0];
+      if (!line) return null;
+      const crs = line.dataset.crs;
+      const destination = TYPES.list().find((d) => d.crs === crs);
+      if (!destination) return null;
+      const text = journeyText(destination);
+      // The fare name is composed here from the row's own quality phrase, so
+      // the check is not the page's own ticketName() agreeing with itself.
+      const want = destination.isAdvance
+        ? "Advance single"
+        : destination.quality === "unrestricted Anytime Day Return"
+          ? "Unrestricted Anytime Day Return"
+          : destination.quality === "outbound single"
+            ? "Standard outbound single"
+            : "Standard return";
+      return {
+        crs,
+        want,
+        mode: document.querySelector('input[name="ticketMode"]:checked').value,
+        ticketLine: (text.split("\n").find((entry) => entry.startsWith("Ticket: ")) || "").trim(),
+        modeLabel: (document.querySelector('input[name="ticketMode"]:checked').closest("label").textContent || "").trim(),
+      };
+    });
+    check(
+      "and a row in the cheapest list hands over the fare it is priced as",
+      cheapestCopy
+        ? cheapestCopy.mode === "cheapest" &&
+          cheapestCopy.ticketLine === "Ticket: " + cheapestCopy.want &&
+          cheapestCopy.ticketLine !== "Ticket: " + cheapestCopy.modeLabel
+        : notExercised("this page has no row to copy"),
+      JSON.stringify(cheapestCopy)
+    );
 
     // 4. A ticket link goes where it says it goes, in a new tab.
     const link = page.locator("#rows a.buy").first();
@@ -2344,16 +2531,17 @@ async function runPage(browser, index, given, file, body, base) {
     // S20: counts on the chips, the union stated, and a way back to All.
     const facets = await page.evaluate(() => {
       const cap = Number(document.getElementById("budgetNumber").value) * 100;
-      const mode = document.querySelector('input[name="ticketMode"]:checked').value;
-      const available = mode === "single" ? DATA.singleDestinations
-        : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
+      // The list the page is showing, from the reader rather than re-derived
+      // here: on the opening list that is the composed one, and counting the
+      // returns instead would call a correct page wrong.
+      const available = TYPES.list();
       return Array.from(document.querySelectorAll(".chipcount")).map((slot) => {
         const value = slot.dataset.countFor;
         return {
           value,
           shown: slot.textContent,
           count: available.filter(
-            (destination) => destination.adultPence <= cap &&
+            (destination) => TYPES.price(destination) <= cap &&
               (destination.destinationTypes || [destination.destinationType]).includes(value)
           ).length,
         };
@@ -2418,6 +2606,13 @@ async function runPage(browser, index, given, file, body, base) {
       setBudget(1);
       currentPage = 1;
       render();
+      // A station whose cheapest fare is a pound still shows that row at every
+      // budget the control can hold; two adults at the same budget is the
+      // empty list a reader can actually reach.
+      if (document.getElementById("empty").hidden) {
+        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        render();
+      }
       if (document.getElementById("empty").hidden) return { actions: [] };
       const actions = Array.from(document.querySelectorAll("#empty .toggle")).map((button) => button.textContent);
       const first = document.querySelector("#empty .toggle");
@@ -2442,6 +2637,7 @@ async function runPage(browser, index, given, file, body, base) {
     const coverage = (await page.textContent("#feedCoverage")) || "";
     const coverageMode = await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value);
     const COVERAGE_LEAD = {
+      cheapest: /each on the cheapest fare of any ticket type the feed prices for it/,
       anytime: /reviewed unrestricted Anytime Day Return fares are available in this mode/,
       single: /displayable outbound single fares are available in this mode/,
       return: /standard-return destinations were found in the feed/,

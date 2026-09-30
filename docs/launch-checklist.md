@@ -55,8 +55,11 @@ community signal appears.
 
 Things the post must do:
 
-- [ ] Say in the first sentence what the tool does **and what it is not**: reviewed
-      Anytime Day Returns, not Advance singles, not a booking engine. Railcard
+- [ ] Say in the first sentence what the tool does **and what it is not**: the
+      cheapest fare of any ticket type from a station, named on the row, not a
+      booking engine. Where that fare is an Advance single it is valid on a
+      qualifying train only and the page says so; the reviewed Anytime Day Return
+      set is one of three filters rather than the list that opens. Railcard
       discounts are priced per fare when the reader ticks the box, and the party
       quote keeps the undiscounted fare as its default
 - [ ] Disclose any affiliate link in the post itself. A community that discovers it

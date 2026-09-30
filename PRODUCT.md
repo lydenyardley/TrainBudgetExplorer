@@ -34,8 +34,10 @@ review (ADR-0004).
 
 Turn a price into a shortlist of places. Given an origin station and a budget, the
 page lists **every** destination reachable by train inside that budget, with the
-fastest journey time, the number of changes, the fare for one adult, and the total
-for two adults at two Anytime Day Returns (ADR-0025).
+fastest journey time, the number of changes, the cheapest fare of any ticket type
+the feed prices to that place for one adult, and the total for two adults on that
+same fare (ADR-0025, ADR-0044). The ticket a row is priced as is named on the row,
+and the count line names the mix of ticket types the list is showing.
 
 It exists as a demand experiment whose commercial shape, if it survives, is
 affiliate lead generation (ADR-0003). Success for v1 is therefore a **signal, not
@@ -93,7 +95,9 @@ conversion would not make those moves.
 
 **Confirmed functionality.** Station picker (search by name or three-letter code,
 resolving to the station's page); budget slider; destination filter by name or code;
-party switch (one adult, or two adults at two Anytime Day Returns); per
+party switch (one adult, or two adults on the fare the row names); a ticket type
+control that opens on the cheapest fare of any type and filters the list to one
+of the three named sets; per
 destination a price, the fastest journey time, the number of changes, the station
 a journey changes at when it changes (where a two-ticket split may be cheaper,
 stated without a price), the fare type code, the travel condition the feed states
@@ -111,16 +115,21 @@ the reader, and, where links are tracked, what it earns the site.
   (ADR-0010). No webfonts, no CDN imagery, no framework, nothing fetched at
   runtime. There are currently **no images, logos, icons, or font files in the
   repository at all**, and designing one in means inlining it.
-- **Fares are reviewed Anytime Day Returns.** The public page opens in the
-  reviewed set: exact standard-class ANYTIME DAY R ticket codes with a blank
-  restriction code, and the build refuses to run without a clean `.RST` file
-  (ADR-0025). Advance fares can be cheaper and the page must never imply them.
-  A return is assumed. A broader "any return" set — every standard-class return
-  the feed prices, restricted ones included — is offered as a second, named
-  mode rather than as the default, because a restricted off-peak fare is a real
-  price a reader can buy but is not interchangeable with an unrestricted one.
-  Whichever mode is open, the page states above the table what that set
-  contains.
+- **The reader picks the ticket, from three named sets.** The page opens on the
+  cheapest fare of any ticket type to each destination, because the question a
+  reader arrived with is a budget and not a ticket type (ADR-0044). The three
+  sets stay as filters: the **reviewed unrestricted Anytime Day Returns** — exact
+  standard-class ANYTIME DAY R ticket codes with a blank restriction code, and
+  the build still refuses to run without a clean `.RST` file (ADR-0025) — the
+  **any return** set (every standard-class return the feed prices, restricted
+  off-peak and advance included, because a restricted off-peak fare is a real
+  price a reader can buy), and **outbound singles**. Whichever set is open, the
+  page states above the table what that set contains, and a fare that is only
+  valid on a particular train says so where it is shown rather than in a
+  footnote. On the real Grantham feed the opening list is all 101 destinations
+  and every one of them is cheapest on a single, which is the accepted cost of
+  the decision: the headline is a one-way price list, and the party figure is
+  two of the fare the row names.
 - **Two Together is the only railcard in v1.** Its discount is priced on the page
   when the reader ticks it: the one-third discount rounded down to 5p, held up by
   the `.RCM` minimum fare in force on the day -- each record's own `start_date`
