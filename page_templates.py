@@ -874,8 +874,11 @@ function ticketName(destination) {
   if (destination.quality === "outbound single") return "Standard outbound single";
   return "Standard return";
 }
-// The mix of ticket types in a list, for the count line. Silent when the list
-// is one kind of fare: then the mode the reader picked already named it.
+// The mix of ticket types in a list, for the count line. A list of one kind is
+// the case this exists for rather than the case it stays quiet about: on the
+// real Grantham page every one of the 101 opening rows is a single, and "cheapest
+// first" beside a control named "Cheapest of any type" does not tell a reader
+// why no return is on the page.
 const MIX_WORDS = {
   "outbound single": "single",
   "unrestricted Anytime Day Return": "Anytime Day Return",
@@ -886,7 +889,7 @@ function mixPhrase(destinations) {
     const word = MIX_WORDS[destination.quality] || "return";
     counts.set(word, (counts.get(word) || 0) + 1);
   }
-  if (counts.size < 2) return "";
+  if (!counts.size) return "";
   return ": " + listWords(Array.from(counts.entries()).map(
     ([word, count]) => count + " " + (count === 1 ? word : word + "s")));
 }
