@@ -2653,6 +2653,112 @@ class AllOriginsCliTest(unittest.TestCase):
 
 
 
+class SharedStationAssetTest(unittest.TestCase):
+    """Unit 1d: the picker's list is one file per site, not a copy per page.
+
+    The station list was the release's largest repeated item -- the same rows on
+    every page, 445 MB across the projected network -- so the network build
+    writes it once and each page names it. The page's own destinations still
+    travel inside it (ADR-0033, re-scoped), and a page whose copy of the list
+    did not arrive states the station as text rather than offering a control
+    that opens nothing.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+        self.timetable = build_synthetic_timetable(root / "timetable")
+        self.out = root / "site" / "index.html"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--feed",
+                    str(self.feed),
+                    "--timetable",
+                    str(self.timetable),
+                    "--all-origins",
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.log = buffer.getvalue()
+        self.site = self.out.parent
+
+    def test_the_whole_site_gets_one_station_asset(self) -> None:
+        assets = sorted(self.site.rglob("stations.js"))
+        self.assertEqual(
+            [path.relative_to(self.site).as_posix() for path in assets], ["stations.js"]
+        )
+        asset = assets[0].read_text(encoding="utf-8")
+        self.assertIn("window.TBE_STATIONS = ", asset)
+        rows = json.loads(asset.split("window.TBE_STATIONS = ", 1)[1].rstrip().rstrip(";"))
+        # Every station this build wrote, including each page's own: a page
+        # filters its own origin out as it loads, which is what keeps this one
+        # file byte-identical for every page.
+        self.assertEqual(sorted(row["crs"] for row in rows), ["GRN", "NOT"])
+        self.assertTrue(all(row["href"].startswith("/from/") for row in rows))
+        self.assertIn("stations.js", self.log)
+
+    def test_a_station_page_names_the_asset_and_ships_no_station_rows(self) -> None:
+        pages = sorted((self.site / "from").glob("*/index.html"))
+        self.assertEqual(len(pages), 2)
+        for page in pages:
+            html = page.read_text(encoding="utf-8")
+            self.assertIn('<script src="/stations.js"></script>', html)
+            self.assertNotIn('"stations":', embedded_text(html))
+            # The page keeps its own destination rows, and the heading control
+            # is still the page's own markup rather than something built here.
+            self.assertIn('id="changeOrigin"', html)
+            self.assertTrue(embedded_payload(html)["destinations"])
+
+    def test_the_page_puts_the_station_name_back_if_the_asset_does_not_arrive(self) -> None:
+        page = (self.site / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("if (window.TBE_STATIONS) {", page)
+        # The fallback is a name in the heading, never an empty one: a heading
+        # reading "from" and nothing is the failure this guards against.
+        self.assertIn('stationName.className = "origin-name";', page)
+        self.assertIn('stationName.textContent = DATA.origin ? DATA.origin.name : "";', page)
+        self.assertIn("changeOrigin.replaceWith(stationName);", page)
+        self.assertIn("originPicker.remove();", page)
+        self.assertIn("fallbackNote.textContent = FIRST_USE_FALLBACK;", page)
+
+    def test_the_asset_is_the_whole_list_in_plain_objects(self) -> None:
+        rows = build_demo_page.station_asset_rows(
+            [{"name": "A & B", "crs": "ABB", "slug": "a-b", "destinations": 2}],
+            base_path="/tb",
+        )
+        self.assertEqual(rows, [{"name": "A & B", "crs": "ABB", "href": "/tb/from/a-b/"}])
+        asset = build_demo_page.render_station_asset(rows)
+        self.assertTrue(asset.endswith(";\n"), asset[-20:])
+        # Plain objects keep "href" in the file, which is the shape the route
+        # crawl reads: a table of cells would hide every option from it.
+        self.assertIn('"href":"/tb/from/a-b/"', asset)
+
+    def test_the_crawl_reads_the_asset_and_fails_a_route_it_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text(
+                "<p>the page asks for the asset, and the asset asks for a route</p>",
+                encoding="utf-8",
+            )
+            (site / "stations.js").write_text(
+                'window.TBE_STATIONS = [{"name":"LINCOLN","crs":"LCN","href":"/from/lincoln/"}];\n',
+                encoding="utf-8",
+            )
+            broken = build_demo_page.crawl_internal_links(site)
+            self.assertEqual(len(broken), 1, broken)
+            self.assertIn("stations.js", broken[0])
+            self.assertIn("/from/lincoln/", broken[0])
+            (site / "from" / "lincoln").mkdir()
+            (site / "from" / "lincoln" / "index.html").write_text("ok", encoding="utf-8")
+            self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+
+
 class SlugAgreementTest(unittest.TestCase):
     """Audit finding A1: both build modes must agree on station addresses.
 

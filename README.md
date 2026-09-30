@@ -556,9 +556,12 @@ the shareable address a community post can carry.
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --origin GRN --out _site/index.html --all-origins
 ```
 
-writes one self-contained page per priceable station under `_site/from/<slug>/`
-plus the chooser at `_site/index.html`. For a real DTD fares feed, the faster
-publication mode is:
+writes one page per priceable station under `_site/from/<slug>/` plus the chooser
+at `_site/index.html`, and one `stations.js` beside them for the station picker:
+the same list on every page, so it is one file rather than 2,712 copies. Each
+page still carries its own destinations inline, and a page whose copy of the
+list does not arrive states its station as text instead of offering a control
+that opens nothing. For a real DTD fares feed, the faster publication mode is:
 
 ```
 python build_demo_page.py --feed feeds/fares --fast-all-origins --out _site/index.html

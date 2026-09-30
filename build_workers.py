@@ -18,7 +18,13 @@ from atoc_fares import FaresDb
 from atoc_knowledgebase import Knowledgebase
 from atoc_timetable import TimetableDb
 
-from build_demo_page import build_payload, render_page, wants_nre_credit, with_base
+from build_demo_page import (
+    STATION_ASSET_NAME,
+    build_payload,
+    render_page,
+    wants_nre_credit,
+    with_base,
+)
 
 # Per-process state: the feed databases and the shared build config. In pool
 # mode the initialiser fills it once per worker; the in-process build fills
@@ -110,12 +116,14 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         reference=_WORKER.get("reference"),
         reference_published=_WORKER.get("reference_published", ""),
         reference_checked=_WORKER.get("reference_checked", ""),
+        # The picker's options are the site's one shared asset, not a copy inside
+        # every page, so this page carries the request and not the rows (audit,
+        # 30 September 2026: the list was 445 MB across the network).
+        published_routes=[],
     )
     base_path = _WORKER["base_path"]
-    payload["stations"] = [
-        {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/")}
-        for e in _WORKER["index"] if e["crs"] != origin_crs
-    ]
+    payload["stations"] = []
+    payload["stationsSrc"] = with_base(base_path, "/" + STATION_ASSET_NAME)
     html = render_page(
         payload,
         budget_pounds=20,

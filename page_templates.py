@@ -712,9 +712,10 @@ __THEME_TOGGLE__
   <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
-<script>
+__STATIONS_SRC__<script>
 __LIST_KEYS__
 const DATA = __DATA__;
+const FIRST_USE_FALLBACK = __FIRST_USE_FALLBACK__;
 // Each row list arrives as a column list and a table of cells, because every row
 // in a list carried the same field names and the page was sending them once per
 // row. Hydrating here keeps the rest of this script reading rows as objects, and
@@ -735,6 +736,17 @@ function hydrate(table) {
 }
 for (const key of ["destinations", "singleDestinations", "anytimeDestinations", "stations"]) {
   DATA[key] = hydrate(DATA[key]);
+}
+// ADR-0033 is re-scoped for the picker: its list is one file the site
+// serves once, because the same list on every page was the release's
+// largest repeated item (audit, 30 September 2026). The page's own
+// destinations still travel in it, and nothing else breaks when this
+// request does not arrive -- the branch under the picker says what the
+// page is instead of offering a control that opens nothing.
+if (window.TBE_STATIONS) {
+  DATA.stations = window.TBE_STATIONS.filter(
+    (station) => !DATA.origin || station.crs !== DATA.origin.crs
+  );
 }
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
@@ -2124,6 +2136,22 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   // heading -- so it answers the same two keys through the same block. The
   // Escape handler above closes the whole picker; this only adds the way in.
   wireListKeys(originSearch, originPicks);
+} else if (changeOrigin) {
+  // The shared station list did not arrive, so this control can only open
+  // an empty panel. Put the station's own name where the control was --
+  // the heading must never be left saying "from" and nothing -- and say
+  // what the page is instead of naming a control it does not have. This is
+  // still one station's page, and the way to another one is the All
+  // stations link in the footer. A build that ships the list inside the
+  // page never reaches this branch: DATA.stations is filled before this
+  // script runs, so there is no request that can fail.
+  const stationName = document.createElement("span");
+  stationName.className = "origin-name";
+  stationName.textContent = DATA.origin ? DATA.origin.name : "";
+  changeOrigin.replaceWith(stationName);
+  originPicker.remove();
+  const fallbackNote = document.getElementById("firstUse");
+  if (fallbackNote) fallbackNote.textContent = FIRST_USE_FALLBACK;
 }
 
 // S26: a shortlist of candidate places, and nothing that looks like a
