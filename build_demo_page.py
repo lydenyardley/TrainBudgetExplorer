@@ -355,8 +355,11 @@ def internal_hrefs(html: str) -> list[str]:
 def crawl_internal_links(out_dir: Path, base_path: str = "") -> list[str]:
     """Every internal link in the built site, resolved against written files.
 
-    A generated site is a set of HTML files under ``out_dir``; a link is
-    healthy when the file it names exists. The chooser at the root, each
+    A generated site is a set of HTML files under ``out_dir``, plus the shared
+    picker asset; a link is healthy when the file it names exists. The asset is
+    read as well as the pages, because the picker's options moved out of the
+    pages and a crawl that stopped reading where they went would keep passing a
+    site whose only route contract was broken. The chooser at the root, each
     station page and the privacy page are all crawled, so a link from any page
     to a page that was not written is caught here rather than by a reader.
     External and seller links are left alone: they are not this site's files.
@@ -370,8 +373,8 @@ def crawl_internal_links(out_dir: Path, base_path: str = "") -> list[str]:
         if path.is_file()
     }
     broken: list[str] = []
-    for page in sorted(out_dir.rglob("*.html")):
-        if not page.is_file():
+    for page in sorted(out_dir.rglob("*")):
+        if not page.is_file() or page.suffix.lower() not in (".html", ".js"):
             continue
         source = page.relative_to(out_dir).as_posix()
         for href in internal_hrefs(page.read_text(encoding="utf-8")):
@@ -1968,7 +1971,7 @@ def origin_control(payload: dict) -> str:
     """
 
     name = html.escape(payload["origin"]["name"])
-    if not payload.get("stations"):
+    if not picker_has_options(payload):
         # Plain text, not the shared slot: the slot's underline is the promise
         # that this part of the sentence can be changed, and on a build with
         # nowhere to go that promise would be a lie. The browser suite checks
@@ -2048,6 +2051,16 @@ def nre_attribution() -> str:
     )
 
 
+# The first-use note for a build with nowhere to change to. It is a constant
+# because the page ships it twice: as the text in the document, and as the
+# sentence the script falls back to if the shared picker list did not arrive.
+ONE_STATION_FIRST_USE = (
+    "This page is about one station, and it is the only one this site "
+    "was built for: everything below narrows the destinations "
+    "reachable from it."
+)
+
+
 def first_use_sentence(payload: dict) -> str:
     """The first-use note, which can only name a control the page has.
 
@@ -2065,12 +2078,8 @@ def first_use_sentence(payload: dict) -> str:
     narrows the destinations.
     """
 
-    if not payload.get("stations"):
-        return (
-            "This page is about one station, and it is the only one this site "
-            "was built for: everything below narrows the destinations "
-            "reachable from it."
-        )
+    if not picker_has_options(payload):
+        return ONE_STATION_FIRST_USE
     return (
         "This page is about one station: <b>the station name</b> in the heading "
         "opens a list of the others. Everything below narrows the destinations "
@@ -2190,12 +2199,25 @@ def render_page(
     ``analytics`` is whatever snippet the owner chose for counting referrers. It
     is injected as given, and empty by default, so the page is self-contained
     unless someone deliberately decides otherwise.
+
+    ``payload["stationsSrc"]`` is the one deliberate exception to the one-file
+    route (ADR-0033, re-scoped 30 September 2026): the picker's list is the
+    site's largest repeated item, so a build may point the page at the shared
+    asset while the page's own destination payload still travels inline.
     """
     prices = [row["adultPence"] for row in payload["destinations"]]
     prices += [row["adultPence"] for row in payload.get("singleDestinations", [])]
     prices += [row["adultPence"] for row in payload.get("anytimeDestinations", [])]
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
-    embedded = json.dumps(encode_payload(payload), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    # The picker's list is the one thing a page no longer carries once the
+    # build serves it as the shared asset: sending both would be the hundreds
+    # of MB across the network the asset exists to remove.
+    embedded_payload = (
+        {key: value for key, value in payload.items() if key != "stations"}
+        if payload.get("stationsSrc")
+        else payload
+    )
+    embedded = json.dumps(encode_payload(embedded_payload), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     initial_budget = max(1, min(int(budget_pounds), ceiling))
     # A facet chip is only offered when this page has a destination carrying
     # it. The taxonomy is shared, so a facet with no matches here is a filter
@@ -2220,8 +2242,10 @@ def render_page(
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
         .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
+        .replace("__STATIONS_SRC__", station_asset_tag(payload.get("stationsSrc")))
         .replace("__ORIGIN_CONTROL__", origin_control(payload))
         .replace("__FIRST_USE__", first_use_sentence(payload))
+        .replace("__FIRST_USE_FALLBACK__", json.dumps(ONE_STATION_FIRST_USE, ensure_ascii=False))
         .replace("__NRE_CREDIT__", nre_attribution() if nre_credit else "")
         .replace("__MAXPOUNDS__", str(ceiling))
         .replace("__BUDGET__", str(initial_budget))
@@ -2394,6 +2418,79 @@ def render_privacy(
     )
 
 
+
+
+# The station picker is the first thing this project serves as one shared file
+# rather than one copy per page, so the name lives in one place: the build
+# writes it, the page names it, and the link crawl reads it (ADR-0033, re-scoped
+# 30 September 2026 -- a page still carries its own destinations inline).
+STATION_ASSET_NAME = "stations.js"
+
+
+def picker_has_options(payload: dict) -> bool:
+    """Whether this page was built with another station's page to move to.
+
+    Two ways to answer yes, because the list arrives two ways: inline in the
+    payload for a build that ships one file per route, and as the shared asset
+    (``stationsSrc``) for the network build that cannot afford 2,712 copies of
+    it. The heading control and the first-use note both ask this question rather
+    than reading the list, so a page cannot render a control while shipping no
+    options, or ship options with no way to open them.
+    """
+    return bool(payload.get("stations") or payload.get("stationsSrc"))
+
+
+def station_asset_rows(index: list[dict], base_path: str = "") -> list[dict]:
+    """The picker's options for the whole site, not for one page.
+
+    Every station this build wrote a page for, **including** the page's own:
+    each page filters its own origin out as it loads (ADR-0019 offers the
+    others), and keeping the file identical for every page is the only reason a
+    reader pays one request instead of 2,712 copies. Built from the same route
+    manifest the chooser and the link crawl read, so an option can only name a
+    page this build wrote (S01).
+    """
+    return [
+        {
+            "name": entry["name"],
+            "crs": entry["crs"],
+            "href": with_base(base_path, f"/from/{entry['slug']}/"),
+        }
+        for entry in index
+    ]
+
+
+def render_station_asset(rows: list[dict]) -> str:
+    """The one shared file the picker reads: a station list, loaded by every page.
+
+    Plain objects rather than the column-and-cell encoding a page payload uses.
+    A table would save about a third of the bytes, but the list is sent once
+    rather than once per page, so the saving is tens of KB on the whole network;
+    and the objects keep ``"href": "/from/..."`` in the file, which is the shape
+    the route crawl reads to prove every picker option resolves (S03).
+    """
+    header = (
+        "// The station picker's options, one file for the whole site. Every page\n"
+        "// filters its own origin out as it loads (ADR-0019), and a page whose copy\n"
+        "// of this file did not arrive states the station as text rather than\n"
+        "// offering a control that opens nothing.\n"
+    )
+    return header + "window.TBE_STATIONS = " + json.dumps(
+        rows, ensure_ascii=False, separators=(",", ":")
+    ) + ";\n"
+
+
+def station_asset_tag(src: str | None) -> str:
+    """The one request a page needs beyond itself, or nothing at all.
+
+    Written only for a build that set ``stationsSrc``, so a single-origin site
+    and every direct caller of ``render_page`` still ship one file per route with
+    no second request. Without this tag the page's picker reads its list out of
+    the page's own payload, exactly as before the list moved.
+    """
+    if not src:
+        return ""
+    return f'<script src="{html.escape(src, quote=True)}"></script>\n'
 
 
 def published_routes_for(index: list[dict], base_path: str = "") -> list[dict]:
@@ -2903,6 +3000,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_unsourced and coverage:
             return coverage.exit_code(True)
         index = build_station_index(priced_counts, fares.locations_by_crs)
+        # The picker's options, written once for the whole site rather than into
+        # every page. The same list on 2,712 pages was 295 MB of the network in
+        # the wire encoding -- 168 KB a page as these objects -- and identical on
+        # every page but the one row each page filters out (audit, 30 September
+        # 2026, measured from this build's own output).
+        station_rows = station_asset_rows(index, base_path)
+        write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+        print(
+            f"wrote {out_dir / STATION_ASSET_NAME} with {len(station_rows):,} station(s) "
+            "for every page's picker",
+            flush=True,
+        )
         by_crs = {entry["crs"]: entry for entry in index}
         # One shared config for every page, handed to workers once through the
         # pool initialiser; each job then carries only its own origin (audit

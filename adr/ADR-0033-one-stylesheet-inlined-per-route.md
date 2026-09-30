@@ -1,7 +1,7 @@
 # ADR-0033 — One stylesheet source, inlined into every route
 
 **Date:** 27 September 2026
-**Status:** accepted
+**Status:** accepted; amended 30 September 2026 (see below)
 
 ## Context
 
@@ -61,3 +61,44 @@ and nothing a browser could fetch.
 - **Keep three `<style>` blocks and add a test that they match.** A test can
   catch drift once it is written; a single source cannot drift at all, and the
   test is still worth having to catch someone pasting a rule back into a route.
+
+## Amendment — 30 September 2026: what a route may fetch
+
+The consequence recorded above ("roughly 3 KB of duplicated CSS") is stale, and
+the guarantee now has one exception, so both are stated here rather than left
+implied. Every figure is measured by `tools/page_bytes.py`, which is the tool the
+release argues its byte budget from.
+
+**The price of the guarantee, measured.** `SHARED_CSS` is 15.9 KB, not 3 KB, so
+the shared block is about five times what this ADR recorded. The bytes that are
+byte-identical on every station page are larger still — **119.3 KB**, measured
+over 963 pages of a real network build: this block, the theme block and the theme
+control, the chevron, the list-key block, the station page's own stylesheet and
+its script, and the picker's handling. Across the projected 2,712-page network
+that is ~309 MB of ~1.6 GB, about a fifth.
+
+**The boundary, which is what the one exception needs.** A route carries in its
+own file everything that is *its own answer*: the destination rows, the fares,
+the provenance and the notices, the destination facets, and everything a reader
+needs to read the page. A route may fetch a document that is the same for every
+route and is not part of that route's answer. There is exactly one such document
+today:
+
+- **`stations.js`, the station picker's options** — the same 2,712 rows on every
+  station page but the one row each page filters out, 295 MB of the projected
+  network sent 2,712 times over before it moved (audit recommendation 1d).
+
+The stylesheet and the script stay inline until a decision moves them, and if they
+move they move under this same boundary. A requirement follows from the boundary
+rather than being a separate promise: **a route whose shared document does not
+arrive stays readable and truthful.** The picker's failure mode is that rule's
+shape — the heading's control is replaced by the station's name as text, the
+panel is removed rather than left empty, and the first-use sentence is rewritten
+— so no reader meets a heading reading "from" and nothing, or a control that
+opens nothing. A build that ships the list inside the page cannot reach that
+state at all.
+
+Nothing else changes. The single-source rule above stands, `with_shared()`'s
+substitution stands, and the tests that prove each route carries the shared block
+rather than a lookalike stand: what this amends is the claim about external
+assets, not the claim about where the stylesheet comes from.

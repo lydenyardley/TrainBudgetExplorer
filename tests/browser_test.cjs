@@ -21,7 +21,9 @@
  *
  * A path that is a directory is swept: every index.html beneath it becomes a
  * page of the run, in name order, which is how a whole published station set
- * is driven in one command. --max bounds a sweep and says on stderr how many
+ * is driven in one command. A page that names a file beyond itself -- the
+ * shared station-picker asset -- has that file served from beside it, so the
+ * picker is exercised the way a reader's browser would load it. --max bounds a sweep and says on stderr how many
  * pages it left out, because a run that quietly tested twenty of two thousand
  * has not tested the site.
  *
@@ -178,7 +180,51 @@ function requirePlaywright() {
   }
 }
 
-function serve(bodies) {
+/**
+ * The files a page asks for beyond itself, read from beside the page on disk.
+ *
+ * A page is served from memory, so a request it makes for anything else -- the
+ * shared station-picker asset is the only one today -- has no directory to
+ * resolve against. The page names the asset in its own markup and the asset sits
+ * beside the page's site root, so the reference is followed from the page rather
+ * than guessed: whatever a page asks for by name is looked for up its own tree.
+ * An asset a page asks for and the suite cannot find is a stopped run, because a
+ * page whose picker quietly went missing would otherwise pass by testing less.
+ */
+function sharedAssets(pages) {
+  const files = new Map();
+  const missing = [];
+  for (const entry of pages) {
+    if (!entry.file) continue;
+    let html = "";
+    try {
+      html = fs.readFileSync(entry.file, "utf8");
+    } catch (error) {
+      continue;
+    }
+    for (const match of html.matchAll(/<script[^>]+src="([^"]+)"/g)) {
+      const name = path.basename(new URL(match[1], "http://x").pathname);
+      if (files.has(name)) continue;
+      let directory = path.dirname(entry.file);
+      let found = false;
+      for (let up = 0; up < 5; up += 1) {
+        const candidate = path.join(directory, name);
+        if (fs.existsSync(candidate)) {
+          files.set(name, fs.readFileSync(candidate));
+          found = true;
+          break;
+        }
+        const parent = path.dirname(directory);
+        if (parent === directory) break;
+        directory = parent;
+      }
+      if (!found && !missing.includes(name)) missing.push(name);
+    }
+  }
+  return { files, missing };
+}
+
+function serve(bodies, assets = new Map()) {
   // One server for the whole run, with one synthetic path per page. The file
   // names are not unique -- a chooser and a station page are both index.html
   // -- and a page served from memory has no directory worth preserving, so
@@ -187,13 +233,19 @@ function serve(bodies) {
   bodies.forEach((body, index) => routes.set(`/page-${index + 1}.html`, body));
   const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
-    const body = routes.get(pathname);
+    const body = routes.has(pathname) ? routes.get(pathname) : assets.get(path.basename(pathname));
     if (body === null || body === undefined) {
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("no such page");
       return;
     }
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    // The shared asset is JavaScript, not HTML: a script served as text/html is
+    // refused outright by a browser that sees a nosniff header anywhere above
+    // it, and this suite is about what the page does with the file.
+    const type = pathname.endsWith(".js")
+      ? "text/javascript; charset=utf-8"
+      : "text/html; charset=utf-8";
+    response.writeHead(200, { "content-type": type });
     response.end(body);
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
@@ -3571,7 +3623,15 @@ async function main() {
     return { given, file, body };
   });
 
-  const server = await serve(pages.map((entry) => entry.body));
+  const assets = sharedAssets(pages);
+  if (assets.missing.length) {
+    console.error(
+      "the page(s) under test ask for " + assets.missing.join(", ") +
+        ", which is not beside them, so the checks that need it would be skipped."
+    );
+    process.exit(1);
+  }
+  const server = await serve(pages.map((entry) => entry.body), assets.files);
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await playwright.chromium.launch();
   const results = [];
