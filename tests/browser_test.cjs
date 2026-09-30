@@ -27,8 +27,9 @@
  * pages it left out, because a run that quietly tested twenty of two thousand
  * has not tested the site.
  *
- * A path that is not a station page is the chooser at the site root or the
- * privacy page. The chooser is driven like any other page -- it is where a
+ * A path that is not a station page is the chooser at the site root, a
+ * one-station release's root, or the privacy page. The chooser is driven like
+ * any other page -- it is where a
  * reader chooses the station everything else is about -- while the privacy
  * page carries no controls and is reported as 0/0, named at the end of the
  * run, and does not fail it. A run in which no page could be checked at all
@@ -573,6 +574,133 @@ async function checkChooser(page, url, check) {
   );
 }
 
+/**
+ * The root of a release that priced exactly one station.
+ *
+ * It is not a chooser and must not look like one. The published artefact used to
+ * ask the reader to type a station that could only ever be the one the build
+ * already knew, and the suite drove it as a chooser: four of its checks could not
+ * be exercised there, three of them because there is no second answer to reach.
+ * A release that has already chosen states the choice in its shape, so it is
+ * driven as what it is -- the heading names the station, and the one row is the
+ * page to open (audit recommendation 2, 30 September 2026).
+ *
+ * Every fact is read out of the page's own STATIONS array, like the chooser's, so
+ * the suite never names a station here either.
+ */
+async function checkReleaseRoot(page, url, check) {
+  const listed = await page.evaluate(() => STATIONS.map((s) => ({ name: s.name, crs: s.crs, href: s.href })));
+  const station = listed[0] || { name: "", crs: "", href: "" };
+  const heading = await page.evaluate(() => {
+    const el = document.getElementById("pageHeading");
+    const named = el.querySelector(".origin-name");
+    return {
+      text: el.textContent.replace(/\u2060/g, "").replace(/\s+/g, " ").trim(),
+      station: named ? named.textContent.trim() : "",
+      slot: Boolean(el.querySelector(".origin-slot")),
+      fields: el.querySelectorAll("input").length,
+    };
+  });
+  check(
+    "a one-station release names its station where a chooser would ask for one",
+    heading.station === station.name && heading.text.includes(station.name),
+    JSON.stringify({ heading: heading.text, station: station.name })
+  );
+  // The check rec 2 exists for: a field that can only ever confirm a single
+  // answer is a control that lies, so this fails a root that renders one.
+  check(
+    "and it offers no field that can only confirm that one answer",
+    !heading.slot && (await page.locator("#originSearch").count()) === 0,
+    JSON.stringify({ slot: heading.slot, fields: heading.fields })
+  );
+  check(
+    "and it makes no ranking claim over its one row",
+    (await page.locator("#orderingNote").count()) === 0 &&
+      !/how many destinations/i.test(await page.textContent("main"))
+  );
+  const options = await page.locator("#picks a").count();
+  check(
+    "the list is the whole release",
+    options === listed.length && options === 1,
+    `${options} of ${listed.length}`
+  );
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#picks a")).map((a) => ({
+      href: a.getAttribute("href"),
+      text: a.textContent,
+      tall: a.getBoundingClientRect().height,
+    }))
+  );
+  check(
+    "and it is a link to that station's page",
+    rows.length === 1 &&
+      new URL(rows[0].href, "http://x").pathname === new URL(station.href, "http://x").pathname,
+    JSON.stringify(rows[0] || null)
+  );
+  check("the option is a 44px target", rows.every((row) => row.tall >= 44), `${rows[0] ? rows[0].tall : 0}px`);
+  check(
+    "the option carries the station's own name, code and count",
+    rows.some(
+      (row) =>
+        row.text.includes(station.name) &&
+        row.text.includes(station.crs) &&
+        /\d+ destinations?/.test(row.text)
+    ),
+    JSON.stringify(rows[0] || null)
+  );
+  const budget = await page.inputValue("#budgetNumber");
+  check("the budget is still the heading's own field", Boolean(budget), budget);
+  check(
+    "and the link carries it",
+    new URL(rows[0].href, "http://x").searchParams.get("budget") === budget,
+    rows[0].href
+  );
+  // The one thing a reader can change on this page is the budget, and it has to
+  // reach both the tab title and the page it opens.
+  const next = Math.min(500, Number(budget) + 7);
+  await page.fill("#budgetNumber", String(next));
+  const title = await page.title();
+  const named = station.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  check(
+    "changing the budget retitles the page for that station",
+    new RegExp("£" + next + ".*" + named).test(title),
+    title
+  );
+  check(
+    "and the link carries the new budget",
+    (await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"))) === String(next)
+  );
+  await page.goto(url + "?budget=42");
+  check(
+    "a budget in the link opens the release at that budget",
+    (await page.inputValue("#budgetNumber")) === "42",
+    await page.inputValue("#budgetNumber")
+  );
+  check(
+    "and the station link carries it on",
+    (await page.evaluate(() => new URL(document.querySelector("#picks a").href).searchParams.get("budget"))) === "42"
+  );
+  const privacy = await page.evaluate(() =>
+    (document.querySelector(".footnav a") || {}).getAttribute
+      ? document.querySelector(".footnav a").getAttribute("href")
+      : null
+  );
+  check(
+    "the release root links to the privacy page",
+    privacy !== null && /\/privacy\/$/.test(new URL(privacy, "http://x").pathname),
+    String(privacy)
+  );
+  // The station's name sits in the heading, so a long one is where a page goes
+  // sideways.
+  await page.setViewportSize({ width: 390, height: 720 });
+  const overflow = await page.evaluate(() => {
+    const html = document.documentElement;
+    return Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
+  });
+  check("at 390px nothing overflows horizontally", overflow <= 0, `${overflow}px`);
+}
+
+
 async function runPage(browser, index, given, file, body, base) {
   // One context per page. The seller's stub route and the clipboard grant are
   // both context-scoped, and a page that failed a step must not hand the next
@@ -658,7 +786,12 @@ async function runPage(browser, index, given, file, body, base) {
   // and a full-network build writes a chooser there.
   const kind = await page.evaluate(() => {
     if (typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined") return "station";
-    if (typeof STATIONS !== "undefined" && document.getElementById("picks")) return "chooser";
+    if (typeof STATIONS !== "undefined" && document.getElementById("picks")) {
+      // One station is not a chooser: a release that already knows the answer
+      // names it in the heading instead of asking for it (recommendation 2), so
+      // it is driven as what it is rather than as a search with one result.
+      return STATIONS.length === 1 ? "release" : "chooser";
+    }
     if (document.querySelector("h1")) return "privacy";
     return "other";
   });
@@ -680,9 +813,10 @@ async function runPage(browser, index, given, file, body, base) {
     await context.close();
     return { given, file, checks, stopped, notStation, kind };
   }
-  if (kind === "chooser") {
+  if (kind === "chooser" || kind === "release") {
     try {
-      await checkChooser(page, url, check);
+      if (kind === "chooser") await checkChooser(page, url, check);
+      else await checkReleaseRoot(page, url, check);
     } catch (error) {
       console.error("the browser test stopped early on " + given + ": " + error.message);
       stopped = true;
@@ -2794,12 +2928,18 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   // aria-hidden, so the name read "for up to 20" while the status line said
   // "£20.00" -- the reader was told a number and no unit. Read from the
   // browser's tree, not from the markup, so hiding the sign again fails here.
-  if (routeKind === "station" || routeKind === "chooser") {
+  if (routeKind === "station" || routeKind === "chooser" || routeKind === "release") {
     const headingName = (String(await page.locator("h1").ariaSnapshot()).split("\n")[0].match(/"([^"]*)"/) || [])[1] || "";
     // The chooser's page data is STATIONS, not DATA, and its heading asks which
     // station rather than naming one, so the station is only read where it is
-    // both in the payload and in the sentence.
-    const origin = routeKind === "station" ? await page.evaluate(() => DATA.origin.name) : "";
+    // both in the payload and in the sentence. A one-station release names its
+    // station in that heading, so it is read there too.
+    const origin =
+      routeKind === "station"
+        ? await page.evaluate(() => DATA.origin.name)
+        : routeKind === "release"
+          ? await page.evaluate(() => (STATIONS[0] || {}).name || "")
+          : "";
     check(
       `the heading a screen reader reads states the budget in pounds${origin ? " and names the station" : ""}`,
       /up to £\s*\d+/.test(headingName) && (!origin || headingName.includes(origin)),

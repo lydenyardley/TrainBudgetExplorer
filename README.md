@@ -1028,10 +1028,12 @@ python run.py
 
 That builds the site from the current feed, serves it at
 http://localhost:8741, and opens your browser. A single-origin build is a whole
-site — the chooser at the root, that one station under `/from/<slug>/`, and the
-privacy page — and the runner removes any station page folder a *previous*
-all-origins build left behind, reading the release manifest to tell which
-folders this build wrote. Close the window (or Ctrl+C) to stop.
+site — its root at `/`, that one station under `/from/<slug>/`, and the privacy
+page — and because it priced exactly one station its root names that station
+rather than offering a search over a list of one. The runner removes any station
+page folder a *previous* all-origins build left behind, reading the release
+manifest to tell which folders this build wrote. Close the window (or Ctrl+C) to
+stop.
 
 Useful variants: `--port 9000`, `--no-build` (serve what's there),
 `--timetable` with no value for a prices-only build, `--feed feeds/fares

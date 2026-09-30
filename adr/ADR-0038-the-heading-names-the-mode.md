@@ -1,6 +1,6 @@
 # ADR-0038: The heading names the mode, and it is a spec line
 
-**Status:** Accepted
+**Status:** Accepted; amended 30 September 2026 (see below)
 **Date:** 29 September 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0027 (the browser suite
 covers the template), ADR-0039 (the chooser and a station page are one page with
@@ -77,3 +77,13 @@ GRANTHAM for up to £20?* is a sentence doing a label's job.
   between the field and the dot, and both were visible only by looking at the
   rendered page. Layout decisions that depend on where a line may break need the
   rendered page, not the markup.
+
+## Amendment — 30 September 2026
+
+Point 5's second title belongs to a root that offers a choice. A release that
+priced exactly one station writes no chooser: its root names that station in the
+heading instead of asking for it, so its tab title names the station — *Train
+fares up to £20 · GRANTHAM* — and the script keeps it named as the budget
+changes (audit recommendation 2, 30 September 2026). The rule point 5 states is
+unchanged: the figure comes from the same resolved budget as the heading and the
+outgoing links, and what follows it says what the page is.
