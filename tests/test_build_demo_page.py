@@ -937,13 +937,25 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(details["pricePence"], 770)
         self.assertEqual(
             details["minimumFarePence"],
-            self.fares.minimum_fares.get(("TWO", row["ticket"])),
+            self.fares.minimum_fare("TWO", row["ticket"]),
         )
         self.assertIn("travel condition rather than a card ban", details["reason"])
         self.assertIn('id="railcardDrawer"', self.html)
         self.assertIn("showRailcardDetails(destination)", self.html)
         self.assertIn("DATA.railcardRules[details.rule]", self.html)
         self.assertIn("Exact DTD rule", self.html)
+
+    def test_a_ticked_row_shows_the_card_price_and_the_standard_fare(self) -> None:
+        # Q3: a discounted number never stands alone in the cell. The page
+        # builds the price cell so it can carry the standard fare the card was
+        # taken from, and carries nothing beside a price the card did not
+        # lower. The live behaviour is driven by the browser suite.
+        self.assertIn('cell.dataset.label = "Price"', self.html)
+        self.assertIn('amount.className = "price"', self.html)
+        self.assertIn('was.className = "was"', self.html)
+        self.assertIn("if (price < standard)", self.html)
+        self.assertIn('money(standard) + " standard"', self.html)
+        self.assertIn("td.num .was {", self.html)
 
     def test_rule_records_are_hoisted_out_of_the_rows(self) -> None:
         rows = [

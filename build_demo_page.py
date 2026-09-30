@@ -1463,7 +1463,7 @@ def build_payload(
         ban = next((rule for rule in rules if rule.total_ban), None)
         condition = next((rule for rule in rules if rule.restriction_code), None)
         shown_rule = ban or condition
-        minimum = fares.minimum_fares.get((railcard_code, one.ticket_code))
+        minimum = fares.minimum_fare(railcard_code, one.ticket_code, day)
         rule = None
         if shown_rule is not None:
             scope = []
@@ -1502,7 +1502,9 @@ def build_payload(
             price = None
             state = "blocked"
         else:
-            price = fares.railcard_price(railcard_code, one.ticket_code, one.standard_pence)
+            price = fares.railcard_price(
+                railcard_code, one.ticket_code, one.standard_pence, day=day
+            )
             state = "eligible"
             if condition is None:
                 reason = (
@@ -1518,7 +1520,10 @@ def build_payload(
                 f"The feed's two-thirds discount gives {format_pence(price)} per adult"
             )
             if minimum is None:
-                reason += "; no minimum fare is listed for this ticket, so the discounted fare is used"
+                reason += (
+                    "; no minimum fare is current for this ticket, so the "
+                    "discounted fare is used"
+                )
             elif minimum >= price:
                 reason += f", but the DTD minimum fare of {format_pence(minimum)} is higher"
             else:

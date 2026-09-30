@@ -1643,7 +1643,10 @@ async function runPage(browser, index, given, file, body, base) {
     const orderState = () => page.evaluate(() => {
       const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
       return {
-        prices: shown.map((r) => Number(r.querySelector("td.num").textContent.replace(/[^0-9.]/g, ""))),
+        // The price is its own span, because the cell can also carry the
+        // standard fare a discount was taken from (Q3); reading the whole
+        // cell would read two numbers as one.
+        prices: shown.map((r) => Number(r.querySelector("td.num .price").textContent.replace(/[^0-9.]/g, ""))),
         paints: Array.from(new Set(shown.map((r) => getComputedStyle(r.querySelector("td") || r).backgroundColor))),
         words: (document.getElementById("summary") || {}).textContent || "",
       };
@@ -2037,12 +2040,82 @@ async function runPage(browser, index, given, file, body, base) {
         : notExercised("no destination on this page is railcard-eligible"),
       cardChoice ? cardPair.help : ""
     );
+    // Q3: the discounted number never stands alone in the cell. With the card
+    // ticked a row the card lowers carries the card price and the standard
+    // fare it came from; a row it does not lower carries one price; and with
+    // the box clear no row carries a second number at all.
     if (cardChoice) {
+      const readCells = () => page.evaluate(() => {
+        const cells = {};
+        for (const row of document.querySelectorAll("#rows tr[data-crs]")) {
+          const price = row.querySelector("td.num .price");
+          const was = row.querySelector("td.num .was");
+          cells[row.dataset.crs] = {
+            price: price ? price.textContent.trim() : null,
+            was: was ? was.textContent.trim() : null,
+          };
+        }
+        return cells;
+      });
+      const amount = (text) => Number(String(text).replace(/[^0-9.]/g, ""));
+      // A row the card actually lowers is the row this check is about, so the
+      // budget is set to reach one instead of inheriting whatever the section
+      // before left on screen.
+      const lowered = await page.evaluate(() => {
+        const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
+        const helped = rows.filter(
+          (d) => d.railcardPence !== null && d.railcardPence < d.adultPence
+        );
+        const dearest = helped.reduce((high, d) => Math.max(high, d.partyPence), 0);
+        if (dearest) {
+          setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
+        }
+        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        document.getElementById("railcard").checked = false;
+        render();
+        return helped.length;
+      });
+      const clear = await readCells();
       await page.evaluate(() => {
-        document.querySelector('input[name="unit"][value="adult"]').checked = true;
+        document.getElementById("railcard").checked = true;
         render();
       });
+      const card = await readCells();
+      const rows = Object.keys(clear).filter((crs) => clear[crs].price !== null && card[crs]);
+      const helped = rows.filter((crs) => amount(card[crs].price) < amount(clear[crs].price));
+      const unchanged = rows.filter((crs) => amount(card[crs].price) === amount(clear[crs].price));
+      check(
+        "a discounted row shows the card price and the standard fare it was discounted from",
+        lowered
+          ? helped.length > 0 &&
+            helped.every(
+              (crs) =>
+                amount(card[crs].was) === amount(clear[crs].price) && /standard/.test(card[crs].was)
+            )
+          : notExercised("no destination on this page is lowered by the card"),
+        JSON.stringify(helped.slice(0, 3).map((crs) => [crs, clear[crs], card[crs]]))
+      );
+      check(
+        "and a row the card does not lower still shows one price",
+        unchanged.every((crs) => card[crs].was === null),
+        JSON.stringify(unchanged.slice(0, 3).map((crs) => card[crs]))
+      );
+      check(
+        "with the card unticked no row shows a second price",
+        rows.every((crs) => clear[crs].was === null),
+        JSON.stringify(rows.slice(0, 3).map((crs) => clear[crs]))
+      );
+    } else {
+      check("a discounted row shows the card price and the standard fare it was discounted from",
+        notExercised("no destination on this page is railcard-eligible"));
+      check("and a row the card does not lower still shows one price",
+        notExercised("no destination on this page is railcard-eligible"));
+      check("with the card unticked no row shows a second price",
+        notExercised("no destination on this page is railcard-eligible"));
     }
+    // The section that follows reads rows and their panels, so the page is
+    // handed back at the budget the rest of this block is written against.
+    await open(facts.affordable);
 
     // S19, with the finding of 29 September 2026 on top: the condition is
     // still a sentence rather than a bare code, and the feed's own vocabulary

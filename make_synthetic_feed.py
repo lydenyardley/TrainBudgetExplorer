@@ -324,6 +324,7 @@ def build_synthetic_feed(
     include_restrictions: bool = False,
     include_third_origin: bool = False,
     include_return_network: bool = False,
+    minimum_fares: tuple[tuple[str, ...], ...] | None = None,
 ) -> Path:
     """Write the fares feed.
 
@@ -418,8 +419,20 @@ def build_synthetic_feed(
     ]
 
     minimum_lines = [
-        _line({"railcard_code": railcard, "ticket_code": ticket, "minimum_fare_pence": str(pence)}, MINIMUM_FARE)
-        for railcard, ticket, pence in MINIMUM_FARES
+        _line(
+            {
+                "railcard_code": record[0],
+                "ticket_code": record[1],
+                "minimum_fare_pence": str(record[2]),
+                # A window is optional: a three-tuple keeps the open-ended
+                # record the older fixtures rely on, and a five-tuple writes
+                # the dated record the real catalogue carries.
+                "start_date": record[3] if len(record) > 3 else "",
+                "end_date": record[4] if len(record) > 4 else "",
+            },
+            MINIMUM_FARE,
+        )
+        for record in (MINIMUM_FARES if minimum_fares is None else minimum_fares)
     ]
 
     (path / "rjfaf.ffl").write_text("\n".join(flow_lines) + "\n", encoding="utf-8")

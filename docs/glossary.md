@@ -8,7 +8,7 @@
 | **Fares flow** | A priced origin→destination pair in the fares data (the unit of the Fares Feed). |
 | **Ticket restriction code** | The two-character code on a fare that selects its validity rules (`B1`, `C4`, `Y2`, …). A blank code is how the DTD feed marks a fare with no restriction of its own. |
 | **Restriction file (`.RST`)** | The RSPS5045 file holding the restriction rules the codes point at. `atoc_restrictions.py` reads it, and `publishable_destinations_within` refuses to publish unless it parsed cleanly. |
-| **Publishable selector** | `publishable_destinations_within`: the reviewed query that keeps only exact standard-class ANYTIME DAY R tickets with a blank restriction code. It still refuses railcard discounts, because the `RR` rules are parsed but not evaluated. |
+| **Publishable selector** | `publishable_destinations_within`: the reviewed query that keeps only exact standard-class ANYTIME DAY R tickets with a blank restriction code. A railcard price is evaluated against the current `RR` rows in the same feed: a matching total ban removes the discount, and a matching restriction code supplies the travel condition (ADR-0025). |
 | **Fares Feed** | The ATOC/NRE master file of all fares between all flows, released ~3×/year; legacy format. |
 | **Darwin** | NRE's real-time engine; its timetable/schedule feeds give the national train schedule (open data). |
 | **Rail Data Marketplace** | raildata.org.uk — the portal through which NRE/industry data products (including fares) are licensed. |
