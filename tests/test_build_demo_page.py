@@ -363,8 +363,9 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('"unrestricted Anytime Day Return": "Anytime Day Return"', words)
         mix = script.split("function mixPhrase(")[1].split("\nfunction ")[0]
         self.assertIn("MIX_WORDS[destination.quality] || \"return\"", mix)
-        # Silent on a list of one kind of fare: then the mode already named it.
-        self.assertIn('if (counts.size < 2) return "";', mix)
+        # Named even when the list is one kind of fare, which is the case it
+        # exists for: a list of nothing but singles says so.
+        self.assertIn('if (!counts.size) return "";', mix)
         summary = script.split("const what = unit()")[1].split("\nfunction ")[0]
         self.assertIn('"for the two of us, two of the fare each row names"', summary)
         self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', summary)

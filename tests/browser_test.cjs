@@ -1056,12 +1056,15 @@ async function runPage(browser, index, given, file, body, base) {
         : notExercised("this page's feed prices nothing"),
       JSON.stringify(headline.shown.map((row) => row.crs))
     );
-    const mixExpected = Object.entries(headline.kinds)
-      .map(([word, count]) => `${count} ${count === 1 ? word : word + "s"}`)
-      .filter((phrase) => new RegExp("\\b" + phrase + "\\b").test(headline.summary));
+    const kinds = Object.entries(headline.kinds);
+    const namedKinds = kinds.filter(([word, count]) =>
+      new RegExp(`\\b${count} ${count === 1 ? word : word + "s"}\\b`).test(headline.summary)
+    );
     check(
       "and the count line names the mix of ticket types it is showing",
-      Object.keys(headline.kinds).length < 2 || mixExpected.length === Object.keys(headline.kinds).length,
+      headline.shown.length === 0
+        ? notExercised("this page shows no row to count")
+        : namedKinds.length === kinds.length,
       JSON.stringify({ kinds: headline.kinds, summary: headline.summary })
     );
     const partyBasis = await page.evaluate(() => {
