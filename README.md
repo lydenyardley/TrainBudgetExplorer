@@ -305,6 +305,8 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `fuzz_feed.py` | Mutates a feed at random and checks the parser's invariants |
 | `retailer.py` | Builds the outbound ticket links, with tracking off by default |
 | `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
+| `tools/page_bytes.py` | CLI: a built page split into stylesheet, script and inline payload, the bytes every measured page repeats word for word, and a built folder totalled against the site budget |
+| `tools/test_page_bytes.py` | Tests for the measurer: where a payload's split ends, and what may count as shared |
 | `tools/inspect_knowledgebase.py` | CLI: what a Knowledgebase reference feed actually contains, what the reader makes of it, and which element name to add when it guesses wrong |
 | `tools/test_inspect_knowledgebase.py` | Tests for the inspector's element summary, name matching and verdicts |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
