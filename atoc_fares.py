@@ -966,6 +966,29 @@ class Fare:
     restriction_code: str
 
 
+@dataclass(frozen=True, slots=True)
+class MinimumFare:
+    """One ``.RCM`` record: the floor a discounted fare cannot go below.
+
+    The DTD catalogue writes a validity window on every record, and a key can
+    hold several records for different windows. Reading past the window applied
+    a lapsed minimum as if it were current (audit finding 3), so the window
+    travels with the price and only a record that covers the query day can
+    raise a fare.
+    """
+
+    pence: int
+    start_date: date | None
+    end_date: date | None
+
+    def covers(self, day: date) -> bool:
+        """Whether this record's own window includes ``day``, ends included."""
+        return not (
+            (self.start_date is not None and day < self.start_date)
+            or (self.end_date is not None and day > self.end_date)
+        )
+
+
 @dataclass(frozen=True)
 class Railcard:
     code: str
@@ -1056,7 +1079,10 @@ class FaresDb:
         # same question per origin; scanning every flow for each origin would
         # turn a full-network build into 2,500 full scans.
         self.flows_touching_nlc: dict[str, list[Flow]] = {}
-        self.minimum_fares: dict[tuple[str, str], int] = {}
+        # Keyed by (railcard code, ticket code). A key holds a list, because
+        # the catalogue writes one record per validity window rather than one
+        # per key: 613 of the real feed's 646 keys carry more than one.
+        self.minimum_fares: dict[tuple[str, str], list[MinimumFare]] = {}
         self.restrictions = RestrictionIndex()
         self.report = ParseReport()
         self.files_read = self.report.files_read
@@ -2156,7 +2182,22 @@ class FaresDb:
         pence = _as_int(_text(line, MINIMUM_FARE_OFFSETS, "minimum_fare_pence"))
         if not railcard_code or not ticket_code or pence <= 0:
             return
-        self.minimum_fares[(railcard_code, ticket_code)] = pence
+        record = MinimumFare(
+            pence=pence,
+            start_date=_parse_dtd_date(_text(line, MINIMUM_FARE_OFFSETS, "start_date")),
+            end_date=_parse_dtd_date(_text(line, MINIMUM_FARE_OFFSETS, "end_date")),
+        )
+        windows = self.minimum_fares.setdefault((railcard_code, ticket_code), [])
+        for index, existing in enumerate(windows):
+            if (existing.start_date, existing.end_date) == (
+                record.start_date,
+                record.end_date,
+            ):
+                # A re-issue of one window replaces it, rather than stacking a
+                # second price on a window that can hold one.
+                windows[index] = record
+                return
+        windows.append(record)
 
     def _load_restrictions(self, line: str) -> None:
         self.restrictions.load_line(line)
@@ -2324,12 +2365,40 @@ class FaresDb:
                 return code
         return None
 
-    def railcard_price(self, railcard_code: str, ticket_code: str, standard_pence: int) -> int:
+    def minimum_fare(
+        self, railcard_code: str, ticket_code: str, day: date | None = None
+    ) -> int | None:
+        """The minimum fare in force for this ticket on ``day``, if any.
+
+        A blank start or end date is an open end, so a record that names no
+        window applies to every day. When a key holds several windows only the
+        ones covering the query day are considered; if a feed ever lists two
+        that both cover it, the later start wins, so the record nearest the
+        query is the one applied rather than whichever the file wrote last.
+        """
+        query_day = day or date.today()
+        active = [
+            record
+            for record in self.minimum_fares.get((railcard_code, ticket_code), ())
+            if record.covers(query_day)
+        ]
+        if not active:
+            return None
+        return max(active, key=lambda record: record.start_date or date.min).pence
+
+    def railcard_price(
+        self,
+        railcard_code: str,
+        ticket_code: str,
+        standard_pence: int,
+        *,
+        day: date | None = None,
+    ) -> int:
         # National Rail's published third-off result is rounded down to the
         # nearest 5p for each ticket, not up. Rounding up costs 5p per traveller
         # whenever the exact discount falls between two 5p amounts.
         discounted = _round_down_to(standard_pence * RAILCARD_DISCOUNT, ROUNDING_STEP_PENCE)
-        minimum = self.minimum_fares.get((railcard_code, ticket_code))
+        minimum = self.minimum_fare(railcard_code, ticket_code, day)
         if minimum is not None:
             discounted = max(discounted, minimum)
         return discounted
@@ -2401,6 +2470,7 @@ class FaresDb:
         origin_nlc: str,
         destination_nlc: str,
         standard_pence: int,
+        day: date | None = None,
     ) -> int | None:
         restriction = self.railcard_restriction(
             railcard_code,
@@ -2413,7 +2483,7 @@ class FaresDb:
         )
         if restriction is not None:
             return None
-        return self.railcard_price(railcard_code, ticket_code, standard_pence)
+        return self.railcard_price(railcard_code, ticket_code, standard_pence, day=day)
 
     def destinations_within(
         self,
@@ -2728,6 +2798,7 @@ class FaresDb:
                             origin_nlc=origin_nlc,
                             destination_nlc=destination_nlc,
                             standard_pence=fare.pence,
+                            day=query_day,
                         )
                         if railcard_code
                         else None

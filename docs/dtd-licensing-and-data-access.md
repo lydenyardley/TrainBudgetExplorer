@@ -405,9 +405,9 @@ Before a real-data page is published:
 - [x] The reviewed `publishable_destinations_within` selector exists: it keeps
       only the exact standard-class ANYTIME DAY R ticket codes and blank
       restriction codes, and it refuses to run unless the `.RST` file parsed
-      cleanly. It still refuses railcard discounts, because the `.RST` railcard
-      records are parsed but not evaluated. The broad `destinations_within` query
-      remains for analysis only.
+      cleanly. Railcard prices are evaluated against the current `RR` rows in the
+      same feed, with the `.RCM` minimum fare in force on the day. The broad
+      `destinations_within` query remains for analysis only.
 - [ ] The timetable audit's rejected records, unopened files, date range, STP
       mix, TIPLOC normalisation, and the unresolved TIPLOC categories (known
       location vs no record) have been read.

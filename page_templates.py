@@ -431,6 +431,10 @@ __SHARED_CSS__
      price is not a cramped column, it is a different number, and the reader
      comparing it with the row above has been told something false. */
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* The price the card was taken off, in the same cell as the price: a
+     discounted number never stands alone (Q3), and the second number is
+     quieter because the first is the one the reader asked for. */
+  td.num .was { color: var(--muted); font-size: .875em; }
   /* The fare's own code, where the sentence used to be repeated on every row,
      and one word beside it when the fare is one a reader should open. The
      condition itself is in the row's disclosure; a reader who never opens it
@@ -877,6 +881,29 @@ function priceOf(destination) {
     return Math.min(base, cardTotal);
   }
   return base;
+}
+// Q3: with the card ticked the cell shows what the reader would pay *and* the
+// standard fare it came from, so a discounted number never stands alone. With
+// the box clear there is one price and no second number, because there is one
+// price.
+function priceCell(destination) {
+  const cell = document.createElement("td");
+  cell.className = "num";
+  cell.dataset.label = "Price";
+  const party = unit() === "party";
+  const standard = party ? destination.partyPence : destination.adultPence;
+  const price = priceOf(destination);
+  const amount = document.createElement("span");
+  amount.className = "price";
+  amount.textContent = money(price);
+  cell.append(amount);
+  if (price < standard) {
+    const was = document.createElement("span");
+    was.className = "was";
+    was.textContent = " " + money(standard) + " standard";
+    cell.append(was);
+  }
+  return cell;
 }
 // S15: Two Together is a railcard for a named number of adults travelling
 // together, so it is a constraint on the party rather than a discount a solo
@@ -1456,7 +1483,6 @@ function render() {
     const row = document.createElement("tr");
     const cells = [
       [destination.name + " (" + destination.crs + ")", "", "Station"],
-      [money(priceOf(destination)), "num", "Price"],
     ];
     if (DATA.hasJourneys) {
       // S23: a dash said nothing about which of three different absences this
@@ -1499,6 +1525,7 @@ function render() {
       }
       row.append(cell);
     }
+    row.append(priceCell(destination));
     row.append(fareCodeCell(destination));
     cellWithLinks(row, destination, wanted);
     rows.append(row);
@@ -1746,7 +1773,7 @@ function showRailcardDetails(destination) {
   document.getElementById("railcardDiscounted").textContent =
     details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
   document.getElementById("railcardMinimum").textContent =
-    details.minimumFarePence === null ? "Not listed for " + destination.ticket : money(details.minimumFarePence);
+    details.minimumFarePence === null ? "None current for " + destination.ticket : money(details.minimumFarePence);
   // The rule record lives once in DATA.railcardRules; the row carries its
   // key, because repeating the record per row cost 388KB on the heaviest
   // real page (audit B3).

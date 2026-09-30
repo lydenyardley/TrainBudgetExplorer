@@ -1062,6 +1062,69 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(results["LCN"].best_pence, 870)
         self.assertEqual(results["LCN"].party_pence, 1740)
 
+    # The .RCM record's own window is read, rather than read past: finding 3 of
+    # the 29 September 2026 audit found a minimum outside its window applied as
+    # if current, which holds a discounted fare above the floor the feed had
+    # already retired.
+
+    def _db_with_minimums(self, *records: tuple[str, ...]) -> FaresDb:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        feed = build_synthetic_feed(
+            Path(tmp.name) / "rjfaf-rcm-window", minimum_fares=records
+        )
+        return FaresDb().load_feed(feed)
+
+    def test_a_lapsed_window_does_not_raise_a_fare(self) -> None:
+        db = self._db_with_minimums(("TWO", "SDR", 1200, "01012020", "31122020"))
+        day = date(2026, 9, 24)
+        # The card's own discount: two thirds of £8.70, rounded down to 5p.
+        self.assertIsNone(db.minimum_fare("TWO", "SDR", day))
+        self.assertEqual(db.railcard_price("TWO", "SDR", 870, day=day), 580)
+        rows = {
+            row.crs: row
+            for row in db.destinations_within(
+                "GRN", 2000, adults=2, railcard="Two Together", day=day
+            )
+        }
+        self.assertEqual(rows["LCN"].railcard_pence, 580)
+        self.assertEqual(rows["LCN"].standard_pence, 870)
+
+    def test_the_window_ends_belong_to_the_record(self) -> None:
+        db = self._db_with_minimums(("TWO", "SDR", 1200, "01012026", "30092026"))
+        self.assertEqual(db.minimum_fare("TWO", "SDR", date(2026, 1, 1)), 1200)
+        self.assertEqual(db.minimum_fare("TWO", "SDR", date(2026, 9, 30)), 1200)
+        # One day past the end, the floor is gone rather than still applied.
+        self.assertIsNone(db.minimum_fare("TWO", "SDR", date(2026, 10, 1)))
+        # And a day before the start is the same answer for the same reason.
+        self.assertIsNone(db.minimum_fare("TWO", "SDR", date(2025, 12, 31)))
+
+    def test_the_window_covering_the_day_is_the_one_applied(self) -> None:
+        db = self._db_with_minimums(
+            ("TWO", "SDR", 1200, "01012020", "31122020"),
+            ("TWO", "SDR", 1500, "01012026", "31122026"),
+        )
+        self.assertEqual(db.minimum_fare("TWO", "SDR", date(2026, 9, 24)), 1500)
+        self.assertIsNone(db.minimum_fare("TWO", "SDR", date(2022, 1, 1)))
+
+    def test_the_query_day_reaches_the_railcard_price(self) -> None:
+        db = self._db_with_minimums(("TWO", "SDR", 1200, "01012020", "31122020"))
+        day = date(2026, 9, 24)
+        self.assertEqual(
+            db.railcard_price_for(
+                "TWO",
+                ticket_code="SDR",
+                route_code="",
+                origin_crs="GRN",
+                destination_crs="LCN",
+                origin_nlc="",
+                destination_nlc="",
+                standard_pence=870,
+                day=day,
+            ),
+            580,
+        )
+
     def test_party_budget_mode_tests_the_total(self) -> None:
         results = self.db.destinations_within(
             "GRN", 1550, adults=2, railcard="Two Together", party_budget=True

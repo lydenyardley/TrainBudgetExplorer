@@ -19,9 +19,12 @@ deciding in seconds whether this is worth a click.
 **Travelling as a pair is a first-class case, not a variant.** Two adults on a Two
 Together Railcard is the only railcard in v1 (ADR-0002), so a large share of
 readers are two people asking what the trip costs *them*. The card's discount is
-not priced on the public page yet: the DTD `.RST` railcard records are parsed but
-not evaluated, so the party total is two reviewed Anytime Day Returns and the page
-says so (ADR-0025).
+priced per fare (ADR-0025): ticking it lowers the fare wherever the feed's current
+`RR` rules permit and widens the list the budget reaches, and each row's own
+details name the minimum fare in force and the rule behind the answer. The
+undiscounted figure stays the default party total and the budget ceiling, because
+the page cannot know who is reading and a ceiling must not move when a box is
+ticked.
 
 **The operator is the owner**, acting part-time. The staged plan bounds the whole
 experiment at roughly four weeks part-time, with a hard build stop and a written
@@ -51,8 +54,9 @@ you can go. The glossary calls the shape a **"fare-ochrone"** — reachable with
 What a neighbouring product could not truthfully copy is the second half of that:
 this one publishes its own limits as content. It promises reviewed Anytime Day
 **Returns** and says out loud that Advance singles can undercut them; it refuses
-not only a chosen train but a railcard *discount* it cannot yet validate, and it
-never sends a railcard or a chosen train to a seller; and when no ticket link
+not only a chosen train but an unrunnable assumption: the railcard is priced only
+where the reader says they hold one and the feed's own current rules allow it, and
+it never sends a railcard or a chosen train to a seller; and when no ticket link
 could be verified, it was the link —
 not the claim — that changed (ADR-0017, ADR-0018). A competitor optimising for
 conversion would not make those moves.
@@ -115,10 +119,13 @@ the reader, and, where links are tracked, what it earns the site.
   price a reader can buy but is not interchangeable with an unrestricted one.
   Whichever mode is open, the page states above the table what that set
   contains.
-- **Two Together is the only railcard in v1**, but its discount is not priced yet:
-  the `.RST` railcard rules are parsed and not evaluated, so the page says the
-  party total is two Anytime Day Returns (ADR-0025). The railcard is never sent to
-  a seller; the page tells the reader to tick the box instead (ADR-0014).
+- **Two Together is the only railcard in v1.** Its discount is priced on the page
+  when the reader ticks it: the one-third discount rounded down to 5p, held up by
+  the `.RCM` minimum fare in force on the day -- each record's own `start_date`
+  and `end_date` are honoured -- and gated by the current `.RST` `RR` ticket,
+  route, location and total-ban rules. The undiscounted figure stays the default
+  party total and the budget ceiling (ADR-0025). The railcard is never sent to a
+  seller; the page tells the reader to tick the box instead (ADR-0014).
 - **No train is ever chosen for the reader.** A departure or a journey identifier
   in a link would turn a price list into a booking suggestion the data cannot
   support.
