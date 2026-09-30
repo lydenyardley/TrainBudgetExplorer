@@ -168,3 +168,44 @@ feed cannot explain a condition the page says so plainly and sends the reader
 to the seller. That is C08, and it is open. This ADR fixes which set a reader
 is shown and what they are told about it; it does not make the page able to
 decode a rule it has not been given.
+
+## Amendment, 30 September 2026: the minimum fare has a window, and the cell shows both numbers
+
+Two claims this ADR made about the Two Together price were not quite true, and
+one document had stopped being true with them. All three are corrected here
+rather than left for the next reader to find.
+
+**The `.RCM` record's own window, which was being read past.** Every record in
+the minimum-fare catalogue carries a start date and an end date, and the loader
+kept one price per `(railcard, ticket)` key, so the *last* window in the file won
+whatever day the reader asked about. The 24 September 2026 download holds 639
+keys and 3,355 records, and 613 of those keys carry more than one window, so this
+is the normal case rather than an edge. A floor the catalogue had retired kept
+raising discounted fares as if it were current, which is a price invented out of
+a record that no longer applied.
+
+`MinimumFare` now carries its window, `covers()` is inclusive at both ends, a
+blank start or end is an open end, a re-issued window replaces the record it
+re-issues rather than stacking a second price on it, and
+`minimum_fare(railcard, ticket, day)` only lets a record that covers the query
+day raise a fare. Where a feed ever lists two windows that both cover the day,
+the later start wins, so the record nearest the query is the one applied rather
+than whichever the file happened to write last. The query day is the day the
+page is built for, and it reaches the query through `destinations_within`,
+`railcard_price_for` and the row's own Card details, so a lapsed floor now leaves
+the card's own one-third-off price in place instead of replacing it.
+
+**The cell, so a discounted number never stands alone.** With the card ticked, a
+row's price is built in `priceCell`, which also prints the standard fare the
+discount came from ("£18.40 standard"). With the box clear there is one price
+and no second number, because there is one price. The browser suite ticks the
+card, reads both numbers off the live rows, compares them and clears it again, so
+a cell that lost its second number or kept it when it had none would fail rather
+than ship.
+
+**What was stale.** The product brief, the launch checklist, the glossary and
+the licensing note all said the railcard records were "parsed but not evaluated".
+The code evaluates them: a matching `TOTAL_BAN` removes the discount, a matching
+restriction code supplies the travel condition, and the `.RCM` floor applies
+when its own window covers the day. Those four documents now say that instead,
+and none of them promises anything the parser does not do.

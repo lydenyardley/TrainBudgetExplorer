@@ -730,6 +730,24 @@ compared rather than looked for, to the day, against the build's own `feedDate`;
 and `tests/test_build_demo_page.py` refuses a doubled escape inside any page
 callback, which is the shape that made the check unfalsifiable.
 
+**The figures these ADRs quote, and the command beside each.** A number in a
+decision record that nobody can re-derive is a rumour, so the ones that survive
+into the ADRs came with their command and keep it:
+
+| Figure | Command |
+|---|---|
+| a page split into stylesheet, script and inline payload, the bytes every page repeats, a folder totalled against the 800 MB target | `python tools/page_bytes.py --site _site` |
+| unclassified destinations, the worst origins by share, and the rows the feed cannot name at all | `python destination_coverage.py --feed feeds/fares` |
+| the browser suite over the published routes, with its not-exercised count | `npx --yes --package playwright node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
+| which routes this release actually wrote | `_site/release-manifest.json` |
+| a station's own rows, its three lists and its prices | the payload in the built page, which the suite reads as `DATA` |
+
+Two figures from the September 2026 audit cannot be re-derived, because the
+artefact they were measured from was deleted after measuring: 564 MB for the 944
+pages a full-network build had written when the disk filled, and the 396–861 KB
+range those pages showed. They are in the audit's history and nowhere else, and
+nothing in the current decisions rests on them.
+
 ## The real-data build, end to end
 
 When the licensed feeds land, this is the whole path from download to site. Each

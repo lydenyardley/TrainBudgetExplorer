@@ -1576,7 +1576,7 @@ def build_payload(
             if journey_db and with_journey
             else []
         )
-        # Q2 (audit finding 5): a journey with a change is where a split ticket
+        # Q2 (ADR-0045): a journey with a change is where a split ticket
         # can undercut the through fare, and the station it would change at is
         # one fact the build already holds. The page names it and claims no
         # price: the feed prices flows, not itineraries, so which two tickets
