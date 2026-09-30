@@ -836,7 +836,7 @@ const MODE_LISTS = {
   single: "singleDestinations",
   anytime: "anytimeDestinations",
 };
-// Q4 (finding 6 of the promise-gap audit): the page opens on the cheapest fare
+// Q4 (ADR-0044): the page opens on the cheapest fare
 // of any ticket type, because "where can I get to for this much" is the
 // question the reader arrived with, and a list of one ticket type answers it
 // with a number that is often not the fare they can buy. The three named sets
@@ -1675,11 +1675,10 @@ function fareSummary(destination) {
   return "No fare restriction code is attached to this fare.";
 }
 
-// Q2 (finding 5 of the promise-gap audit): a journey with a change is where a
-// split ticket can undercut the through fare, and the station it would change
-// at is the part a reader can act on. The page states the possibility and no
-// price: the feed prices flows, not itineraries, so which two tickets are
-// cheaper is not in this data.
+// Q2 (ADR-0045): a journey with a change is where a split ticket can undercut
+// the through fare, and the station it would change at is the part a reader can
+// act on. The page states the possibility and no price: the feed prices flows,
+// not itineraries, so which two tickets are cheaper is not in this data.
 function splitNote(destination) {
   const stations = destination.changeStations || [];
   if (!stations.length) return null;

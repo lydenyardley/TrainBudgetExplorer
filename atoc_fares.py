@@ -973,7 +973,7 @@ class MinimumFare:
 
     The DTD catalogue writes a validity window on every record, and a key can
     hold several records for different windows. Reading past the window applied
-    a lapsed minimum as if it were current (audit finding 3), so the window
+    a lapsed minimum as if it were current (ADR-0025, amended), so the window
     travels with the price and only a record that covers the query day can
     raise a fare.
     """
@@ -1082,7 +1082,8 @@ class FaresDb:
         self.flows_touching_nlc: dict[str, list[Flow]] = {}
         # Keyed by (railcard code, ticket code). A key holds a list, because
         # the catalogue writes one record per validity window rather than one
-        # per key: 613 of the real feed's 646 keys carry more than one.
+        # per key: in the 24 September 2026 download 613 of 639 keys carried
+        # more than one window, 3,355 records in all.
         self.minimum_fares: dict[tuple[str, str], list[MinimumFare]] = {}
         self.restrictions = RestrictionIndex()
         self.report = ParseReport()
@@ -1785,9 +1786,9 @@ class FaresDb:
         ("Watford (Watford)", "Neston (Cheshire West and Chester)"), and the
         station side has always dropped its own bracketed qualifier. Keying only
         the full name kept the two sides from meeting, which left priced
-        destinations unclassified for no reason but the bracket (audit
-        recommendation 4). Two settlements of one name whose bands differ are
-        kept and marked unusable: which of them a station serves is not
+        destinations unclassified for no reason but the bracket (ADR-0026).
+        Two settlements of one name whose bands differ are kept and marked
+        unusable: which of them a station serves is not
         knowable from the name, so the station stays unclassified rather than
         being given a class that may belong to the other one.
         """

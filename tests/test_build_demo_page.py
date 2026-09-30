@@ -4444,9 +4444,9 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
         self.assertGreater(payload["railcardEligibleCount"], 0)
 
     def test_a_changed_journey_names_the_station_where_it_changes(self) -> None:
-        # Q2 (finding 5 of the promise-gap audit): a split ticket is the reply
-        # the launch post expects, and the page answers it where the fare's
-        # condition already sits -- naming the interchange, claiming no price.
+        # Q2 (ADR-0045): a split ticket is the reply the launch post expects,
+        # and the page answers it where the fare's condition already sits --
+        # naming the interchange, claiming no price.
         payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
         changed = [row for row in payload["destinations"] if row["changes"] == 1]
         self.assertTrue(changed, "no destination on this page changes")
