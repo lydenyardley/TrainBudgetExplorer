@@ -260,6 +260,58 @@ class FaresParserTest(unittest.TestCase):
         self.assertFalse(db._settlement_matches("CHESTER ROAD", settled))
         self.assertTrue(db._settlement_matches("BATH", settled))
 
+    def test_a_workbook_district_does_not_hide_a_settlement(self) -> None:
+        # The workbook writes "Foxton (South Cambridgeshire)"; the station is
+        # FOXTON, and the two sides have to normalise the same way. On the real
+        # feed this gap alone left 43 priced destinations unclassified.
+        db = FaresDb()
+        bands = FaresDb._key_settlements(
+            [
+                ("Foxton (South Cambridgeshire)", "minor"),
+                ("Neston (Cheshire West and Chester)", "small"),
+            ]
+        )
+        self.assertEqual(bands["FOXTON"]["type"], "village")
+        self.assertEqual(bands["NESTON"]["type"], "small_town")
+        db._read_ons_built_up_areas = lambda data: bands  # type: ignore[method-assign]
+        db.locations_by_crs = {"FXN": Location("1", "FXN", "FOXTON", "")}
+        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
+            db._load_ons_location_types()
+        self.assertEqual(db.destination_type("FXN"), "village")
+
+    def test_two_settlements_of_one_name_are_refused_not_guessed(self) -> None:
+        # Bucknell (Cherwell) and Bucknell (Shropshire) are different places
+        # with the same name; a station called BUCKNELL cannot be told which one
+        # it serves from its name, so it keeps the coverage report rather than
+        # taking a class that may belong to the other.
+        db = FaresDb()
+        same = FaresDb._key_settlements(
+            [("Bucknell (Cherwell)", "minor"), ("Bucknell (Shropshire)", "minor")]
+        )
+        self.assertEqual(same["BUCKNELL"]["type"], "village", "one band is not ambiguous")
+        different = FaresDb._key_settlements(
+            [("Wick (Hackney)", "large"), ("Wick (Highland)", "small")]
+        )
+        self.assertIsNone(different["WICK"]["type"])
+        db._read_ons_built_up_areas = lambda data: different  # type: ignore[method-assign]
+        db.locations_by_crs = {"WCK": Location("1", "WCK", "WICK", "")}
+        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
+            db._load_ons_location_types()
+        self.assertEqual(db.destination_type("WCK"), "other")
+
+    def test_a_station_qualifier_is_not_dropped_to_find_a_class(self) -> None:
+        # Tried and dropped: stripping a trailing qualifier matched London
+        # stations to same-named settlements the workbook holds elsewhere --
+        # Acton Central to Acton, Clapham High Street to Clapham (Arun) -- and
+        # a wrong class on a page is worse than no class at all. The name the
+        # station carries is the name the workbook has to hold; the qualifier
+        # only ever decides which *session* is asked about, never a different
+        # settlement.
+        db = FaresDb()
+        self.assertEqual(db._settlement_name_candidates("WATFORD JUNCTION"), ["WATFORDJUNCTION"])
+        self.assertEqual(db._settlement_name_candidates("CLAPHAM HIGH ST"), ["CLAPHAMHIGHST"])
+        self.assertFalse(db._settlement_matches("WATFORD JUNCTION", {"WATFORD"}))
+
     def test_an_older_cache_cannot_keep_calling_villages_other(self) -> None:
         db = FaresDb()
         db._load_location_types_json(

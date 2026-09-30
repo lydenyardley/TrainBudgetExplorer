@@ -124,8 +124,51 @@ checks, it drops 41,034 rows for having no location record and 39,982 for
 having no station code — 81,016 rows in all, 1,001 of them on ECW's page
 alone. No reviewed list closes this gap, because a flow runs to an NLC the
 feed never locates. `python destination_coverage.py --feed feeds/fares`
-prints the count beside the unsourced stations, beginning "A further
-81,016 destination rows cannot be named at all". The CI gate's
+prints the count beside the unsourced stations. Re-measured on 30 September
+2026 against the same download, the same three reasons sum to **84,544** rows:
+41,034 with no location record, 39,986 with no station code, and 3,524 to a
+fare-construction point with no train behind it. The CI gate's
 `--unsourced-ceiling` holds the classifiable half to its measured floor.
 The unnameable half is a fact about the feed, not a defect in the
 registry.
+
+## Amendment, 30 September 2026: the district the workbook appends, and a rule measured and dropped
+
+The workbook writes a settlement with its district in brackets where the name
+needs one -- "Watford (Watford)", "Neston (Cheshire West and Chester)",
+"Blackburn (Blackburn with Darwen)" -- and the station side of the match has
+always dropped its own bracketed qualifier ("Ascot (Berks)"). The two sides were
+normalised differently, so a station whose settlement the workbook names was
+left unclassified for no reason but the bracket. Keying the workbook name
+without its district closed it: 43 stations the feed prices gained the
+workbook's own class, 42 of them as priced destinations, and the coverage
+report's count fell from **1,575 to 1,533** on the 24 September 2026 download
+(`python destination_coverage.py --feed feeds/fares`). That measured floor is
+what the CI ceiling now holds.
+
+Where one name the workbook holds twice collapses onto the same key with
+different bands -- Wick appears three times, in Arun, South Gloucestershire and
+the Vale of Glamorgan -- the station keeps the report's attention rather than a
+class that may belong to the other settlement. One cost is accepted knowingly:
+"Newquay" and "New Quay" normalise to one key, so Newquay (Cornwall) is refused
+beside the Ceredigion village of the same name rather than guessed.
+
+A wider version of the same idea was measured and dropped. Dropping a trailing
+qualifier from the *station's* name -- Acton Central, Clapham High Street,
+Watford Junction -- reached 28 more of the 1,575, but it also matched London
+stations to same-named settlements the workbook holds elsewhere: Acton Central
+to Acton, Clapham High Street to Clapham (Arun). This ADR's own warning about
+prefix matching applies to that rule too, and a wrong class is a claim about a
+place, so the rule was not kept. The qualifier families stay with the reviewed
+list.
+
+What is left of the 1,533 is not one gap. Measured the same day, the worst
+origins are bus links and underground sites whose destinations are outside the
+workbook's nations -- PEE Portree Bus and UIG Uig Bus price 44 Highland
+stations each, and MYB prices ten Underground and Overground stations -- and the
+largest family is Greater London and the conurbations, which the workbook
+excludes by design because it cannot separate settlements inside them. Scotland
+and Northern Ireland need a settlement source of their own, the Rural Urban
+Classification the decision above names, before those classes can be sourced
+rather than reviewed. Nothing in this amendment closes that gap; the reviewed
+lists and the ceiling are what keep it visible until a source lands.

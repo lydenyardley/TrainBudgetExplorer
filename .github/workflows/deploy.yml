@@ -183,7 +183,9 @@ jobs:
       # when a reviewed settlement class lands (update it in the same commit);
       # raising it needs a reason in that commit.
       - name: Gate the unsourced-destination count
-        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1575
+        # 1,533 measured on 30 September 2026, after the workbook's own
+        # district stopped hiding the settlement its name carries (ADR-0026).
+        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1533
 
       - name: Restore the timetable index
         # The timetable parse is the expensive part of this build, and it is
