@@ -62,7 +62,9 @@ Things the post must do:
 - [ ] Disclose any affiliate link in the post itself. A community that discovers it
       undeclared is a community lost, and that is the whole audience
 - [ ] Meet the predictable "split ticketing is cheaper" reply by agreeing with it,
-      because it is true, and naming it as a known limitation rather than arguing
+      because it is true: every row whose journey changes names the station it
+      changes at and says a two-ticket split may cost less, while the page prices
+      the through fare only
 
 ## 4. The review, 21 October 2026
 

@@ -2117,6 +2117,80 @@ async function runPage(browser, index, given, file, body, base) {
     // handed back at the budget the rest of this block is written against.
     await open(facts.affordable);
 
+    // Q2 (finding 5): a journey with a change names the station a split ticket
+    // would change at, in the same panel as the condition, and prices neither
+    // half. Read from this page's own payload first, so a page with no changed
+    // row reports that rather than asserting a sentence it cannot show.
+    //
+    // The row is found in a list the page can actually render: the section
+    // above opened the page on its cheapest fare in one mode, and the changed
+    // row is not necessarily in that list -- on the Lincoln fixture it sits in
+    // the returns while the page opens on the Anytime set. Each named list is
+    // tried in turn, at that list's own ceiling, and the page and its panels
+    // are put back the way they were found.
+    const split = await page.evaluate(() => {
+      const budgetBefore = budget.value;
+      const modeBefore = document.querySelector('input[name="ticketMode"]:checked').value;
+      const lists = { return: "destinations", single: "singleDestinations", anytime: "anytimeDestinations" };
+      const restore = () => {
+        const back = document.querySelector(`input[name="ticketMode"][value="${modeBefore}"]`);
+        if (back) back.checked = true;
+        setBudget(Number(budgetBefore));
+        currentPage = 1;
+        render();
+      };
+      // The note is read out of the opened panel and the panel is closed again:
+      // a row left open would make the next check count one toggle fewer than
+      // it has rows.
+      const noteFor = (destination) => {
+        const line = document.querySelector(`#rows tr[data-crs="${destination.crs}"]`);
+        if (!line) return null;
+        const toggle = line.querySelector(".toggle[aria-expanded='false']");
+        if (!toggle) return null;
+        toggle.click();
+        const detail = line.nextElementSibling;
+        const note = detail && detail.classList.contains("detail")
+          ? detail.querySelector(".split") : null;
+        toggle.click();
+        return note ? note.textContent : "";
+      };
+      for (const mode of [modeBefore, "return", "single", "anytime"]) {
+        const list = DATA[lists[mode]];
+        const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
+        if (!list || !input) continue;
+        input.checked = true;
+        setBudget(budgetCeiling());
+        currentPage = 1;
+        render();
+        const changed = list.find((d) => (d.changeStations || []).length);
+        if (!changed) continue;
+        const direct = list.find((d) => !(d.changeStations || []).length);
+        const read = {
+          mode,
+          changed: { crs: changed.crs, name: changed.changeStations[0].name, note: noteFor(changed) },
+          direct: direct ? { crs: direct.crs, note: noteFor(direct) } : null,
+        };
+        restore();
+        return read;
+      }
+      restore();
+      return null;
+    });
+    check(
+      "a changed journey names the station a split ticket would change at",
+      split && split.changed
+        ? Boolean(split.changed.note) && split.changed.note.includes(split.changed.name) && /split ticket/.test(split.changed.note)
+        : notExercised("no destination on this page changes"),
+      JSON.stringify(split && split.changed || null)
+    );
+    check(
+      "and a direct journey claims no split to make",
+      split && split.changed && split.direct
+        ? split.direct.note === ""
+        : notExercised("no changed row, or no direct row in the same list"),
+      JSON.stringify(split && split.direct || null)
+    );
+
     // S19, with the finding of 29 September 2026 on top: the condition is
     // still a sentence rather than a bare code, and the feed's own vocabulary
     // is still folded away -- but on the real page that same sentence stood in
