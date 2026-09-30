@@ -2012,8 +2012,13 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn("goes here before the site is published", html)
 
     def test_the_chooser_budget_is_carried_into_station_links(self) -> None:
+        # Two stations, because a root that offers a choice is the chooser. A
+        # root that offers one station is the release root, driven below.
         chooser = render_chooser(
-            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            [
+                {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1},
+                {"crs": "GRN", "name": "GRANTHAM", "slug": "grantham", "destinations": 3},
+            ],
             budget_pounds=20,
         )
         # The budget is the heading's own inline field, the same one a
@@ -2027,6 +2032,62 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="originSearch"', chooser)
         self.assertIn('placeholder="station"', chooser)
         self.assertNotIn("Rail Budget", chooser)
+
+    def test_a_one_station_release_names_the_station_instead_of_asking(self) -> None:
+        # Recommendation 2: the published artefact offered one station and asked
+        # the reader to type it, so every check that narrowed a list of one had
+        # to be reported as not exercised. A field that can only ever confirm a
+        # single answer is a control that lies, so the shape states the choice
+        # the build has already made. The station's name is escaped on the way
+        # into the heading, like every other string the build writes.
+        chooser = render_chooser(
+            [{"crs": "NOT", "name": "CARK & CARTMEL", "slug": "cark", "destinations": 5}],
+            budget_pounds=20,
+        )
+        self.assertNotIn('id="originSearch"', chooser)
+        self.assertNotIn('class="origin-slot"', chooser)
+        self.assertIn('<span class="origin-name">CARK &amp; CARTMEL</span>', chooser)
+        self.assertIn("built for one station", chooser)
+        # Nothing is ordered over one row, so the page makes no ranking claim.
+        self.assertNotIn('id="orderingNote"', chooser)
+        self.assertNotIn("Ordered by how many destinations", chooser)
+        # The tab title names the station, and the script keeps it named as the
+        # budget changes rather than falling back to asking where to leave from.
+        self.assertIn("&middot; CARK &amp; CARTMEL</title>", chooser)
+        self.assertIn('const TITLE_SUFFIX = "CARK & CARTMEL";', chooser)
+        self.assertIn('"name":"CARK & CARTMEL"', chooser)
+        # The one row is still the release: the page to open, with its count.
+        self.assertIn("/from/cark/", chooser)
+        self.assertIn('"destinations":5', chooser.replace(" ", ""))
+        # A chooser's field is optional now, so the script cannot assume it.
+        self.assertIn('if (pick) pick.addEventListener("input", render);', chooser)
+        self.assertIn('const needle = pick ? pick.value.trim().toLowerCase() : "";', chooser)
+        self.assertIn("if (pick) pick.focus();", chooser)
+        # The list is the whole page's answer, so it is still built and counted.
+        self.assertIn('const TITLE_SUFFIX', chooser)
+        self.assertIn('status.textContent = wanted.length + " station"', chooser)
+
+    def test_the_chooser_stylesheet_does_not_change_with_the_station_count(self) -> None:
+        # The two shapes differ in one place: the heading's station clause, which
+        # a one-station release fills with the station's name. That substitution
+        # runs over the whole page, so a placeholder named anywhere else -- in a
+        # CSS comment, say -- is filled in too, and one route's stylesheet starts
+        # depending on what the page happens to list.
+        def stylesheet(page: str) -> str:
+            return page.split("<style>", 1)[1].split("</style>", 1)[0]
+
+        one = render_chooser(
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            budget_pounds=20,
+        )
+        many = render_chooser(
+            [
+                {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1},
+                {"crs": "GRN", "name": "GRANTHAM", "slug": "grantham", "destinations": 3},
+            ],
+            budget_pounds=20,
+        )
+        self.assertEqual(stylesheet(one), stylesheet(many))
 
     def test_the_chooser_explains_a_truncated_match_list(self) -> None:
         chooser = render_chooser([], budget_pounds=20)
@@ -3752,7 +3813,9 @@ class RouteManifestTest(unittest.TestCase):
     The re-envision audit names the route contract as the weakest subsystem: a
     single-origin build used to publish a station page at the root whose Change
     picker linked to every station in the feed, none of which it had written.
-    A release now writes a chooser at the root, one page per station at its
+    A release now writes a root at the site root -- the chooser when it offers a
+    choice, and the one station named in the heading when that is all it priced
+    (recommendation 2, 30 September 2026) -- one page per station at its
     canonical /from/<slug>/ route, and the privacy page, and proves every
     internal link resolves before calling the build good.
     """
@@ -3765,17 +3828,20 @@ class RouteManifestTest(unittest.TestCase):
             code = build_demo_page.main(["--feed", str(feed), "--out", str(out), *extra])
         return code, buffer.getvalue()
 
-    def test_a_single_origin_build_is_a_site_with_the_chooser_at_the_root(self) -> None:
+    def test_a_single_origin_build_is_a_site_with_its_own_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             code, log = self.build_site(root)
             self.assertEqual(code, 0)
             site = root / "site"
-            # The root is the chooser, the one station has its canonical route,
-            # and the privacy page the footer links to is present (S01, S04).
+            # The root is this release's own: it names the one station it priced
+            # rather than asking for it, the station has its canonical route, and
+            # the privacy page the footer links to is present (S01, S04, rec 2).
             chooser = (site / "index.html").read_text(encoding="utf-8")
             self.assertIn("const STATIONS", chooser)
-            self.assertNotIn("const DATA", chooser)  # the chooser carries no fares
+            self.assertNotIn("const DATA", chooser)  # the root carries no fares
+            self.assertNotIn('id="originSearch"', chooser)
+            self.assertIn('class="origin-name"', chooser)
             station = station_page(site / "index.html")
             self.assertTrue(station.is_file())
             self.assertIn("const DATA", station.read_text(encoding="utf-8"))
@@ -3873,11 +3939,13 @@ class RouteManifestTest(unittest.TestCase):
         # The root page is the departure picker, so the one control it exists
         # for has to filter the list. It had no listener at all, so typing a
         # name left every station on screen and the list read as a result.
+        # Built with --all-origins, because a one-station release has no search
+        # to wire: its root names the station instead of asking for it (rec 2).
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.build_site(root)
+            self.build_site(root, "--all-origins")
             chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
-            self.assertIn('pick.addEventListener("input", render)', chooser)
+            self.assertIn('if (pick) pick.addEventListener("input", render)', chooser)
 
     def test_the_chooser_links_to_the_privacy_page(self) -> None:
         # The root page is where a reader starts, so the thing that says what

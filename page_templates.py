@@ -2468,16 +2468,20 @@ _CHOOSER_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 __SHARED_THEME__
-<title>Train fares up to &pound;__BUDGET__ &middot; pick your station</title>
+<title>Train fares up to &pound;__BUDGET__ &middot; __TITLE_SUFFIX_HTML__</title>
 <style>
 __SHARED_CSS__
-  /* The same heading over the same sentence as a station page. The only thing
-     this route lacks is the station, so its slot is a field to type one into
-     rather than a name to click, and it is the same slot in the same place --
-     which is what makes the two pages read as one product.
+  /* The same heading over the same sentence as a station page. When this route
+     offers a choice, its slot is a field to type a station into; when the
+     release priced exactly one station there is no choice to make, so the
+     heading names that station instead, and the origin clause carries whichever
+     of the two it is (recommendation 2, 30 September 2026). It is the same
+     slot in the same place either way, which is what makes the pages read as
+     one product.
      Nothing else here is a control, so this route has no filter bar: the two
      things a reader can change are the two gaps in the heading, and the list
-     below answers them. */
+     below answers them. A one-station release has one gap, because the second
+     already has an answer. */
   /* No width of its own either: see the token in the shared block. */
   h1 { margin: 0 0 .7rem; }
   .sub { margin: 0 0 .3rem; }
@@ -2488,7 +2492,11 @@ __SHARED_CSS__
      cells are a fixed measure rather than a share of the width, so one
      station does not stretch to fill the page and a full-network build reads
      as columns of names rather than a very long list. */
-  #picks { list-style: none; margin: 0; padding: 0;
+  /* The space above the list belongs to the list, not to the note that used to
+     sit there: a one-station release carries no ordering note, and the list
+     then sat 5px under its sentence (finding, 30 September 2026). Adjacent
+     margins collapse, so the chooser's spacing is unchanged. */
+  #picks { list-style: none; margin: 1.6rem 0 0; padding: 0;
            display: grid; grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
            gap: 0 1.5rem; }
   #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .55rem .4rem;
@@ -2505,9 +2513,9 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br><span id="originClause"> from <span class="origin-slot" id="originField"><input id="originSearch" type="search" placeholder="station" autocomplete="off" aria-label="The station you are starting from" aria-describedby="pickStatus" aria-controls="picks"></span></span></h1>
-<p class="sub">Type the station you are leaving from, then pick it from the list.</p>
-<p class="sub" id="orderingNote">Ordered by how many destinations this download prices from each station &mdash; not by how busy it is, and not by how near it is.</p>
+<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>__ORIGIN_CLAUSE__</h1>
+__CHOOSER_INTRO__
+__ORDERING_NOTE__
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
 <p id="capMessage" hidden></p>
@@ -2518,6 +2526,9 @@ __THEME_TOGGLE__
 <script>
 __LIST_KEYS__
 const STATIONS = __STATIONS__;
+// What the tab and every retitle say after the budget. A release that
+// priced one station names it; a chooser says what it is for.
+const TITLE_SUFFIX = __TITLE_SUFFIX_JS__;
 const picks = document.getElementById("picks");
 const nomatch = document.getElementById("nomatch");
 const status = document.getElementById("pickStatus");
@@ -2544,7 +2555,7 @@ function resolvedBudget() {
 }
 function syncChooserBudget() {
   const value = resolvedBudget();
-  document.title = "Train fares up to £" + value + " · pick your station";
+  document.title = "Train fares up to £" + value + " · " + TITLE_SUFFIX;
   return value;
 }
 
@@ -2562,7 +2573,9 @@ function render() {
     status.textContent = "0 stations listed";
     return;
   }
-  const needle = pick.value.trim().toLowerCase();
+  // A one-station release has no field, so there is nothing to filter by
+  // and the whole list is what it offers.
+  const needle = pick ? pick.value.trim().toLowerCase() : "";
   const wanted = STATIONS.filter((station) => matches(station, needle));
   picks.replaceChildren();
   for (const station of wanted.slice(0, CHOOSER_LIMIT)) {
@@ -2615,7 +2628,7 @@ if (budgetNumber) {
 // The field the whole page exists for, and the one a reader arrives at. It is
 // focused rather than merely present: the caret in the heading is what says the
 // page is waiting for a station, without a label above it saying so.
-pick.addEventListener("input", render);
+if (pick) pick.addEventListener("input", render);
 // The budget slot has been clickable across its whole width since it was
 // written, and the station slot is the other half of the same sentence: both
 // are a gap in the heading that the reader fills in. Clicking the slot -- not
@@ -2633,7 +2646,7 @@ if (originField) {
 wireListKeys(pick, picks);
 syncChooserBudget();
 render();
-pick.focus();
+if (pick) pick.focus();
 </script>
 __ANALYTICS__
 </body>

@@ -2525,9 +2525,16 @@ def render_chooser(
 ) -> str:
     """The root page: the station chooser itself, with no fares on it.
 
-    ``index`` is the priced station index -- the chooser offers exactly the
+    ``index`` is the priced station index -- the root offers exactly the
     stations whose pages this build wrote, and nothing else, so a root that
     names a station always has a page behind it (S01).
+
+    A release that priced exactly one station is not a chooser: there is no
+    choice to make, and the published artefact used to ask the reader to type
+    a station that could only ever be the one it already knew. So it states
+    the choice in its shape as well as its sentence -- the heading names that
+    station, the field and the ordering note are absent, and the one row is
+    the page to open (audit recommendation 2, 30 September 2026).
 
     ``note`` is the same provenance note the station pages carry, so a real-feed
     site does not have a chooser claiming synthetic data above pages that name
@@ -2541,8 +2548,44 @@ def render_chooser(
         ensure_ascii=False,
         separators=(",", ":"),
     ).replace("</", "<\\/")
+    if len(index) == 1:
+        only = index[0]
+        origin_clause = (
+            '<span id="originClause"> from <span class="origin-name">'
+            f'{html.escape(only["name"])}</span></span>'
+        )
+        intro = (
+            '<p class="sub">This site was built for one station: open it below for '
+            "every destination your budget reaches from there.</p>"
+        )
+        # Nothing is ordered, so the page makes no ranking claim: an ordering
+        # note over one row describes a choice the reader does not have.
+        ordering = ""
+        title_suffix = only["name"]
+    else:
+        origin_clause = (
+            '<span id="originClause"> from <span class="origin-slot" id="originField">'
+            '<input id="originSearch" type="search" placeholder="station" autocomplete="off" '
+            'aria-label="The station you are starting from" aria-describedby="pickStatus" '
+            'aria-controls="picks"></span></span>'
+        )
+        intro = (
+            '<p class="sub">Type the station you are leaving from, then pick it '
+            "from the list.</p>"
+        )
+        ordering = (
+            '<p class="sub" id="orderingNote">Ordered by how many destinations this '
+            "download prices from each station &mdash; not by how busy it is, and not by "
+            "how near it is.</p>"
+        )
+        title_suffix = "pick your station"
     return (
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
+        .replace("__ORIGIN_CLAUSE__", origin_clause)
+        .replace("__CHOOSER_INTRO__", intro)
+        .replace("__ORDERING_NOTE__", ordering)
+        .replace("__TITLE_SUFFIX_HTML__", html.escape(title_suffix))
+        .replace("__TITLE_SUFFIX_JS__", json.dumps(title_suffix, ensure_ascii=False))
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", note)
         .replace("__BASE__", base_path.rstrip("/"))
