@@ -170,6 +170,7 @@ LOCATION_BAND_TYPES = {
     "minor": "village",
 }
 
+
 # Some stations the workbook cannot name are nevertheless an obvious
 # settlement, and the page's "No settlement band" answer was poor UX for
 # them. This reviewed list is the floor that removes that answer from the
@@ -1756,7 +1757,7 @@ class FaresDb:
                     if item.tag.endswith("}si")
                 ]
 
-            bands: dict[str, dict[str, str]] = {}
+            found: list[tuple[str, str]] = []
             for name in archive.namelist():
                 if not re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name):
                     continue
@@ -1773,14 +1774,38 @@ class FaresDb:
                     band = values.get("G", "").strip().lower()
                     settlement = values.get("F", "").strip()
                     if settlement and band in LOCATION_BAND_TYPES:
-                        bands[self._normalise_settlement_name(settlement)] = {
-                            "name": settlement,
-                            "type": LOCATION_BAND_TYPES[band],
-                            "band": band,
-                        }
-            if not bands:
-                raise ValueError("ONS workbook contains no built-up-area size bands")
-            return bands
+                        found.append((settlement, band))
+            return self._key_settlements(found)
+
+    @classmethod
+    def _key_settlements(cls, rows) -> dict[str, dict[str, str]]:
+        """Index workbook settlements by the name a station would carry.
+
+        The workbook writes a settlement with its district in brackets
+        ("Watford (Watford)", "Neston (Cheshire West and Chester)"), and the
+        station side has always dropped its own bracketed qualifier. Keying only
+        the full name kept the two sides from meeting, which left priced
+        destinations unclassified for no reason but the bracket (audit
+        recommendation 4). Two settlements of one name whose bands differ are
+        kept and marked unusable: which of them a station serves is not
+        knowable from the name, so the station stays unclassified rather than
+        being given a class that may belong to the other one.
+        """
+        bands: dict[str, dict[str, str]] = {}
+        for settlement, band in rows:
+            for key in cls._settlement_name_candidates(settlement):
+                existing = bands.get(key)
+                if existing is None:
+                    bands[key] = {
+                        "name": settlement,
+                        "type": LOCATION_BAND_TYPES[band],
+                        "band": band,
+                    }
+                elif existing["band"] != band:
+                    bands[key] = {"name": settlement, "type": None, "band": ""}
+        if not bands:
+            raise ValueError("ONS workbook contains no built-up-area size bands")
+        return bands
 
     def _load_ons_location_types(self) -> None:
         request = urllib.request.Request(
@@ -1795,7 +1820,10 @@ class FaresDb:
                 continue
             for candidate in self._settlement_name_candidates(location.name):
                 area = areas.get(candidate)
-                if area:
+                # A refused key carries no class: the workbook holds two
+                # settlements of this name with different bands, so the station
+                # keeps the report's attention instead of a guessed class.
+                if area and area["type"]:
                     self.location_types_by_crs[crs] = area["type"]
                     # Which stations the workbook names, kept because it is the
                     # only way to tell a reviewed *fallback* from a reviewed
