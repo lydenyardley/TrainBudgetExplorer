@@ -2078,6 +2078,106 @@ def first_use_sentence(payload: dict) -> str:
     )
 
 
+# The payload's row lists, and the shape they ship in. Every row in a list
+# carries the same field names, so sending them once per page instead of once per
+# row costs nothing to read and a third of the payload to send: on the Grantham
+# page the names were 67 KB of a 200 KB payload, and the station picker's three
+# names were 11 KB of every 168 KB it added to every page (measured 30 September
+# 2026 by tools/page_bytes.py).
+ROW_LISTS = ("destinations", "singleDestinations", "anytimeDestinations", "stations")
+
+
+POOL_MIN_BYTES = 12
+
+
+def _pool_key(value: object) -> str:
+    """A value's identity, so two equal railcard records share one entry."""
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _value_pool(tables: dict[str, list[dict]]) -> dict[str, int]:
+    """The values that repeat inside the row lists, and their pool positions.
+
+    Counting before choosing is what keeps this from being a hoist per field: a
+    value earns an entry when it appears more than once and is long enough that a
+    reference to it is cheaper than the value. On the Grantham page that is one
+    link object on all 190 rows, one railcard record per rule rather than per row,
+    and the arrays of destination types.
+
+    The length floor is what stops a pool costing more than it saves: pooling
+    false, which is five bytes, would spend five bytes on a reference to save five.
+    """
+    counts: dict[str, int] = {}
+    for items in tables.values():
+        for row in items:
+            for value in row.values():
+                if isinstance(value, (dict, list)) or (
+                    isinstance(value, str) and len(value) >= POOL_MIN_BYTES
+                ):
+                    key = _pool_key(value)
+                    counts[key] = counts.get(key, 0) + 1
+    pool: dict[str, int] = {}
+    for items in tables.values():
+        for row in items:
+            for value in row.values():
+                key = _pool_key(value)
+                if counts.get(key, 0) > 1 and key not in pool:
+                    pool[key] = len(pool)
+    return pool
+
+
+def encode_payload(payload: dict) -> dict:
+    """The payload in the form a page ships: a column list and a row table per list.
+
+    Each row list keeps its own columns. The lists carry different fields, and one
+    shared column set would pad the picker's three fields out to a destination
+    row's twenty, which is a loss disguised as a saving.
+    ``page_templates`` hydrates the tables back into objects as the page loads, so values that repeat
+    inside a list are sent once in the page-level pool and referred to by index,
+    and
+    the rest of the script reads rows exactly as it did before the wire form
+    changed.
+    """
+    tables = {
+        key: payload[key]
+        for key in ROW_LISTS
+        if isinstance(payload.get(key), list) and payload[key]
+    }
+    if not tables:
+        return payload
+
+    pool = _value_pool(tables)
+    values: list[object] = [None] * len(pool)
+    for items in tables.values():
+        for row in items:
+            for value in row.values():
+                position = pool.get(_pool_key(value))
+                if position is not None:
+                    values[position] = value
+
+    encoded = dict(payload)
+    for key, items in tables.items():
+        columns: list[str] = []
+        for row in items:
+            for field in row:
+                if field not in columns:
+                    columns.append(field)
+
+        def cell(value: object) -> object:
+            # A pool reference is a negative index, so it cannot be confused with
+            # a real cell: -1 is the pool's first entry, and null stays null.
+            position = pool.get(_pool_key(value)) if value is not None else None
+            return -(position + 1) if position is not None else value
+
+        encoded[key] = {
+            "columns": columns,
+            "rows": [[cell(row.get(field)) for field in columns] for row in items],
+        }
+    if values:
+        encoded["pool"] = values
+    return encoded
+
+
 def render_page(
     payload: dict,
     *,
@@ -2095,7 +2195,7 @@ def render_page(
     prices += [row["adultPence"] for row in payload.get("singleDestinations", [])]
     prices += [row["adultPence"] for row in payload.get("anytimeDestinations", [])]
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
-    embedded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    embedded = json.dumps(encode_payload(payload), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     initial_budget = max(1, min(int(budget_pounds), ceiling))
     # A facet chip is only offered when this page has a destination carrying
     # it. The taxonomy is shared, so a facet with no matches here is a filter

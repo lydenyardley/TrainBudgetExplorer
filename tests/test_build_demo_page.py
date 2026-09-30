@@ -26,6 +26,7 @@ from build_demo_page import (
     wants_nre_credit,
     build_payload,
     build_station_index,
+    encode_payload,
     explain_unpriced,
     render_chooser,
     render_page,
@@ -38,11 +39,39 @@ from parse_report import ParseReport
 from retailer import DISCLOSURE
 
 
+def hydrate_rows(payload: dict) -> dict:
+    """The payload as the page reads it: each row table turned back into objects.
+
+    The build ships a row list as a column list and a table of cells, and the page
+    hydrates them as it loads, so a test that read the wire text directly would be
+    asserting a shape no reader of the page ever sees.
+    """
+    for key in ("destinations", "singleDestinations", "anytimeDestinations", "stations"):
+        table = payload.get(key)
+        if isinstance(table, dict) and isinstance(table.get("rows"), list):
+            pool = payload.get("pool") or []
+            payload[key] = [
+                {
+                    field: pool[-cell - 1] if isinstance(cell, int) and cell < 0 else cell
+                    for field, cell in zip(table["columns"], cells)
+                }
+                for cells in table["rows"]
+            ]
+    payload.pop("pool", None)
+    return payload
+
+
+def embedded_text(html: str) -> str:
+    """The payload exactly as the page's own script receives it."""
+    start = html.index("const DATA = ") + len("const DATA = ")
+    return html[start : html.index(";", start)]
+
+
 def embedded_payload(html: str) -> dict:
     match = re.search(r"const DATA = (\{.*?\});\n", html, re.DOTALL)
     if match is None:
         raise AssertionError("the page carries no embedded payload")
-    return json.loads(match.group(1))
+    return hydrate_rows(json.loads(match.group(1)))
 
 
 def serialised_callback_lines(source: str) -> list[str]:
@@ -2116,7 +2145,7 @@ class DemoPageTest(unittest.TestCase):
     def test_a_script_tag_in_the_data_cannot_close_the_script_early(self) -> None:
         payload = dict(self.payload, note="a note with </script> in it")
         html = render_page(payload, budget_pounds=20)
-        payload_region = html.split("const DATA = ")[1].split(";\nconst rows")[0]
+        payload_region = html.split("const DATA = ")[1].split(";\n")[0]
         self.assertNotIn("</script>", payload_region)
         self.assertEqual(embedded_payload(html)["note"], "a note with </script> in it")
 
@@ -4131,6 +4160,102 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
             any(state != "found" for state in states),
             f"every destination has a journey: {states}",
         )
+
+
+class EncodedPayloadTest(unittest.TestCase):
+    """The wire form of the payload: field names once per page, not once per row."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        fares = FaresDb().load_feed(
+            build_synthetic_feed(
+                Path(cls._tmp.name) / "fares",
+                include_unserved_station=True,
+                include_restrictions=True,
+            )
+        )
+        timetable = TimetableDb().load_feed(build_synthetic_timetable(Path(cls._tmp.name) / "timetable"))
+        cls.page = render_page(build_payload(fares, timetable, "GRN"), budget_pounds=20)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    payload = {
+        "origin": {"crs": "GRN", "name": "GRANTHAM"},
+        "note": "a note",
+        "attribution": [{"url": "https://example.invalid", "label": "Example"}],
+        "destinations": [
+            {"crs": "NOT", "name": "NOTTINGHAM", "adultPence": 1200, "partyPence": 2400,
+             "link": {"url": "https://example.invalid/search", "rel": "noopener"}},
+            {"crs": "SLP", "name": "SLEAFORD", "adultPence": 800, "partyPence": 1600,
+             "link": {"url": "https://example.invalid/search", "rel": "noopener"}},
+        ],
+        "singleDestinations": [{"crs": "NOT", "name": "NOTTINGHAM", "adultPence": 700}],
+        "stations": [{"name": "LINCOLN", "crs": "LCN", "href": "/from/lincoln/"}],
+    }
+
+    def test_every_row_reads_back_as_it_was_written(self) -> None:
+        decoded = hydrate_rows(encode_payload(self.payload))
+        for key in ("destinations", "singleDestinations", "stations"):
+            self.assertEqual(decoded[key], self.payload[key])
+
+    def test_a_field_name_is_sent_once_for_the_whole_list(self) -> None:
+        encoded = json.dumps(encode_payload(self.payload), separators=(",", ":"))
+        self.assertEqual(encoded.count('"partyPence"'), 1)
+
+    def test_the_lists_keep_their_own_columns(self) -> None:
+        encoded = encode_payload(self.payload)
+        self.assertEqual(encoded["stations"]["columns"], ["name", "crs", "href"])
+        self.assertNotIn("partyPence", encoded["stations"]["columns"])
+
+    def test_a_list_that_is_not_a_row_list_is_left_alone(self) -> None:
+        encoded = encode_payload(self.payload)
+        self.assertEqual(encoded["attribution"], self.payload["attribution"])
+
+    def test_a_payload_with_no_rows_is_returned_untouched(self) -> None:
+        payload = {"origin": {"crs": "GRN"}, "destinations": []}
+        self.assertIs(encode_payload(payload), payload)
+
+    def test_the_payload_it_was_given_is_not_modified(self) -> None:
+        before = json.loads(json.dumps(self.payload))
+        encode_payload(self.payload)
+        self.assertEqual(self.payload, before)
+
+
+    def test_a_value_that_repeats_is_sent_once_for_the_whole_page(self) -> None:
+        encoded = encode_payload(self.payload)
+        self.assertEqual(len(encoded["pool"]), 1)
+        self.assertEqual(encoded["pool"][0]["url"], "https://example.invalid/search")
+        link = encoded["destinations"]["columns"].index("link")
+        self.assertEqual(encoded["destinations"]["rows"][0][link], -1)
+
+    def test_a_value_used_once_is_left_where_it_is(self) -> None:
+        encoded = json.dumps(encode_payload(self.payload), separators=(",", ":"))
+        self.assertEqual(encoded.count("NOTTINGHAM"), 2)
+        self.assertEqual(encoded.count("https://example.invalid/search"), 1)
+
+    def test_a_payload_with_nothing_repeated_carries_no_pool(self) -> None:
+        payload = {"destinations": [{"crs": "NOT", "adultPence": 1}, {"crs": "SLP", "adultPence": 2}]}
+        self.assertNotIn("pool", encode_payload(payload))
+
+    def test_a_null_cell_is_still_null(self) -> None:
+        payload = {"destinations": [{"crs": "NOT", "minutes": None}, {"crs": "SLP", "minutes": None}]}
+        encoded = encode_payload(payload)
+        self.assertEqual(encoded["destinations"]["rows"], [["NOT", None], ["SLP", None]])
+
+    def test_the_pool_reads_back_by_hand_as_well_as_through_the_page(self) -> None:
+        encoded = encode_payload(self.payload)
+        self.assertEqual(hydrate_rows(encoded)["destinations"], self.payload["destinations"])
+
+    def test_a_rendered_page_carries_the_tables_and_the_hydrator(self) -> None:
+        self.assertIn('"columns":', embedded_text(self.page))
+        self.assertNotIn('"partyPence":', embedded_text(self.page))
+        self.assertIn("function hydrate(table)", self.page)
+
+    def test_a_rendered_page_reads_back_as_the_payload_it_was_built_from(self) -> None:
+        self.assertTrue(embedded_payload(self.page)["destinations"])
 
 
 if __name__ == "__main__":
