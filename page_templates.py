@@ -715,6 +715,27 @@ __THEME_TOGGLE__
 <script>
 __LIST_KEYS__
 const DATA = __DATA__;
+// Each row list arrives as a column list and a table of cells, because every row
+// in a list carried the same field names and the page was sending them once per
+// row. Hydrating here keeps the rest of this script reading rows as objects, and
+// it is also what makes an older payload -- a plain list -- still render.
+function hydrate(table) {
+  if (!table || !Array.isArray(table.rows)) return table || [];
+  const pool = DATA.pool || [];
+  return table.rows.map((cells) => {
+    const row = {};
+    for (let i = 0; i < table.columns.length; i += 1) {
+      const cell = cells[i];
+      // A negative cell is an index into the page's pool of values that repeat,
+      // so the rows that share a link or a railcard record share one object.
+      row[table.columns[i]] = typeof cell === "number" && cell < 0 ? pool[-cell - 1] : cell;
+    }
+    return row;
+  });
+}
+for (const key of ["destinations", "singleDestinations", "anytimeDestinations", "stations"]) {
+  DATA[key] = hydrate(DATA[key]);
+}
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
 const budgetField = document.getElementById("budgetField");
