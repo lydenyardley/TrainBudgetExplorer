@@ -224,6 +224,17 @@ class DemoPageTest(unittest.TestCase):
         # address does rather than a second, drifting copy of it.
         self.assertIn('link.href = station.href + "?" + stateQuery();', self.html)
 
+    def test_the_page_states_where_a_split_ticket_would_split(self) -> None:
+        # The other half of Q2: the sentence that states the possibility, in
+        # the panel where the fare's condition already sits, and no price for
+        # either half. The browser suite drives the live row.
+        self.assertIn("function splitNote(destination)", self.html)
+        self.assertIn("destination.changeStations || []", self.html)
+        self.assertIn('note.className = "split"', self.html)
+        self.assertIn("one ticket to that station and another from it", self.html)
+        self.assertIn("can sometimes cost less than this through fare", self.html)
+        self.assertIn("this page prices the through fare only", self.html)
+
     def test_payload_records_the_source_fingerprint_used_to_build_the_page(self) -> None:
         self.assertRegex(self.payload["sourceFingerprint"], r"^[0-9a-f]{16}$")
         self.assertIn("sourceFingerprint", self.html)
@@ -4336,6 +4347,17 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
         self.assertTrue(any(p > 1200 for p in prices), "nothing is above the £12.00 minimum")
         self.assertTrue(any(p < 1200 for p in prices), "nothing is below the £12.00 minimum")
         self.assertGreater(payload["railcardEligibleCount"], 0)
+
+    def test_a_changed_journey_names_the_station_where_it_changes(self) -> None:
+        # Q2 (finding 5 of the promise-gap audit): a split ticket is the reply
+        # the launch post expects, and the page answers it where the fare's
+        # condition already sits -- naming the interchange, claiming no price.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
+        changed = [row for row in payload["destinations"] if row["changes"] == 1]
+        self.assertTrue(changed, "no destination on this page changes")
+        self.assertEqual(changed[0]["changeStations"], [{"crs": "NOT", "name": "NOTTINGHAM"}])
+        direct = next(row for row in payload["destinations"] if row["changes"] == 0)
+        self.assertEqual(direct["changeStations"], [], "a direct journey has no change to split at")
 
     def test_one_destination_is_priced_and_never_served(self) -> None:
         # The shape the page's "no service" row exists to report.

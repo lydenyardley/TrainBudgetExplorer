@@ -1576,6 +1576,22 @@ def build_payload(
             if journey_db and with_journey
             else []
         )
+        # Q2 (audit finding 5): a journey with a change is where a split ticket
+        # can undercut the through fare, and the station it would change at is
+        # one fact the build already holds. The page names it and claims no
+        # price: the feed prices flows, not itineraries, so which two tickets
+        # are cheaper is not in this data.
+        change_stations = [
+            {
+                "crs": leg.destination_crs,
+                "name": (
+                    fares.locations_by_crs[leg.destination_crs].name
+                    if leg.destination_crs in fares.locations_by_crs
+                    else leg.destination_crs
+                ),
+            }
+            for leg in (journey.legs[:-1] if journey else ())
+        ]
         link = ticket_link(
             origin.crs,
             crs,
@@ -1626,6 +1642,9 @@ def build_payload(
             ),
             "minutes": journey.duration if journey else None,
             "changes": journey.changes if journey else None,
+            # One entry per leg boundary, so a one-change journey carries the
+            # one interchange and a longer one carries every change station.
+            "changeStations": change_stations,
             # S23: why there is no time, in the page's own words, so a reader
             # can tell "the feed has no service" from "this build priced fares
             # only" instead of reading a bare dash for both.

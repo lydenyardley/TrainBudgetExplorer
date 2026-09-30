@@ -1603,6 +1603,23 @@ function fareSummary(destination) {
   return "No fare restriction code is attached to this fare.";
 }
 
+// Q2 (finding 5 of the promise-gap audit): a journey with a change is where a
+// split ticket can undercut the through fare, and the station it would change
+// at is the part a reader can act on. The page states the possibility and no
+// price: the feed prices flows, not itineraries, so which two tickets are
+// cheaper is not in this data.
+function splitNote(destination) {
+  const stations = destination.changeStations || [];
+  if (!stations.length) return null;
+  const named = stations.map((station) => station.name + " (" + station.crs + ")");
+  const note = document.createElement("p");
+  note.className = "split";
+  note.textContent = "Change at " + named.join(" and ") +
+    ". A split ticket \u2014 one ticket to that station and another from it " +
+    "\u2014 can sometimes cost less than this through fare; this page prices the through fare only.";
+  return note;
+}
+
 // The FARE and CONDITIONS columns, moved into the panel the row already had
 // rather than deleted: the condition is the reader's, the twenty repetitions of
 // it were not (finding, 29 September 2026).
@@ -1625,6 +1642,8 @@ function fareDetails(destination) {
   // optional note is added only when there is one to add.
   const validity = validityNote(destination);
   if (validity) readable.append(validity);
+  const split = splitNote(destination);
+  if (split) panel.append(split);
   panel.append(feedRecord(destination));
   panel.title = fareSummary(destination);
   return panel;

@@ -94,8 +94,10 @@ conversion would not make those moves.
 **Confirmed functionality.** Station picker (search by name or three-letter code,
 resolving to the station's page); budget slider; destination filter by name or code;
 party switch (one adult, or two adults at two Anytime Day Returns); per
-destination a price, the fastest journey time, the number of changes, the fare type
-code, the travel condition the feed states for a restricted fare, an expander
+destination a price, the fastest journey time, the number of changes, the station
+a journey changes at when it changes (where a two-ticket split may be cheaper,
+stated without a price), the fare type code, the travel condition the feed states
+for a restricted fare, an expander
 holding the next few departures, and one ticket link on the row; date-aware
 schedules when the page is built with a date, and an explicit note that every
 schedule was read when it is not. A build with no timetable says so in its opening
