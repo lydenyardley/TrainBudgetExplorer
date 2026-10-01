@@ -1090,21 +1090,24 @@ python tools/check_release_clearance.py --print          # blocks to fill in
 python run.py
 ```
 
-That builds the site from the current feed, serves it at
-http://localhost:8741, and opens your browser. A single-origin build is a whole
-site — its root at `/`, that one station under `/from/<slug>/`, and the privacy
-page — and because it priced exactly one station its root names that station
-rather than offering a search over a list of one. The runner removes any station
-page folder a *previous* all-origins build left behind, reading the release
-manifest to tell which folders this build wrote. Close the window (or Ctrl+C) to
-stop.
+That builds one page per priced station from the current feed, serves it at
+http://localhost:8741, and opens your browser. It says what that costs before it
+starts — about 20 minutes on eight cores, 81 on two — and the next run serves
+what the first one wrote and starts immediately. The runner also rebuilds when
+the builder, the template or the fare maths is newer than the build it would
+serve, so a page cannot quietly be yesterday's (ADR-0055). The runner removes any
+station page folder a *previous* single-origin build left behind, reading the
+release manifest to tell which folders this build wrote. Close the window (or
+Ctrl+C) to stop.
 
-Useful variants: `--port 9000`, `--no-build` (serve what's there),
-`--timetable` with no value for a prices-only build, `--feed feeds/fares
---timetable feeds/timetable` for the real licensed feeds, and `--all-origins`
-for every priced station (slow at network scale — ADR-0024). The demo feed is
-rebuilt first if `_demo_feed/` is missing: `python make_synthetic_feed.py
-_demo_feed --unserved-station --third-origin`.
+Useful variants: `--origin GRA` for the fast single-station page — its root at
+`/`, that one station under `/from/<slug>/`, and the privacy page, with a root
+that names the station rather than offering a search over a list of one —
+`--port 9000`, `--no-build` (serve what's there), `--timetable` with no value for
+a prices-only build, and `--feed feeds/fares --timetable feeds/timetable` for
+the real licensed feeds. The demo feed is rebuilt first if `_demo_feed/` is
+missing: `python make_synthetic_feed.py _demo_feed --unserved-station
+--third-origin`.
 
 A real-feed run carries the same licence notices the deploy workflow passes,
 without being asked, so the page you preview is the page that ships. `--notices`
