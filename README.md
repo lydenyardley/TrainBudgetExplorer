@@ -309,8 +309,10 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tools/check_links.py` | CLI: whether each seller's link lands on a search, proved only where it can be |
 | `tools/page_bytes.py` | CLI: a built page split into stylesheet, script and inline payload, the bytes every measured page repeats word for word, and a built folder totalled against the site budget |
 | `tools/test_page_bytes.py` | Tests for the measurer: where a payload's split ends, and what may count as shared |
+| `tools/feed_change_report.py` | CLI: two feed snapshots compared -- the fares whose prices moved, the ones removed and added, the restrictions that changed at an unchanged price, and the stations whose coverage changed; `--fail-on-material` is the opt-in refusal |
 | `tools/inspect_knowledgebase.py` | CLI: what a Knowledgebase reference feed actually contains, what the reader makes of it, and which element name to add when it guesses wrong |
 | `tools/test_inspect_knowledgebase.py` | Tests for the inspector's element summary, name matching and verdicts |
+| `tools/test_feed_change_report.py` | Tests for the change report: both materiality bars, a renumbered flow id, an unattributable fare, and the wording that must not claim a change that did not happen |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
 | `destination_coverage.py` | Names the priced destinations no source could classify; a build prints the summary, `--fail-on-unsourced` turns it into a refusal, and `--unsourced-ceiling` holds the count |
 | `make_synthetic_feed.py` | Builds invented fares and timetable feed folders |
@@ -741,6 +743,7 @@ into the ADRs came with their command and keep it:
 | a page split into stylesheet, script and inline payload, the bytes every page repeats, a folder totalled against the 800 MB target | `python tools/page_bytes.py --site _site` |
 | the whole network, measured against that target: 2,712 pages and 498 MB of 800 MB, or 583 MB before the stylesheet became a shared document | `python build_demo_page.py --feed feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html` then `python tools/page_bytes.py --site _cache/site_measure` |
 | unclassified destinations, the worst origins by share, and the rows the feed cannot name at all | `python destination_coverage.py --feed feeds/fares` |
+| what a new feed download changed against the one the published pages were built from | `python tools/feed_change_report.py --previous-feed feeds/previous --feed feeds/fares` |
 | the browser suite over the published routes, with its not-exercised count | `npx --yes --package playwright node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
 | which routes this release actually wrote | `_site/release-manifest.json` |
 | a station's own rows, its three lists and its prices | the payload in the built page, which the suite reads as `DATA` |
