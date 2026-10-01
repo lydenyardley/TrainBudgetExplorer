@@ -400,6 +400,22 @@ class DemoPageTest(unittest.TestCase):
         )
         journey = script.split("function journeyText")[1].split("\nfunction ")[0]
         self.assertIn('"Ticket: " + fareName(destination)', journey)
+        # A price with no ticket beside it is the one thing a reader holding
+        # the list cannot act on, so the shortlist names the fare on the row
+        # and on every copied line, beside the price rather than in a footer.
+        # The chip carries the name and the price -- the reason the place is
+        # there -- and the fare name travels in the copied text and on the
+        # row itself rather than making every chip three lines tall.
+        row = script.split("function shortlistRow(")[1].split("\nfunction ")[0]
+        self.assertIn('price.textContent = money(priceOf(destination));', row)
+        self.assertNotIn("fareName(destination)", row)
+        copied = script.split("function shortlistText()")[1].split("\nfunction ")[0]
+        self.assertIn(r'" " + what + ", " + fareName(destination) + ", " + time', copied)
+        # The set names itself above the table, in the coverage line and in the
+        # provenance line, so no sentence on the page counts the wrong fares.
+        self.assertIn('cheapest: "Each row is the cheapest fare of any ticket type', script)
+        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", script)
+        self.assertIn('cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed"', script)
 
     def test_the_warn_token_clears_aa_where_the_cheapest_rows_put_it(self) -> None:
         # The cheapest list leads with restricted and advance fares, whose words
@@ -1005,10 +1021,20 @@ class DemoPageTest(unittest.TestCase):
         # S26: the decision the page exists for is which place, so a reader can
         # keep a few, compare them on the price currently shown, and hand the
         # list to somebody else as a link. Nothing about it implies a booking.
-        self.assertIn('id="shortlistHeading">Shortlist', self.html)
-        self.assertIn("not a booking: no train is chosen and no ticket is held", self.html)
-        self.assertIn('save.className = "toggle shortlist-toggle"', self.html)
-        self.assertIn('save.setAttribute("aria-pressed", "false")', self.html)
+        self.assertIn('id="shortlistBar" aria-label="Shortlist"', self.html)
+        self.assertIn("not a booking", self.html)
+        # One control, above the table, rather than a named button on every
+        # row: twenty rows carried twenty copies of the same word, and
+        # pressing one changed its own text and reflowed the table.
+        self.assertIn('id="shortlistPick"', self.html)
+        self.assertIn("function renderShortlistPicker()", self.html)
+        self.assertIn("shortlistPick.addEventListener(\"change\"", self.html)
+        self.assertNotIn("shortlist-toggle", self.html)
+        # ... and the places it holds are drawn where the control is.
+        self.assertLess(
+            self.html.index('id="shortlistBar"'),
+            self.html.index("<table>"),
+        )
         # It is part of the address, one readable key per place.
         self.assertIn('for (const code of shortlistCodes) params.append("short", code);', self.html)
         self.assertIn('short: params.getAll("short")', self.html)
@@ -1022,8 +1048,22 @@ class DemoPageTest(unittest.TestCase):
         # shared link claims.
         self.assertIn("shortlistCodes = state.short.filter(pricedHere);", self.html)
         # The limit is said, not silently applied.
-        self.assertIn('setShortlistStatus("The shortlist holds " + SHORTLIST_LIMIT + " places.', self.html)
-        self.assertIn('save.setAttribute("aria-label", "Shortlist " + destination.name);', self.html)
+        # Said on the page as well as to the status region: a control that
+        # stops responding with no explanation is the one thing a reader
+        # cannot act on, and the strip is where they are already looking.
+        self.assertIn(
+            'const message = "The shortlist holds " + SHORTLIST_LIMIT + " places. Remove one to add another.";',
+            self.html,
+        )
+        self.assertIn(
+            "if (shortlistLimit) shortlistLimit.textContent = message;", self.html
+        )
+        # One control for the whole page rather than a button on every row:
+        # twenty rows is twenty buttons that all say the same thing, and a
+        # reader comparing prices wants one list, not twenty ways of making
+        # it. The select's own options are the rows on this page.
+        self.assertIn('document.querySelectorAll("#rows tr[data-crs]")', self.html)
+        self.assertIn(".filter((crs) => !inShortlist(crs));", self.html)
 
     def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
         # A full-network build is hours long and publishes thousands of
@@ -2713,15 +2753,15 @@ class DemoPageTest(unittest.TestCase):
         # wants after deciding rather than while deciding. The row keeps the
         # ticket link, the expander and the shortlist toggle.
         script = page_script(self.html)
-        row_cell = script.split("function cellWithLinks")[1].split("function rowActions")[0]
+        row_cell = script.split("function cellWithLinks")[1].split("function cardNote")[0]
         self.assertIn('link.textContent = "Tickets"', row_cell)
         self.assertIn("toggle.textContent = times", row_cell)
-        self.assertIn('save.className = "toggle shortlist-toggle"', row_cell)
-        for moved in ("Card details", "Copy the journey details", "copyJourney("):
+        for moved in ("Card details", "Copy the journey details", "copyJourney(", "toggleShortlist("):
             self.assertNotIn(moved, row_cell)
         # ... and the panel builds them, in one box, with the copy text landing
         # in that same box when the clipboard is refused.
-        actions = script.split("function rowActions")[1].split("function cardNote")[0]
+        actions = script.split("function rowActions")[1].split("\nfunction ")[0]
+        self.assertNotIn("Card details", actions)
         self.assertIn('copy.textContent = "Copy"', actions)
         self.assertIn("copyJourney(destination, copy, tools)", actions)
         copy_path = script.split("function copyJourney")[1].split("function showCopyText")[0]
