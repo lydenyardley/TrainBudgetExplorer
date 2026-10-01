@@ -1125,6 +1125,40 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("travel condition rather than a card ban", self.html)
         self.assertIn("Exact DTD rule", self.html)
 
+    def test_the_drawer_never_shows_more_than_the_row_it_was_opened_from(self) -> None:
+        # The row is priced at the cheaper of the standard fare and the card's.
+        # The drawer used to print the card's own price under the label
+        # "Discounted fare", so on a fare whose card minimum is above the
+        # discount it opened showing GBP 12.00 against a row showing GBP 8.70,
+        # and called the bigger number a discount.
+        row = next(r for r in self.payload["destinations"] if r["crs"] == "LCN")
+        card = row["railcards"]["YNG"]
+        self.assertEqual(row["adultPence"], 870)
+        self.assertEqual(card["pricePence"], 1200)
+        shown = min(row["adultPence"], card["pricePence"])
+        self.assertEqual(shown, 870)
+        self.assertLessEqual(shown, row["adultPence"], "a card never raises a row's price")
+        # The drawer takes its headline number from the same rule the table uses.
+        self.assertIn("const shownPrice = (destination, details) =>", self.html)
+        self.assertIn(
+            "return Math.min(destination.adultPence, details.pricePence);", self.html
+        )
+        # And the label no longer calls a price above the standard fare a discount.
+        self.assertIn("<dt>Price with this card</dt>", self.html)
+        self.assertNotIn("<dt>Discounted fare</dt>", self.html)
+        self.assertIn("which is the standard fare", self.html)
+        self.assertIn("does not reduce this fare", self.html)
+        self.assertIn(
+            ': money(shown) + " per adult, which is the standard fare";', self.html
+        )
+        self.assertLess(
+            self.html.index('? money(shown) + " per adult"'),
+            self.html.index(
+                ': money(shown) + " per adult, which is the standard fare";'
+            ),
+            "the caption is on the branch where the card is not the price shown",
+        )
+
     def test_the_drawer_explains_which_card_it_is_about(self) -> None:
         # The reader picked one card out of six, so the drawer has to name it.
         # A drawer that explained "the railcard" while the page listed six
@@ -1153,11 +1187,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(details["minimumFarePence"], 1200)
         self.assertEqual(details["pricePence"], 1200)
         self.assertGreater(details["pricePence"], row["adultPence"])
-        # The page's own wording for that case, written in the drawer.
-        self.assertIn(
-            "but the DTD minimum fare of ", self.html
-        )
-        self.assertIn("is higher.", self.html)
+        # The drawer's own wording for that case: it says the card does not help
+        # here, gives both numbers, and names the minimum as the reason, so a
+        # reader who opens it is not left reading a discount the row did not get.
+        self.assertIn("does not reduce this fare.", self.html)
+        self.assertIn("because the minimum fare the feed applies to this ", self.html)
+        self.assertIn("This row is priced at the cheaper of the two", self.html)
 
     @property
     def stylesheet(self) -> str:
