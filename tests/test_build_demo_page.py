@@ -547,7 +547,12 @@ class DemoPageTest(unittest.TestCase):
         # screen is taken out of the list rather than left there to be picked.
         # The bounds come from the feed, not from this project.
         card = self.payload["railcards"][0]
-        self.assertEqual((card["minAdults"], card["maxAdults"]), (1, 1))
+        # The bounds are each card's own, measured on the real feed on
+        # 1 October 2026, so the party filter has something to take out.
+        bounds = {c["key"]: (c["minAdults"], c["maxAdults"]) for c in self.payload["railcards"]}
+        self.assertEqual(bounds["YNG"], (1, 8))
+        self.assertEqual(bounds["2TR"], (2, 2))
+        self.assertEqual(bounds["BB2"], (1, 1))
         self.assertIn("function syncRailcardParty()", self.html)
         self.assertIn("function cardCoversParty(card)", self.html)
         self.assertIn("return card.minAdults <= adults && adults <= card.maxAdults;", self.html)
@@ -1108,7 +1113,16 @@ class DemoPageTest(unittest.TestCase):
         # R9 is the railcard's travel condition, not a total ban, so the
         # synthetic fares that carry it remain eligible.
         cards = {card["key"]: card for card in self.payload["railcards"]}
-        self.assertEqual(list(cards), ["YNG"], "the demo feed carries one reviewed card")
+        # All six reviewed cards, with the party each one prices. The
+        # fixture used to carry a single card under a code that is not in
+        # the reviewed set at all, so the control built to offer six came
+        # out with one option in it.
+        self.assertEqual(
+            list(cards),
+            ["YNG", "DIS", "NEW", "SRN", "BB2", "2TR"],
+            "the demo feed prices the six reviewed cards",
+        )
+        self.assertEqual((cards["2TR"]["minAdults"], cards["2TR"]["maxAdults"]), (2, 2))
         self.assertEqual(cards["YNG"]["label"], "16-25 Railcard")
         # Two of the five fares sit on route 00002, which the fixture's RR 0001
         # bans for this card outright. The remaining three are discounted.
