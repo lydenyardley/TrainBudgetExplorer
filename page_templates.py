@@ -734,7 +734,7 @@ __THEME_TOGGLE__
   <dl>
     <dt>Card</dt><dd id="railcardName"></dd>
     <dt>Standard fare</dt><dd id="railcardStandard"></dd>
-    <dt>Discounted fare</dt><dd id="railcardDiscounted"></dd>
+    <dt>Price with this card</dt><dd id="railcardDiscounted"></dd>
     <dt>DTD minimum</dt><dd id="railcardMinimum"></dd>
   </dl>
   <h3>Exact DTD rule</h3>
@@ -2010,6 +2010,15 @@ function showRailcardDetails(destination) {
   const name = document.getElementById("railcardName");
   const discounted = document.getElementById("railcardDiscounted");
   const minimum = document.getElementById("railcardMinimum");
+  // The row is priced at the cheaper of the standard fare and the card's, so
+  // the drawer leads with that number rather than with the card's own. A card
+  // whose minimum fare is above the discounted fare has a price that is dearer
+  // than travelling without it, and printing that as the fare would show a
+  // reader a bigger number than the row they opened it from.
+  const shownPrice = (destination, details) => {
+    if (details.pricePence === null) return destination.adultPence;
+    return Math.min(destination.adultPence, details.pricePence);
+  };
   const ruleText = document.getElementById("railcardRule");
   document.getElementById("railcardStandard").textContent = money(destination.adultPence) + " per adult";
 
@@ -2048,16 +2057,31 @@ function showRailcardDetails(destination) {
   const condition = rule && !rule.totalBan && rule.restrictionCode !== "none"
     ? rule.restrictionCode
     : null;
+  const cardBeatsStandard = details.pricePence !== null && details.pricePence < destination.adultPence;
+  const shown = shownPrice(destination, details);
   const minimumClause = details.minimumFarePence === null
     ? ", and no minimum fare is current for this ticket."
+    // The build floors the card's price at the minimum, so price == minimum is
+    // the only way to land here, and it lands on the branches where the card
+    // does help. Saying the minimum makes the fare dearer would be false there,
+    // and saying it is above a discounted price the page never sent would be a
+    // claim about a number nobody can see: so it says the minimum is the price.
     : details.minimumFarePence >= details.pricePence
-      ? ", but the DTD minimum fare of " + money(details.minimumFarePence) + " is higher."
+      ? ", and the DTD minimum fare of " + money(details.minimumFarePence) +
+        " is the price here, so the discount took it no lower."
       : ", and the DTD minimum of " + money(details.minimumFarePence) + " does not raise it.";
 
   status.dataset.state = details.state;
   name.textContent = card.label + " (" + card.codes.join(", ") + ")";
-  discounted.textContent =
-    details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
+  // The number here is the one the row is priced at, so it is never dearer than
+  // the row the reader opened the drawer from. When the card does not help, the
+  // card's own price is still shown, labelled as what it is, because it is the
+  // fact that explains the standard fare beside it.
+  discounted.textContent = details.pricePence === null
+    ? "Not available, so " + money(destination.adultPence) + " per adult stands"
+    : cardBeatsStandard
+      ? money(shown) + " per adult"
+      : money(shown) + " per adult, which is the standard fare";
   minimum.textContent =
     details.minimumFarePence === null
       ? "None current for " + destination.ticket
@@ -2071,6 +2095,18 @@ function showRailcardDetails(destination) {
       card.label + " cannot be applied to this fare. A current DTD RR rule matches this ticket, " +
       "route or endpoint and records a total ban, so the standard fare is the only price the feed " +
       "offers here.";
+  } else if (!cardBeatsStandard) {
+    // The three numbers the build already sent are enough to say this. The
+    // discounted price before the minimum is not one of them, and recomputing it
+    // here would put a second copy of the rounding rule in the page, where it
+    // could drift from the build's.
+    status.textContent =
+      card.label + " does not reduce this fare. Its own price here is " +
+      money(details.pricePence) + " per adult, against a standard fare of " +
+      money(destination.adultPence) + ", because the minimum fare the feed applies to this " +
+      "ticket is " + money(details.minimumFarePence) +
+      ". This row is priced at the cheaper of the two, so travelling without the card would " +
+      "cost the same.";
   } else if (condition) {
     status.textContent =
       card.label + " is available for this fare, subject to condition " + condition + ". No " +
