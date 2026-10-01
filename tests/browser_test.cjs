@@ -1027,6 +1027,10 @@ async function runPage(browser, index, given, file, body, base) {
       const cheapest = window.cheapestOfEveryList();
       const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((row) => {
         const wanted = cheapest.get(row.dataset.crs) || null;
+        // The row names its fare in one of the reader's own three words, and
+        // the word has to be the one this row's fare earns. The code the feed
+        // used is one disclosure away and no longer on the row at all.
+        const row1 = activeDestinations().find((d) => d.crs === row.dataset.crs) || {};
         return {
           crs: row.dataset.crs,
           price: (row.querySelector("td.num .price") || {}).textContent || "",
@@ -1039,7 +1043,8 @@ async function runPage(browser, index, given, file, body, base) {
               code: wanted.ticket || "",
             }
             : null,
-          code: (row.querySelector(".ticket-code") || {}).textContent || "",
+          code: row1.isAdvance ? "Advance" : row1.restrictionCode ? "Restricted" : "Regular",
+          word: (row.querySelector(".fare-kind") || {}).textContent || "",
         };
       });
       // The mix is the mix of the rows on screen: the count line describes the
@@ -1070,7 +1075,7 @@ async function runPage(browser, index, given, file, body, base) {
           headline.pageCount === headline.expected &&
           headline.shown.length > 0 &&
           headline.shown.every(
-            (row) => row.wanted && amount(row.price) === amount(row.wanted.price) && row.code === row.wanted.code
+            (row) => row.wanted && amount(row.price) === amount(row.wanted.price) && row.code === row.word
           )
         : notExercised("this page's feed prices nothing"),
       JSON.stringify({ mode: headline.mode, expected: headline.expected, pageCount: headline.pageCount, first: headline.shown[0] || null })
@@ -1120,8 +1125,8 @@ async function runPage(browser, index, given, file, body, base) {
     check(
       "the opening sentence matches whether a timetable was loaded",
       opening.hasJourneys
-        ? /fastest journey time/.test(opening.intro)
-        : !/journey time/.test(opening.intro) && /no timetable/i.test(opening.intro),
+        ? /fastest time/.test(opening.intro)
+        : !/fastest time/.test(opening.intro) && /no timetable/i.test(opening.intro),
       JSON.stringify(opening)
     );
     check(
@@ -1143,11 +1148,23 @@ async function runPage(browser, index, given, file, body, base) {
       const lines = (el) => {
         const range = document.createRange();
         range.selectNodeContents(el);
-        return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+        // Line boxes a pixel or two apart are one line: a cell whose only
+        // child is an inline span reports the span's line-height beside the
+        // row's strut, and a genuine second line is a whole line lower.
+        const tops = Array.from(range.getClientRects())
+          .map((rect) => rect.top)
+          .sort((a, b) => a - b);
+        let count = 0;
+        let last = -Infinity;
+        for (const top of tops) {
+          if (top - last > 3) count += 1;
+          last = top;
+        }
+        return count;
       };
       const cells = [
         ...document.querySelectorAll("thead th"),
-        ...document.querySelectorAll("#rows td.num, #rows .ticket-code"),
+        ...document.querySelectorAll("#rows td.num, #rows .fare-type"),
       ];
       const wrapped = [];
       for (const el of cells) {
@@ -1214,7 +1231,9 @@ async function runPage(browser, index, given, file, body, base) {
       measure.countToFirstRow === null
         ? notExercised("this page shows no count and no first row")
         : measure.countToFirstRow <= 100 &&
-          measure.afterProvenance.every((id) => ["dateNote", "linkTerms", "summary"].includes(id)),
+          measure.afterProvenance.every((id) =>
+            ["dateNote", "linkTerms", "shortlistBar", "summary"].includes(id)
+          ),
       `count to first row ${measure.countToFirstRow}px; after the provenance: ${measure.afterProvenance.join(", ") || "nothing"}`
     );
 
@@ -1475,15 +1494,16 @@ async function runPage(browser, index, given, file, body, base) {
     // flag is asserted against the rows the payload says are advance singles in
     // this mode, at this budget -- and against their absence when there are
     // none, so a page cannot pass by never showing one. Finding, 29 September
-    // 2026: the sentence moved into the row's own disclosure and the row
-    // carries the fare's code, so what is on the row is the word "advance" and
-    // the sentence is read where a reader now reads it.
+    // 2026: the sentence moved into the row's own disclosure and the row names
+    // its fare in the reader's own words, so what is on the row is the word
+    // "Advance" and the sentence is read where a reader now reads it.
     const advance = await page.evaluate(() => {
       const wanted = TYPES.list().filter((d) => d.isAdvance && d.adultPence <= TYPES.cap()).length;
       const rows = Array.from(document.querySelectorAll("#rows tr:not(.detail)"));
-      const flagged = rows.filter(
-        (row) => ((row.querySelector(".condition-flag") || {}).textContent || "").trim() === "advance"
-      );
+      const flagged = rows.filter((row) => {
+        const cell = row.querySelector(".fare-type");
+        return Boolean(cell) && cell.dataset.kind === "advance";
+      });
       const sentences = flagged.map((row) => {
         const toggle = row.querySelector(".toggle[aria-expanded=false]");
         if (toggle) toggle.click();
@@ -2061,10 +2081,10 @@ async function runPage(browser, index, given, file, body, base) {
     // (LONDON KINGS X, NOTTINGHAM), and a one-word pattern rejected the
     // correct answer while accepting a wrong one on the demo feed.
     const rowText = (await page.textContent("#rows tr")).trim();
-    // Copy and Card details wait in the row's own panel (finding 4, 29
-    // September 2026), so the row is opened first: a control a reader reaches
-    // through a disclosure is still a control, and this is where the suite
-    // meets it.
+    // Copy and the railcard note wait in the row's own panel (finding 4,
+    // 29 September 2026), so the row is opened first: a control a reader
+    // reaches through a disclosure is still a control, and this is where the
+    // suite meets it.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
     const adultButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
     const journey = await page.evaluate((label) => {
@@ -2123,10 +2143,10 @@ async function runPage(browser, index, given, file, body, base) {
     const partyReachable = party.cheapest <= party.ceiling;
     if (partyReachable) {
     await page.fill("#budgetNumber", String(Math.max(1, Math.ceil(party.cheapest / 100))));
-    // Copy and Card details wait in the row's own panel (finding 4, 29
-    // September 2026), so the row is opened first: a control a reader reaches
-    // through a disclosure is still a control, and this is where the suite
-    // meets it.
+    // Copy and the railcard note wait in the row's own panel (finding 4,
+    // 29 September 2026), so the row is opened first: a control a reader
+    // reaches through a disclosure is still a control, and this is where the
+    // suite meets it.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
     const copyButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
     const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy the journey details for ", "");
@@ -2175,9 +2195,27 @@ async function runPage(browser, index, given, file, body, base) {
       const html = document.documentElement;
       const overflow = Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
       const cell = document.querySelector("#rows td:last-child").getBoundingClientRect();
-      return { overflow, onScreen: cell.right <= window.innerWidth && cell.left >= 0 };
+      // What is sticking out, named: a bare pixel count sends whoever reads a
+      // red run back to the stylesheet to guess which element it was.
+      const edge = html.clientWidth;
+      const wide = Array.from(document.querySelectorAll("body *"))
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter((entry) => entry.r.right > edge + 1)
+        .map((entry) => ({
+          tag: entry.el.tagName.toLowerCase(),
+          id: entry.el.id,
+          cls: String(entry.el.className).slice(0, 40),
+          right: Math.round(entry.r.right),
+          width: Math.round(entry.r.width),
+        }))
+        .slice(0, 5);
+      return { overflow, onScreen: cell.right <= window.innerWidth && cell.left >= 0, wide };
     });
-    check("at 390px nothing overflows horizontally", mobile.overflow <= 0, `${mobile.overflow}px`);
+    check(
+      "at 390px nothing overflows horizontally",
+      mobile.overflow <= 0,
+      `${mobile.overflow}px; ${JSON.stringify(mobile.wide)}`
+    );
     check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
 
     // 7a. A resize is not a fold. The refinements used to open and close with
@@ -2318,22 +2356,31 @@ async function runPage(browser, index, given, file, body, base) {
     const cardChoice = await page.locator("#railcardChoice").isVisible();
     const menu = await page.evaluate(() => {
       const select = document.getElementById("railcardSelect");
+      const adults = document.querySelector('input[name="unit"]:checked').value === "party" ? 2 : 1;
       return {
         options: Array.from(select.options).map((o) => ({ value: o.value, label: o.textContent })),
         value: select.value,
         disabled: select.disabled,
         help: document.getElementById("railcardHelp").textContent,
+        adults,
+        // Every card the feed prices, and the ones this party can actually use.
+        // A card whose own bounds exclude the party on screen is not offered:
+        // it is not that the feed forgot it.
         offered: (DATA.railcards || []).map((c) => c.key),
+        forParty: (DATA.railcards || [])
+          .filter((c) => c.minAdults <= adults && adults <= c.maxAdults)
+          .map((c) => c.key),
       };
     });
     check(
-      "the railcard control offers every reviewed card and one 'none' option",
+      "the railcard control offers every card this party can use, and one 'none' option",
       cardChoice
-        ? menu.options.length === menu.offered.length + 1 &&
+        ? menu.offered.length > 0 &&
+          menu.options.length === menu.forParty.length + 1 &&
           menu.options[0].value === "" &&
-          menu.options.slice(1).every((o, i) => o.value === menu.offered[i])
+          menu.options.slice(1).every((o, i) => o.value === menu.forParty[i])
         : notExercised("this feed prices no reviewed railcard"),
-      JSON.stringify(menu.options)
+      `${menu.adults} adult(s): offered ${JSON.stringify(menu.forParty)} of ${JSON.stringify(menu.offered)}; ${JSON.stringify(menu.options)}`
     );
     check(
       "and no railcard is selected by default, so the prices are standard fares",
@@ -2392,10 +2439,10 @@ async function runPage(browser, index, given, file, body, base) {
       : null;
     check(
       "two adults are offered the cards that cover two",
-      cardChoice && duo.cards.some((c) => c.min <= 2 && 2 <= c.max)
+      cardChoice && duo.cards.some((c) => c.minAdults <= 2 && 2 <= c.maxAdults)
         ? duo.first !== "" &&
           duo.cards
-            .filter((c) => c.min <= 2 && 2 <= c.max)
+            .filter((c) => c.minAdults <= 2 && 2 <= c.maxAdults)
             .every((c) => duo.options.includes(c.key)) &&
           !duo.disabled
         : notExercised(
@@ -2404,7 +2451,7 @@ async function runPage(browser, index, given, file, body, base) {
               : "this feed prices no reviewed railcard"
           ),
       `options=${duo ? duo.options.join(",") : ""} cards=${
-        duo ? duo.cards.filter((c) => c.min <= 2 && 2 <= c.max).map((c) => c.key).join(",") : ""
+        duo ? duo.cards.filter((c) => c.minAdults <= 2 && 2 <= c.maxAdults).map((c) => c.key).join(",") : ""
       }`
     );
     check(
@@ -2413,10 +2460,11 @@ async function runPage(browser, index, given, file, body, base) {
         ? (() => {
             const card = duo.cards.find((c) => c.key === duo.first);
             return (
-              card && new RegExp(String(card.min) + " to " + String(card.max) + " adults").test(duo.help) &&
+              card &&
+              new RegExp(String(card.minAdults) + " to " + String(card.maxAdults) + " adults").test(duo.help) &&
               duo.help.includes(card.label) &&
               new RegExp(String(card.eligibleCount)).test(duo.help) &&
-              /Card details/.test(duo.help)
+              /open a row's own details/.test(duo.help)
             );
           })()
         : notExercised("this page prices no card that covers two adults"),
@@ -2624,13 +2672,14 @@ async function runPage(browser, index, given, file, body, base) {
       check("with no railcard selected no row shows a second price",
         notExercised("this feed prices no reviewed railcard"));
     }
-    // The drawer leads with the row's own price, so opening it never shows a
-    // bigger number than the row it was opened from. The row the old drawer got
-    // wrong is the one the card does not lower: the card's own price for that
-    // fare sits above the fare the row is priced at, and it was printed under a
-    // label that called it a discount. Read from the drawers themselves rather
-    // than from the template, because the number is written by script and a
-    // string in the source can only say what was meant to be written.
+    // The railcard note leads with the row's own price, so opening a row's
+    // details never shows a bigger number than the row it was opened from. The
+    // row the old drawer got wrong is the one the card does not lower: the
+    // card's own price for that fare sits above the fare the row is priced at,
+    // and it was printed under a label that called it a discount. Read from
+    // the notes themselves rather than from the template, because the number
+    // is written by script and a string in the source can only say what was
+    // meant to be written.
     const drawerChoice = await page.evaluate(() => {
       const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
       for (const card of DATA.railcards || []) {
@@ -2645,17 +2694,21 @@ async function runPage(browser, index, given, file, body, base) {
       }
       return null;
     });
-    const drawerRows = drawerChoice
+    const noteRows = drawerChoice
       ? await page.evaluate((choice) => {
-          const dialog = document.getElementById("railcardDrawer");
+          // There is no drawer: the note is built into the panel the row
+          // already opens, so it is read from there and from nowhere else.
+          if (document.getElementById("railcardDrawer")) {
+            return { error: "the railcard drawer is still on the page" };
+          }
           document.querySelector(
             'input[name="unit"][value="' + (choice.adults === 2 ? "party" : "adult") + '"]'
           ).checked = true;
           document.getElementById("railcardSelect").value = choice.key;
           // Only the list the page is showing: a row in another ticket mode is
-          // not on screen, so it is not a drawer a reader could open.
+          // not on screen, so it is not a note a reader could read.
           const priced = activeDestinations().filter((d) => (d.railcards || {})[choice.key]);
-          if (!priced.length) return [];
+          if (!priced.length) return { error: "this page shows no row that card touches" };
           const dearest = priced.reduce(
             (high, d) => Math.max(high, choice.adults === 2 ? d.partyPence : d.adultPence),
             0
@@ -2667,44 +2720,57 @@ async function runPage(browser, index, given, file, body, base) {
           render();
           const readings = [];
           for (const row of Array.from(document.querySelectorAll("#rows tr[data-crs]"))) {
-            // Card details waits in the row's own panel, so the row is opened
-            // first, the same way a reader reaches it. The panel is built when
-            // it opens, so it is read after that and not before.
+            // The note is built when the panel opens, so the row is opened
+            // first, the same way a reader reaches it, and closed again after.
             const fold = row.querySelector(".toggle[aria-expanded='false']");
             if (fold) fold.click();
             const detail = row.nextElementSibling;
-            const button = detail
-              ? Array.from(detail.querySelectorAll("button")).find((b) => b.textContent === "Card details")
-              : null;
-            if (!button) continue;
-            button.click();
+            const note =
+              detail && detail.classList.contains("detail")
+                ? detail.querySelector(".card-note")
+                : null;
             const price = row.querySelector("td.num .price");
             readings.push({
               crs: row.dataset.crs,
               row: price ? price.textContent.trim() : null,
-              shown: document.getElementById("railcardDiscounted").textContent,
-              standard: document.getElementById("railcardStandard").textContent,
+              inOwnPanel: Boolean(note) && detail.contains(note),
+              state: note ? note.dataset.state : null,
+              text: note ? note.textContent : null,
             });
-            dialog.close();
+            if (fold) fold.click();
           }
-          return readings;
+          return { readings };
         }, drawerChoice)
-      : [];
+      : { readings: [] };
+    const noteRowsList = noteRows.readings || [];
     const pounds = (text) => Number(String(text).replace(/[^0-9.]/g, ""));
-    // A row with no price on screen, or a drawer saying a card is not priced
-    // for it, carries no number to compare.
-    const opened = drawerRows.filter((r) => r.row !== null && pounds(r.shown) > 0);
+    // The note names the card's own price first wherever it names one at all:
+    // the blocked branch quotes no figure, and every other branch opens with
+    // what the card costs for this fare.
+    const quoted = (note) => {
+      const match = /£\s?([0-9]+(?:\.[0-9]{2})?)/.exec(note.text || "");
+      return match ? Number(match[1]) : null;
+    };
+    // A row with no price on screen carries no number to compare.
+    const quotedRows = noteRowsList.filter((r) => r.row !== null && quoted(r) !== null);
     check(
-      "the drawer never shows more than the row it was opened from",
-      opened.length
-        ? opened.every((r) => pounds(r.shown) <= pounds(r.row))
-        : notExercised("this page prices no railcard against a row it shows"),
-      JSON.stringify(drawerRows.slice(0, 4))
+      "the note is in the row's own panel, and no drawer is left behind",
+      noteRows.error
+        ? false
+        : noteRowsList.length > 0 && noteRowsList.every((r) => r.inOwnPanel),
+      JSON.stringify({ error: noteRows.error, sample: noteRowsList.slice(0, 3) })
     );
     check(
-      "and the standard fare beside it is the fare the row is priced at without a card",
-      opened.every((r) => pounds(r.standard) === pounds(r.row) || pounds(r.row) <= pounds(r.shown)),
-      JSON.stringify(drawerRows.slice(0, 4))
+      "the note never quotes more than the row it sits under",
+      quotedRows.length
+        ? quotedRows.every((r) => quoted(r) <= pounds(r.row))
+        : notExercised("this page prices no railcard against a row it shows"),
+      JSON.stringify(quotedRows.slice(0, 4).map((r) => [r.crs, r.row, quoted(r), r.state]))
+    );
+    check(
+      "and a row the card cannot be applied to says so rather than quoting a price",
+      noteRowsList.filter((r) => r.state === "blocked").every((r) => quoted(r) === null),
+      JSON.stringify(noteRowsList.filter((r) => r.state === "blocked").slice(0, 3).map((r) => r.text))
     );
     // The section that follows reads rows and their panels, so the page is
     // handed back at the budget the rest of this block is written against.
@@ -2798,13 +2864,18 @@ async function runPage(browser, index, given, file, body, base) {
       for (const toggle of toggles) toggle.click();
       const found = Array.from(document.querySelectorAll("#rows .restriction")).map((cell) => {
         const row = cell.closest("tr.detail").previousElementSibling;
+        const record = Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent);
         return {
           readable: (cell.querySelector(".condition") || {}).textContent || "",
+          sentence: (cell.querySelector(".fare-line") || {}).textContent || "",
           validity: (cell.querySelector(".validity") || {}).textContent || "",
           restricted: cell.dataset.status === "restricted",
-          record: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent),
+          record,
           summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
-          code: (row.querySelector(".ticket-code") || {}).textContent || "",
+          // The code is in the record now, under the "Ticket" label, and the
+          // row itself carries the word a reader can act on.
+          code: record[0] || "",
+          word: (row.querySelector(".fare-kind") || {}).textContent || "",
         };
       });
       // Put the rows back: a later check that found twenty panels open would be
@@ -2813,18 +2884,33 @@ async function runPage(browser, index, given, file, body, base) {
       return { found, rows: document.querySelectorAll("#rows tr:not(.detail)").length, toggles: toggles.length };
     });
     check(
-      "every row states its fare conditions in a sentence, one disclosure away",
+      "every row states its fare in a sentence, one disclosure away",
       conditions.rows > 0 &&
         conditions.toggles === conditions.rows &&
         conditions.found.length === conditions.rows &&
-        conditions.found.every((cell) => cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)),
+        // Every row says what kind of fare it is. A row whose fare carries a
+        // restriction code says what the condition is as well; a row with no
+        // condition in the feed is not given one, which is why the sentence
+        // and the condition are checked separately.
+        conditions.found.every(
+          (cell) =>
+            cell.sentence.length > 10 &&
+            !/^[A-Z0-9]{1,4}\b/.test(cell.sentence) &&
+            (!cell.restricted || (cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)))
+        ),
       JSON.stringify(conditions.found[0] || null) +
         ` rows=${conditions.rows} toggles=${conditions.toggles}`
     );
     check(
-      "and the row carries the fare's code while the feed's codes stay folded",
+      "and the row names the fare in a word while the feed's code stays folded",
       conditions.found.length > 0 &&
-        conditions.found.every((cell) => cell.summary && cell.record.length >= 2 && cell.code.length > 0),
+        conditions.found.every(
+          (cell) =>
+            cell.summary &&
+            cell.record.length >= 2 &&
+            cell.code.length > 0 &&
+            ["Advance", "Restricted", "Regular"].includes(cell.word)
+        ),
       JSON.stringify(conditions.found[0] || null)
     );
     // C08: where the feed states what a restriction permits, the row prints it
@@ -3115,9 +3201,13 @@ async function runPage(browser, index, given, file, body, base) {
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
 
     // 7f. The conditions in the table are the fares feed's own wording; the
-    // page says what the portal's own restriction feed was asked and answered,
-    // and says it ABOVE the table, because a condition that has since changed is
-    // what a reader needs before choosing between two prices, not after.
+    // page says what the portal's own restriction feed was asked and answered.
+    // It used to sit above the table. It is in the page's method note now,
+    // under "Where these prices come from", because the distillation moved
+    // every line of legal and provenance text below the results: a reader
+    // choosing between two prices needs the price, the time and the fare type,
+    // and the claim about which feed was checked is one of the things that can
+    // be looked up rather than read first.
     //
     // The dangerous case is the one that reads best: a build that checked
     // nothing and reported the portal as still publishing every condition. So
@@ -3153,6 +3243,11 @@ async function runPage(browser, index, given, file, body, base) {
           ? Boolean(line.compareDocumentPosition(document.getElementById("rows")) &
               Node.DOCUMENT_POSITION_FOLLOWING)
           : false,
+        // And it lives in the method note, which is the disclosure a reader
+        // opens to be told how a number was arrived at.
+        inMethod: line
+          ? Boolean(line.closest("details.method"))
+          : false,
       };
     });
     check(
@@ -3180,9 +3275,9 @@ async function runPage(browser, index, given, file, body, base) {
       reference.text
     );
     check(
-      "and says it before the table it qualifies",
-      reference.above,
-      `${reference.text} (above: ${reference.above})`
+      "and keeps it in the method note, below the results",
+      reference.inMethod && !reference.above,
+      `${reference.text} (in the method note: ${reference.inMethod}, above the table: ${reference.above})`
     );
     // The invariant is about the WORDED claim, not the status value: a build
     // that compared nothing must not be allowed to read as confirmed. Tested
@@ -3293,14 +3388,51 @@ async function runPage(browser, index, given, file, body, base) {
       render();
       const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
       if (rows.length < 2) return { rows: rows.length };
-      const first = rows[0].querySelector(".shortlist-toggle");
-      const second = rows[1].querySelector(".shortlist-toggle");
+      const pick = document.getElementById("shortlistPick");
+      // One select rather than a button on every row, so adding a place is
+      // choosing it from the list of places this page shows.
+      const add = (row) => {
+        pick.value = row.dataset.crs;
+        pick.dispatchEvent(new Event("change"));
+      };
+      const first = rows[0];
+      const second = rows[1];
       const facts = () => Array.from(document.querySelectorAll("#shortlistList li")).map((li) => li.textContent);
       const saved = [];
-      first.click();
+      add(first);
       saved.push(facts());
-      second.click();
+      add(second);
       const both = facts();
+      // What the strip offers once both places are on it, and the order the
+      // chips are in. Read here, before the mode dance below changes what the
+      // page is showing: a check written at the end of the block would be
+      // reading a page the reader never saw at that point.
+      const chips = () =>
+        Array.from(document.querySelectorAll("#shortlistList li")).map((li) => ({
+          text: li.textContent,
+          title: (li.querySelector(".shortlist-name") || {}).title || "",
+        }));
+      const offered = Array.from(pick.options).map((option) => option.value).filter(Boolean);
+      const held = shortlistCodes.slice();
+      // The chip is a place and its price. The place and the price are read
+      // off the table row the chip came from, and the order from the strip
+      // itself, so this says the chip agrees with the row rather than that
+      // the page can compute its own number.
+      const chipsAgainstRows = Array.from(document.querySelectorAll("#shortlistList li")).map((li) => {
+        const name = (li.querySelector(".shortlist-name") || {}).textContent || "";
+        const row = Array.from(document.querySelectorAll("#rows tr[data-crs]"))
+          .find((r) => (r.querySelector(".station-name") || {}).textContent === name);
+        return {
+          text: li.textContent,
+          title: (li.querySelector(".shortlist-name") || {}).title || "",
+          row: row
+            ? {
+              name,
+              price: (row.querySelector("td.num .price") || {}).textContent || "",
+            }
+            : null,
+        };
+      });
       const address = window.location.href;
       // The party price is the price a pair would see, so the comparison has
       // to follow the party control.
@@ -3310,15 +3442,9 @@ async function runPage(browser, index, given, file, body, base) {
       document.querySelector('input[name="unit"][value="adult"]').checked = true;
       render();
       const asSolo = facts();
-      // The fare a shortlisted place is priced as, which the count line
-      // already names for the whole list. Read off the page here and checked
-      // against the rendered row on the other side of the boundary, so this
-      // says the row shows it rather than that the page can compute it.
-      const expected = shortlisted().map((destination) => fareName(destination));
-      // A list of one kind of fare names that kind, so a shortlist kept
-      // across a mode change must stop quoting the fare the reader has just
-      // switched away from. Both named modes are tried, because a row priced
-      // as a return leaves the list when the reader asks for singles.
+      // A shortlist kept across a mode change must not keep a place whose fare
+      // the reader can no longer see. Both named modes are tried, because a row
+      // priced as a return leaves the list when the reader asks for singles.
       const openedIn = ticketMode();
       const byMode = [];
       for (const mode of ["single", "return"]) {
@@ -3326,21 +3452,28 @@ async function runPage(browser, index, given, file, body, base) {
         if (!input || !modeCount(mode)) continue;
         input.checked = true;
         render();
-        byMode.push({ mode, label: modeLabels()[mode], texts: facts() });
+        byMode.push({ mode, texts: facts() });
         if (byMode[byMode.length - 1].texts.length) break;
       }
       document.querySelector(`input[name="ticketMode"][value="${openedIn}"]`).checked = true;
       render();
       const share = document.getElementById("shortlistShare").textContent;
-      const pressed = rows.map((row) => row.querySelector(".shortlist-toggle").getAttribute("aria-pressed"));
-      return { both, asPair, asSolo, expected, byMode, share, address, pressed, names: both.map((text) => text.slice(0, 24)) };
+      return {
+        both, asPair, asSolo, chipsAgainstRows, byMode, share, address,
+        offered,
+        rowCount: rows.length,
+        held,
+        names: both.map((text) => text.slice(0, 24)),
+      };
     });
     if (shortlist.rows !== undefined && shortlist.rows < 2) {
       for (const name of [
-        "a shortlisted place is listed with its price, time and changes",
-        "a shortlisted place names the fare it is priced as",
-        "and the fare it names follows the ticket type the reader has chosen",
+        "a shortlisted place is listed as its name and the price beside it",
+        "and each chip is a way back to the row it came from",
+        "and a place leaves the list when its fare is no longer on the page",
         "and the list is a list of places, not a booking",
+        "one select adds a place, and a held place is not offered again",
+        "and the held places are announced, not just drawn",
         "the shortlist is in the address, so it can be shared",
         "a refresh brings the shortlist back",
         "and it follows the party the reader has chosen",
@@ -3351,28 +3484,43 @@ async function runPage(browser, index, given, file, body, base) {
       }
     } else {
       check(
-        "a shortlisted place is listed with its price, time and changes",
+        "a shortlisted place is listed as its name and the price beside it",
         shortlist.both.length === 2 &&
-          shortlist.both.every((text) => /£\d/.test(text) && /(no change|\d+ change\(s\)|changes unknown)/.test(text)),
-        JSON.stringify(shortlist.both)
+          shortlist.both.every((text) => /£\d/.test(text)) &&
+          shortlist.chipsAgainstRows.every(
+            (chip) =>
+              chip.row &&
+              chip.text.includes(chip.row.name) &&
+              chip.text.includes(chip.row.price)
+          ),
+        JSON.stringify({ chips: shortlist.chipsAgainstRows, both: shortlist.both })
       );
       check(
-        "a shortlisted place names the fare it is priced as",
-        shortlist.expected.length === 2 &&
-          shortlist.both.every((text, index) => shortlist.expected[index] && text.includes(shortlist.expected[index])),
-        JSON.stringify({ expected: shortlist.expected, both: shortlist.both })
+        "and each chip is a way back to the row it came from",
+        shortlist.chipsAgainstRows.length === 2 &&
+          shortlist.chipsAgainstRows.every(
+            (chip) => chip.row && chip.title.includes(chip.row.name)
+          ),
+        JSON.stringify(shortlist.chipsAgainstRows)
       );
-      const followed = shortlist.byMode.find((entry) => entry.texts.length);
+      // A place whose fare the reader can no longer see leaves the list rather
+      // than sitting on it as a name with no fare behind it.
+      const followed = shortlist.byMode[0];
       check(
-        "and the fare it names follows the ticket type the reader has chosen",
-        !!followed && followed.texts.every((text) => text.includes("\u00b7 " + followed.label + " \u00b7")),
+        "and a place leaves the list when its fare is no longer on the page",
+        followed && followed.texts.every((text) => /£\d/.test(text)),
         JSON.stringify(shortlist.byMode)
       );
       check(
         "and the list is a list of places, not a booking",
-        /not a booking/i.test(await page.textContent("#shortlist")) &&
-          /no train is chosen/i.test(await page.textContent("#shortlist")),
-        (await page.textContent("#shortlistHeading")) || ""
+        /not a booking/i.test(await page.textContent("#shortlistBar")),
+        (await page.textContent("#shortlistEmpty")) || ""
+      );
+      check(
+        "one select adds a place, and a held place is not offered again",
+        shortlist.offered.length === shortlist.rowCount - 2 &&
+          shortlist.offered.every((crs) => !shortlist.held.includes(crs)),
+        JSON.stringify({ offered: shortlist.offered, held: shortlist.held })
       );
       const wanted = await page.evaluate(() => shortlistCodes);
       check(
@@ -3385,7 +3533,11 @@ async function runPage(browser, index, given, file, body, base) {
         shortlist.asPair.length === 2 && shortlist.asPair.some((text, index) => text !== shortlist.asSolo[index]),
         JSON.stringify({ pair: shortlist.asPair, solo: shortlist.asSolo })
       );
-      check("and the row control announces it is on", shortlist.pressed.filter((value) => value === "true").length === 2, shortlist.pressed.join(","));
+      check(
+        "and the held places are announced, not just drawn",
+        /2 shortlisted/.test(await page.textContent("#shortlistStatus")),
+        (await page.textContent("#shortlistStatus")) || ""
+      );
       // A shared link is the whole point, so it is opened, not assumed.
       await page.goto(shortlist.address);
       const restored = await page.evaluate(() => Array.from(document.querySelectorAll("#shortlistList li")).length);
@@ -3556,12 +3708,13 @@ async function runPage(browser, index, given, file, body, base) {
       // in the page's own terms, and only on the page where it is true.
       const firstUse = (await page.textContent("#firstUse")) || "";
       check(
-        "the page says the station name in the heading moves station and the rest filters",
-        // The control is the station's own name with a chevron beside it, so the
+        "the page says the station name in the heading moves station",
+        // The control is the station's own name with a field beside it, so the
         // sentence has to name the name rather than a button that is no longer
         // there: it said "Change" for exactly as long as that word was on the
-        // page, which is the whole point of the check.
-        /station name/i.test(firstUse) && /narrow/i.test(firstUse),
+        // page, which is the whole point of the check. Nothing about narrowing
+        // is claimed now: the field filters the list as it is typed into.
+        /station name/i.test(firstUse) && /start from somewhere else/i.test(firstUse),
         JSON.stringify(firstUse)
       );
       // A list of one cannot be narrowed. That is a fact about the page's own
@@ -3588,12 +3741,42 @@ async function runPage(browser, index, given, file, body, base) {
       await page.keyboard.press("Escape");
       check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
       check("and focus returns to the heading station control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
+      // The field the reader types in lives in the heading while the picker is
+      // open, so Escape has to be caught where the key is actually pressed.
+      check(
+        "and Escape in the field closes it too",
+        await page.evaluate(() => {
+          // The field is detached while the picker is closed, so it is read
+          // after the picker is opened, not before.
+          document.getElementById("changeOrigin").click();
+          const field = document.getElementById("originSearch");
+          if (!field) return false;
+          field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          return document.getElementById("originPicker").hidden;
+        })
+      );
+      // The station name is the control while the picker is closed, and it is
+      // the field while the picker is open: pressing it a second time is not
+      // something a reader can do, because the name is not on the page any
+      // more. What has to be true instead is that closing it puts the name
+      // back, and that the field sits in the heading while it is open.
+      check(
+        "closing the picker puts the station name back",
+        await page.evaluate(() => {
+          const button = document.getElementById("changeOrigin");
+          return Boolean(button) && !button.hidden && button.textContent.trim().length > 0;
+        })
+      );
       await pickerButton.click();
-      check("pressing the station control again reopens the picker", await page.locator("#originPicker").isVisible());
-      await pickerButton.click();
-      check("and it closes it again", !(await page.locator("#originPicker").isVisible()));
+      check(
+        "and opening it puts the field where the name was",
+        await page.evaluate(() => {
+          const field = document.getElementById("originSearch");
+          const button = document.getElementById("changeOrigin");
+          return Boolean(field) && Boolean(button) && button.hidden && field.closest("h1") !== null;
+        })
+      );
       // Keyboard-only reachability of the picker's first option.
-      await pickerButton.click();
       const firstOption = page.locator("#originPicks a").first();
       check(
         "picker options are keyboard-focusable links",
@@ -4104,6 +4287,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         ["h1", "the page heading"],
         ["h2", "a section heading"],
         [".condition", "the condition in words"],
+        [".fare-line", "the fare in words on the row"],
         [".origin-picker-label", "the change-station field label"],
         [".chipcount", "a chip's count"],
         [".condition", "the readable condition"],
@@ -4129,7 +4313,37 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       // A contrast check that only measured what happened to be unfolded is how
       // the warn token regressed before (C14): the sentence a reader must not
       // misread would simply have stopped being measured.
-      const rowToggle = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded=false]");
+// The row opened for the measuring is a row that HAS a condition: the
+      // condition is only printed where a fare carries a restriction code, so
+      // a probe that opened the first row found nothing to measure on a page
+      // whose cheapest fare is an unrestricted one, and reported the C14
+      // regression as covered when it had measured no condition at all. The
+      // named modes are tried in turn and the page is put back afterwards, so
+      // the probe does not change what the rest of the matrix measures.
+      const modeBefore =
+        (document.querySelector('input[name="ticketMode"]:checked') || {}).value || "";
+      const budgetBefore = document.getElementById("budget") ? budget.value : "";
+      let rowToggle = null;
+      if (document.getElementById("rows") && typeof setBudget === "function") {
+        setBudget(budgetCeiling());
+        currentPage = 1;
+        render();
+        for (const mode of [modeBefore, "single", "return", "anytime"]) {
+          const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
+          if (!input) continue;
+          input.checked = true;
+          currentPage = 1;
+          render();
+          const row = Array.from(document.querySelectorAll("#rows tr:not(.detail)")).find((r) => {
+            const found = activeDestinations().find((d) => d.crs === r.dataset.crs);
+            return found && found.restrictionCode;
+          });
+          if (row) {
+            rowToggle = row.querySelector(".toggle[aria-expanded=false]");
+            break;
+          }
+        }
+      }
       if (rowToggle) rowToggle.click();
       const measured = [];
       for (const [selector, what] of SELECTORS) {
@@ -4146,6 +4360,24 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         measured.push({ what, selector, value: Math.round(value * 100) / 100, needed, size });
       }
       if (rowToggle) rowToggle.click();
+      const back = document.querySelector(`input[name="ticketMode"][value="${modeBefore}"]`);
+      if (back) back.checked = true;
+      if (document.getElementById("rows") && typeof setBudget === "function") {
+        setBudget(Number(budgetBefore));
+        currentPage = 1;
+        render();
+      }
+      // Whether this page's feed prices any fare with a condition at all. A
+      // page that has none cannot be asked to have measured one, and saying so
+      // is the difference between "nothing to measure" and "the condition was
+      // dropped". Carried on the array so every reader below keeps its shape.
+      measured.hasRestricted = Boolean(
+        typeof DATA !== "undefined" &&
+          [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
+            .flat()
+            .filter(Boolean)
+            .some((d) => Boolean(d.restrictionCode))
+      );
       return measured;
     });
     const failures = contrast.filter((entry) => entry.value < entry.needed);
@@ -4164,6 +4396,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
     check(
       `the row's fare condition is measured for contrast in ${scheme}`,
       contrast.some((entry) => entry.selector === ".condition") ||
+        !contrast.hasRestricted ||
         (await page.locator("#rows .toggle").count()) === 0,
       contrast.map((entry) => entry.selector).join(" ")
     );
