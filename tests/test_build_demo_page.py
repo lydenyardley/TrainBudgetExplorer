@@ -370,14 +370,26 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('"for the two of us, two of the fare each row names"', summary)
         self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', summary)
         self.assertIn("+ order + mix", summary)
-        # A row in this list names its own fare, and the handoff to a seller
-        # names that fare rather than the name of the mode.
+        # A row in this list names its own fare, and every place a price is
+        # carried off the page reads the same answer: the handoff to a
+        # seller, the shortlist row, and the copied list. One helper, because
+        # a shortlist that named a different fare from the count line beside
+        # it would be the page disagreeing with itself.
         self.assertIn("function ticketName(destination)", script)
-        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
+        fare = script.split("function fareName(")[1].split("\nfunction ")[0]
         self.assertIn(
             "ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]",
-            journey,
+            fare,
         )
+        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
+        self.assertIn('"Ticket: " + fareName(destination)', journey)
+        # A price with no ticket beside it is the one thing a reader holding
+        # the list cannot act on, so the shortlist names the fare on the row
+        # and on every copied line, beside the price rather than in a footer.
+        row = script.split("function shortlistRow(")[1].split("\nfunction ")[0]
+        self.assertIn(r'" \u00b7 " + fareName(destination)', row)
+        copied = script.split("function shortlistText()")[1].split("\nfunction ")[0]
+        self.assertIn(r'" " + what + ", " + fareName(destination) + ", " + time', copied)
         # The set names itself above the table, in the coverage line and in the
         # provenance line, so no sentence on the page counts the wrong fares.
         self.assertIn('cheapest: "The cheapest fare of any ticket type for each destination', script)
@@ -993,6 +1005,44 @@ class DemoPageTest(unittest.TestCase):
         # The limit is said, not silently applied.
         self.assertIn('setShortlistStatus("The shortlist holds " + SHORTLIST_LIMIT + " places.', self.html)
         self.assertIn('save.setAttribute("aria-label", "Shortlist " + destination.name);', self.html)
+
+    def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
+        # A full-network build is hours long and publishes thousands of
+        # files. Windows refuses to replace a file anything else holds open,
+        # and the build that measured the whole network died that way at page
+        # 77 of 2,712, holding 76 finished pages: an indexer, a virus scanner
+        # or a person reading the resume file is enough. The lock lasts
+        # milliseconds, so the replace waits for it rather than ending the
+        # build.
+        with tempfile.TemporaryDirectory() as folder:
+            page = Path(folder) / "from" / "grantham" / "index.html"
+            build_demo_page.write_page_atomic(page, "<p>first</p>")
+            self.assertEqual(page.read_text(encoding="utf-8"), "<p>first</p>")
+            # What a lock looks like from inside: the replace raises twice,
+            # then succeeds, and the page is published.
+            real_replace = Path.replace
+            calls = {"n": 0}
+
+            def locked(self, target):
+                calls["n"] += 1
+                if calls["n"] < 3:
+                    raise PermissionError(13, "used by another process")
+                return real_replace(self, target)
+
+            with mock.patch.object(Path, "replace", locked):
+                build_demo_page.write_page_atomic(page, "<p>second</p>")
+            self.assertEqual(calls["n"], 3)
+            self.assertEqual(page.read_text(encoding="utf-8"), "<p>second</p>")
+            # A lock that never clears is still an error an operator has to
+            # see, rather than a page silently left unwritten.
+            def never(self, target):
+                raise PermissionError(13, "used by another process")
+
+            with mock.patch.object(Path, "replace", never):
+                with self.assertRaises(PermissionError):
+                    build_demo_page.replace_published(
+                        page.with_name("x.tmp"), page, attempts=1
+                    )
 
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
         # R9 is the railcard's travel condition, not a total ban, so the
@@ -2406,11 +2456,11 @@ class DemoPageTest(unittest.TestCase):
         journey = script.split("function journeyText")[1].split("\nfunction ")[0]
         # A reader in a named set gets that set's name; a reader in the cheapest
         # list chose a price rather than a ticket type, so the handoff names the
-        # fare the row is actually priced as (Q4).
-        self.assertIn(
-            '"Ticket: " + (ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]),',
-            journey,
-        )
+        # fare the row is actually priced as (Q4). The rule itself lives in
+        # fareName, which the shortlist and the copied list read as well, so it
+        # is asserted there and named here.
+        self.assertIn('"Ticket: " + fareName(destination)', journey)
+        self.assertIn("function fareName(destination)", script)
 
     def test_the_row_keeps_the_action_and_the_panel_holds_the_rest(self) -> None:
         # Finding 4 of the 29 September review: five controls in every row is a

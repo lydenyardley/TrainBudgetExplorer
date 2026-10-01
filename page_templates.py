@@ -874,6 +874,17 @@ function ticketName(destination) {
   if (destination.quality === "outbound single") return "Standard outbound single";
   return "Standard return";
 }
+// The fare a price belongs to, for everywhere a price is carried off the
+// page: the shortlist, the copied shortlist, and a row's own handoff. The
+// cheapest list holds one fare per place and can hold a different fare on
+// every row, so it names the ticket on the row; a named list holds one kind
+// of fare, so it names the list. One helper rather than the same decision
+// written three times, because the count line already names the mix of the
+// cheapest list (mixPhrase) and a shortlist that named a different fare from
+// the count line beside it would be the page disagreeing with itself.
+function fareName(destination) {
+  return ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()];
+}
 // The mix of ticket types in a list, for the count line. A list of one kind is
 // the case this exists for rather than the case it stays quiet about: on the
 // real Grantham page every one of the 101 opening rows is a single, and "cheapest
@@ -2142,7 +2153,7 @@ function journeyText(destination) {
   const lines = [
     "From: " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     "To: " + destination.name + " (" + destination.crs + ")",
-    "Ticket: " + (ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]),
+    "Ticket: " + fareName(destination),
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
@@ -2347,7 +2358,7 @@ function shortlistRow(destination) {
       ? "no service found"
       : duration(destination.minutes))
     : "no timetable in this build";
-  facts.textContent = price + (unit() === "party" ? " for the two of us" : " each") + " \\u00b7 " + time + " \\u00b7 " + changes;
+  facts.textContent = price + (unit() === "party" ? " for the two of us" : " each") + " \\u00b7 " + fareName(destination) + " \\u00b7 " + time + " \\u00b7 " + changes;
   const drop = document.createElement("button");
   drop.type = "button";
   drop.className = "toggle";
@@ -2404,7 +2415,7 @@ function shortlistText() {
       ? (destination.minutes === null || destination.minutes === undefined ? "no service found" : duration(destination.minutes))
       : "no timetable in this build";
     lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
-      " " + what + ", " + time + ", " + changes);
+      " " + what + ", " + fareName(destination) + ", " + time + ", " + changes);
   }
   lines.push("A shortlist of places, not a booking: no train is chosen and no ticket is held.");
   return lines.join("\\n");
