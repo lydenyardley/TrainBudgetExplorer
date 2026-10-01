@@ -1027,6 +1027,21 @@ class MinimumFare:
         )
 
 
+def _adult_bounds(codes: tuple[str, ...], railcards: dict[str, "Railcard"]) -> tuple[int, int]:
+    """The adult range a set of railcard codes states between them.
+
+    A bound of zero is the feed's way of not stating one. The 16-25 3-year
+    codes Y3R and YN3 both carry 0-0, and reading that at face value reported
+    the 16-25 Railcard as covering zero to eight adults. A card cannot price a
+    party of no one, so both ends skip an unstated zero, and a set that states
+    no bound at all falls back to one adult, which is the only party size the
+    feed prices for every railcard it carries.
+    """
+    lows = [railcards[code].min_adults for code in codes if railcards[code].min_adults > 0]
+    highs = [railcards[code].max_adults for code in codes if railcards[code].max_adults > 0]
+    return (min(lows) if lows else 1, max(highs) if highs else 1)
+
+
 @dataclass(frozen=True, slots=True)
 class RailcardFamily:
     """One railcard a reader holds, and every code the feed gives it."""
@@ -2447,7 +2462,9 @@ class FaresDb:
 
         The adult bounds are the union across every code the feed carries for
         the product: the feed gives the Senior Railcard 1-1 under SRN and 1-8
-        under RSN, and a reader with the replacement is still one traveller.
+        under RSN, and a reader with the replacement is still one traveller. A
+        bound of zero is read as unstated rather than as a bound, so the 16-25
+        Railcard is one adult rather than none.
 
         Ordered by label, so adding a product to the middle of the reviewed set
         cannot silently reshuffle the menu.
@@ -2464,14 +2481,14 @@ class FaresDb:
             # An alias standing in for an absent primary is promoted, so the
             # card is offered under the code the feed actually has.
             lead = present[0]
-            records = [self.railcards[code] for code in present]
+            low, high = _adult_bounds(present, self.railcards)
             families.append(
                 RailcardFamily(
                     key=lead,
                     label=str(entry["label"]),
                     codes=present,
-                    min_adults=min(record.min_adults for record in records),
-                    max_adults=max(record.max_adults for record in records),
+                    min_adults=low,
+                    max_adults=high,
                 )
             )
         if absent and not self.report.reviewed_railcard_codes_absent:

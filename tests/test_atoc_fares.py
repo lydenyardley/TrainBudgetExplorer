@@ -1377,6 +1377,41 @@ class PublishableSelectorTest(unittest.TestCase):
         )
 
 
+class RailcardAdultBoundsTest(unittest.TestCase):
+    """The adult range a card is offered with, read from the feed's own records.
+
+    A railcard cannot price a party of no one, so a family whose union came
+    out at zero adults would tell a reader a card that is not there. The real
+    feed carries the 16-25 3-year codes Y3R and YN3 as 0-0, and taking those at
+    face value reported the 16-25 Railcard as covering zero to eight adults.
+    """
+
+    def _db_with(self, records):
+        db = atoc_fares.FaresDb()
+        db.railcards = {
+            code: atoc_fares.Railcard(code=code, name=code, min_adults=low, max_adults=high)
+            for code, (low, high) in records.items()
+        }
+        return db
+
+    def test_a_zero_bound_is_read_as_unstated_not_as_zero_adults(self):
+        db = self._db_with({"YNG": (1, 1), "Y3R": (0, 0), "YN3": (0, 0), "RYP": (1, 8)})
+        families = {family.label: family for family in db.reviewed_railcard_families()}
+        self.assertEqual(1, families["16-25 Railcard"].min_adults)
+        self.assertEqual(8, families["16-25 Railcard"].max_adults)
+
+    def test_every_reviewed_card_offers_a_party_of_at_least_one_adult(self):
+        db = self._db_with({code: (0, 0) for code in ("YNG", "NEW", "SRN", "DIS", "BB2", "2TR")})
+        for family in db.reviewed_railcard_families():
+            with self.subTest(family.label):
+                self.assertGreaterEqual(family.min_adults, 1)
+
+    def test_a_card_that_states_no_bound_at_all_prices_one_adult(self):
+        db = self._db_with({"BB2": (0, 0)})
+        family = db.reviewed_railcard_families()[0]
+        self.assertEqual((1, 1), (family.min_adults, family.max_adults))
+
+
 class ReviewedRailcardTest(unittest.TestCase):
     """What the page may offer, and what it is offered under.
 
