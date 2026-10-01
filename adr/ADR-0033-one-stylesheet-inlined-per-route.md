@@ -1,7 +1,7 @@
 # ADR-0033 — One stylesheet source, inlined into every route
 
 **Date:** 27 September 2026
-**Status:** accepted; amended 30 September 2026 (see below)
+**Status:** accepted; amended 30 September 2026 and 1 October 2026 (see below)
 
 ## Context
 
@@ -71,11 +71,18 @@ release argues its byte budget from.
 
 **The price of the guarantee, measured.** `SHARED_CSS` is 15.9 KB, not 3 KB, so
 the shared block is about five times what this ADR recorded. The bytes that are
-byte-identical on every station page are larger still — **119.3 KB**, measured
+byte-identical on every station page are larger still — **126.2 KB**, measured
 over 963 pages of a real network build: this block, the theme block and the theme
 control, the chevron, the list-key block, the station page's own stylesheet and
-its script, and the picker's handling. Across the projected 2,712-page network
-that is ~309 MB of ~1.6 GB, about a fifth.
+its script, and the picker's handling. **This figure is superseded on 1 October
+2026; see the second amendment below.**
+
+*(Superseded on 1 October 2026: the 119.3 KB above was measured before the
+picker's list moved into `stations.js` and before the payload gained its value
+pool, and the ~309 MB of ~1.6 GB was a projection from it. A whole-network build
+of all 2,712 pages now measures **583 MB** — the projection was low by nearly a
+factor of three, and wrong in the safe direction only by accident. The 126.2 KB
+is what the same measurement gives on the current build.)*
 
 **The boundary, which is what the one exception needs.** A route carries in its
 own file everything that is *its own answer*: the destination rows, the fares,
@@ -87,9 +94,13 @@ today:
 - **`stations.js`, the station picker's options** — the same 2,712 rows on every
   station page but the one row each page filters out, 295 MB of the projected
   network sent 2,712 times over before it moved (audit recommendation 1d).
+- **`station-<digest>.css`, the station route's stylesheet** — the shared block
+  and the station route's own rules, byte-identical on all 2,712 station pages
+  and 92.6 MB of the network before it moved (ADR-0047, 1 October 2026). Named
+  for a digest of its own bytes, so a changed stylesheet is a new file.
 
-The stylesheet and the script stay inline until a decision moves them, and if they
-move they move under this same boundary. A requirement follows from the boundary
+The script stays inline until a decision moves it, and if it moves it moves under
+this same boundary. A requirement follows from the boundary
 rather than being a separate promise: **a route whose shared document does not
 arrive stays readable and truthful.** The picker's failure mode is that rule's
 shape — the heading's control is replaced by the station's name as text, the
@@ -102,3 +113,42 @@ Nothing else changes. The single-source rule above stands, `with_shared()`'s
 substitution stands, and the tests that prove each route carries the shared block
 rather than a lookalike stand: what this amends is the claim about external
 assets, not the claim about where the stylesheet comes from.
+
+## Amendment — 1 October 2026: a whole-network build, and the second document
+
+The 30 September amendment was written from 963 pages and a projection. The
+projection is retired, because a build of the whole network now exists and
+disagrees with it: **583 MB over 2,714 pages against the 800 MB budget**, from
+
+```
+python build_demo_page.py --feed feeds/fares --fast-all-origins \
+  --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html
+python tools/page_bytes.py --site _cache/site_measure
+```
+
+Six minutes on eight workers, 2,712 station pages, and the tool exits 0. What
+the projection had wrong was the picker's list, which is 168 KB once in
+`stations.js` rather than 295 MB spread over the network, and the payload
+encoding that shrank every page since. Nothing about the boundary above needed
+to move for that, but one document has joined it.
+
+**What a station page fetches now.** Two documents, neither of them part of any
+page's answer: `stations.js` and the station route's stylesheet. The chooser and
+the privacy page fetch neither, because two pages are not worth a request. The
+script stays inline, and the reason is the one thing this boundary cannot
+absorb: the script draws the page's own payload, so its absence leaves a shell
+rather than an unstyled page. ADR-0047 records that measurement and the
+alternative considered.
+
+**What the boundary now costs, and what it bought.** The site went from 583 MB
+to **498 MB**, and the bytes identical on every station page from 126.2 KB to
+**93.9 KB**, which is the script alone. A mean page is 192,167 bytes against a
+mean payload of 69,936: the payload is now 37% of a page rather than 32%, and
+the page is 12% smaller than it was before any of this.
+
+The claims that stand unchanged: the single source (the block is still written
+once, in `page_templates.SHARED_CSS`, and the asset is that block plus the
+station route's own rules); `with_shared()`'s substitution, and its refusal; and
+the test that each route carries the shared block rather than a lookalike — which
+for the station route is now the test that it *links* the one file, whose name is
+a digest of the bytes it serves.
