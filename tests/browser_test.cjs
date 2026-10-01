@@ -1380,23 +1380,36 @@ async function runPage(browser, index, given, file, body, base) {
     // The card is chosen through the same select a reader uses, and the party
     // is set to one the chosen card actually covers, because a card that does
     // not cover the party on screen is taken out of the list rather than priced.
+    // The budget is raised to reach a row the chosen card actually lowers.
+    // Without that the guard depends on the fixture's numbers: on a page whose
+    // only row inside the budget is under the card's minimum fare, the card
+    // changes nothing on screen and the guard read "9.5 -> 9.5" and reported a
+    // page that does not re-sort.
     const resortable = await page.evaluate(() => {
       const select = document.getElementById("railcardSelect");
-      const cards = (DATA.railcards || []).filter((card) => card.minAdults <= 1 && 1 <= card.maxAdults);
-      if (!select || !cards.length) return null;
+      const card = (DATA.railcards || []).find((c) => c.minAdults <= 1 && 1 <= c.maxAdults);
+      if (!select || !card) return null;
       document.querySelector('input[name="unit"][value="adult"]').checked = true;
-      select.value = cards[0].key;
+      const lowered = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
+        .flat()
+        .filter((d) => {
+          const entry = (d.railcards || {})[card.key];
+          return entry && entry.pricePence !== null && entry.pricePence < d.adultPence;
+        });
+      if (!lowered.length) return null;
+      const dearest = lowered.reduce((high, d) => Math.max(high, d.adultPence), 0);
+      setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
+      select.value = "";
       render();
-      return cards[0].key;
+      return card.key;
     });
     if (resortable) {
-      await page.fill("#budgetNumber", String(twoAdultStop.max));
       const beforeCard = await shownPrices();
-      await page.evaluate(() => {
+      await page.evaluate((key) => {
         const select = document.getElementById("railcardSelect");
-        select.value = "";
+        select.value = key;
         render();
-      });
+      }, resortable);
       const withCard = await shownPrices();
       check(
         "and the list re-sorts when the railcard replaces every price",
@@ -1411,7 +1424,7 @@ async function runPage(browser, index, given, file, body, base) {
     } else {
       check(
         "and the list re-sorts when the railcard replaces every price",
-        notExercised("this feed prices no railcard for one adult, so no row's price changes")
+        notExercised("this feed prices no railcard that lowers a displayed fare for one adult")
       );
     }
 
