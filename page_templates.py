@@ -627,7 +627,7 @@ __THEME_TOGGLE__
     <legend class="sr-only">Budget</legend>
     <label class="sr-only" for="budget">Budget in pounds</label>
     <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
-    <span class="tag" id="budgetHint">Drag to change the budget in the heading.</span>
+    <span class="tag" id="budgetHint">Drag to change the budget in the heading. It stops at the highest fare in the ticket type you are looking at — <span id="budgetCeiling">__CEILING_NOTE__</span>.</span>
   </fieldset>
   <div class="more-filters" id="moreFilters" data-open="false">
     <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
@@ -782,7 +782,7 @@ if (window.TBE_STATIONS) {
   );
 }
 const rows = document.getElementById("rows");
-const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");
+const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");const budgetCeilingNote = document.getElementById("budgetCeiling");
 const budgetField = document.getElementById("budgetField");
 const railcard = document.getElementById("railcard");
 
@@ -1557,6 +1557,12 @@ function render() {
   const ceiling = budgetCeiling();
   budget.max = String(ceiling);
   budgetNumber.max = String(ceiling);
+  // The stop is part of the budget's contract, so it is named where the
+  // reader is holding the control, and it is named as a figure rather
+  // than a rule: the sentence above the number is what changes, the number
+  // is what the reader can predict a boundary fare against.
+  budgetCeilingNote.textContent = money(ceiling * 100) + " for "
+    + (unit() === "party" ? "two adults" : "one adult");
   if (Number(budget.value) > ceiling) setBudget(ceiling);
   const cap = Number(budget.value) * 100;
   const wantedTypes = selectedDestinationTypes();

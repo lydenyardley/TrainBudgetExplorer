@@ -1307,6 +1307,79 @@ async function runPage(browser, index, given, file, body, base) {
     check("an empty budget says so rather than showing nothing", floored.empty, JSON.stringify(floored));
     check("the summary counts what is left", /No destinations for up to/.test(floored.summary), floored.summary);
 
+    // S17: the slider has always stopped somewhere the page never said out
+    // loud, so a reader could not predict whether a fare at the boundary was
+    // included without dragging the control to find out. The figure is read
+    // out of the rendered page and compared with the input's own max -- not
+    // with the resolver that produced it -- so a note that drifts from the
+    // control is what fails.
+    const statedStop = () => page.evaluate(() => ({
+      max: Number(document.getElementById("budget").max),
+      stated: ((document.getElementById("budgetCeiling") || {}).textContent || "").trim(),
+    }));
+    // The empty-budget check above may have left the page priced for two
+    // adults, so the one-adult figure is read from a state this block sets.
+    await page.check('input[name="unit"][value="adult"]');
+    const oneAdultStop = await statedStop();
+    check(
+      "the budget control says where it stops, and the figure is the stop",
+      oneAdultStop.stated.includes("\u00a3" + oneAdultStop.max + ".00 for one adult"),
+      `${oneAdultStop.stated} against a slider that stops at ${oneAdultStop.max}`
+    );
+    // Two adults double every price, which leaves the order alone and puts
+    // the stop at twice as much, so this is where the stated figure is proved
+    // to follow the party rather than being written once at build time.
+    await page.check('input[name="unit"][value="party"]');
+    const twoAdultStop = await statedStop();
+    check(
+      "and the stated stop follows the party the reader chooses",
+      twoAdultStop.stated.includes("\u00a3" + twoAdultStop.max + ".00 for two adults") &&
+        twoAdultStop.max > oneAdultStop.max,
+      `${twoAdultStop.stated} against ${oneAdultStop.stated} for one adult`
+    );
+    await page.check('input[name="unit"][value="adult"]');
+    // C17, the one state the existing reading cannot reach. Doubling every
+    // price leaves an order untouched, so the adult and two-adult readings
+    // above cannot tell a page that re-sorts from one that happens to be
+    // right. The railcard is the only control that replaces each row's price
+    // with a different discount, so it is the only state where a row can move.
+    //
+    // This page's own feed cannot prove it, and the check says so rather than
+    // borrowing a proof it does not have: the discounts here fall in the same
+    // order as the fares they come from (measured, two adults, no card to card:
+    // 2 17.4 24 44.8 252 -> 1.3 17.4 24 29.8 168), so a sort that ignored the
+    // card entirely was measured and passed this state. It is a guard for a
+    // feed whose discounts are not uniform, and the tamper that cleared it is
+    // recorded so the next reader does not mistake it for a gate.
+    const shownPrices = () => page.evaluate(() =>
+      Array.from(document.querySelectorAll("#rows tr[data-crs] td.num .price"))
+        .map((cell) => Number(cell.textContent.replace(/[^0-9.]/g, "")))
+    );
+    const ascending = (xs) => xs.every((value, i) => i === 0 || xs[i - 1] <= value);
+    const hasCard = await page.evaluate(() => Boolean(DATA.railcardAvailable));
+    if (hasCard) {
+      // Two Together covers two adults travelling together, so the page stands
+      // the card down for a party of one: the control is exercised with the
+      // party it applies to selected.
+      await page.check('input[name="unit"][value="party"]');
+      await page.fill("#budgetNumber", String(twoAdultStop.max));
+      const beforeCard = await shownPrices();
+      await page.check("#railcard");
+      const withCard = await shownPrices();
+      check(
+        "and the list re-sorts when the railcard replaces every price",
+        ascending(withCard) && withCard.join(" ") !== beforeCard.join(" "),
+        `${beforeCard.join(" ")} -> ${withCard.join(" ")}`
+      );
+      await page.uncheck("#railcard");
+      await page.check('input[name="unit"][value="adult"]');
+    } else {
+      check(
+        "and the list re-sorts when the railcard replaces every price",
+        notExercised("this feed prices no railcard, so no row's price changes")
+      );
+    }
+
     // 3. The destination-type chips narrow the result set and support both
     // exclusive All and multi-select specific types. Every chip is judged
     // against the page's own data in both directions, and the ticket mode is
