@@ -2009,11 +2009,17 @@ def origin_control(payload: dict) -> str:
         # this direction too -- it fails a page that renders a control which
         # opens nothing.
         return f'<span class="origin-name">{name}</span>'
+    # The wrapper is the slot: it carries the underline and the heading's own
+    # weight whether the reader is looking at the station's name or at the field
+    # that replaces it, so clicking the name and typing into it are the same
+    # gesture in the same place.
     return (
+        '<span class="origin-slot-wrap">'
         '<button id="changeOrigin" class="origin-slot" type="button" aria-expanded="false"'
         ' aria-controls="originPicker">'
         '<span class="sr-only">Change starting station: </span>'
         f'<span>{name}</span>{CHEVRON}</button>'
+        '</span>'
     )
 
 

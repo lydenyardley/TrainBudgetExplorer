@@ -147,7 +147,7 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      the caret in it is the browser's own and blinks, and the word in it is a
      placeholder rather than a value. That word is muted: the reader's answer is
      what belongs in the accent, not the page's suggestion. */
-  .heading-field, .origin-slot { display: inline-flex; align-items: baseline; color: var(--accent);
+  .heading-field, .origin-slot-wrap { display: inline-flex; align-items: baseline; color: var(--accent);
                                  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
                                  border-radius: .15rem .15rem 0 0; }
   /* Focus is carried by the underline and by the caret, never by a wash. At
@@ -156,8 +156,12 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      caret is already sitting in the slot, blinking, which no other affordance
      can say. A keyboard reader gets the page's own focus ring on top, because
      :focus-visible is a different question from :focus-within. */
-  .heading-field:focus-within, .origin-slot:focus-within { border-bottom-style: solid; border-bottom-width: 2px; }
+  .heading-field:focus-within, .origin-slot-wrap:focus-within { border-bottom-style: solid; border-bottom-width: 2px; }
   .heading-field { cursor: text; }
+  /* The name inside the wrapper is a button, not a slot of its own, so the
+     shared rule does not draw a second underline under it. */
+  .origin-slot-wrap .origin-slot { display: inline-flex; align-items: baseline;
+                                   color: inherit; border-bottom: 0; padding: 0; }
   /* The currency sign is read, not decorative. It was aria-hidden, so the
      heading's accessible name was "for up to 20" while the page said 20 pounds
      everywhere else; the number field keeps its own label, so nothing is
@@ -196,15 +200,15 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      characters typed, which scrolled the page 1,739px sideways. ch scales with
      the heading's own size, so 18 of them fit the column on a wide screen, and
      the viewport share is what fits on a narrow one. */
-  .origin-slot #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
+  .origin-slot-wrap #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
                                padding: .05rem .15rem; border: 0; outline: 0;
                                background: transparent; color: inherit; font: inherit;
                                font-weight: inherit; letter-spacing: inherit;
                                caret-color: var(--accent); }
   @supports not (field-sizing: content) {
-    .origin-slot #originSearch { width: 9ch; }
+    .origin-slot-wrap #originSearch { width: 9ch; }
   }
-  .origin-slot #originSearch::placeholder { color: var(--muted); opacity: 1; }
+  .origin-slot-wrap #originSearch::placeholder { color: var(--muted); opacity: 1; }
   /* One drawn disclosure mark, used by both the refinements control and the
      station slot. Authored rather than a character: a character has no stroke
      weight of its own, is styled differently by every font, and the one this
@@ -529,17 +533,20 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      beside the condition it explains. */
   .row-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .6rem; }
   .row-actions .toggle { margin-left: 0; }
-  #originPicker { margin: .75rem 0 1rem; }
-  .origin-picker-label { display: block; margin-bottom: .35rem; font-size: .8rem;
-                         text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  #originPicker input[type=search] { width: 100%; max-width: 24rem; padding: .5rem; border: 1px solid var(--line);
-                                     border-radius: .35rem; font: inherit; color: var(--fg); background: var(--field); }
-  #originPicks { list-style: none; margin: .5rem 0 0; padding: 0; max-width: 24rem; }
-  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; min-height: 44px; padding: .55rem .4rem;
+  /* The list, opened directly under the heading it replaces. It is as wide as
+     the heading's own measure and no wider: it is a list of names and codes,
+     and a column of links 24rem wide in a 78rem page reads as a sidebar. */
+  #originPicker { margin: .4rem 0 1rem; max-width: 34rem; }
+  .origin-picker-label { margin: 0 0 .3rem; font-size: .72rem;
+                         text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  #originPicks { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto;
+                 border-top: 1px solid var(--line); }
+  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; min-height: 44px;
+                   padding: .55rem .4rem; align-items: baseline;
                    color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  #originPicks .code { color: var(--muted); }
-  #originNomatch { color: var(--muted); margin-top: .5rem; }
+  #originPicks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #originNomatch { color: var(--muted); margin: .5rem 0 0; }
   /* The unpriced-origin message replaces the intro, so it is page-size text in
      the normal foreground colour: a finding, not a footnote. */
   .unpriced { margin: 0 0 1.25rem; }
@@ -672,20 +679,22 @@ __THEME_TOGGLE__
      one per build and the first one is written by script, and a reader cannot
      tell where the sentence ended. -->
 <p class="sub" id="pageIntro">Every destination this feed prices from the station above, inside the budget.<span id="firstUse"> __FIRST_USE__</span></p>
+<!-- The list, not the field. The field is moved into the heading by the
+     script, into the place the station's own name was, so that clicking the
+     name and typing are the same gesture in the same place -- and the list
+     opens directly under it, because a reader who has just clicked a word
+     looks at that word and not two paragraphs further down. -->
+<div id="originPicker" hidden>
+  <p class="origin-picker-label" id="originPicksLabel">Every station on this site</p>
+  <ul id="originPicks" aria-labelledby="originPicksLabel"></ul>
+  <p id="originNomatch" hidden></p>
+  <span id="originStatus" class="sr-only" role="status"></span>
+</div>
 <!-- ADR-0047: shown only when the stylesheet did not arrive. The page is
      plain text in that state, and says so rather than leaving a reader to
      wonder why this station looks unlike every other one. -->
 <p class="sub" id="styleNote" hidden></p>
 <p id="unpriced" class="unpriced" hidden></p>
-
-<div id="originPicker" hidden>
-  <label class="origin-picker-label" for="originSearch">Start from a different station</label>
-  <input id="originSearch" type="search" placeholder="Type part of a name or its three-letter code" autocomplete="off"
-         aria-describedby="originStatus" aria-controls="originPicks">
-  <span id="originStatus" class="sr-only" role="status"></span>
-  <ul id="originPicks"></ul>
-  <p id="originNomatch" hidden></p>
-</div>
 
 <section class="filter-bar" aria-label="Journey and destination filters">
   <fieldset class="budget-track">
@@ -2134,15 +2143,14 @@ function cellWithLinks(row, destination, wanted) {
 // fare they explain, where the reader opened the row to look, and the feed's
 // exact RR rule sits in the feed record below them with the codes.
 function cardNote(destination) {
+  // With no card chosen there is nothing to explain: the row is priced at the
+  // standard fare, the price cell says so by not saying otherwise, and the
+  // control above already reads "No railcard selected, so these are standard
+  // fares". A paragraph on every expanded row repeating the page's default is
+  // the noise this replaced.
+  if (noCard() || !railcards[railcardSelect.value]) return null;
   const note = document.createElement("p");
   note.className = "card-note";
-  if (noCard() || !railcards[railcardSelect.value]) {
-    note.dataset.state = "none";
-    note.textContent =
-      "No railcard is selected, so this fare is shown at its standard price. Choose the card " +
-      "you hold above and every destination is priced against that card\u2019s own rules.";
-    return note;
-  }
 
   const card = railcards[railcardSelect.value];
   const details = (destination.railcards || {})[card.key];
@@ -2541,7 +2549,18 @@ async function copyJourney(destination, button, host) {
 const changeOrigin = document.getElementById("changeOrigin");
 const originPicker = document.getElementById("originPicker");
 if (changeOrigin && DATA.stations && DATA.stations.length) {
-  const originSearch = document.getElementById("originSearch");
+  // The field the page's own script created, read here rather than from the
+  // document: it is moved into the heading when the picker opens, and the
+  // markup no longer holds it.
+  const originSearch = document.createElement("input");
+  originSearch.id = "originSearch";
+  originSearch.type = "search";
+  originSearch.placeholder = "station";
+  originSearch.autocomplete = "off";
+  originSearch.setAttribute("aria-describedby", "originStatus");
+  originSearch.setAttribute("aria-controls", "originPicks");
+  originSearch.setAttribute("aria-label", "Start from a different station");
+  const originSlot = changeOrigin.parentElement;
   const originPicks = document.getElementById("originPicks");
   const originNomatch = document.getElementById("originNomatch");
   const originStatus = document.getElementById("originStatus");
@@ -2576,13 +2595,24 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     originStatus.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
   }
 
+  // The field is moved into the slot rather than duplicated, so there is one
+  // input in the document and the heading's own accessible name is the one
+  // that gets typed into. Moving it back on close keeps the DOM where the
+  // script that reads it expects it after a navigation.
   function setPicker(open) {
     changeOrigin.setAttribute("aria-expanded", String(open));
     originPicker.hidden = !open;
     if (open) {
+      if (originSearch.parentElement !== originSlot) originSlot.append(originSearch);
+      changeOrigin.hidden = true;
       renderPicks();
+      // The field is sized to its placeholder, so it is as wide as the word
+      // "station" and no wider until something is typed into it.
       originSearch.focus();
+      originSearch.select();
     } else {
+      changeOrigin.hidden = false;
+      if (originSearch.parentElement !== originPicker) originSearch.remove();
       // Escape is a keyboard exit, and focus returns to the control that
       // opened the picker rather than dropping to the top of the page.
       changeOrigin.focus();
@@ -2591,6 +2621,13 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
 
   changeOrigin.addEventListener("click", () => {
     setPicker(changeOrigin.getAttribute("aria-expanded") !== "true");
+  });
+  // The listener is on the field rather than on the panel, because the field
+  // is moved out of the panel and into the heading while the picker is open.
+  // A listener on the panel alone meant Escape -- pressed in the field, which
+  // is the only place a reader can press it -- bubbled past it and did nothing.
+  originSearch.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setPicker(false);
   });
   originPicker.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setPicker(false);
