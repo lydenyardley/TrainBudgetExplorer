@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -4530,6 +4531,80 @@ class RunnerPassthroughTest(unittest.TestCase):
         # would be credited to NRE.
         command = self._command(feed=Path("_demo_feed"))
         self.assertNotIn("--notices", command)
+
+
+class RunnerBuildOrServeTest(unittest.TestCase):
+    """Which of the two jobs the runner does on a given run.
+
+    The decision is the point. A runner that rebuilds on every start cannot
+    answer "is this the build I made?", and these tests are about that answer
+    being knowable rather than about the build itself.
+    """
+
+    def run_main(self, *flags, site_exists=True):
+        served = []
+
+        class FakeServer:
+            allow_reuse_address = True
+
+            def __init__(self, *a, **k):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def serve_forever(self):
+                served.append(1)
+
+        # The flags are the tokens a reader would type, because the decision
+        # under test belongs to run.py and a dict would rewrite them.
+        argv = ["run.py"] + list(flags)
+        # The decision turns on whether _site/ is there, so the two states have
+        # to be real directories rather than a flag the runner cannot see.
+        if site_exists:
+            site = Path(__file__).parent.parent / "_site"
+        else:
+            site = Path(tempfile.mkdtemp()) / "never-built"
+            self.addCleanup(shutil.rmtree, site.parent, True)
+        builder = mock.Mock(return_value=0)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(sys, "argv", argv))
+            stack.enter_context(mock.patch.object(run, "SITE", site))
+            stack.enter_context(mock.patch.object(run.socketserver, "ThreadingTCPServer", FakeServer))
+            stack.enter_context(mock.patch.object(run, "webbrowser", mock.Mock()))
+            stack.enter_context(mock.patch.object(run.threading, "Timer", mock.Mock()))
+            stack.enter_context(mock.patch.object(run, "build", builder))
+            stack.enter_context(mock.patch.object(run.os, "chdir", mock.Mock()))
+            out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            code = run.main()
+        return code, out.getvalue(), builder.call_count, served
+
+    def test_a_clean_checkout_builds_because_there_is_nothing_to_serve(self) -> None:
+        _, _, builds, _ = self.run_main("--no-build", site_exists=True)
+        self.assertEqual(builds, 0)
+        _, _, builds, served = self.run_main(site_exists=False)
+        self.assertEqual(builds, 1)
+        self.assertEqual(len(served), 1)
+
+    def test_a_second_run_serves_what_the_first_one_wrote(self) -> None:
+        _, said, builds, served = self.run_main(site_exists=True)
+        self.assertEqual(builds, 0)
+        self.assertEqual(len(served), 1)
+        self.assertIn("without rebuilding", said)
+
+    def test_rebuild_builds_even_when_a_site_is_already_there(self) -> None:
+        _, _, builds, _ = self.run_main("--rebuild", site_exists=True)
+        self.assertEqual(builds, 1)
+
+    def test_no_build_refuses_rather_than_building_what_it_was_told_not_to(self) -> None:
+        code, _, builds, served = self.run_main("--no-build", site_exists=False)
+        self.assertEqual(code, 1)
+        self.assertEqual(builds, 0)
+        self.assertEqual(served, [])
 
 
 class SingleOriginRunnerTidyTest(unittest.TestCase):

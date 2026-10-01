@@ -2,10 +2,12 @@
 
     python run.py
 
-Every run rebuilds from the current fares feed so the pages are never stale, then
-serves the whole site on http://localhost:8741 and opens it. The default is a
-fast single-origin page; use --with-timetable to opt into the large national
-timetable feed, or pass --all-origins for every priced station (slow).
+This serves what the last build wrote, on http://localhost:8741, and opens it. It
+does not rebuild: a server that rebuilds on every start cannot say what it is
+serving. On a clean checkout there is nothing to serve, so it builds once first.
+The default build is a fast single-origin page; use --with-timetable to opt into
+the large national timetable feed, or pass --all-origins for every priced station
+(slow).
 
 Other useful forms:
 
@@ -239,7 +241,10 @@ def main() -> int:
     parser.add_argument("--privacy-contact", default=None,
                         help="who to contact about a problem with the page; overrides "
                              "the project's own contact in build_demo_page.py")
-    parser.add_argument("--no-build", action="store_true", help="serve _site/ as it is, without rebuilding")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="build _site/ again before serving it (the default builds only when there is nothing to serve)")
+    parser.add_argument("--no-build", action="store_true",
+                        help="serve _site/ as it is and fail if it is not there")
     parser.add_argument("--origin", default=None, help="origin CRS code; defaults to GRA for real feeds and GRN for the demo")
     parser.add_argument("--date", default=None, help="timetable service date as YYYY-MM-DD; defaults to today")
     args = parser.parse_args()
@@ -276,13 +281,26 @@ def main() -> int:
               "--all-origins for the fast single-origin demo.", file=sys.stderr)
         return 2
 
-    if not args.no_build:
+    # The build and the serve are separate decisions. A runner that rebuilds
+    # every time cannot answer "is this the build I made?", and a stale
+    # answer to that question is how a page gets reviewed against yesterday's
+    # fares. So it builds when there is nothing to serve, serves what is there
+    # otherwise, and says which of the two it did.
+    if args.no_build:
+        if not SITE.exists():
+            print("No _site/ to serve and --no-build was given. Run a build first.",
+                  file=sys.stderr)
+            return 1
+        print("Serving the existing _site/ untouched, as asked.")
+    elif args.rebuild or not SITE.exists():
+        if args.rebuild:
+            print("Rebuilding _site/ before serving, as asked.")
         rc = build(args)
         if rc != 0:
             return rc
-    elif not SITE.exists():
-        print("No _site/ to serve -- drop --no-build or run a build first.", file=sys.stderr)
-        return 1
+    else:
+        print("Serving the existing _site/ without rebuilding it. Pass --rebuild to"
+              " build again first.")
 
     os.chdir(SITE)
 
