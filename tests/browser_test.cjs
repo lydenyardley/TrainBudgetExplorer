@@ -2624,6 +2624,88 @@ async function runPage(browser, index, given, file, body, base) {
       check("with no railcard selected no row shows a second price",
         notExercised("this feed prices no reviewed railcard"));
     }
+    // The drawer leads with the row's own price, so opening it never shows a
+    // bigger number than the row it was opened from. The row the old drawer got
+    // wrong is the one the card does not lower: the card's own price for that
+    // fare sits above the fare the row is priced at, and it was printed under a
+    // label that called it a discount. Read from the drawers themselves rather
+    // than from the template, because the number is written by script and a
+    // string in the source can only say what was meant to be written.
+    const drawerChoice = await page.evaluate(() => {
+      const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
+      for (const card of DATA.railcards || []) {
+        for (const adults of [2, 1]) {
+          if (!(card.minAdults <= adults && adults <= card.maxAdults)) continue;
+          const priced = rows.filter((d) => {
+            const detail = (d.railcards || {})[card.key];
+            return detail && detail.pricePence !== null;
+          });
+          if (priced.length) return { key: card.key, adults };
+        }
+      }
+      return null;
+    });
+    const drawerRows = drawerChoice
+      ? await page.evaluate((choice) => {
+          const dialog = document.getElementById("railcardDrawer");
+          document.querySelector(
+            'input[name="unit"][value="' + (choice.adults === 2 ? "party" : "adult") + '"]'
+          ).checked = true;
+          document.getElementById("railcardSelect").value = choice.key;
+          // Only the list the page is showing: a row in another ticket mode is
+          // not on screen, so it is not a drawer a reader could open.
+          const priced = activeDestinations().filter((d) => (d.railcards || {})[choice.key]);
+          if (!priced.length) return [];
+          const dearest = priced.reduce(
+            (high, d) => Math.max(high, choice.adults === 2 ? d.partyPence : d.adultPence),
+            0
+          );
+          if (dearest) {
+            setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
+          }
+          currentPage = 1;
+          render();
+          const readings = [];
+          for (const row of Array.from(document.querySelectorAll("#rows tr[data-crs]"))) {
+            // Card details waits in the row's own panel, so the row is opened
+            // first, the same way a reader reaches it. The panel is built when
+            // it opens, so it is read after that and not before.
+            const fold = row.querySelector(".toggle[aria-expanded='false']");
+            if (fold) fold.click();
+            const detail = row.nextElementSibling;
+            const button = detail
+              ? Array.from(detail.querySelectorAll("button")).find((b) => b.textContent === "Card details")
+              : null;
+            if (!button) continue;
+            button.click();
+            const price = row.querySelector("td.num .price");
+            readings.push({
+              crs: row.dataset.crs,
+              row: price ? price.textContent.trim() : null,
+              shown: document.getElementById("railcardDiscounted").textContent,
+              standard: document.getElementById("railcardStandard").textContent,
+            });
+            dialog.close();
+          }
+          return readings;
+        }, drawerChoice)
+      : [];
+    const pounds = (text) => Number(String(text).replace(/[^0-9.]/g, ""));
+    // A row with no price on screen, or a drawer saying a card is not priced
+    // for it, carries no number to compare.
+    const opened = drawerRows.filter((r) => r.row !== null && pounds(r.shown) > 0);
+    check(
+      "the drawer never shows more than the row it was opened from",
+      opened.length
+        ? opened.every((r) => pounds(r.shown) <= pounds(r.row))
+        : notExercised("this page prices no railcard against a row it shows"),
+      JSON.stringify(drawerRows.slice(0, 4))
+    );
+    check(
+      "and the standard fare beside it is the fare the row is priced at without a card",
+      opened.every((r) => pounds(r.standard) === pounds(r.row) || pounds(r.row) <= pounds(r.shown)),
+      JSON.stringify(drawerRows.slice(0, 4))
+    );
     // The section that follows reads rows and their panels, so the page is
     // handed back at the budget the rest of this block is written against.
     await open(facts.affordable);
