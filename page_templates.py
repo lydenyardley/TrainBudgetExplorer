@@ -479,22 +479,15 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .shortlist-name { font-weight: 600; }
   .shortlist-facts { color: var(--muted); font-variant-numeric: tabular-nums; }
   .empty-actions .toggle { min-height: 44px; }
-  #railcardDrawer { width: min(30rem, calc(100% - 1rem)); max-width: none; height: 100dvh;
-                    max-height: none; margin: 0 0 0 auto; padding: 1.25rem;
-                    border: 0; border-left: 1px solid var(--line); color: var(--fg);
-                    background: var(--field); box-shadow: -1rem 0 2.5rem rgba(0,0,0,.18); }
-  #railcardDrawer::backdrop { background: rgba(0,0,0,.38); }
-  .drawer-head { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
-  .drawer-head h2 { margin: 0; font-size: 1.25rem; }
-  .drawer-close { min-width: 2.75rem; min-height: 2.75rem; }
-  .drawer-status { margin: 1.25rem 0; padding: .8rem; border: 1px solid var(--line);
-                    border-radius: .5rem; background: var(--best); }
-  .drawer-status[data-state=blocked], .drawer-status[data-state=unavailable] { border-color: #b7791f; }
-  #railcardRule { padding: .8rem; border: 1px solid var(--line); border-left-color: var(--accent); background: var(--bg);
-                  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85rem; }
-  #railcardDrawer dl { display: grid; grid-template-columns: max-content 1fr; gap: .55rem .8rem; }
-  #railcardDrawer dt { color: var(--muted); }
-  #railcardDrawer dd { margin: 0; font-variant-numeric: tabular-nums; }
+  /* The railcard, said in the row's own words, in the row's own disclosure. It
+     was a dialog with a Close button and a definition list of three numbers
+     the row above it already carried; it is now one paragraph, and the only
+     part of it that is ever urgent -- a card that cannot be used on this fare
+     -- is the part that is coloured. */
+  .card-note { margin: .5rem 0 0; padding: .5rem .6rem; border: 1px solid var(--line);
+               border-radius: .4rem; background: var(--bg); }
+  .card-note[data-state=blocked], .card-note[data-state=unavailable] { border-color: var(--warn); }
+  .card-note[data-state=available] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .9rem; }
   .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
@@ -761,22 +754,6 @@ __THEME_TOGGLE__
   <button id="nextPage" type="button" class="toggle">Next</button>
 </nav>
 
-<dialog id="railcardDrawer" aria-labelledby="railcardDrawerTitle" aria-describedby="railcardReason">
-  <div class="drawer-head">
-    <h2 id="railcardDrawerTitle">Railcard eligibility</h2>
-    <button id="railcardClose" class="toggle drawer-close" type="button" aria-label="Close railcard details">Close</button>
-  </div>
-  <p id="railcardDestination" class="tag"></p>
-  <p id="railcardReason" class="drawer-status"></p>
-  <dl>
-    <dt>Card</dt><dd id="railcardName"></dd>
-    <dt>Standard fare</dt><dd id="railcardStandard"></dd>
-    <dt>Price with this card</dt><dd id="railcardDiscounted"></dd>
-    <dt>DTD minimum</dt><dd id="railcardMinimum"></dd>
-  </dl>
-  <h3>Exact DTD rule</h3>
-  <p id="railcardRule"></p>
-</dialog>
 </main>
 
 <footer>
@@ -903,8 +880,6 @@ const pagination = document.getElementById("pagination");
 const previousPage = document.getElementById("previousPage");
 const nextPage = document.getElementById("nextPage");
 const pageStatus = document.getElementById("pageStatus");
-const railcardDrawer = document.getElementById("railcardDrawer");
-const railcardClose = document.getElementById("railcardClose");
 const clearTypes = document.getElementById("clearTypes");
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
@@ -1864,6 +1839,8 @@ function fareTypeCell(destination) {
   const cell = document.createElement("td");
   cell.className = "fare-type";
   cell.dataset.label = "Fare type";
+  cell.dataset.kind = destination.isAdvance ? "advance"
+    : destination.restrictionCode ? "restricted" : "regular";
   const kind = document.createElement("span");
   kind.className = "fare-kind";
   kind.textContent = fareTypeWord(destination);
@@ -1887,15 +1864,21 @@ function fareFlag(destination) {
   return "";
 }
 
-// The fare in words, inside the row's own disclosure. The pointer C07 asked
-// for is kept, because it is still true: a restricted fare's condition is the
-// next thing in this same panel, not a column away.
+// The fare in words, inside the row's own disclosure. It is a full sentence
+// because it is the only thing the panel says before the condition: a fragment
+// with a semicolon in it was read as two facts of equal weight, and the second
+// half of it ("price and availability can change") was the one a reader needed
+// before deciding whether to trust the price at all.
 function fareSentence(destination) {
-  if (destination.isAdvance) return "Advance single — choose a qualifying train; price and availability can change";
-  if (destination.restrictionCode) return "Restricted fare — condition below";
-  if (destination.quality === "outbound single") return "Standard outbound single";
-  if (destination.quality === "unrestricted Anytime Day Return") return "Unrestricted Anytime Day Return";
-  return "Standard return fare";
+  if (destination.isAdvance) {
+    return "Advance single: you choose the train, and the price and availability can change.";
+  }
+  if (destination.restrictionCode) return "Restricted fare \u2014 the condition is below.";
+  if (destination.quality === "outbound single") return "Standard outbound single, with no conditions in the feed.";
+  if (destination.quality === "unrestricted Anytime Day Return") {
+    return "Unrestricted Anytime Day Return: valid on any train on the route.";
+  }
+  return "Standard return fare, with no conditions in the feed.";
 }
 
 // What the row's title attribute says, in the same voice as the sentence: the
@@ -1936,19 +1919,26 @@ function fareDetails(destination) {
   const fare = document.createElement("p");
   fare.className = "fare-line";
   fare.textContent = fareSentence(destination);
+  panel.append(fare);
   // S19: what the reader has to know to rule the fare in or out, in sentences.
-  const readable = document.createElement("p");
-  readable.className = "condition";
-  readable.textContent = restricted
-    ? (destination.restrictionDescription || "This fare carries a restriction code; check the seller's conditions before buying.")
-    : "No travel conditions on this fare in the feed.";
-  panel.append(fare, readable);
-  // append() would stringify a null argument into the word "null", so the
-  // optional note is added only when there is one to add.
-  const validity = validityNote(destination);
-  if (validity) readable.append(validity);
+  // Said only when there is a condition to rule out: an unrestricted fare used
+  // to open with a second paragraph saying there was nothing to read, which is
+  // the same information as silence, said in a line.
+  if (restricted) {
+    const readable = document.createElement("p");
+    readable.className = "condition";
+    readable.textContent = destination.restrictionDescription ||
+      "This fare carries a restriction code; check the seller's conditions before buying.";
+    panel.append(readable);
+  }
   const split = splitNote(destination);
   if (split) panel.append(split);
+  // The railcard, when one is in play, and the feed's record of the fare --
+  // codes, restriction, route, and the exact RR rule that decided the card's
+  // price. All of it is the explanation of the number at the top of the row, so
+  // all of it is in the one place the reader opened to find the number.
+  const card = cardNote(destination);
+  if (card) panel.append(card);
   panel.append(feedRecord(destination));
   panel.title = fareSummary(destination);
   return panel;
@@ -2003,8 +1993,34 @@ function feedRecord(destination) {
   add("Route", destination.routeCode);
   add("Priced as", destination.quality);
   add("Times", destination.journeyState);
+  // C08: what the condition permits, in the feed's own words. It was a third
+  // paragraph under the row's own, in capitals, between a sentence and a code,
+  // and it was the only part of the three that could not be paraphrased without
+  // a licencee's risk. It is here now: still verbatim, still present, and
+  // behind the record rather than in front of the decision.
+  const validity = validityNote(destination);
+  if (validity) {
+    const dt = document.createElement("dt");
+    dt.textContent = "In the feed\u2019s words";
+    const dd = document.createElement("dd");
+    dd.append(validity);
+    list.append(dt, dd);
+  }
+  const rule = railcardRuleFor(destination);
+  if (rule) add("Railcard rule", rule);
   details.append(summary, list);
   return details;
+}
+
+// The exact RR rule behind the chosen card\u2019s price on this fare, if there
+// is one. It was the last line of a dialog; a rule is a record, and records
+// live in the record.
+function railcardRuleFor(destination) {
+  if (noCard() || !railcards[railcardSelect.value]) return null;
+  const details = (destination.railcards || {})[railcardSelect.value];
+  if (!details || !details.rule) return null;
+  const rule = DATA.railcardRules[details.rule];
+  return rule ? rule.text : null;
 }
 
 function cellWithLinks(row, destination, wanted) {
@@ -2060,77 +2076,33 @@ function cellWithLinks(row, destination, wanted) {
   row.append(cell);
 }
 
-// The row's two secondary actions, built into the panel rather than onto the
-// row. Both take the reader somewhere the row has no space for: the railcard
-// drawer, which is the one fare question the feed answers with a rule, and the
-// copied handoff text, which is what a reader pastes to a seller or a friend
-// (ADR-0018). The copy text of a refused clipboard lands in this same panel,
-// under the button that asked for it.
-function rowActions(row, destination) {
-  const tools = document.createElement("div");
-  tools.className = "row-actions";
-  const cardDetails = document.createElement("button");
-  cardDetails.className = "toggle";
-  cardDetails.type = "button";
-  cardDetails.textContent = "Card details";
-  cardDetails.setAttribute("aria-label", "Railcard eligibility for " + destination.name);
-  cardDetails.addEventListener("click", () => showRailcardDetails(destination));
-  const copy = document.createElement("button");
-  copy.className = "toggle";
-  copy.type = "button";
-  copy.textContent = "Copy";
-  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
-  copy.title = "Copy the from, to, date and party size for this row";
-  copy.addEventListener("click", () => copyJourney(destination, copy, tools));
-  tools.append(cardDetails, copy);
-  return tools;
-}
-
-function showRailcardDetails(destination) {
-  document.getElementById("railcardDestination").textContent =
-    destination.name + " (" + destination.crs + ") \u00b7 " + destination.quality;
-  const status = document.getElementById("railcardReason");
-  const name = document.getElementById("railcardName");
-  const discounted = document.getElementById("railcardDiscounted");
-  const minimum = document.getElementById("railcardMinimum");
-  // The row is priced at the cheaper of the standard fare and the card's, so
-  // the drawer leads with that number rather than with the card's own. A card
-  // whose minimum fare is above the discounted fare has a price that is dearer
-  // than travelling without it, and printing that as the fare would show a
-  // reader a bigger number than the row they opened it from.
-  const shownPrice = (destination, details) => {
-    if (details.pricePence === null) return destination.adultPence;
-    return Math.min(destination.adultPence, details.pricePence);
-  };
-  const ruleText = document.getElementById("railcardRule");
-  document.getElementById("railcardStandard").textContent = money(destination.adultPence) + " per adult";
-
+// What the railcard did to this row's price, in the row's own disclosure.
+//
+// It was a dialog: a button on every row, opening a panel on top of a page
+// the reader was already reading, to be told a number the row beside it
+// already carried. The sentences are unchanged -- they are the ones that keep
+// the page honest about a card that cannot help -- but they now sit under the
+// fare they explain, where the reader opened the row to look, and the feed's
+// exact RR rule sits in the feed record below them with the codes.
+function cardNote(destination) {
+  const note = document.createElement("p");
+  note.className = "card-note";
   if (noCard() || !railcards[railcardSelect.value]) {
-    status.dataset.state = "none";
-    status.textContent =
+    note.dataset.state = "none";
+    note.textContent =
       "No railcard is selected, so this fare is shown at its standard price. Choose the card " +
-      "you hold above and every destination is priced against that card's own rules.";
-    name.textContent = "None selected";
-    discounted.textContent = "Not priced with a card";
-    minimum.textContent = "Not priced with a card";
-    ruleText.textContent = "No card is selected, so no railcard rule is consulted.";
-    railcardDrawer.showModal();
-    return;
+      "you hold above and every destination is priced against that card\u2019s own rules.";
+    return note;
   }
 
   const card = railcards[railcardSelect.value];
   const details = (destination.railcards || {})[card.key];
   if (!details) {
-    status.dataset.state = "unavailable";
-    status.textContent =
+    note.dataset.state = "unavailable";
+    note.textContent =
       "This feed prices no " + card.label + " fare to " + destination.name + ", so there is " +
       "nothing to compare it against.";
-    name.textContent = card.label;
-    discounted.textContent = "Not in this feed";
-    minimum.textContent = "Not in this feed";
-    ruleText.textContent = "No " + card.label + " record applies to this fare.";
-    railcardDrawer.showModal();
-    return;
+    return note;
   }
 
   // The rule record lives once in DATA.railcardRules and every card's row
@@ -2141,7 +2113,6 @@ function showRailcardDetails(destination) {
     ? rule.restrictionCode
     : null;
   const cardBeatsStandard = details.pricePence !== null && details.pricePence < destination.adultPence;
-  const shown = shownPrice(destination, details);
   const minimumClause = details.minimumFarePence === null
     ? ", and no minimum fare is current for this ticket."
     // The build floors the card's price at the minimum, so price == minimum is
@@ -2154,27 +2125,12 @@ function showRailcardDetails(destination) {
         " is the price here, so the discount took it no lower."
       : ", and the DTD minimum of " + money(details.minimumFarePence) + " does not raise it.";
 
-  status.dataset.state = details.state;
-  name.textContent = card.label + " (" + card.codes.join(", ") + ")";
-  // The number here is the one the row is priced at, so it is never dearer than
-  // the row the reader opened the drawer from. When the card does not help, the
-  // card's own price is still shown, labelled as what it is, because it is the
-  // fact that explains the standard fare beside it.
-  discounted.textContent = details.pricePence === null
-    ? "Not available, so " + money(destination.adultPence) + " per adult stands"
-    : cardBeatsStandard
-      ? money(shown) + " per adult"
-      : money(shown) + " per adult, which is the standard fare";
-  minimum.textContent =
-    details.minimumFarePence === null
-      ? "None current for " + destination.ticket
-      : money(details.minimumFarePence);
-
+  note.dataset.state = details.state;
   // The sentences are written here rather than shipped per row per card. Six
   // cards at the build's own wording measured 2,598 bytes a row against 433
   // for one, on a page that already carries 411KB; the facts cost 98.
   if (details.state === "blocked") {
-    status.textContent =
+    note.textContent =
       card.label + " cannot be applied to this fare. A current DTD RR rule matches this ticket, " +
       "route or endpoint and records a total ban, so the standard fare is the only price the feed " +
       "offers here.";
@@ -2183,7 +2139,7 @@ function showRailcardDetails(destination) {
     // discounted price before the minimum is not one of them, and recomputing it
     // here would put a second copy of the rounding rule in the page, where it
     // could drift from the build's.
-    status.textContent =
+    note.textContent =
       card.label + " does not reduce this fare. Its own price here is " +
       money(details.pricePence) + " per adult, against a standard fare of " +
       money(destination.adultPence) + ", because the minimum fare the feed applies to this " +
@@ -2191,26 +2147,37 @@ function showRailcardDetails(destination) {
       ". This row is priced at the cheaper of the two, so travelling without the card would " +
       "cost the same.";
   } else if (condition) {
-    status.textContent =
+    note.textContent =
       card.label + " is available for this fare, subject to condition " + condition + ". No " +
       "matching total ban applies; the restriction is a travel condition rather than a card ban. " +
-      "The feed's one-third discount gives " + money(details.pricePence) + " per adult" +
+      "The feed\u2019s one-third discount gives " + money(details.pricePence) + " per adult" +
       minimumClause;
   } else {
-    status.textContent =
+    note.textContent =
       card.label + " is available for this fare. No current RR rule matches this ticket, route or " +
-      "either endpoint. The feed's one-third discount gives " + money(details.pricePence) +
+      "either endpoint. The feed\u2019s one-third discount gives " + money(details.pricePence) +
       " per adult" + minimumClause;
   }
-  ruleText.textContent = rule
-    ? rule.text
-    : "No matching current RR rule for " + card.label + " on this fare.";
-  railcardDrawer.showModal();
+  return note;
 }
-railcardClose.addEventListener("click", () => railcardDrawer.close());
-railcardDrawer.addEventListener("click", (event) => {
-  if (event.target === railcardDrawer) railcardDrawer.close();
-});
+
+// The row's one secondary action, in the panel rather than on the row: the
+// handoff text, which is what a reader pastes to a seller or a friend
+// (ADR-0018). The copy text of a refused clipboard lands in this same panel,
+// under the button that asked for it.
+function rowActions(row, destination) {
+  const tools = document.createElement("div");
+  tools.className = "row-actions";
+  const copy = document.createElement("button");
+  copy.className = "toggle";
+  copy.type = "button";
+  copy.textContent = "Copy";
+  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
+  copy.title = "Copy the from, to, date and party size for this row";
+  copy.addEventListener("click", () => copyJourney(destination, copy, tools));
+  tools.append(copy);
+  return tools;
+}
 
 // C28: one panel per row, and one owner for it. It used to be two -- the times
 // list and the manual-copy box each removed whatever sat under the row -- so

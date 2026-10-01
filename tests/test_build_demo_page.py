@@ -468,7 +468,8 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(rows["SLP"]["restrictionCode"], "")
         self.assertIn("restrictionCode", self.html)
         self.assertIn("restrictionDescription", self.html)
-        self.assertIn('(destination.restrictionDescription || "This fare carries a restriction code', self.html)
+        self.assertIn('readable.textContent = destination.restrictionDescription ||', self.html)
+        self.assertIn('if (restricted) {', self.html)
         self.assertIn('add("Restriction", destination.restrictionCode || "none")', self.html)
         self.assertIn("ITX placeholder fares", self.html)
 
@@ -538,7 +539,11 @@ class DemoPageTest(unittest.TestCase):
         # ticket, restriction and route codes are one disclosure away.
         self.assertIn("function feedRecord(destination)", self.html)
         self.assertIn('readable.className = "condition"', self.html)
-        self.assertIn("No travel conditions on this fare in the feed.", self.html)
+        # An unrestricted fare used to open with a second paragraph saying
+        # there was nothing to read, which is the same information as
+        # silence said in a line.
+        self.assertIn("with no conditions in the feed.", self.html)
+        self.assertNotIn("No travel conditions on this fare in the feed.", self.html)
         row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
         self.assertEqual(row["routeCode"], "00000")
         self.assertEqual(row["restrictionCode"], "1A")
@@ -1118,18 +1123,25 @@ class DemoPageTest(unittest.TestCase):
         ban = self.payload["railcardRules"][refused["railcards"]["YNG"]["rule"]]
         self.assertTrue(ban["totalBan"])
         self.assertEqual(ban["sequence"], "0001")
-        self.assertIn('id="railcardDrawer"', self.html)
-        self.assertIn("showRailcardDetails(destination)", self.html)
+        # The explanation is one paragraph in the row's own disclosure.
+        # A dialog on every row, opened on top of a page the reader was
+        # already reading, to be told a number the row beside it carried.
+        self.assertIn("function cardNote(destination)", self.html)
+        self.assertIn("panel.append(card)", self.html)
         self.assertIn("DATA.railcardRules[details.rule]", self.html)
         self.assertIn("travel condition rather than a card ban", self.html)
-        self.assertIn("Exact DTD rule", self.html)
+        self.assertNotIn('id="railcardDrawer"', self.html)
+        # The exact rule is still on the page, filed with the codes it is
+        # a record of rather than headlined in a panel of its own.
+        self.assertIn("function railcardRuleFor(destination)", self.html)
+        self.assertIn('add("Railcard rule", rule)', self.html)
 
-    def test_the_drawer_never_shows_more_than_the_row_it_was_opened_from(self) -> None:
+    def test_the_railcard_note_never_names_a_price_above_the_row(self) -> None:
         # The row is priced at the cheaper of the standard fare and the card's.
-        # The drawer used to print the card's own price under the label
-        # "Discounted fare", so on a fare whose card minimum is above the
-        # discount it opened showing GBP 12.00 against a row showing GBP 8.70,
-        # and called the bigger number a discount.
+        # The card's own price used to be printed under the label "Discounted
+        # fare", so on a fare whose card minimum is above the discount it
+        # showed GBP 12.00 against a row showing GBP 8.70, and called the
+        # bigger number a discount.
         row = next(r for r in self.payload["destinations"] if r["crs"] == "LCN")
         card = row["railcards"]["YNG"]
         self.assertEqual(row["adultPence"], 870)
@@ -1137,39 +1149,39 @@ class DemoPageTest(unittest.TestCase):
         shown = min(row["adultPence"], card["pricePence"])
         self.assertEqual(shown, 870)
         self.assertLessEqual(shown, row["adultPence"], "a card never raises a row's price")
-        # The drawer takes its headline number from the same rule the table uses.
-        self.assertIn("const shownPrice = (destination, details) =>", self.html)
-        self.assertIn(
-            "return Math.min(destination.adultPence, details.pricePence);", self.html
-        )
-        # And the label no longer calls a price above the standard fare a discount.
-        self.assertIn("<dt>Price with this card</dt>", self.html)
-        self.assertNotIn("<dt>Discounted fare</dt>", self.html)
-        self.assertIn("which is the standard fare", self.html)
+        # The note never quotes a number at all, so it cannot quote one
+        # above the row: it names the card, says whether the card lowers
+        # the fare, and gives the card's own price and the standard fare as
+        # two labelled figures a reader can compare.
+        self.assertIn("const cardBeatsStandard =", self.html)
+        self.assertIn("details.pricePence < destination.adultPence", self.html)
         self.assertIn("does not reduce this fare", self.html)
-        self.assertIn(
-            ': money(shown) + " per adult, which is the standard fare";', self.html
-        )
-        self.assertLess(
-            self.html.index('? money(shown) + " per adult"'),
-            self.html.index(
-                ': money(shown) + " per adult, which is the standard fare";'
-            ),
-            "the caption is on the branch where the card is not the price shown",
-        )
+        self.assertIn("This row is priced at the cheaper of the two", self.html)
+        # The minimum is named as what it is, in the branch where the card
+        # does help, rather than as a discount that made the fare dearer.
+        self.assertIn("is the price here, so the discount took it no lower.", self.html)
+        self.assertIn("does not raise it.", self.html)
 
-    def test_the_drawer_explains_which_card_it_is_about(self) -> None:
-        # The reader picked one card out of six, so the drawer has to name it.
-        # A drawer that explained "the railcard" while the page listed six
-        # would answer a question nobody asked.
-        self.assertIn('id="railcardName"', self.html)
-        self.assertIn('name.textContent = card.label + " (" + card.codes.join(", ") + ")";',
-                      self.html)
-        # With no card chosen there is nothing to explain, and the drawer says
-        # that rather than describing a rule for a card the reader did not name.
-        self.assertIn('status.dataset.state = "none";', self.html)
-        self.assertIn("No railcard is selected, so this fare is shown at its standard price.",
-                      self.html)
+    def test_the_railcard_note_names_the_card_it_is_about(self) -> None:
+        # The reader picked one card out of six, so the note has to name it.
+        # A note that explained "the railcard" while the page listed six would
+        # answer a question nobody asked.
+        # The label is read from the variable, not spelled out, so the test
+        # reads the variable and the two sentences the note branches into.
+        self.assertIn("const card = railcards[railcardSelect.value];", self.html)
+        self.assertIn('card.label + " does not reduce this fare. Its own price here is "', self.html)
+        self.assertIn('card.label + " cannot be applied to this fare.', self.html)
+        # With no card chosen there is nothing to explain, so there is no
+        # paragraph: the control above already says the prices are standard,
+        # and a sentence on every expanded row repeating the page's default
+        # is the noise this replaced.
+        self.assertIn(
+            "if (noCard() || !railcards[railcardSelect.value]) return null;", self.html
+        )
+        self.assertIn(
+            '      "This feed prices no " + card.label + " fare to " + destination.name +',
+            self.html,
+        )
 
     def test_a_card_whose_minimum_is_higher_shows_the_standard_fare(self) -> None:
         # LCN's SDR fare is £8.70. The card's discounted price would be £5.80,
@@ -1949,6 +1961,10 @@ class DemoPageTest(unittest.TestCase):
         # hangs off, which is what the phone reflow and C14 both read.
         self.assertIn('panel.dataset.status = restricted ? "restricted" : "unrestricted";', self.html)
         self.assertIn('readable.className = "condition";', self.html)
+        # C07: the condition is still on the same row, one disclosure away, so
+        # the pointer is kept rather than dropped -- and it now points at the
+        # thing it names instead of at a column that no longer exists.
+        self.assertIn('Restricted fare — the condition is below.', self.html)
 
     def test_the_page_opens_on_the_cheapest_list_and_every_set_says_what_it_is(self) -> None:
         # C07 was "the set the page opens in is the one PRODUCT.md promises",
