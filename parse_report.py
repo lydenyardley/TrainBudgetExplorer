@@ -44,6 +44,11 @@ class ParseReport:
     # wrong until the name match misses and the reviewed class lands.
     # --require-live-reviewed-codes turns these into a refusal too.
     reviewed_codes_redundant: list[str] = field(default_factory=list)
+    #: Reviewed railcard codes the feed does not carry. Its own channel for
+    #: the reason the reviewed station lists have one: the code is intersected
+    #: away before it is applied, so a stale entry changes nothing at runtime
+    #: and only silence would let the list rot unnoticed.
+    reviewed_railcard_codes_absent: list[str] = field(default_factory=list)
 
     def skip_file(self, message: str) -> None:
         """Record a whole file the loader chose not to read.
