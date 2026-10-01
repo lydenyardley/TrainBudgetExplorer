@@ -294,6 +294,28 @@ def read_resume_state(path: Path, signature: str) -> set[str]:
     return {str(slug) for slug in completed} if isinstance(completed, list) else set()
 
 
+def replace_published(temporary: Path, path: Path, attempts: int = 5) -> None:
+    """Put ``temporary`` in place of ``path``, surviving a moment's sharing lock.
+
+    A full-network build is hours long and publishes thousands of files, and
+    Windows refuses the replace while anything else holds the destination
+    open -- an indexer, a virus scanner, or a person reading the resume file
+    to see how far the build has got. The build that measured the network
+    died that way at page 77 of 2,712, holding 76 finished pages, and a whole
+    measurement to start again, for a lock that is released in milliseconds.
+    So the replace is retried, and the last attempt still raises: a lock that
+    persists is something an operator has to see.
+    """
+    for attempt in range(attempts):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.2 * (attempt + 1))
+
+
 def write_resume_state(path: Path, signature: str, completed: set[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
@@ -305,7 +327,7 @@ def write_resume_state(path: Path, signature: str, completed: set[str]) -> None:
         ) + "\n",
         encoding="utf-8",
     )
-    temporary.replace(path)
+    replace_published(temporary, path)
 
 
 def write_page_atomic(path: Path, html: str) -> None:
@@ -313,7 +335,7 @@ def write_page_atomic(path: Path, html: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(html, encoding="utf-8")
-    temporary.replace(path)
+    replace_published(temporary, path)
 
 
 # -- the route manifest (S01, S04) ------------------------------------------

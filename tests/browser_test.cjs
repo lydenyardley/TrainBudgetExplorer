@@ -2907,18 +2907,42 @@ async function runPage(browser, index, given, file, body, base) {
       document.querySelector('input[name="unit"][value="adult"]').checked = true;
       render();
       const asSolo = facts();
+      // The fare a shortlisted place is priced as, which the count line
+      // already names for the whole list. Read off the page here and checked
+      // against the rendered row on the other side of the boundary, so this
+      // says the row shows it rather than that the page can compute it.
+      const expected = shortlisted().map((destination) => fareName(destination));
+      // A list of one kind of fare names that kind, so a shortlist kept
+      // across a mode change must stop quoting the fare the reader has just
+      // switched away from. Both named modes are tried, because a row priced
+      // as a return leaves the list when the reader asks for singles.
+      const openedIn = ticketMode();
+      const byMode = [];
+      for (const mode of ["single", "return"]) {
+        const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
+        if (!input || !modeCount(mode)) continue;
+        input.checked = true;
+        render();
+        byMode.push({ mode, label: modeLabels()[mode], texts: facts() });
+        if (byMode[byMode.length - 1].texts.length) break;
+      }
+      document.querySelector(`input[name="ticketMode"][value="${openedIn}"]`).checked = true;
+      render();
       const share = document.getElementById("shortlistShare").textContent;
       const pressed = rows.map((row) => row.querySelector(".shortlist-toggle").getAttribute("aria-pressed"));
-      return { both, asPair, asSolo, share, address, pressed, names: both.map((text) => text.slice(0, 24)) };
+      return { both, asPair, asSolo, expected, byMode, share, address, pressed, names: both.map((text) => text.slice(0, 24)) };
     });
     if (shortlist.rows !== undefined && shortlist.rows < 2) {
       for (const name of [
         "a shortlisted place is listed with its price, time and changes",
+        "a shortlisted place names the fare it is priced as",
+        "and the fare it names follows the ticket type the reader has chosen",
         "and the list is a list of places, not a booking",
         "the shortlist is in the address, so it can be shared",
         "a refresh brings the shortlist back",
         "and it follows the party the reader has chosen",
         "one control clears it",
+        "and every copied place names the fare that price is for",
       ]) {
         check(name, notExercised(`this page lists ${shortlist.rows} row(s) to choose from`));
       }
@@ -2928,6 +2952,18 @@ async function runPage(browser, index, given, file, body, base) {
         shortlist.both.length === 2 &&
           shortlist.both.every((text) => /£\d/.test(text) && /(no change|\d+ change\(s\)|changes unknown)/.test(text)),
         JSON.stringify(shortlist.both)
+      );
+      check(
+        "a shortlisted place names the fare it is priced as",
+        shortlist.expected.length === 2 &&
+          shortlist.both.every((text, index) => shortlist.expected[index] && text.includes(shortlist.expected[index])),
+        JSON.stringify({ expected: shortlist.expected, both: shortlist.both })
+      );
+      const followed = shortlist.byMode.find((entry) => entry.texts.length);
+      check(
+        "and the fare it names follows the ticket type the reader has chosen",
+        !!followed && followed.texts.every((text) => text.includes("\u00b7 " + followed.label + " \u00b7")),
+        JSON.stringify(shortlist.byMode)
       );
       check(
         "and the list is a list of places, not a booking",
@@ -2965,6 +3001,15 @@ async function runPage(browser, index, given, file, body, base) {
       check(
         "and the copied list names the origin, the prices and says it is not a booking",
         /Shortlist from /.test(text) && /Budget: /.test(text) && /not a booking/i.test(text) && text.includes("£"),
+        text
+      );
+      const copiedPlaces = text.split("\n").filter((line) => line.startsWith("- "));
+      check(
+        "and every copied place names the fare that price is for",
+        copiedPlaces.length === 2 &&
+          copiedPlaces.every((line) =>
+            /Standard outbound single|Advance single|Unrestricted Anytime Day Return|Standard return/.test(line)
+          ),
         text
       );
       await open(facts.affordable);
