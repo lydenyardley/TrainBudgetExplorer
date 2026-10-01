@@ -2431,6 +2431,38 @@ class DemoPageTest(unittest.TestCase):
         dearest = max(row["adultPence"] for row in self.payload["destinations"])
         self.assertGreaterEqual(ceiling * 100, dearest)
 
+    def test_the_page_says_where_the_slider_stops_and_the_figure_is_the_stop(self) -> None:
+        # A control that stops somewhere for a reason the page never states is
+        # a control the reader has to discover by dragging. The budget contract
+        # is "up to", inclusive, so a fare at the boundary is included and the
+        # figure has to be predictable -- which it is only if the number on the
+        # page is the number the input actually stops at. The two are read out
+        # of the built page, not out of the resolver that produced them, so a
+        # disagreement between them is what fails.
+        ceiling = int(re.search(r'id="budget"[^>]*max="(\d+)"', self.html).group(1))
+        hint = re.search(r'(id="budgetHint">.*?)</span>\.', self.html, re.S).group(1)
+        self.assertIn("It stops at the highest fare", hint)
+        self.assertIn("&pound;{}.00 for one adult".format(ceiling), hint)
+        self.assertNotIn("__CEILING_NOTE__", self.html)
+
+    def test_the_stated_ceiling_follows_the_party_the_reader_chooses(self) -> None:
+        # The ceiling is party-aware -- two adults cost twice one -- so a note
+        # written once at build time would name a stop the page leaves behind
+        # the moment "Two adults" is chosen, and the figure would contradict the
+        # input's own max. It is written from the resolved ceiling on every
+        # render, and it names the party that ceiling was resolved for, because
+        # "£252.00" is not a budget until the page says whose it is.
+        script = page_script(self.html)
+        render = script.split("function render(")[1].split("\nfunction ")[0]
+        self.assertIn("budgetCeilingNote.textContent = money(ceiling * 100)", render)
+        self.assertIn('unit() === "party" ? "two adults" : "one adult"', render)
+        # It is written where the ceiling is resolved, and not before an early
+        # return that would leave a stale figure on an emptied list.
+        self.assertLess(
+            render.index("const ceiling = budgetCeiling();"),
+            render.index("budgetCeilingNote.textContent"),
+        )
+
     def test_a_script_tag_in_the_data_cannot_close_the_script_early(self) -> None:
         payload = dict(self.payload, note="a note with </script> in it")
         html = render_page(payload, budget_pounds=20)

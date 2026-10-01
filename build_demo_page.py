@@ -2316,6 +2316,9 @@ def render_page(
         .replace("__FIRST_USE_FALLBACK__", json.dumps(ONE_STATION_FIRST_USE, ensure_ascii=False))
         .replace("__NRE_CREDIT__", nre_attribution() if nre_credit else "")
         .replace("__MAXPOUNDS__", str(ceiling))
+        # S17: the control's stop is a build fact, so the page states it
+        # before any script runs. The script keeps it true afterwards.
+        .replace("__CEILING_NOTE__", "&pound;" + str(ceiling) + ".00 for one adult")
         .replace("__BUDGET__", str(initial_budget))
         .replace("__NOTE__", payload["note"])
         .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
