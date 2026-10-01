@@ -37,6 +37,7 @@ from atoc_fares import (
     FLOW_T,
     Fare,
     FaresDb,
+    Railcard,
     Location,
     TicketType,
     is_pseudo_station,
@@ -1374,6 +1375,73 @@ class PublishableSelectorTest(unittest.TestCase):
         self.assertEqual(
             header.return_text, "RETURN NOT VALID FOR TRAVEL ON SATURDAY OR SUNDAY"
         )
+
+
+class ReviewedRailcardTest(unittest.TestCase):
+    """What the page may offer, and what it is offered under.
+
+    The feed gives one product several codes -- a base code, a three-year
+    code, an online code, a replacement code and a corporate one -- and a
+    reader holding any of them holds the same card. Publishing the codes
+    separately would put five controls on the page for one product and make
+    the reader work out which one they have.
+    """
+
+    def setUp(self) -> None:
+        self.db = FaresDb()
+        self.db.railcards = {
+            "2TR": Railcard("2TR", "TWO TOGETHER R/CARD", 2, 2),
+            "YNG": Railcard("YNG", "16-25 RAILCARD", 1, 1),
+            "Y3R": Railcard("Y3R", "16-25 3YR RC REP", 0, 0),
+            "RYP": Railcard("RYP", "REP 16-25 RAILCARD", 1, 8),
+            "SRN": Railcard("SRN", "SENIOR RAILCARD", 1, 1),
+            "RSN": Railcard("RSN", "REP SENIOR RAILCARD", 1, 8),
+            "NEW": Railcard("NEW", "NETWORK RAILCARD", 0, 4),
+            "DIS": Railcard("DIS", "DISABLED ADULT", 1, 2),
+            "AT1": Railcard("AT1", "1YR DISABLED PERSONS", 1, 2),
+            "AT4": Railcard("AT4", "3YR DISABLED PERSONS", 1, 2),
+            "BB2": Railcard("BB2", "STUDENT DISCOUNT", 1, 1),
+            "TYC": Railcard("TYC", "A CLUB SEASON TICKET", 1, 4),
+        }
+
+    def test_a_product_is_one_control_however_many_codes_the_feed_gives_it(self) -> None:
+        families = {family.key: family for family in self.db.reviewed_railcard_families()}
+        self.assertEqual(sorted(families), ["2TR", "BB2", "DIS", "NEW", "SRN", "YNG"])
+        self.assertEqual(families["YNG"].codes, ("YNG", "Y3R", "RYP"))
+        self.assertEqual(families["YNG"].label, "16-25 Railcard")
+
+    def test_a_code_outside_the_reviewed_set_is_not_offered(self) -> None:
+        # The catalogue is 382 codes on the real feed and most are agency,
+        # group-travel and football-club passes. A club season ticket is a real
+        # code that a page cannot offer 382 of.
+        offered = {family.key for family in self.db.reviewed_railcard_families()}
+        self.assertNotIn("TYC", offered)
+
+    def test_the_adult_bounds_are_the_union_across_the_products_codes(self) -> None:
+        # The feed gives the Senior Railcard 1-1 under SRN and 1-8 under RSN.
+        # A reader with the replacement is still one traveller, and a bound
+        # taken from one code rather than the product would price a party of
+        # two at a one-adult card's rate on one code and refuse it on another.
+        families = {family.key: family for family in self.db.reviewed_railcard_families()}
+        self.assertEqual((families["SRN"].min_adults, families["SRN"].max_adults), (1, 8))
+
+    def test_a_product_the_feed_drops_is_reported_and_not_silently_shortened(self) -> None:
+        del self.db.railcards["2TR"]
+        families = {family.key: family for family in self.db.reviewed_railcard_families()}
+        self.assertNotIn("2TR", families)
+        self.assertEqual(self.db.report.reviewed_railcard_codes_absent, ["2TR"])
+
+    def test_a_product_whose_primary_code_is_gone_is_still_offered_through_an_alias(self) -> None:
+        # Refusing a card because the feed dropped one of its spellings would
+        # be a page answering the wrong question about a card the reader holds.
+        del self.db.railcards["YNG"]
+        families = {family.key: family for family in self.db.reviewed_railcard_families()}
+        self.assertIn("Y3R", families)
+        self.assertEqual(families["Y3R"].label, "16-25 Railcard")
+
+    def test_the_list_is_ordered_by_the_label_a_reader_reads(self) -> None:
+        labels = [family.label for family in self.db.reviewed_railcard_families()]
+        self.assertEqual(labels, sorted(labels))
 
 
 class AdvanceFareTest(unittest.TestCase):

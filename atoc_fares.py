@@ -898,6 +898,43 @@ REVIEWED_ANYTIME_DAY_RETURN_TICKETS: dict[str, str] = {
 # is train-specific whatever its ticket is called, and a ticket called ADVANCE
 # is train-specific whatever code it carries, so a caller asks about both
 # through one predicate rather than retyping either test.
+# The reviewed railcard selector. The real DTD catalogue carries 382 railcard
+# codes, most of them group-travel, agency, football-club and operator passes
+# that no reader arriving at this site holds. Publishing all of them would put
+# 382 controls on a page whose premise is that a reader has a budget and an
+# hour; publishing none would be a page that cannot answer the question a
+# railcard holder arrives with.
+#
+# An entry is therefore a product and not a code, because the feed gives one
+# product several: 16-25 is YNG, and Y3R for three years, YN3 bought online,
+# RYP as a repaperminted replacement and GCM through a corporate scheme. A
+# reader holding any of them holds the same card and pays the same price, so one
+# control reads all of them and the page names the codes it recognised. The
+# primary code is the one the discount and the minimum fare are read through.
+#
+# Set here and reviewed by a person, the same way the anytime-return ticket
+# codes are, so a name test cannot widen what the site offers. Removing an
+# entry removes that card from the page, and the build then says how many
+# catalogue codes it is no longer offering, so the omission is visible rather
+# than silent.
+REVIEWED_PUBLIC_RAILCARDS: dict[str, dict[str, object]] = {
+    "2TR": {"label": "Two Together", "codes": ()},
+    "YNG": {
+        "label": "16-25 Railcard",
+        "codes": ("Y3R", "YN3", "RYP", "GCM"),
+    },
+    "NEW": {"label": "Network Railcard", "codes": ("RNW", "NCP")},
+    "SRN": {
+        "label": "Senior Railcard",
+        "codes": ("RSN", "GCO", "SRS"),
+    },
+    "DIS": {
+        "label": "Disabled Persons Railcard",
+        "codes": ("AT1", "AT4", "DIR"),
+    },
+    "BB2": {"label": "Student Discount Card", "codes": ()},
+}
+
 ADVANCE_RESTRICTION_CODE = "AS"
 
 
@@ -990,7 +1027,24 @@ class MinimumFare:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class RailcardFamily:
+    """One railcard a reader holds, and every code the feed gives it."""
+
+    #: The code the discount and the minimum fare are read through, chosen from
+    #: the reviewed entry's primary code and the codes the feed actually has.
+    key: str
+    #: What the reader is shown. Never a feed string: the catalogue's names are
+    #: upper case and truncated ("SEASON HOLDER DSCT"), and this is the one
+    #: place a reader is asked to recognise their own card.
+    label: str
+    #: Every code the feed carries for this product, primary first.
+    codes: tuple[str, ...]
+    min_adults: int
+    max_adults: int
+
+
+@dataclass(frozen=True, slots=True)
 class Railcard:
     code: str
     name: str
@@ -2381,6 +2435,52 @@ class FaresDb:
             "restriction_codes": len(self.restrictions.code_record_counts),
             "restriction_railcards": len(self.restrictions.railcard_record_counts),
         }
+
+    def reviewed_railcard_families(self) -> list[RailcardFamily]:
+        """The published railcards, as products, in the order the page lists them.
+
+        Only products whose primary code the feed carries are published. A
+        product whose primary code is absent but whose aliases are present is
+        still published, through the alias, because refusing a card the reader
+        holds because the feed dropped one of its spellings would be a page
+        answering the wrong question.
+
+        The adult bounds are the union across every code the feed carries for
+        the product: the feed gives the Senior Railcard 1-1 under SRN and 1-8
+        under RSN, and a reader with the replacement is still one traveller.
+
+        Ordered by label, so adding a product to the middle of the reviewed set
+        cannot silently reshuffle the menu.
+        """
+        families: list[RailcardFamily] = []
+        absent: list[str] = []
+        for primary, entry in REVIEWED_PUBLIC_RAILCARDS.items():
+            wanted = (primary,) + tuple(entry.get("codes") or ())
+            present = tuple(code for code in wanted if code in self.railcards)
+            missing = [code for code in wanted if code not in self.railcards]
+            if not present:
+                absent.extend(missing)
+                continue
+            # An alias standing in for an absent primary is promoted, so the
+            # card is offered under the code the feed actually has.
+            lead = present[0]
+            records = [self.railcards[code] for code in present]
+            families.append(
+                RailcardFamily(
+                    key=lead,
+                    label=str(entry["label"]),
+                    codes=present,
+                    min_adults=min(record.min_adults for record in records),
+                    max_adults=max(record.max_adults for record in records),
+                )
+            )
+        if absent and not self.report.reviewed_railcard_codes_absent:
+            self.report.reviewed_railcard_codes_absent = sorted(absent)
+        return sorted(families, key=lambda family: family.label)
+
+    def railcard_label(self, code: str) -> str:
+        """The label a reviewed railcard is shown by, or an empty string."""
+        return REVIEWED_PUBLIC_RAILCARDS.get(code, {}).get("label", "")
 
     def railcard_code(self, name: str) -> str | None:
         needle = name.strip().lower()
