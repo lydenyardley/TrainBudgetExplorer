@@ -8,6 +8,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from unittest import mock
@@ -4727,7 +4728,7 @@ class RunnerBuildOrServeTest(unittest.TestCase):
     being knowable rather than about the build itself.
     """
 
-    def run_main(self, *flags, site_exists=True):
+    def run_main(self, *flags, site_exists=True, stale=False):
         served = []
 
         class FakeServer:
@@ -4763,6 +4764,11 @@ class RunnerBuildOrServeTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(run, "webbrowser", mock.Mock()))
             stack.enter_context(mock.patch.object(run.threading, "Timer", mock.Mock()))
             stack.enter_context(mock.patch.object(run, "build", builder))
+            # The freshness check reads this machine's file times, which
+            # are not what is under test; the decision is.
+            stack.enter_context(
+                mock.patch.object(run, "sources_are_newer", lambda: stale)
+            )
             stack.enter_context(mock.patch.object(run.os, "chdir", mock.Mock()))
             out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
@@ -4777,10 +4783,54 @@ class RunnerBuildOrServeTest(unittest.TestCase):
         self.assertEqual(len(served), 1)
 
     def test_a_second_run_serves_what_the_first_one_wrote(self) -> None:
-        _, said, builds, served = self.run_main(site_exists=True)
+        # --origin is the fast single-station build, and it is the one a
+        # second run of it serves without rebuilding.
+        _, said, builds, served = self.run_main("--origin", "GRA", site_exists=True)
         self.assertEqual(builds, 0)
         self.assertEqual(len(served), 1)
         self.assertIn("without rebuilding", said)
+
+    def test_the_default_builds_the_whole_network(self) -> None:
+        # A one-station build has nowhere for the heading's station control
+        # to go, so the name renders as plain text -- the page that cannot
+        # change station. The default is the network, and it says what that
+        # costs before it starts.
+        _, said, builds, served = self.run_main(site_exists=False)
+        self.assertEqual(builds, 1)
+        self.assertEqual(len(served), 1)
+        self.assertIn("one page per priced station", said)
+        self.assertIn("--origin GRA", said)
+
+    def test_a_build_older_than_the_sources_is_not_served(self) -> None:
+        # Nine hours of committed work, a double-clicked runner, and a page
+        # from before it: nothing on the page says so. The runner rebuilds
+        # when what it would serve is out of date, and names the reason.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            manifest = site / run.RELEASE_MANIFEST_NAME
+            manifest.write_text("{}", encoding="utf-8")
+            os.utime(manifest, (1000, 1000))
+            with mock.patch.object(run, "SITE", site):
+                self.assertTrue(run.sources_are_newer())
+            os.utime(manifest, (time.time() + 60, time.time() + 60))
+            with mock.patch.object(run, "SITE", site):
+                self.assertFalse(run.sources_are_newer())
+        # A build with no manifest answers no: an unreadable answer must
+        # never be the one that starts an hour-long build.
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(run, "SITE", Path(tmp)):
+                self.assertFalse(run.sources_are_newer())
+
+    def test_a_build_the_sources_have_moved_past_is_rebuilt(self) -> None:
+        # Nine hours of committed work, a double-clicked runner and a page
+        # from before it, with nothing on the page saying so. The runner
+        # rebuilds when what it would serve is out of date, and says why.
+        _, said, builds, served = self.run_main(
+            "--origin", "GRA", site_exists=True, stale=True
+        )
+        self.assertEqual(builds, 1)
+        self.assertEqual(len(served), 1)
+        self.assertIn("newer than _site/", said)
 
     def test_rebuild_builds_even_when_a_site_is_already_there(self) -> None:
         _, _, builds, _ = self.run_main("--rebuild", site_exists=True)

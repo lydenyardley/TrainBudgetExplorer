@@ -216,6 +216,44 @@ def remove_unwritten_station_pages() -> list[str]:
     return removed
 
 
+# The files whose mtime decides whether _site/ is out of date. A build is a
+# function of the builder and its template, so those two decide it; the modules
+# they import decide it too, and a change to the fare maths that never reaches
+# the page is still a change to the page's numbers.
+BUILD_SOURCES = (
+    "build_demo_page.py",
+    "page_templates.py",
+    "atoc_fares.py",
+    "atoc_restrictions.py",
+    "atoc_timetable.py",
+    "retailer.py",
+)
+
+
+def sources_are_newer() -> bool:
+    """Is any source newer than the build this runner is about to serve?
+
+    Compared against the manifest rather than a page, because the manifest is
+    written last and is therefore the build's own completion stamp. A manifest
+    that is missing or unreadable answers no: an unreadable answer must never
+    be the one that starts an hour-long build, and a stale build is fixed by
+    --rebuild.
+    """
+    manifest = SITE / RELEASE_MANIFEST_NAME
+    try:
+        built = manifest.stat().st_mtime
+    except OSError:
+        return False
+    for name in BUILD_SOURCES:
+        source = ROOT / name
+        try:
+            if source.stat().st_mtime > built:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build the site and serve it at http://localhost:<port>")
@@ -265,21 +303,20 @@ def main() -> int:
     if args.timetable is not None and not args.timetable.exists():
         args.timetable = None
 
-    if args.all_origins and not args.i_know_this_is_slow:
-        # Guard the default path: `python run.py` must never silently start a
-        # build that takes the machine for an hour and a half. Measured on the
-        # real feed: 2,718 priced stations, and at roughly 0.28 pages/s per
-        # worker an eight-core machine finishes in about 20 minutes while a
-        # two-core one takes about 81. ADR-0024 projected days from an invented
-        # uniform feed and the real network is far kinder than that shape; the
-        # number here is the measured one. The escape is still one flag away
-        # (audit D1), because asking for it should be a decision.
-        print("--all-origins builds one page per priced station: 2,718 pages "
-              "against the real feed, measured at about 81 minutes on two cores "
-              "(ADR-0024, re-measured 1 October 2026; ADR-0050). Pass "
-              "--i-know-this-is-slow to run it anyway, or drop "
-              "--all-origins for the fast single-origin demo.", file=sys.stderr)
-        return 2
+    # The default is now the whole network, and this says what that costs
+    # before it starts rather than after it has finished. Measured on the real
+    # feed: 2,718 priced stations at roughly 0.28 pages/s per worker, so about
+    # 20 minutes on eight cores and 81 on two (ADR-0024, re-measured 1 October
+    # 2026; ADR-0050). The fast single-origin page is still one flag away,
+    # because a build of one station is the right tool for working on one
+    # station and the wrong thing to double-click.
+    if not args.all_origins and args.origin is None and not args.no_build:
+        args.all_origins = True
+        args.i_know_this_is_slow = True
+        print("Building one page per priced station. This is a one-off: the "
+              "next `python run.py` serves what this writes and starts "
+              "immediately. Pass --origin GRA for the fast single-station "
+              "page instead.")
 
     # The build and the serve are separate decisions. A runner that rebuilds
     # every time cannot answer "is this the build I made?", and a stale
@@ -292,9 +329,18 @@ def main() -> int:
                   file=sys.stderr)
             return 1
         print("Serving the existing _site/ untouched, as asked.")
-    elif args.rebuild or not SITE.exists():
+    elif args.rebuild or not SITE.exists() or sources_are_newer():
         if args.rebuild:
             print("Rebuilding _site/ before serving, as asked.")
+        elif not SITE.exists():
+            print("There is nothing in _site/ yet, so building it.")
+        else:
+            # The one case that made this runner quietly wrong. A build written
+            # before the last commit is a page from before the last commit, and
+            # nothing on the page says so -- which is how a review happens
+            # against yesterday's fares, or a railcard fix appears not to work.
+            print("The sources are newer than _site/, so rebuilding rather than "
+                  "serving a page that is out of date.")
         rc = build(args)
         if rc != 0:
             return rc
