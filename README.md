@@ -12,8 +12,10 @@ and timetable access still depends on the separate DTD subscription entitlement.
 
 From any UK station, find every destination reachable for under a set budget
 (e.g. "≤£20 return from Grantham"), with the journey time and the number of
-changes. Prices are standard-class return fares; the page also shows a Two Together price
-where the current DTD railcard restriction records permit that fare.
+changes. Prices are standard-class return fares; a reader who holds a railcard
+can price the journey with it, from the six cards the project has reviewed, and
+the page shows that price where the current DTD railcard restriction records
+permit the fare.
 
 ## Destination types
 
@@ -132,9 +134,11 @@ chip that can only ever return nothing reads as a broken control.
 - **Hypothesis:** affiliate lead-gen asset (Trainline, applied post-launch).
 - **Discovery:** communities first (r/uktrains, local FB groups, HN); SEO only
   after a community signal.
-- **Scope:** Two Together is the only railcard in v1. Its one-third discount and
-  feed minimum fare are shown only when the current DTD RR rules permit the
-  fare's ticket, route, and endpoint locations.
+- **Scope:** six reviewed railcards, offered as one control with none selected by
+  default (ADR-0052). A card's one-third discount and feed minimum fare are shown
+  only when the current DTD RR rules permit the fare's ticket, route, and endpoint
+  locations, and a card whose own feed record does not cover the party on screen
+  is not offered for it.
 - **Plan:** Stage 1 licence and data verification, then go/no-go, then a
   one-week build hard-stopped at 30 September, launch w/c 5 October, written
   review **21 October** with park-by-default if unsure.
@@ -568,7 +572,7 @@ fare is a walk-up fare valid on all of them.
 Because the default link carries nothing, each row's own details offer a **Copy**
 control that puts the four things a seller asks for — from, to, date, and party
 size — on the reader's clipboard, saying that the railcard discount is not included
-and to tick the Two Together box on the seller's site. If the browser refuses
+and to tick the card on the seller's site. If the browser refuses
 clipboard access, which it does for a page opened straight from disk, the text
 appears under that button and the button says so instead of the page claiming a
 copy that did not happen.

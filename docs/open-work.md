@@ -64,7 +64,7 @@ argued for, because a suggestion without one is a wish.
 | **S08** | An opt-in "find my station" path, backed by a reviewed coordinate source, keeping manual name/code search as the default and explaining exactly what the permission does before asking | A traveller who knows their town but not the station's CRS code can still start, without silently collecting location data | | Open. It is the same data question as C27, and it is gated on the same named source. |
 | **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open. The whole network now publishes with the national timetable, which is the aggregate case this is about. |
 | **S25** | Calendar handling, but only where the source supports it: bank holidays and service exceptions as first-class inputs, with a clear fallback where they are not | Fewer "typical" schedules are mistaken for holiday-specific service | | Open, and downstream of S24. A service-date label is what makes a fallback honest. |
-| **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right | **Implement** | Queued, after the railcard work, because a card changes the party size a link is built for. |
+| **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right | **Implement** | Queued next. The railcard work it waited on is landed, so the party a link is built for is now whichever the reader chose. |
 
 ### Needs a product decision, not a source
 
@@ -147,10 +147,16 @@ the next person from re-deriving it.
    feed's catalogue holds 382 codes, and the passenger cards arrive in families:
    16-25 is YNG, and Y3R for three years, YN3 bought online, RYP as a
    repaperminted replacement. A reader holding any of them holds the same card,
-   so a railcard is now modelled as a product with the codes the feed carries for
-   it, and the reviewed set is six products rather than one card. None selected by
-   default, and a selection remembered by the browser, are both part of the page
-   migration that follows the model.
+   so a railcard is modelled as a product with the codes the feed carries for it,
+   and the reviewed set is six products rather than one card.
+   **Landed.** The page offers all six in one control, nothing is selected by
+   default, and the browser remembers the reader's card.
+   [ADR-0052](../adr/ADR-0052-the-railcard-is-one-of-a-collection.md) is the
+   decision, and its argument is the payload shape. A card's whole answer costs
+   433 bytes a row, so six of them is a sixfold regression on a page that already
+   carries 411KB. The row keeps a price and a rule key per card, and the page
+   writes the sentences. The real page went from 411,583 to 421,124 bytes and now
+   carries six cards where it carried one.
 3. **Does the local preview keep its own build step, or does the runner become a
    server for a folder the builder produces?** The concrete cost of the split has
    been fixed, so the question is open again rather than answered by a defect:
@@ -181,6 +187,7 @@ because a reader checking a closure wants the ADR and the test.
 | C27's sibling findings, C01–C31 | five passes, 27–28 September 2026 | the commits that carried each change; the finding ids that survive as reasons in the code (`C14` in `SHARED_CSS`) |
 | Question 1, the release coverage, settled by building every priced station rather than Grantham alone | ADR-0050 | `timeout-minutes: 150` against the measured extrapolation, and `tools/page_bytes.py --site _site` as the only step that reads the release's bytes |
 | A railcard is a product with the feed's codes for it, not a code | landed ahead of the page that consumes it, so each unit builds and verifies | `ReviewedRailcardTest` in `tests/test_atoc_fares.py`, six tests over families, aliases, bounds and the absent-code report |
+| Question 2, the railcards, with the page offering the reviewed collection, none selected by default, and the browser remembering the choice | ADR-0052 | `RailcardAdultBoundsTest`, and the browser suite's six collection checks, which are the menu, the default, the memory, the address, an unpriced code, and the party rule |
 | Question 3, the runner, with the build and the serve as separate commands | ADR-0051 | `RunnerBuildOrServeTest`, four tests over the four combinations of a site existing, not existing, and a flag asking for a rebuild |
 
 ### The measurements three ADRs lean on
