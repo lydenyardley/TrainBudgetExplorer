@@ -1927,7 +1927,7 @@ class DemoPageTest(unittest.TestCase):
         # field keeps its own aria-label, so nothing is announced twice.
         self.assertIn('<span class="budget-prefix">&pound;</span>', heading)
         self.assertNotIn('<span class="budget-prefix" aria-hidden="true">', heading)
-        self.assertIn("--h1: clamp(2rem, 6vw, 6rem)", self.stylesheet)
+        self.assertIn("--h1: clamp(2rem, 7vw, 7rem)", self.stylesheet)
         self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.stylesheet)
         self.assertNotIn("max-width: 32ch", self.html)
         self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
@@ -2309,8 +2309,14 @@ class DemoPageTest(unittest.TestCase):
         # the table wraps, and the browser suite measures the painted lines.
         self.assertIn("color: var(--muted); white-space: nowrap; }", self.stylesheet)
         self.assertIn("font-variant-numeric: tabular-nums; white-space: nowrap; }", self.stylesheet)
-        self.assertIn(".ticket-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; }",
-                      self.stylesheet)
+        # The station's own code is the widest run of characters in the
+        # first column, and it must not wrap either: "KINGS" over "X" is a
+        # different place.
+        self.assertIn(
+            ".station-code { color: var(--muted); font-variant-numeric: tabular-nums; }",
+            self.stylesheet,
+        )
+        self.assertNotIn(".ticket-code", self.stylesheet)
 
     def test_the_count_line_sits_on_its_table(self) -> None:
         # Finding, 29 September 2026: on the real page the count sat 205px above
