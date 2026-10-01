@@ -186,7 +186,7 @@ class DemoPageTest(unittest.TestCase):
         # Every control that changes the result writes it, and the budget is
         # the one that does so while it is being dragged.
         self.assertIn("budget.addEventListener(\"input\", () => { setBudget(budget.value); currentPage = 1; render(); writeUrl({ budget: true }); })", self.html)
-        self.assertIn("railcard.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
+        self.assertIn('railcardSelect.addEventListener("change", () => {', self.html)
         self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
         # The title is the heading's sentence, so a reader with two tabs open
         # can tell the two searches apart.
@@ -250,7 +250,11 @@ class DemoPageTest(unittest.TestCase):
         # even when it is restricted. The browser budget filter does the final
         # selection; the synthetic fixture's cheaper CDR is therefore visible.
         self.assertEqual(rows["NOT"]["adultPence"], 1160)
-        self.assertEqual(rows["NOT"]["railcardPence"], 770)
+        # NOT's CDR fare is the one the fixture's RR 0001 bans for this card,
+        # so it carries a state and no price.
+        self.assertEqual(rows["NOT"]["railcards"]["YNG"]["state"], "blocked")
+        self.assertIsNone(rows["NOT"]["railcards"]["YNG"]["pricePence"])
+        self.assertEqual(rows["PBO"]["railcards"]["YNG"]["pricePence"], 1490)
         self.assertEqual(rows["NOT"]["partyPence"], 2320)
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
@@ -521,19 +525,21 @@ class DemoPageTest(unittest.TestCase):
 
     def test_a_railcard_is_a_constraint_on_the_party_not_a_discount(self) -> None:
         # S15: the cheapest number on screen has to be a fare the party could
-        # buy, so the box is disabled for a party of one and the sentence beside
-        # it says why, in the feed's own terms rather than this project's.
-        # The name is the feed's own, truncated by its fixed-width field; the
-        # party size is what the page's sentence is built from.
-        self.assertEqual(self.payload["railcardParty"]["minAdults"], 2)
-        self.assertEqual(self.payload["railcardParty"]["maxAdults"], 2)
+        # buy, so a card whose own feed record does not cover the party on
+        # screen is taken out of the list rather than left there to be picked.
+        # The bounds come from the feed, not from this project.
+        card = self.payload["railcards"][0]
+        self.assertEqual((card["minAdults"], card["maxAdults"]), (1, 1))
         self.assertIn("function syncRailcardParty()", self.html)
-        self.assertIn('railcard.disabled = !applies;', self.html)
-        self.assertIn("if (!applies && railcard.checked) railcard.checked = false;", self.html)
-        self.assertIn('"The railcard in this feed covers " + party.minAdults', self.html)
-        # A card=1 that arrives on a link must not tick a box the party of one
-        # cannot use.
-        self.assertIn("railcard.checked = state.railcard && unit() === \"party\";", self.html)
+        self.assertIn("function cardCoversParty(card)", self.html)
+        self.assertIn("return card.minAdults <= adults && adults <= card.maxAdults;", self.html)
+        self.assertIn("railcardSelect.disabled = offered.length === 0;", self.html)
+        self.assertIn('"The " + chosen.label + " in this feed covers "', self.html)
+        # A card code arriving on a link is applied only when this page prices
+        # it, so a link naming a card this origin has no fares for does not
+        # read as a card the reader holds.
+        self.assertIn('const wanted = state.railcard && railcards[state.railcard] ? state.railcard : "";',
+                      self.html)
 
     def test_a_row_states_its_condition_and_folds_the_feed_record_away(self) -> None:
         # S19: the condition a reader can act on sits beside the price; the
@@ -615,7 +621,7 @@ class DemoPageTest(unittest.TestCase):
         for control in (
             "budget.addEventListener",
             "budgetNumber.addEventListener",
-            "railcard.addEventListener",
+            "railcardSelect.addEventListener",
             "previousPage",
             "nextPage",
         ):
@@ -1048,10 +1054,29 @@ class DemoPageTest(unittest.TestCase):
     def test_railcard_pricing_is_available_from_the_feed(self) -> None:
         # R9 is the railcard's travel condition, not a total ban, so the
         # synthetic fares that carry it remain eligible.
-        self.assertTrue(self.payload["railcardInFeed"])
-        self.assertTrue(self.payload["railcardAvailable"])
-        self.assertEqual(self.payload["railcardEligibleCount"], 3)
-        self.assertIn("Two Together is in this feed", self.payload["railcardNote"])
+        cards = {card["key"]: card for card in self.payload["railcards"]}
+        self.assertEqual(list(cards), ["YNG"], "the demo feed carries one reviewed card")
+        self.assertEqual(cards["YNG"]["label"], "16-25 Railcard")
+        # Two of the five fares sit on route 00002, which the fixture's RR 0001
+        # bans for this card outright. The remaining three are discounted.
+        self.assertEqual(cards["YNG"]["eligibleCount"], 3)
+        refused = [
+            row
+            for row in self.payload["destinations"]
+            if row["railcards"]["YNG"]["state"] == "blocked"
+        ]
+        self.assertEqual([row["crs"] for row in refused], ["NOT"], "the total ban refuses the CDR fare")
+        self.assertIsNone(refused[0]["railcards"]["YNG"]["pricePence"])
+        # A refused fare keeps its standard price rather than showing a
+        # discount the feed will not honour.
+        self.assertEqual(refused[0]["adultPence"], 1160)
+        # LCN's £8.70 SDR fare is not counted either, and for the opposite
+        # reason: the card's £12.00 minimum is higher than the discounted fare,
+        # so the card raises this price rather than lowering it.
+        raised = next(r for r in self.payload["destinations"] if r["crs"] == "LCN")
+        self.assertEqual(raised["railcards"]["YNG"]["pricePence"], 1200)
+        self.assertGreater(raised["railcards"]["YNG"]["pricePence"], raised["adultPence"])
+        self.assertIn("No railcard is selected", self.payload["railcardNote"])
         self.assertIn("restriction codes are retained as travel conditions", self.payload["railcardNote"])
         self.assertIn("DATA.railcardNote", self.html)
         self.assertIn("Math.min(base, cardTotal)", self.html)
@@ -1065,31 +1090,71 @@ class DemoPageTest(unittest.TestCase):
             fares.minimum_fares.clear()
             payload = build_payload(fares, None, "GRN")
         rows = {row["crs"]: row for row in payload["destinations"]}
-        self.assertEqual(rows["NOT"]["railcardPence"], 770)
-        self.assertTrue(payload["railcardAvailable"])
-        self.assertTrue(payload["railcardInFeed"])
-        self.assertEqual(payload["railcardEligibleCount"], 4)
-        self.assertIn("one-third discount", payload["railcardNote"])
+        self.assertEqual(rows["NOT"]["railcards"]["YNG"]["pricePence"], 770)
+        cards = {card["key"]: card for card in payload["railcards"]}
+        self.assertEqual(cards["YNG"]["eligibleCount"], 4)
+        self.assertIn("discounted by a third", payload["railcardNote"])
 
     def test_each_destination_exposes_its_exact_railcard_decision(self) -> None:
-        row = next(row for row in self.payload["destinations"] if row["crs"] == "NOT")
-        details = row["railcard"]
+        row = next(row for row in self.payload["destinations"] if row["crs"] == "PBO")
+        details = row["railcards"]["YNG"]
         self.assertEqual(details["state"], "eligible")
         rule = self.payload["railcardRules"][details["rule"]]
-        self.assertIn("any ticket", rule["text"])
         self.assertIn("RR", rule["text"])
+        self.assertIn("16-25 Railcard", rule["text"])
         self.assertEqual(rule["restrictionCode"], "R9")
+        # RR 0002 rather than 0001: 0001 is a total ban on route 00002, and this
+        # row is not on that route. A restriction code attached to a fare is a
+        # travel condition, not a refusal, which is what keeps the row eligible.
+        self.assertEqual(rule["sequence"], "0002")
         self.assertFalse(rule["totalBan"])
-        self.assertEqual(details["pricePence"], 770)
+        self.assertEqual(details["pricePence"], 1490)
         self.assertEqual(
             details["minimumFarePence"],
-            self.fares.minimum_fare("TWO", row["ticket"]),
+            self.fares.minimum_fare("YNG", row["ticket"]),
         )
-        self.assertIn("travel condition rather than a card ban", details["reason"])
+        # The refused fare names the rule that refused it, so the drawer can say
+        # which DTD record did it rather than only that it did not apply.
+        refused = next(r for r in self.payload["destinations"] if r["crs"] == "NOT")
+        ban = self.payload["railcardRules"][refused["railcards"]["YNG"]["rule"]]
+        self.assertTrue(ban["totalBan"])
+        self.assertEqual(ban["sequence"], "0001")
         self.assertIn('id="railcardDrawer"', self.html)
         self.assertIn("showRailcardDetails(destination)", self.html)
         self.assertIn("DATA.railcardRules[details.rule]", self.html)
+        self.assertIn("travel condition rather than a card ban", self.html)
         self.assertIn("Exact DTD rule", self.html)
+
+    def test_the_drawer_explains_which_card_it_is_about(self) -> None:
+        # The reader picked one card out of six, so the drawer has to name it.
+        # A drawer that explained "the railcard" while the page listed six
+        # would answer a question nobody asked.
+        self.assertIn('id="railcardName"', self.html)
+        self.assertIn('name.textContent = card.label + " (" + card.codes.join(", ") + ")";',
+                      self.html)
+        # With no card chosen there is nothing to explain, and the drawer says
+        # that rather than describing a rule for a card the reader did not name.
+        self.assertIn('status.dataset.state = "none";', self.html)
+        self.assertIn("No railcard is selected, so this fare is shown at its standard price.",
+                      self.html)
+
+    def test_a_card_whose_minimum_is_higher_says_so_rather_than_claiming_a_saving(self) -> None:
+        # LCN's SDR fare is £8.70. The card's discounted price would be £5.80,
+        # and the feed's £12.00 minimum is higher than that, so the card makes
+        # this fare dearer. The row must say the minimum is higher rather than
+        # presenting a "discount" that costs the reader money, and the count of
+        # discounted destinations must leave this one out.
+        row = next(r for r in self.payload["destinations"] if r["crs"] == "LCN")
+        details = row["railcards"]["YNG"]
+        self.assertEqual(row["adultPence"], 870)
+        self.assertEqual(details["minimumFarePence"], 1200)
+        self.assertEqual(details["pricePence"], 1200)
+        self.assertGreater(details["pricePence"], row["adultPence"])
+        # The page's own wording for that case, written in the drawer.
+        self.assertIn(
+            "but the DTD minimum fare of ", self.html
+        )
+        self.assertIn("is higher.", self.html)
 
     @property
     def stylesheet(self) -> str:
@@ -1125,23 +1190,28 @@ class DemoPageTest(unittest.TestCase):
             for row in self.payload[key]
         ]
         self.assertTrue(rows)
+        offered = {card["key"] for card in self.payload["railcards"]}
         for row in rows:
-            rule = row["railcard"]["rule"]
-            self.assertIsInstance(rule, str, "rows hold a key, never the record")
-            self.assertIn(rule, self.payload["railcardRules"])
+            for key, details in row["railcards"].items():
+                self.assertIn(key, offered, "a row prices only reviewed cards")
+                rule = details["rule"]
+                self.assertIsInstance(rule, str, "rows hold a key, never the record")
+                self.assertIn(rule, self.payload["railcardRules"])
         rules = self.payload["railcardRules"]
         self.assertTrue(rules, "a page with rows publishes the shared records")
 
     def test_unavailable_railcard_hides_its_own_help(self) -> None:
-        payload = dict(
-            self.payload,
-            railcardAvailable=False,
-            railcardEligibleCount=0,
-        )
+        payload = dict(self.payload, railcards=[])
         html = render_page(payload, budget_pounds=20)
         script = page_script(html)
-        self.assertIn('help.textContent = ""', script)
-        self.assertIn("help.hidden = true", script)
+        self.assertIn("This feed prices no reviewed railcard, so these are standard fares.",
+                      script)
+        self.assertIn("railcardChoice.hidden = true", script)
+        self.assertIn("railcardSelect.disabled = true;", script)
+        # The sentence stays rather than being hidden. "Standard fares" is the
+        # claim the page rests on, and a reader who owns a 16-25 card is owed
+        # the reason their card is not offered rather than an empty space.
+        self.assertIn("help.hidden = false", script)
         self.assertIn("railcardChoice.hidden = true", script)
         self.assertNotIn("no displayed fare is currently eligible", html)
 
@@ -1506,9 +1576,11 @@ class DemoPageTest(unittest.TestCase):
         # The card is never sent anywhere; it is named as something to tick, and
         # only when the price on screen is the one that needs it.
         self.assertIn('const together = unit() === "party";', self.html)
-        self.assertIn('if (together && DATA.railcardAvailable && destination.railcardPence !== null)', self.html)
-        self.assertNotIn('if (together && DATA.railcardInFeed && destination.railcardPence !== null)', self.html)
-        self.assertIn('Two Together discount is not sent to the seller', self.html)
+        self.assertIn("if (together && card)", self.html)
+        self.assertIn('lines.push(railcards[railcardSelect.value].label + " discount is not sent',
+                      self.html)
+        self.assertIn('" discount is not sent to the seller', self.html)
+        self.assertNotIn('"Two Together discount is not sent to the seller', self.html)
 
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
         # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
@@ -4761,7 +4833,10 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
         prices = [row["adultPence"] for row in payload["anytimeDestinations"]]
         self.assertTrue(any(p > 1200 for p in prices), "nothing is above the £12.00 minimum")
         self.assertTrue(any(p < 1200 for p in prices), "nothing is below the £12.00 minimum")
-        self.assertGreater(payload["railcardEligibleCount"], 0)
+        self.assertTrue(
+            any(card["eligibleCount"] > 0 for card in payload["railcards"]),
+            "no card discounts a displayed fare on this origin",
+        )
 
     def test_a_changed_journey_names_the_station_where_it_changes(self) -> None:
         # Q2 (ADR-0045): a split ticket is the reply the launch post expects,
