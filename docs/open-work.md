@@ -170,6 +170,12 @@ the next person from re-deriving it.
    then, takes `--rebuild` to build again, and `--no-build` to refuse rather than
    build what it was told not to.
    [ADR-0051](../adr/ADR-0051-the-runner-serves-and-the-build-builds.md).
+   **Amended 1 October 2026.** The separation stands and the default is
+   reversed: `python run.py` now builds the whole network, because a
+   single-origin build cannot render the heading's station control at all, and
+   it rebuilds when the sources are newer than the build it would serve,
+   because a stale page answers nothing on it.
+   [ADR-0055](../adr/ADR-0055-the-runner-builds-what-the-reader-will-ask-for.md).
 
 ---
 
@@ -188,7 +194,10 @@ because a reader checking a closure wants the ADR and the test.
 | Question 1, the release coverage, settled by building every priced station rather than Grantham alone | ADR-0050 | `timeout-minutes: 150` against the measured extrapolation, and `tools/page_bytes.py --site _site` as the only step that reads the release's bytes |
 | A railcard is a product with the feed's codes for it, not a code | landed ahead of the page that consumes it, so each unit builds and verifies | `ReviewedRailcardTest` in `tests/test_atoc_fares.py`, six tests over families, aliases, bounds and the absent-code report |
 | Question 2, the railcards, with the page offering the reviewed collection, none selected by default, and the browser remembering the choice | ADR-0052 | `RailcardAdultBoundsTest`, and the browser suite's six collection checks, which are the menu, the default, the memory, the address, an unpriced code, and the party rule |
-| Question 3, the runner, with the build and the serve as separate commands | ADR-0051 | `RunnerBuildOrServeTest`, four tests over the four combinations of a site existing, not existing, and a flag asking for a rebuild |
+| Question 3, the runner, with the build and the serve as separate commands | ADR-0051, amended by ADR-0055 | `RunnerBuildOrServeTest`, five tests over a site existing, not existing, a flag asking for a rebuild, and sources newer than the build |
+| The row names its fare in a word; the feed's code waits in the row's disclosure | ADR-0053, superseding decision 2 of ADR-0040 | `test_result_changes_and_mobile_cells_are_accessible` and `test_table_headers_name_their_columns_and_scope`, and the browser suite's fare-type and Feed-record readings |
+| The shortlist is one select and one strip above the table, not a button on every row | ADR-0054 | the browser suite's five shortlist checks, and the select's change listener's tests in `tests/test_build_demo_page.py` |
+| The station name in the heading is the field you type into | ADR-0056 | the heading-picker checks, including Escape pressed in the field rather than in the panel |
 
 ### The measurements three ADRs lean on
 
