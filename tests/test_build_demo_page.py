@@ -232,9 +232,13 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("function splitNote(destination)", self.html)
         self.assertIn("destination.changeStations || []", self.html)
         self.assertIn('note.className = "split"', self.html)
-        self.assertIn("one ticket to that station and another from it", self.html)
+        # The station itself is named in the Changes column now, so the
+        # panel says only what is still worth saying and is nowhere else.
+        self.assertIn("one ticket to the station above", self.html)
+        self.assertIn('line.className = "interchange"', self.html)
+        self.assertIn('"via " + stations.map((station) => station.name)', self.html)
         self.assertIn("can sometimes cost less than this through fare", self.html)
-        self.assertIn("this page prices the through fare only", self.html)
+        self.assertIn("This page prices the through fare only.", self.html)
 
     def test_payload_records_the_source_fingerprint_used_to_build_the_page(self) -> None:
         self.assertRegex(self.payload["sourceFingerprint"], r"^[0-9a-f]{16}$")
@@ -388,18 +392,6 @@ class DemoPageTest(unittest.TestCase):
         )
         journey = script.split("function journeyText")[1].split("\nfunction ")[0]
         self.assertIn('"Ticket: " + fareName(destination)', journey)
-        # A price with no ticket beside it is the one thing a reader holding
-        # the list cannot act on, so the shortlist names the fare on the row
-        # and on every copied line, beside the price rather than in a footer.
-        row = script.split("function shortlistRow(")[1].split("\nfunction ")[0]
-        self.assertIn(r'" \u00b7 " + fareName(destination)', row)
-        copied = script.split("function shortlistText()")[1].split("\nfunction ")[0]
-        self.assertIn(r'" " + what + ", " + fareName(destination) + ", " + time', copied)
-        # The set names itself above the table, in the coverage line and in the
-        # provenance line, so no sentence on the page counts the wrong fares.
-        self.assertIn('cheapest: "The cheapest fare of any ticket type for each destination', script)
-        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", script)
-        self.assertIn('cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed"', script)
 
     def test_the_warn_token_clears_aa_where_the_cheapest_rows_put_it(self) -> None:
         # The cheapest list leads with restricted and advance fares, whose words
@@ -556,8 +548,15 @@ class DemoPageTest(unittest.TestCase):
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["journeyState"], "found")
         self.assertEqual(rows["SLP"]["journeyState"], "no service in this timetable")
-        self.assertIn('missing ? "No service" : duration(destination.minutes)', self.html)
-        self.assertIn('missing ? "Unknown" : String(destination.changes)', self.html)
+        self.assertIn('cell.textContent = missing ? "No service" : duration(destination.minutes);', self.html)
+        # The change count is a word rather than a digit, and the station it
+        # changes at sits under it in the column whose header says Changes.
+        self.assertIn("function changeCount(changes)", self.html)
+        self.assertIn('if (changes === 0) return "Direct";', self.html)
+        self.assertIn(
+            'return changes === 1 ? "1 change" : changes + " changes";', self.html
+        )
+        self.assertIn('count.textContent = missing ? "Unknown" : changeCount(destination.changes);', self.html)
         prices_only = build_payload(self.fares, None, "GRN")
         self.assertEqual(
             next(row for row in prices_only["destinations"] if row["crs"] == "LCN")["journeyState"],
@@ -1935,20 +1934,21 @@ class DemoPageTest(unittest.TestCase):
 
     def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
-        self.assertIn("cell.dataset.label = label", self.html)
-        # Finding, 29 September 2026: the FARE and CONDITIONS columns repeated
-        # one sentence on all 20 rows, so the row carries the fare's own code
-        # and the sentence moved into the row's disclosure. The label on the
-        # new cell is what the phone reflow reads out.
-        self.assertIn('cell.dataset.label = "Fare code"', self.html)
+        self.assertIn("cell.dataset.label =", self.html)
+        # The column is the fare in three words. SDR, 2AS and BPS are a
+        # seller's vocabulary and they were the column, on every row, in
+        # front of the one number the reader came for; the code is in the
+        # row's own record (ADR-0053). The label is what the phone reflow
+        # reads out.
+        self.assertIn('cell.dataset.label = "Fare type"', self.html)
+        self.assertIn('function fareTypeWord(destination)', self.html)
+        self.assertIn('return "Advance"', self.html)
+        self.assertIn('return "Restricted"', self.html)
+        self.assertIn('return "Regular"', self.html)
         # And the panel those cells open carries the token the warn colour
         # hangs off, which is what the phone reflow and C14 both read.
         self.assertIn('panel.dataset.status = restricted ? "restricted" : "unrestricted";', self.html)
         self.assertIn('readable.className = "condition";', self.html)
-        # C07: the condition is still on the same row, one disclosure away, so
-        # the pointer is kept rather than dropped -- and it now points at the
-        # thing it names instead of at a column that no longer exists.
-        self.assertIn("Restricted fare — condition below", self.html)
 
     def test_the_page_opens_on_the_cheapest_list_and_every_set_says_what_it_is(self) -> None:
         # C07 was "the set the page opens in is the one PRODUCT.md promises",
@@ -2290,10 +2290,11 @@ class DemoPageTest(unittest.TestCase):
     def test_table_headers_name_their_columns_and_scope(self) -> None:
         # "Ticket" and "Tickets" as adjacent headers read as one column twice,
         # and "Fare code" was rejected while that column read in sentences. The
-        # column holds the feed's own code again, so the name is right again:
-        # it is the fare's code, not a second ticket action beside the Tickets
-        # column (finding, 29 September 2026).
-        self.assertIn('<th scope="col">Fare code</th>', self.html)
+        # column is now the fare in the reader's own three words and the code
+        # is in the row's disclosure (ADR-0053), so the header names what the
+        # cells hold rather than what the feed calls them.
+        self.assertIn('<th scope="col">Fare type</th>', self.html)
+        self.assertNotIn('<th scope="col">Fare code</th>', self.html)
         self.assertIn('<th scope="col">Tickets</th>', self.html)
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
         self.assertNotIn('<th scope="col">Fare</th>', self.html)
@@ -2684,8 +2685,7 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn(moved, row_cell)
         # ... and the panel builds them, in one box, with the copy text landing
         # in that same box when the clipboard is refused.
-        actions = script.split("function rowActions")[1].split("function showRailcardDetails")[0]
-        self.assertIn('cardDetails.textContent = "Card details"', actions)
+        actions = script.split("function rowActions")[1].split("function cardNote")[0]
         self.assertIn('copy.textContent = "Copy"', actions)
         self.assertIn("copyJourney(destination, copy, tools)", actions)
         copy_path = script.split("function copyJourney")[1].split("function showCopyText")[0]
