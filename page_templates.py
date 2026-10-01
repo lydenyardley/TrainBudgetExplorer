@@ -1097,17 +1097,29 @@ function syncRailcardParty() {
   // A card that cannot price the party on screen is removed from the list
   // rather than left there to be picked and then ignored. The feed's own
   // records decide, so the page is not inventing a rule about who travels.
-  const offered = [];
-  for (const key of railcardKeys) {
-    if (!cardCoversParty(railcards[key])) continue;
-    offered.push(key);
-    if (railcardSelect.value === key) continue;
+  //
+  // The list is rebuilt rather than filtered in place, because the party
+  // control and the card control are two answers to one question and the second
+  // has to follow the first. The earlier version computed the offered list and
+  // then left the options alone, so a party of two was still offered a card the
+  // feed says prices one traveller; the browser suite found it by asking which
+  // options a party of two can see.
+  const offered = railcardKeys.filter((key) => cardCoversParty(railcards[key]));
+  const wanted = railcardSelect.value;
+  railcardSelect.replaceChildren();
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "No railcard";
+  railcardSelect.append(none);
+  for (const key of offered) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = railcards[key].label;
+    railcardSelect.append(option);
   }
-  if (railcardSelect.value && !offered.includes(railcardSelect.value)) {
-    // The reader's remembered card does not cover this party. The choice is
-    // cleared rather than honoured, and the reason is said below the control.
-    railcardSelect.value = "";
-  }
+  // The reader's choice survives the rebuild when the party on screen still
+  // allows it, and is cleared when it does not.
+  railcardSelect.value = offered.includes(wanted) ? wanted : "";
   railcardSelect.disabled = offered.length === 0;
   if (!help) return;
   if (noCard()) {

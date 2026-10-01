@@ -873,14 +873,17 @@ async function runPage(browser, index, given, file, body, base) {
     // that is behaving correctly to fail every chip check. Written here, from
     // the payload, so the check that the page agrees with it is not circular.
     window.cheapestOfEveryList = () => {
+      // Q2: the railcard is one of a collection the reader picks from, so the
+      // reader resolves the chosen card against the row's own entry rather than
+      // reading a single railcardPence the page no longer carries.
       const price = (destination) => {
         const party = document.querySelector('input[name="unit"]:checked').value === "party";
         const base = party ? destination.partyPence : destination.adultPence;
-        const card = document.getElementById("railcard");
-        if (card.checked && destination.railcardPence !== null) {
-          return Math.min(base, destination.railcardPence * (party ? 2 : 1));
-        }
-        return base;
+        const select = document.getElementById("railcardSelect");
+        if (!select || !select.value) return base;
+        const card = (destination.railcards || {})[select.value];
+        if (!card || card.pricePence === null) return base;
+        return Math.min(base, card.pricePence * (party ? 2 : 1));
       };
       const cheapest = new Map();
       for (const list of [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]) {
@@ -1374,27 +1377,41 @@ async function runPage(browser, index, given, file, body, base) {
         .map((cell) => Number(cell.textContent.replace(/[^0-9.]/g, "")))
     );
     const ascending = (xs) => xs.every((value, i) => i === 0 || xs[i - 1] <= value);
-    const hasCard = await page.evaluate(() => Boolean(DATA.railcardAvailable));
-    if (hasCard) {
-      // Two Together covers two adults travelling together, so the page stands
-      // the card down for a party of one: the control is exercised with the
-      // party it applies to selected.
-      await page.check('input[name="unit"][value="party"]');
+    // The card is chosen through the same select a reader uses, and the party
+    // is set to one the chosen card actually covers, because a card that does
+    // not cover the party on screen is taken out of the list rather than priced.
+    const resortable = await page.evaluate(() => {
+      const select = document.getElementById("railcardSelect");
+      const cards = (DATA.railcards || []).filter((card) => card.minAdults <= 1 && 1 <= card.maxAdults);
+      if (!select || !cards.length) return null;
+      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      select.value = cards[0].key;
+      render();
+      return cards[0].key;
+    });
+    if (resortable) {
       await page.fill("#budgetNumber", String(twoAdultStop.max));
       const beforeCard = await shownPrices();
-      await page.check("#railcard");
+      await page.evaluate(() => {
+        const select = document.getElementById("railcardSelect");
+        select.value = "";
+        render();
+      });
       const withCard = await shownPrices();
       check(
         "and the list re-sorts when the railcard replaces every price",
         ascending(withCard) && withCard.join(" ") !== beforeCard.join(" "),
         `${beforeCard.join(" ")} -> ${withCard.join(" ")}`
       );
-      await page.uncheck("#railcard");
-      await page.check('input[name="unit"][value="adult"]');
+      await page.evaluate(() => {
+        const select = document.getElementById("railcardSelect");
+        select.value = "";
+        render();
+      });
     } else {
       check(
         "and the list re-sorts when the railcard replaces every price",
-        notExercised("this feed prices no railcard, so no row's price changes")
+        notExercised("this feed prices no railcard for one adult, so no row's price changes")
       );
     }
 
@@ -2103,9 +2120,15 @@ async function runPage(browser, index, given, file, body, base) {
     // The railcard note is owed only where the feed prices one, so what the
     // copy should say is read off the row it is about to copy: a page with no
     // eligible fare must stay quiet rather than name a discount that is not there.
+    // What the copy should say is read off the chosen card and the row it is
+    // about to copy. A card the feed refused for that fare must stay unmentioned
+    // rather than named as a discount that is not there.
     const railcardNamed = await page.evaluate((name) => {
       const row = DATA.destinations.find((d) => d.name === name);
-      return Boolean(DATA.railcardAvailable && row && row.railcardPence !== null);
+      const select = document.getElementById("railcardSelect");
+      if (!row || !select || !select.value) return false;
+      const card = (row.railcards || {})[select.value];
+      return Boolean(card && card.pricePence !== null);
     }, copiedName);
     await copyButton.click();
     await page.waitForFunction(
@@ -2117,7 +2140,7 @@ async function runPage(browser, index, given, file, body, base) {
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(
       "and names the railcard when the fare is eligible, and stays quiet when it is not",
-      railcardNamed ? /Two Together discount/.test(partyCopy) : !/Two Together discount/.test(partyCopy),
+      railcardNamed ? /discount is not sent to the seller/.test(partyCopy) : !/discount is not sent to the seller/.test(partyCopy),
       `${copiedName} ${railcardNamed ? "is" : "is not"} railcard-eligible: ${partyCopy}`
     );
     } else {
@@ -2276,60 +2299,215 @@ async function runPage(browser, index, given, file, body, base) {
     // of the station it was pointed at.
     await open(facts.affordable);
 
-    // S15: a railcard for two adults is a constraint on the party, so the
-    // cheapest number on screen is a fare the party could actually buy.
+    // Q2: a railcard is one of a collection the reader picks from, nothing is
+    // selected by default, and a card whose own feed record does not cover the
+    // party on screen is not offered for it.
     const cardChoice = await page.locator("#railcardChoice").isVisible();
+    const menu = await page.evaluate(() => {
+      const select = document.getElementById("railcardSelect");
+      return {
+        options: Array.from(select.options).map((o) => ({ value: o.value, label: o.textContent })),
+        value: select.value,
+        disabled: select.disabled,
+        help: document.getElementById("railcardHelp").textContent,
+        offered: (DATA.railcards || []).map((c) => c.key),
+      };
+    });
+    check(
+      "the railcard control offers every reviewed card and one 'none' option",
+      cardChoice
+        ? menu.options.length === menu.offered.length + 1 &&
+          menu.options[0].value === "" &&
+          menu.options.slice(1).every((o, i) => o.value === menu.offered[i])
+        : notExercised("this feed prices no reviewed railcard"),
+      JSON.stringify(menu.options)
+    );
+    check(
+      "and no railcard is selected by default, so the prices are standard fares",
+      cardChoice
+        ? menu.value === "" && /No railcard selected/.test(menu.help)
+        : notExercised("this feed prices no reviewed railcard"),
+      `value=${menu.value} help=${menu.help}`
+    );
     const solo = cardChoice
       ? await page.evaluate(() => {
         document.querySelector('input[name="unit"][value="adult"]').checked = true;
         render();
+        const select = document.getElementById("railcardSelect");
         return {
-          disabled: document.getElementById("railcard").disabled,
-          checked: document.getElementById("railcard").checked,
+          options: Array.from(select.options).map((o) => o.value),
+          cards: DATA.railcards.map((c) => ({ key: c.key, min: c.minAdults, max: c.maxAdults })),
           help: document.getElementById("railcardHelp").textContent,
-          party: DATA.railcardParty,
         };
       })
       : null;
+    // S15: a card that needs two travellers cannot price one reader's journey,
+    // so it is not in the list for a party of one rather than left there to be
+    // picked and then ignored. The bounds are the feed's own records.
     check(
-      "one adult cannot price a journey with a two-adult railcard",
-      cardChoice ? solo.disabled && !solo.checked : notExercised("no destination on this page is railcard-eligible"),
-      cardChoice ? `disabled=${solo.disabled} checked=${solo.checked}` : ""
-    );
-    check(
-      "and the page says the card belongs to a party, not to a discount",
+      "one adult is offered only the cards whose own bounds cover one adult",
       cardChoice
-        ? /covers \d+ to \d+ adults/.test(solo.help) && /Two adults/.test(solo.help)
-        : notExercised("no destination on this page is railcard-eligible"),
-      cardChoice ? solo.help : ""
+        ? solo.options.slice(1).every((key) => {
+            const card = solo.cards.find((c) => c.key === key);
+            return card && card.min <= 1 && 1 <= card.max;
+          }) &&
+          solo.cards
+            .filter((c) => c.min > 1)
+            .every((c) => !solo.options.includes(c.key))
+        : notExercised("this feed prices no reviewed railcard"),
+      `options=${solo ? solo.options.join(",") : ""}`
     );
-    const cardPair = cardChoice
+    const duo = cardChoice
       ? await page.evaluate(() => {
         document.querySelector('input[name="unit"][value="party"]').checked = true;
         render();
+        const select = document.getElementById("railcardSelect");
+        const options = Array.from(select.options).map((o) => o.value);
+        const first = options.find((v) => v !== "") || "";
+        if (first) {
+          select.value = first;
+          render();
+        }
         return {
-          disabled: document.getElementById("railcard").disabled,
+          options,
+          first,
           help: document.getElementById("railcardHelp").textContent,
-          min: DATA.railcardParty ? DATA.railcardParty.minAdults : null,
+          cards: DATA.railcards,
+          disabled: select.disabled,
         };
       })
       : null;
     check(
-      "two adults can use it",
-      cardChoice ? !cardPair.disabled : notExercised("no destination on this page is railcard-eligible"),
-      cardChoice ? `disabled=${cardPair.disabled}` : ""
+      "two adults are offered the cards that cover two",
+      cardChoice && duo.cards.some((c) => c.min <= 2 && 2 <= c.max)
+        ? duo.first !== "" &&
+          duo.cards
+            .filter((c) => c.min <= 2 && 2 <= c.max)
+            .every((c) => duo.options.includes(c.key)) &&
+          !duo.disabled
+        : notExercised(
+            cardChoice
+              ? "this feed prices no railcard that covers two adults, so a party of two cannot be priced with one"
+              : "this feed prices no reviewed railcard"
+          ),
+      `options=${duo ? duo.options.join(",") : ""} cards=${
+        duo ? duo.cards.filter((c) => c.min <= 2 && 2 <= c.max).map((c) => c.key).join(",") : ""
+      }`
     );
     check(
-      "and the help then names what it would discount",
-      cardChoice
-        ? new RegExp(String(cardPair.min || 0)).test(cardPair.help) && /Card details/.test(cardPair.help)
-        : notExercised("no destination on this page is railcard-eligible"),
-      cardChoice ? cardPair.help : ""
+      "and the help names the chosen card, its bounds and what it would discount",
+      cardChoice && pair && duo.first
+        ? (() => {
+            const card = duo.cards.find((c) => c.key === duo.first);
+            return (
+              card && new RegExp(String(card.min) + " to " + String(card.max) + " adults").test(duo.help) &&
+              duo.help.includes(card.label) &&
+              new RegExp(String(card.eligibleCount)).test(duo.help) &&
+              /Card details/.test(duo.help)
+            );
+          })()
+        : notExercised("this page prices no card that covers two adults"),
+      pair ? duo.help : ""
     );
+    // Q2: the browser remembers the card, which is what makes this a collection
+    // rather than a per-page question. Every reading here goes through the
+    // control itself. Assigning select.value from a script fires no change
+    // event, so nothing is written and nothing re-rendered, and a check written
+    // that way reads back the value the test just set rather than anything the
+    // page remembered.
+    // The party is set first, because a card that does not cover the party on
+    // screen is not in the list at all. The block above leaves two adults
+    // selected, and this feed's only reviewed card covers one, so reading the
+    // list without setting the party found nothing to choose.
+    // The refinements are folded on every route, and a navigation folds them
+    // again, so the control is opened the way the reader opens it rather than
+    // driven while hidden.
+    const revealCardControl = async () => {
+      const folded = await page.evaluate(
+        () => (document.getElementById("moreFilters") || {}).dataset.open === "true"
+      );
+      if (!folded) await page.locator("#moreFiltersToggle").click();
+    };
+    const holdable = await page.evaluate(() => {
+      const cards = DATA.railcards || [];
+      for (const adults of [1, 2]) {
+        const card = cards.find((c) => c.minAdults <= adults && adults <= c.maxAdults);
+        if (!card) continue;
+        document.querySelector(
+          'input[name="unit"][value="' + (adults === 2 ? "party" : "adult") + '"]'
+        ).checked = true;
+        render();
+        const options = Array.from(document.getElementById("railcardSelect").options)
+          .map((o) => o.value)
+          .filter(Boolean);
+        if (options.includes(card.key)) return card.key;
+      }
+      return null;
+    });
+    if (holdable) {
+      await revealCardControl();
+      await page.selectOption("#railcardSelect", holdable);
+      const stored = await page.evaluate(() =>
+        window.localStorage.getItem("tbe.railcard." + DATA.origin.crs)
+      );
+      check(
+        "the browser remembers the card the reader chose",
+        stored === holdable,
+        `stored=${stored} chosen=${holdable}`
+      );
+      check(
+        "and the address carries the card by its code, so a shared link is the same search",
+        page.url().includes("card=" + holdable),
+        page.url()
+      );
+      // open() takes a budget, not a URL, so the address is followed directly.
+      await page.goto(page.url());
+      const cameBack = await page.evaluate(() =>
+        document.getElementById("railcardSelect").value
+      );
+      check(
+        "and reopening that address prices with the same card",
+        cameBack === holdable,
+        `value=${cameBack} expected=${holdable}`
+      );
+      await revealCardControl();
+      await page.selectOption("#railcardSelect", "");
+      const cleared = await page.evaluate(() => ({
+        stored: window.localStorage.getItem("tbe.railcard." + DATA.origin.crs),
+        value: document.getElementById("railcardSelect").value,
+        url: window.location.search,
+      }));
+      check(
+        "and clearing the control forgets the card and drops it from the address",
+        cleared.stored === null && cleared.value === "" && !/card=/.test(cleared.url),
+        JSON.stringify(cleared)
+      );
+      // A shared link can name a card this origin's feed does not price. It is
+      // ignored rather than read as a card the reader holds.
+      await page.goto(page.url() + (page.url().includes("?") ? "&" : "?") + "card=ZZZ");
+      const ignoredValue = await page.evaluate(() =>
+        document.getElementById("railcardSelect").value
+      );
+      check(
+        "and a card code this page does not price is ignored, not half-applied",
+        ignoredValue === "",
+        `value=${ignoredValue}`
+      );
+    } else {
+      for (const name of [
+        "the browser remembers the card the reader chose",
+        "and the address carries the card by its code, so a shared link is the same search",
+        "and reopening that address prices with the same card",
+        "and clearing the control forgets the card and drops it from the address",
+        "and a card code this page does not price is ignored, not half-applied",
+      ]) {
+        check(name, notExercised("this feed prices no railcard for the party on screen"));
+      }
+    }
     // Q3: the discounted number never stands alone in the cell. With the card
-    // ticked a row the card lowers carries the card price and the standard
+    // chosen a row the card lowers carries the card price and the standard
     // fare it came from; a row it does not lower carries one price; and with
-    // the box clear no row carries a second number at all.
+    // no card chosen no row carries a second number at all.
     if (cardChoice) {
       const readCells = () => page.evaluate(() => {
         const cells = {};
@@ -2347,25 +2525,59 @@ async function runPage(browser, index, given, file, body, base) {
       // A row the card actually lowers is the row this check is about, so the
       // budget is set to reach one instead of inheriting whatever the section
       // before left on screen.
-      const lowered = await page.evaluate(() => {
+      // The card and the party are chosen together from the feed's own bounds.
+      // The demo feed's reviewed card covers one adult, so choosing the party
+      // first and then looking for a card that covers it found nothing, and the
+      // check reported that no destination is lowered by a card that lowers
+      // three of them.
+      const pick = await page.evaluate(() => {
         const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
-        const helped = rows.filter(
-          (d) => d.railcardPence !== null && d.railcardPence < d.adultPence
-        );
-        const dearest = helped.reduce((high, d) => Math.max(high, d.partyPence), 0);
+        for (const c of DATA.railcards || []) {
+          for (const adults of [2, 1]) {
+            if (!(c.minAdults <= adults && adults <= c.maxAdults)) continue;
+            const helped = rows.filter((d) => {
+              const card = (d.railcards || {})[c.key];
+              return card && card.pricePence !== null && card.pricePence < d.adultPence;
+            });
+            if (helped.length) return { key: c.key, adults, helped: helped.length };
+          }
+        }
+        return null;
+      });
+      // The clear reading is taken with no card selected and the card reading
+      // with it selected. These two were the other way round, so the check
+      // compared two card prices and reported every row as unchanged.
+      await page.evaluate((choice) => {
+        const select = document.getElementById("railcardSelect");
+        if (!choice) {
+          select.value = "";
+          render();
+          return;
+        }
+        document.querySelector(
+          'input[name="unit"][value="' + (choice.adults === 2 ? "party" : "adult") + '"]'
+        ).checked = true;
+        select.value = "";
+        render();
+        const dearest = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
+          .flat()
+          .filter((d) => {
+            const card = (d.railcards || {})[choice.key];
+            return card && card.pricePence !== null && card.pricePence < d.adultPence;
+          })
+          .reduce((high, d) => Math.max(high, choice.adults === 2 ? d.partyPence : d.adultPence), 0);
         if (dearest) {
           setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
         }
-        document.querySelector('input[name="unit"][value="party"]').checked = true;
-        document.getElementById("railcard").checked = false;
         render();
-        return helped.length;
-      });
+      }, pick);
+      const lowered = pick ? pick.helped : 0;
       const clear = await readCells();
-      await page.evaluate(() => {
-        document.getElementById("railcard").checked = true;
+      await page.evaluate((choice) => {
+        const select = document.getElementById("railcardSelect");
+        select.value = choice ? choice.key : "";
         render();
-      });
+      }, pick);
       const card = await readCells();
       const rows = Object.keys(clear).filter((crs) => clear[crs].price !== null && card[crs]);
       const helped = rows.filter((crs) => amount(card[crs].price) < amount(clear[crs].price));
@@ -2387,17 +2599,17 @@ async function runPage(browser, index, given, file, body, base) {
         JSON.stringify(unchanged.slice(0, 3).map((crs) => card[crs]))
       );
       check(
-        "with the card unticked no row shows a second price",
+        "with no railcard selected no row shows a second price",
         rows.every((crs) => clear[crs].was === null),
         JSON.stringify(rows.slice(0, 3).map((crs) => clear[crs]))
       );
     } else {
       check("a discounted row shows the card price and the standard fare it was discounted from",
-        notExercised("no destination on this page is railcard-eligible"));
+        notExercised("this feed prices no reviewed railcard"));
       check("and a row the card does not lower still shows one price",
-        notExercised("no destination on this page is railcard-eligible"));
-      check("with the card unticked no row shows a second price",
-        notExercised("no destination on this page is railcard-eligible"));
+        notExercised("this feed prices no reviewed railcard"));
+      check("with no railcard selected no row shows a second price",
+        notExercised("this feed prices no reviewed railcard"));
     }
     // The section that follows reads rows and their panels, so the page is
     // handed back at the budget the rest of this block is written against.
