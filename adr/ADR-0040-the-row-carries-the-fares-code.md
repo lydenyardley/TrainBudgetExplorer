@@ -11,7 +11,8 @@ Settles findings C03, C07 and C14 as they stood against the table.
 
 A review of the published Grantham page measured the table at 1440×900 and
 390×844, in both palettes. The measurements are filed in
-`docs/audits/2026-09-29-real-grantham-page.md`; the ones that force a decision
+`docs/open-work.md` (which keeps that audit's measurements); the ones that
+force a decision
 are these:
 
 - **The Price column was 56px wide and 13 of the first 20 prices painted as two

@@ -4,7 +4,8 @@
 **Date:** 29 September 2026
 **Relates to:** ADR-0014 (ticket links), ADR-0017 (the plain link), ADR-0018 (the
 handoff text), ADR-0040 (the row carries the fare's code)
-Settles finding 4 of `docs/audits/2026-09-29-real-grantham-page.md`.
+Settles finding 4 of the Grantham page audit, whose measurements are kept in
+`docs/open-work.md`.
 
 ## Context
 

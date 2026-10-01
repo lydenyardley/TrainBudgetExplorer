@@ -345,6 +345,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tests/test_destination_coverage.py` | Coverage-report tests: dedup, ranking, the summary, and the refusal |
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
+| `docs/open-work.md` | Everything the project's own audits left open, and the record of what they closed |
 | `docs/publish-checklist.md` | The licence, attribution, and fee checks that must pass before a tracked link goes live |
 | `licences/release-clearance.md` | Which licensed products may be published, each cleared or excluded with a reason; the record the deploy gate reads |
 | `docs/github-pages-deployment.md` | GitHub Pages setup, safe Actions secrets, scheduled deployment, and troubleshooting |
