@@ -1010,9 +1010,12 @@ class FaresParserTest(unittest.TestCase):
             db = FaresDb().load_feed(
                 build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
             )
+        # SDR, not CDR: the fixture's other rule bans CDR outright, and this test
+        # is about the rule that attaches a condition rather than one that
+        # refuses the discount.
         rules = db.railcard_rules(
-            "TWO",
-            ticket_code="CDR",
+            "YNG",
+            ticket_code="SDR",
             route_code="00000",
             origin_crs="GRN",
             destination_crs="NOT",
@@ -1023,8 +1026,8 @@ class FaresParserTest(unittest.TestCase):
         self.assertFalse(any(rule.total_ban for rule in rules))
         self.assertIsNone(
             db.railcard_restriction(
-                "TWO",
-                ticket_code="CDR",
+                "YNG",
+                ticket_code="SDR",
                 route_code="00000",
                 origin_crs="GRN",
                 destination_crs="NOT",
@@ -1039,16 +1042,16 @@ class FaresParserTest(unittest.TestCase):
                 build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
             )
         context = {
-            "ticket_code": "SDR",
-            "route_code": "00002",
+            "ticket_code": "CDR",
+            "route_code": "00000",
             "origin_crs": "GRN",
             "destination_crs": "NOT",
             "origin_nlc": "1000",
             "destination_nlc": "2000",
         }
-        self.assertTrue(db.railcard_restriction("TWO", **context).total_ban)
+        self.assertTrue(db.railcard_restriction("YNG", **context).total_ban)
         self.assertIsNone(
-            db.railcard_price_for("TWO", standard_pence=2400, **context)
+            db.railcard_price_for("YNG", standard_pence=2400, **context)
         )
 
     def test_flow_validity_dates_exclude_expired_and_future_fares(self) -> None:
@@ -1109,7 +1112,7 @@ class FaresParserTest(unittest.TestCase):
     def test_railcard_minimum_fare_never_beats_the_standard_fare(self) -> None:
         results = {
             reachable.crs: reachable
-            for reachable in self.db.destinations_within("GRN", 2000, adults=2, railcard="Two Together")
+            for reachable in self.db.destinations_within("GRN", 2000, adults=2, railcard="16-25 Railcard")
         }
         self.assertEqual(results["LCN"].railcard_pence, 1200)
         self.assertEqual(results["LCN"].best_pence, 870)
@@ -1180,7 +1183,7 @@ class FaresParserTest(unittest.TestCase):
 
     def test_party_budget_mode_tests_the_total(self) -> None:
         results = self.db.destinations_within(
-            "GRN", 1550, adults=2, railcard="Two Together", party_budget=True
+            "GRN", 1550, adults=2, railcard="16-25 Railcard", party_budget=True
         )
         self.assertEqual([reachable.crs for reachable in results], ["NOT"])
 
@@ -1286,12 +1289,15 @@ class PublishableSelectorTest(unittest.TestCase):
 
     def test_evaluates_a_railcard_against_current_dtd_restrictions(self) -> None:
         rows = self.db.publishable_destinations_within(
-            "GRN", 2000, railcard="Two Together"
+            "GRN", 2000, railcard="16-25 Railcard"
         )
-        # The fixture's general R9 RR row attaches the Two Together travel
-        # condition. It is not a total ban, so the reviewed fares stay priced.
+        # The fixture's general R9 RR row attaches the card's travel condition.
+        # It is not a total ban, so the reviewed fares stay priced.
         self.assertEqual({row.crs for row in rows}, {"LCN", "NOT", "PBO"})
         prices = {row.crs: row.railcard_pence for row in rows}
+        # LCN's £8.70 SDR fare is raised to the card's £12.00 minimum, which is
+        # the case the page has to state rather than present as a saving, and
+        # NOT's cheaper CDR fare is the one the fixture bans outright.
         self.assertEqual(prices, {"LCN": 1200, "NOT": 1200, "PBO": 1490})
 
     def test_a_railcard_price_is_kept_when_no_rr_rule_matches(self) -> None:
@@ -1300,7 +1306,7 @@ class PublishableSelectorTest(unittest.TestCase):
         rows = {
             row.crs: row
             for row in db.publishable_destinations_within(
-                "GRN", 2000, railcard="Two Together"
+                "GRN", 2000, railcard="16-25 Railcard"
             )
         }
         self.assertEqual(rows["LCN"].railcard_pence, 1200)
@@ -1310,11 +1316,11 @@ class PublishableSelectorTest(unittest.TestCase):
         results = {
             reachable.crs: reachable
             for reachable in self.plain_db.publishable_destinations_within(
-                "GRN", 2000, adults=2, railcard="Two Together", require_restrictions=False
+                "GRN", 2000, adults=2, railcard="16-25 Railcard", require_restrictions=False
             )
         }
-        # SDR carries the Two Together minimum fare of £12.00, so the
-        # discounted price is the minimum rather than two thirds of £14.20.
+        # SDR carries the card's £12.00 minimum fare, so the discounted price
+        # is the minimum rather than two thirds of £14.20.
         self.assertEqual(results["NOT"].railcard_pence, 1200)
         self.assertEqual(results["NOT"].ticket_code, "SDR")
 
@@ -1360,7 +1366,7 @@ class PublishableSelectorTest(unittest.TestCase):
         self.assertEqual(self.db.restrictions.record_counts["RH"], 3)
         self.assertEqual(self.db.restrictions.record_counts["RR"], 2)
         self.assertEqual(self.db.restrictions.headers["R1"].description, "PEAK TO LONDON")
-        self.assertIn("TWO", self.db.restrictions.railcard_record_counts)
+        self.assertIn("YNG", self.db.restrictions.railcard_record_counts)
         self.assertEqual(self.plain_db.restrictions.gate_problem() is not None, True)
 
     def test_a_restriction_header_carries_the_validity_beside_the_description(

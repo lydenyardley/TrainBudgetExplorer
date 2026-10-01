@@ -348,6 +348,11 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; }
   .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
   .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
+  /* The card list is one control, not six checkboxes. A select says "none of
+     these" in its own first option, so the default needs no separate control
+     and cannot be left on by a reader who meant standard fares. */
+  #railcardSelect { width: auto; max-width: 100%; min-height: 2.75rem; }
+  #railcardSelect[disabled] { opacity: .6; }
   /* Tight onto its table, which is the only thing it belongs to: the count
      now sits directly above the first row with the provenance above it
      (finding, 29 September 2026). The 1.75rem this used to carry separated it
@@ -651,9 +656,17 @@ __THEME_TOGGLE__
     <div class="filter-options">
       <label class="railcard-choice"><input type="radio" name="unit" value="adult" checked> One adult</label>
       <label class="railcard-choice"><input type="radio" name="unit" value="party"> Two adults</label>
-      <label class="railcard-choice" id="railcardChoice"><input id="railcard" type="checkbox"> Two Together railcard</label>
     </div>
-    <span class="railcard-help" id="railcardHelp">Eligibility is checked against each fare.</span>
+    <!-- Q2: a railcard is one of a collection the reader picks from, and the
+         default is none. The browser remembers the choice, so a reader who
+         holds a card names it once rather than on every page. The options are
+         written by script from the payload, so the control can never offer a
+         card this feed did not price. -->
+    <div class="filter-options">
+      <label class="railcard-choice" id="railcardChoice" for="railcardSelect">Railcard</label>
+      <select id="railcardSelect" name="railcard" aria-describedby="railcardHelp"></select>
+    </div>
+    <span class="railcard-help" id="railcardHelp">No railcard selected, so these are standard fares.</span>
   </fieldset>
   <fieldset class="destination-filter">
     <legend>Destination type</legend>
@@ -713,12 +726,13 @@ __THEME_TOGGLE__
 
 <dialog id="railcardDrawer" aria-labelledby="railcardDrawerTitle" aria-describedby="railcardReason">
   <div class="drawer-head">
-    <h2 id="railcardDrawerTitle">Two Together eligibility</h2>
+    <h2 id="railcardDrawerTitle">Railcard eligibility</h2>
     <button id="railcardClose" class="toggle drawer-close" type="button" aria-label="Close railcard details">Close</button>
   </div>
   <p id="railcardDestination" class="tag"></p>
   <p id="railcardReason" class="drawer-status"></p>
   <dl>
+    <dt>Card</dt><dd id="railcardName"></dd>
     <dt>Standard fare</dt><dd id="railcardStandard"></dd>
     <dt>Discounted fare</dt><dd id="railcardDiscounted"></dd>
     <dt>DTD minimum</dt><dd id="railcardMinimum"></dd>
@@ -784,10 +798,63 @@ if (window.TBE_STATIONS) {
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");const budgetCeilingNote = document.getElementById("budgetCeiling");
 const budgetField = document.getElementById("budgetField");
-const railcard = document.getElementById("railcard");
-
-
+// Q2: the railcard is a select over the reviewed collection rather than one
+// checkbox for one card. Its options are written from the payload below, so the
+// control can only ever offer a card this build priced.
+const railcardSelect = document.getElementById("railcardSelect");
 const railcardChoice = document.getElementById("railcardChoice");
+// The browser remembers the reader's card between pages. The key is
+// per-origin because a reader from one station is answering the same question
+// as a reader from another, and a stored card must not travel to a page whose
+// feed priced nothing for it.
+const RAILCARD_MEMORY = "tbe.railcard.";
+let rememberedCard = null;
+try {
+  rememberedCard = window.localStorage.getItem(RAILCARD_MEMORY + DATA.origin.crs);
+} catch (error) {
+  // A browser with storage blocked still gets the control; it just asks again.
+  rememberedCard = null;
+}
+
+// The collection the page offers, keyed by the code the feed priced it under.
+const railcards = (DATA.railcards || []).reduce((all, card) => {
+  all[card.key] = card;
+  return all;
+}, {});
+const railcardKeys = Object.keys(railcards);
+const noCard = () => railcardSelect.value === "";
+
+// The options are written from the payload, so the control lists the cards this
+// build actually priced and nothing else. This runs before the address is read
+// (ADR-0052): a card named in a shared link is applied to a select that already
+// has an option for it, and a card this feed does not price is dropped rather
+// than read as one the reader holds.
+if (railcardKeys.length) {
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "No railcard";
+  railcardSelect.append(none);
+  for (const key of railcardKeys) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = railcards[key].label;
+    railcardSelect.append(option);
+  }
+  // A remembered card is applied only when this page prices it, so a reader who
+  // chose a card on a page that offered it is not silently moved onto a
+  // different card where it is absent.
+  if (rememberedCard && railcardSelect.querySelector('option[value="' + rememberedCard + '"]')) {
+    railcardSelect.value = rememberedCard;
+  }
+}
+
+// The party a chosen card covers, from the feed's own records for it. A card
+// that needs two travellers cannot price one reader's journey, and the page says
+// so rather than offering a number nobody could buy.
+function cardCoversParty(card) {
+  const adults = unit() === "party" ? 2 : 1;
+  return card.minAdults <= adults && adults <= card.maxAdults;
+}
 const summary = document.getElementById("summary");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
@@ -828,7 +895,7 @@ function filterStateText() {
   // wording a reader has seen for it.
   const types = Array.from(selectedDestinationTypes());
   const party = unit() === "party" ? "Two adults" : "One adult";
-  const card = document.getElementById("railcard").checked ? " + Two Together" : "";
+  const card = noCard() || !railcards[railcardSelect.value] ? "" : " + " + railcards[railcardSelect.value].label;
   const labelOf = (value) => {
     const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
     const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
@@ -967,11 +1034,22 @@ function unit() {
 function priceOf(destination) {
   const party = unit() === "party";
   const base = party ? destination.partyPence : destination.adultPence;
-  if (railcard.checked && destination.railcardPence !== null) {
-    const cardTotal = destination.railcardPence * (party ? 2 : 1);
+  const card = chosenCard(destination);
+  if (card) {
+    const cardTotal = card.pricePence * (party ? 2 : 1);
     return Math.min(base, cardTotal);
   }
   return base;
+}
+// The chosen card's decision for one row, or null when none is chosen, this
+// row cannot price it, or the card does not cover the party on screen. A card
+// the feed blocked for a fare has no price and is not offered as one.
+function chosenCard(destination) {
+  if (noCard()) return null;
+  const card = destination.railcards && destination.railcards[railcardSelect.value];
+  if (!card || card.pricePence === null || card.pricePence === undefined) return null;
+  const chosen = railcards[railcardSelect.value];
+  return chosen && cardCoversParty(chosen) ? card : null;
 }
 // Q3: with the card ticked the cell shows what the reader would pay *and* the
 // standard fare it came from, so a discounted number never stands alone. With
@@ -996,33 +1074,53 @@ function priceCell(destination) {
   }
   return cell;
 }
-// S15: Two Together is a railcard for a named number of adults travelling
-// together, so it is a constraint on the party rather than a discount a solo
-// reader can tick. The number is the feed's own railcard record, not a rule
-// this page invented, and a box that cannot apply is disabled rather than
-// left there to be ticked and silently ignored.
+// S15: a railcard covers a named number of adults travelling together, so it
+// is a constraint on the party rather than a discount a solo reader can tick.
+// The number is the feed's own record for each card rather than a rule this
+// page invented, and a card that cannot cover the party on screen is taken out
+// of the list rather than left there to be picked and then ignored.
 function syncRailcardParty() {
-  const party = DATA.railcardParty;
-  // No railcard record in the feed, or nothing eligible for one, is not this
-  // rule's business: provenance() has already stood the control down and owns
-  // the sentence beside it.
-  if (!party || !DATA.railcardAvailable) return;
-  const applies = unit() === "party";
-  if (!applies && railcard.checked) railcard.checked = false;
-  railcard.disabled = !applies;
-  const choice = document.getElementById("railcardChoice");
-  if (choice) choice.dataset.state = applies ? "ready" : "needs-a-pair";
   const help = document.getElementById("railcardHelp");
-  if (help) {
-    const covers = "The railcard in this feed covers " + party.minAdults + " to " + party.maxAdults +
-      " adults travelling together";
-    help.textContent = applies
-      ? covers + ", so it prices a journey for the party rather than for one reader. " +
-        DATA.railcardEligibleCount + " destinations receive a lower price with it; open a row's own " +
-        "details for its Card details, the minimum fare and the conditions."
-      : covers + ", so it prices a journey for the party rather than for one reader. " +
-        "Choose “Two adults” to use it.";
+  if (!railcardKeys.length) {
+    // The sentence stays and says why: "standard fares" with no explanation is
+    // the claim the whole page rests on, and a reader who owns a 16-25 card is
+    // owed the reason their card is not in the list.
+    if (help) {
+      help.textContent = "This feed prices no reviewed railcard, so these are standard fares.";
+      help.hidden = false;
+    }
+    if (railcardChoice) railcardChoice.hidden = true;
+    railcardSelect.disabled = true;
+    return;
   }
+  if (railcardChoice) railcardChoice.hidden = false;
+  // A card that cannot price the party on screen is removed from the list
+  // rather than left there to be picked and then ignored. The feed's own
+  // records decide, so the page is not inventing a rule about who travels.
+  const offered = [];
+  for (const key of railcardKeys) {
+    if (!cardCoversParty(railcards[key])) continue;
+    offered.push(key);
+    if (railcardSelect.value === key) continue;
+  }
+  if (railcardSelect.value && !offered.includes(railcardSelect.value)) {
+    // The reader's remembered card does not cover this party. The choice is
+    // cleared rather than honoured, and the reason is said below the control.
+    railcardSelect.value = "";
+  }
+  railcardSelect.disabled = offered.length === 0;
+  if (!help) return;
+  if (noCard()) {
+    help.textContent = "No railcard selected, so these are standard fares. Choose the card you " +
+      "hold to price the journey with it; this browser will remember your choice.";
+    return;
+  }
+  const chosen = railcards[railcardSelect.value];
+  const covers = "The " + chosen.label + " in this feed covers " + chosen.minAdults + " to " +
+    chosen.maxAdults + " adults";
+  help.textContent = covers + ", which matches the party on screen. " + chosen.eligibleCount +
+    " destinations receive a lower price with it; open a row's own details for the minimum " +
+    "fare and the conditions the feed applies.";
 }
 
 function selectedDestinationTypes() {
@@ -1480,7 +1578,7 @@ function renderEmpty(available, wanted, cap, what) {
   }
   // A pair's price is a different number, so a party the reader has not chosen
   // yet is a real way out of an empty list rather than advice.
-  if (unit() === "adult" && DATA.railcardAvailable) {
+  if (unit() === "adult" && railcardKeys.length) {
     const cheaper = activeDestinations().some((destination) => destination.partyPence <= cap * 100);
     if (cheaper) {
       offer("Price it for two adults", () => {
@@ -1880,7 +1978,7 @@ function rowActions(row, destination) {
   cardDetails.className = "toggle";
   cardDetails.type = "button";
   cardDetails.textContent = "Card details";
-  cardDetails.setAttribute("aria-label", "Two Together eligibility for " + destination.name);
+  cardDetails.setAttribute("aria-label", "Railcard eligibility for " + destination.name);
   cardDetails.addEventListener("click", () => showRailcardDetails(destination));
   const copy = document.createElement("button");
   copy.className = "toggle";
@@ -1894,24 +1992,88 @@ function rowActions(row, destination) {
 }
 
 function showRailcardDetails(destination) {
-  const details = destination.railcard;
   document.getElementById("railcardDestination").textContent =
-    destination.name + " (" + destination.crs + ") · " + destination.quality;
+    destination.name + " (" + destination.crs + ") \u00b7 " + destination.quality;
   const status = document.getElementById("railcardReason");
-  status.dataset.state = details.state;
-  status.textContent = details.title + ". " + details.reason;
+  const name = document.getElementById("railcardName");
+  const discounted = document.getElementById("railcardDiscounted");
+  const minimum = document.getElementById("railcardMinimum");
+  const ruleText = document.getElementById("railcardRule");
   document.getElementById("railcardStandard").textContent = money(destination.adultPence) + " per adult";
-  document.getElementById("railcardDiscounted").textContent =
-    details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
-  document.getElementById("railcardMinimum").textContent =
-    details.minimumFarePence === null ? "None current for " + destination.ticket : money(details.minimumFarePence);
-  // The rule record lives once in DATA.railcardRules; the row carries its
-  // key, because repeating the record per row cost 388KB on the heaviest
-  // real page (audit B3).
+
+  if (noCard() || !railcards[railcardSelect.value]) {
+    status.dataset.state = "none";
+    status.textContent =
+      "No railcard is selected, so this fare is shown at its standard price. Choose the card " +
+      "you hold above and every destination is priced against that card's own rules.";
+    name.textContent = "None selected";
+    discounted.textContent = "Not priced with a card";
+    minimum.textContent = "Not priced with a card";
+    ruleText.textContent = "No card is selected, so no railcard rule is consulted.";
+    railcardDrawer.showModal();
+    return;
+  }
+
+  const card = railcards[railcardSelect.value];
+  const details = (destination.railcards || {})[card.key];
+  if (!details) {
+    status.dataset.state = "unavailable";
+    status.textContent =
+      "This feed prices no " + card.label + " fare to " + destination.name + ", so there is " +
+      "nothing to compare it against.";
+    name.textContent = card.label;
+    discounted.textContent = "Not in this feed";
+    minimum.textContent = "Not in this feed";
+    ruleText.textContent = "No " + card.label + " record applies to this fare.";
+    railcardDrawer.showModal();
+    return;
+  }
+
+  // The rule record lives once in DATA.railcardRules and every card's row
+  // carries its key, because repeating the record per row cost 388KB on the
+  // heaviest real page (audit B3).
   const rule = details.rule ? DATA.railcardRules[details.rule] : null;
-  document.getElementById("railcardRule").textContent = rule
+  const condition = rule && !rule.totalBan && rule.restrictionCode !== "none"
+    ? rule.restrictionCode
+    : null;
+  const minimumClause = details.minimumFarePence === null
+    ? ", and no minimum fare is current for this ticket."
+    : details.minimumFarePence >= details.pricePence
+      ? ", but the DTD minimum fare of " + money(details.minimumFarePence) + " is higher."
+      : ", and the DTD minimum of " + money(details.minimumFarePence) + " does not raise it.";
+
+  status.dataset.state = details.state;
+  name.textContent = card.label + " (" + card.codes.join(", ") + ")";
+  discounted.textContent =
+    details.pricePence === null ? "Not available" : money(details.pricePence) + " per adult";
+  minimum.textContent =
+    details.minimumFarePence === null
+      ? "None current for " + destination.ticket
+      : money(details.minimumFarePence);
+
+  // The sentences are written here rather than shipped per row per card. Six
+  // cards at the build's own wording measured 2,598 bytes a row against 433
+  // for one, on a page that already carries 411KB; the facts cost 98.
+  if (details.state === "blocked") {
+    status.textContent =
+      card.label + " cannot be applied to this fare. A current DTD RR rule matches this ticket, " +
+      "route or endpoint and records a total ban, so the standard fare is the only price the feed " +
+      "offers here.";
+  } else if (condition) {
+    status.textContent =
+      card.label + " is available for this fare, subject to condition " + condition + ". No " +
+      "matching total ban applies; the restriction is a travel condition rather than a card ban. " +
+      "The feed's one-third discount gives " + money(details.pricePence) + " per adult" +
+      minimumClause;
+  } else {
+    status.textContent =
+      card.label + " is available for this fare. No current RR rule matches this ticket, route or " +
+      "either endpoint. The feed's one-third discount gives " + money(details.pricePence) +
+      " per adult" + minimumClause;
+  }
+  ruleText.textContent = rule
     ? rule.text
-    : "No Two Together railcard rule applies because the railcard is not in this feed.";
+    : "No matching current RR rule for " + card.label + " on this fare.";
   railcardDrawer.showModal();
 }
 railcardClose.addEventListener("click", () => railcardDrawer.close());
@@ -2041,22 +2203,6 @@ function provenance() {
     parts.push("no timetable loaded, so no times are shown");
   }
   if (DATA.locationTypeSource) parts.push("destination types: " + DATA.locationTypeSource);
-  if (DATA.railcardInFeed !== undefined) {
-    railcard.disabled = !DATA.railcardAvailable;
-    const help = document.getElementById("railcardHelp");
-    if (!DATA.railcardInFeed || !DATA.railcardAvailable) {
-      // If the control is hidden, its help must be hidden with it. Leaving the
-      // sentence visible made it look like help for the remaining party-size
-      // radios even though it described a control the reader could not see.
-      help.textContent = "";
-      help.hidden = true;
-      if (railcardChoice) railcardChoice.hidden = true;
-    } else {
-      help.textContent = DATA.railcardEligibleCount + " destinations receive a lower Two Together price; a row's details carry its Card details and RR conditions.";
-      help.hidden = false;
-      if (railcardChoice) railcardChoice.hidden = false;
-    }
-  }
   document.getElementById("provenance").textContent = parts.join(" \u00b7 ");
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
     ? DATA.pricingBasis + ". Use the ticket-type control to change which fares are listed, then use the budget filter to narrow the list."
@@ -2184,8 +2330,9 @@ function journeyText(destination) {
   ];
   if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
-  if (together && DATA.railcardAvailable && destination.railcardPence !== null) {
-    lines.push("Two Together discount is not sent to the seller: confirm the railcard on their site");
+  const card = chosenCard(destination);
+  if (together && card) {
+    lines.push(railcards[railcardSelect.value].label + " discount is not sent to the seller: confirm the railcard on their site");
   }
   return lines.join("\\n");
 }
@@ -2492,7 +2639,7 @@ function stateQuery() {
   const mode = ticketMode();
   if (mode !== DEFAULT_MODE) params.set("mode", mode);
   if (unit() === "party") params.set("party", "2");
-  if (railcard.checked) params.set("card", "1");
+  if (!noCard()) params.set("card", railcardSelect.value);
   const types = Array.from(selectedDestinationTypes()).sort();
   for (const type of types) params.append("types", type);
   if (currentPage > 1) params.set("page", String(currentPage));
@@ -2542,7 +2689,7 @@ function readState() {
     budget: Number(params.get("budget")),
     mode: params.get("mode"),
     unit: params.get("party") === "2" ? "party" : null,
-    railcard: params.get("card") === "1",
+    railcard: params.get("card"),
     types: params.getAll("types"),
     page: Number(params.get("page")) || 1,
     // Only codes this page can price are kept: a shared link must not put a
@@ -2558,10 +2705,12 @@ function applyState(state) {
   for (const input of document.querySelectorAll('input[name="unit"]')) {
     if (input.value === state.unit) input.checked = true;
   }
-  // A card=1 that arrived on a link from a page where the reader had chosen a
-  // pair is not applied to a party of one: the control is disabled in that
-  // case, and a checkbox the page disables must not read as checked.
-  railcard.checked = state.railcard && unit() === "party";
+  // A card code that arrived on a link is applied only when this page prices
+  // that card. A link from another station can name a card this origin's feed
+  // holds nothing for, and the reader should get this page's own default rather
+  // than a control reading as a card they hold.
+  const wanted = state.railcard && railcards[state.railcard] ? state.railcard : "";
+  railcardSelect.value = wanted;
   for (const input of destinationTypeInputs) {
     input.checked = input.value !== "all" && state.types.includes(input.value);
   }
@@ -2597,7 +2746,18 @@ budgetField.addEventListener("click", (event) => {
     budgetNumber.select();
   }
 });
-railcard.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
+railcardSelect.addEventListener("change", () => {
+  try {
+    if (noCard()) window.localStorage.removeItem(RAILCARD_MEMORY + DATA.origin.crs);
+    else window.localStorage.setItem(RAILCARD_MEMORY + DATA.origin.crs, railcardSelect.value);
+  } catch (error) {
+    // Storage blocked. The choice still applies to this page and still travels
+    // in the URL; it just will not be there next time.
+  }
+  currentPage = 1;
+  render();
+  writeUrl();
+});
 for (const input of destinationTypeInputs) {
   input.addEventListener("change", () => {
     const all = destinationTypeInputs.find((candidate) => candidate.value === "all");

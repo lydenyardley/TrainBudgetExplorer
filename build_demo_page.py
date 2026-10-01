@@ -1457,16 +1457,18 @@ def build_payload(
 
     tracked = False
     disclosure: str | None = None
-    # Two Together is the railcard used for the current two-adult question. The
-    # price is calculated from the feed's minimum-fare table and the current RR
-    # restriction records; only a matching total ban removes it.
-    railcard_code = fares.railcard_code("Two Together")
-    railcard_in_feed = railcard_code is not None
+    # Every railcard the project has reviewed and the feed carries, as products.
+    # Two Together is one of them rather than the only one, so a reader who
+    # holds a 16-25 or a Senior card answers the same question with the same
+    # page. The price of each is calculated from the feed's minimum-fare table
+    # and the current RR restriction records; only a matching total ban removes
+    # it, per card.
+    railcard_families = fares.reviewed_railcard_families()
 
     # The full rule record repeats on nearly every row: on the heaviest real
     # page one record served all 1,678 rows and the block was 388KB (audit B3,
     # measured). Rows keep a key into one payload map; only the drawer reads
-    # the record, and the table reads pricePence straight off the row.
+    # the record, and the table reads the price straight off the row.
     rule_ids: dict[str, str] = {}
     railcard_rules: dict[str, dict] = {}
 
@@ -1482,16 +1484,21 @@ def build_payload(
         return rule_id
 
     def railcard_details(one) -> dict:
-        """The exact DTD decision shown in a destination's eligibility drawer."""
-        if railcard_code is None:
-            return {
-                "state": "unavailable",
-                "title": "Two Together is not in this feed",
-                "pricePence": None,
-                "minimumFarePence": None,
-                "rule": None,
-                "reason": "No Two Together railcard record is present, so no discounted price can be calculated from this DTD download.",
-            }
+        """Each reviewed railcard's exact DTD decision for one destination.
+
+        The reader holds one card at a time, so the payload carries a row per
+        card rather than one card's answer repeated six times over the page.
+        Each entry is the discounted price and a key into the shared rule map;
+        the drawer resolves the rest, because the prose would otherwise be six
+        sentences a row and the measured cost of one is already 433 bytes.
+        """
+        return {
+            family.key: railcard_detail_for(family, one) for family in railcard_families
+        }
+
+    def railcard_detail_for(family, one) -> dict:
+        """One card's decision for one fare: its price and its rule key."""
+        railcard_code = family.key
         rules = fares.railcard_rules(
             railcard_code,
             ticket_code=one.ticket_code,
@@ -1507,16 +1514,6 @@ def build_payload(
         minimum = fares.minimum_fare(railcard_code, one.ticket_code, day)
         rule = None
         if shown_rule is not None:
-            scope = []
-            scope.append(
-                f"ticket {shown_rule.ticket_code}" if shown_rule.ticket_code else "any ticket"
-            )
-            scope.append(
-                f"route {shown_rule.route_code}" if shown_rule.route_code else "any route"
-            )
-            scope.append(
-                f"location {shown_rule.location}" if shown_rule.location else "any location"
-            )
             rule = {
                 "sequence": shown_rule.sequence_no,
                 "status": (
@@ -1529,17 +1526,8 @@ def build_payload(
                 "location": shown_rule.location or "any",
                 "restrictionCode": shown_rule.restriction_code or "none",
                 "totalBan": shown_rule.total_ban,
-                "text": (
-                    f"Current RR {shown_rule.sequence_no}: {', '.join(scope)}; "
-                    f"total ban {'yes' if shown_rule.total_ban else 'no'}; "
-                    f"restriction {shown_rule.restriction_code or 'none'}."
-                ),
             }
         if ban is not None:
-            reason = (
-                "This exact DTD RR rule matches the fare and records a total ban, "
-                "so Two Together cannot be applied."
-            )
             price = None
             state = "blocked"
         else:
@@ -1547,56 +1535,35 @@ def build_payload(
                 railcard_code, one.ticket_code, one.standard_pence, day=day
             )
             state = "eligible"
-            if condition is None:
-                reason = (
-                    "No current Two Together RR rule matches this ticket, route, or either endpoint. "
-                )
-            else:
-                reason = (
-                    f"No matching RR total ban applies. Current RR {condition.sequence_no} instead "
-                    f"attaches restriction {condition.restriction_code}, which is a travel condition "
-                    "rather than a card ban. "
-                )
-            reason += (
-                f"The feed's two-thirds discount gives {format_pence(price)} per adult"
+        if rule is not None:
+            rule["text"] = (
+                f"Current RR {rule['sequence']} for {family.label}: "
+                f"ticket {rule['ticketCode']}, route {rule['routeCode']}, "
+                f"location {rule['location']}; total ban "
+                f"{'yes' if rule['totalBan'] else 'no'}; restriction "
+                f"{rule['restrictionCode']}."
             )
-            if minimum is None:
-                reason += (
-                    "; no minimum fare is current for this ticket, so the "
-                    "discounted fare is used"
-                )
-            elif minimum >= price:
-                reason += f", but the DTD minimum fare of {format_pence(minimum)} is higher"
-            else:
-                reason += f"; the DTD minimum is {format_pence(minimum)} and does not raise it"
-            reason += "."
         return {
             "state": state,
-            "title": (
-                (
-                    "Two Together is available for this fare, subject to its RR conditions"
-                    if condition is not None
-                    else "Two Together is available for this fare"
-                )
-                if state == "eligible"
-                else "Two Together is not available for this fare"
-            ),
             "pricePence": price,
             "minimumFarePence": minimum,
-            "rule": rule or {
-                "sequence": "none",
-                "status": "current",
-                "ticketCode": one.ticket_code,
-                "routeCode": one.route_code,
-                "location": f"{origin.crs}/{one.crs}",
-                "restrictionCode": "none",
-                "totalBan": False,
-                "text": (
-                    f"No matching current RR rule for Two Together: ticket {one.ticket_code}, "
-                    f"route {one.route_code}, endpoints {origin.crs}/{one.crs}."
-                ),
-            },
-            "reason": reason,
+            "rule": share_rule(
+                rule
+                or {
+                    "sequence": "none",
+                    "status": "current",
+                    "ticketCode": one.ticket_code,
+                    "routeCode": one.route_code,
+                    "location": f"{origin.crs}/{one.crs}",
+                    "restrictionCode": "none",
+                    "totalBan": False,
+                    "text": (
+                        f"No matching current RR rule for {family.label}: ticket "
+                        f"{one.ticket_code}, route {one.route_code}, endpoints "
+                        f"{origin.crs}/{one.crs}."
+                    ),
+                }
+            ),
         }
 
     def destination_row(
@@ -1647,15 +1614,15 @@ def build_payload(
         nonlocal tracked, disclosure
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
-        card = railcard_details(one)
-        card["rule"] = share_rule(card["rule"])
         return {
             "crs": crs,
             "name": one.station,
             "adultPence": one.best_pence,
             "partyPence": one.best_pence * 2,
-            "railcardPence": card["pricePence"],
-            "railcard": card,
+            # One entry per reviewed railcard the feed carries. The reader holds
+            # one at a time, so the page picks the key rather than offering six
+            # prices per row in the table.
+            "railcards": railcard_details(one),
             "destinationType": fares.destination_type(crs),
             "destinationTypes": fares.destination_types(crs),
             "heritageSites": fares.heritage_sites(crs),
@@ -1789,27 +1756,29 @@ def build_payload(
     # The picker's options (ADR-0019), from the one shared slug map, so a page
     # built on its own links to the same folders the --all-origins build writes.
     slugs = station_slugs_for(fares.locations_by_crs)
-    railcard_eligible_destinations = {
-        row["crs"]
-        for collection in (destinations, single_destinations, anytime_destinations)
-        for row in collection
-        if row["railcardPence"] is not None and row["railcardPence"] < row["adultPence"]
-    }
-    railcard_eligible_count = len(railcard_eligible_destinations)
-    # S15: the railcard is a constraint on the party, not a discount a solo
-    # reader can tick. The feed's own railcard record says how many adults it
-    # covers, so the page states the rule the data states rather than one this
-    # project invented.
-    railcard_record = fares.railcards.get(railcard_code) if railcard_code else None
-    railcard_party = (
-        {
-            "name": railcard_record.name,
-            "minAdults": railcard_record.min_adults,
-            "maxAdults": railcard_record.max_adults,
+    every_row = list(destinations) + list(single_destinations) + list(anytime_destinations)
+    # S15, per card: a railcard is a constraint on the party, not a discount a
+    # solo reader can tick. The bounds are the feed's own records, so the page
+    # states the rule the data states rather than one this project invented, and
+    # a card whose range does not cover the chosen party is not offered for it.
+    railcards = []
+    for family in railcard_families:
+        eligible = {
+            row["crs"]
+            for row in every_row
+            if row["railcards"][family.key]["pricePence"] is not None
+            and row["railcards"][family.key]["pricePence"] < row["adultPence"]
         }
-        if railcard_record
-        else None
-    )
+        railcards.append(
+            {
+                "key": family.key,
+                "label": family.label,
+                "codes": list(family.codes),
+                "minAdults": family.min_adults,
+                "maxAdults": family.max_adults,
+                "eligibleCount": len(eligible),
+            }
+        )
     # The timetable's own service window, read once for both dates below.
     service_window = timetable.service_window() if timetable else ("", "")
     # S29: how much of the feed's coverage this page could not show, counted
@@ -1878,19 +1847,16 @@ def build_payload(
         # all" is on the page rather than inferred from an empty table.
         "stationCount": len(fares.locations_by_crs),
         "hasJourneys": timetable is not None,
-        # Kept as a payload key because the template branches on it and the
-        # page can explain when railcard pricing is available.
-        "hasTwoTogether": railcard_in_feed,
-        "railcardInFeed": railcard_in_feed,
-        "railcardEligibleCount": railcard_eligible_count,
-        "railcardAvailable": railcard_eligible_count > 0,
+        # The collection, and the shared RR rule records behind it. Nothing is
+        # selected: the reader names the card they hold, or reads standard
+        # fares, and the browser remembers which they chose.
+        "railcards": railcards,
         "railcardRules": railcard_rules,
         # C08: the reader-facing validity behind a restriction code, once per
         # code. The page resolves a row's code against this rather than each
         # row repeating the same strings.
         "restrictionValidity": restriction_validity,
         "restrictionReference": restriction_reference_note,
-        "railcardParty": railcard_party,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         "note": note,
@@ -1931,19 +1897,16 @@ def build_payload(
         "disclosure": disclosure,
         "railcardNote": (
             (
-                f"Two Together is in this feed. {railcard_eligible_count} currently eligible "
-                "destination fares are discounted using its minimum-fare table and a one-third "
-                "discount, rounded down to the nearest 5p. Current DTD RR route, ticket, "
-                "location, and total-ban rules are checked for every destination; matching "
-                "restriction codes are retained as travel conditions. Fares without a permitted "
-                "railcard price keep their standard fare."
+                "No railcard is selected, so the prices shown are standard fares. Choose the "
+                "card you hold and each displayed fare is repriced from that card's own "
+                "minimum-fare table, discounted by a third and rounded down to the nearest 5p. "
+                "Current DTD RR route, ticket, location and total-ban rules are checked for "
+                "every destination and every card; matching restriction codes are retained as "
+                "travel conditions rather than treated as bans."
             )
-            if railcard_in_feed and railcard_eligible_count
+            if railcards
             else (
-                "Two Together is in this feed, but none of the displayed fares is currently "
-                "eligible under the DTD railcard rules. The prices shown are standard fares."
-                if railcard_in_feed
-                else "Two Together is not present in this feed. The prices shown are standard fares."
+                "No reviewed railcard is present in this feed. The prices shown are standard fares."
             )
         ),
         # Without a date every schedule in the feed is read, so a train that has
@@ -3502,14 +3465,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"warning: {warning}", file=sys.stderr)
     if not payload["hasJourneys"]:
         print("no timetable given, so the page shows prices without times")
-    if not payload["hasTwoTogether"]:
-        print("Two Together is not present in this feed; standard fares are shown")
-    elif not payload["railcardAvailable"]:
-        print("Two Together is present, but no displayed fare is currently eligible under its DTD rules")
+    if not payload["railcards"]:
+        print("no reviewed railcard is present in this feed; standard fares are shown")
     else:
-        print(
-            f"Two Together is present; {payload['railcardEligibleCount']} displayed fare rows are eligible"
-        )
+        priced = [card for card in payload["railcards"] if card["eligibleCount"]]
+        if not priced:
+            print(
+                "the reviewed railcards are in this feed, but no displayed fare is currently "
+                "eligible under their DTD rules"
+            )
+        else:
+            for card in priced:
+                print(
+                    f"{card['label']} ({'/'.join(card['codes'])}): "
+                    f"{card['eligibleCount']} displayed fare rows are eligible"
+                )
+        print("no railcard is selected by default; the reader chooses one")
     coverage.report()
     return 0
 

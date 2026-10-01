@@ -187,12 +187,17 @@ REAL_SHAPE_FARES = (
     ("0000016", "SDR", 600, ""),
 )
 
+# TWO is carried so the fixture still holds a code the page does not offer,
+# which is what keeps the reviewed set honest: a page can only show a card it
+# has reviewed, so a fixture whose only cards are reviewed would never exercise
+# the difference. YNG is the reviewed card the page therefore prices, and the
+# rules and minimum fare below hang off it.
 RAILCARDS = (
     ("TWO", "TWO TOGETHER RAILCARD", "2", "2"),
     ("YNG", "16-25 RAILCARD", "1", "1"),
 )
 
-MINIMUM_FARES = (("TWO", "SDR", 1200),)
+MINIMUM_FARES = (("YNG", "SDR", 1200),)
 
 # The production fares feed carries CRS, name, and NLC only. The station
 # classification is a separate reference feed, so the synthetic fixture keeps
@@ -581,10 +586,10 @@ def _restriction_lines() -> list[str]:
                 "update_marker": "R",
                 "record_type": "RR",
                 "cf_marker": "C",
-                "railcard_code": "TWO",
+                "railcard_code": "YNG",
                 "sequence_no": "0001",
-                "ticket_code": "SDR",
-                "route_code": "00002",
+                "ticket_code": "CDR",
+                "route_code": "00000",
                 "location": "",
                 "restriction_code": "",
                 "total_ban": "Y",
@@ -596,7 +601,7 @@ def _restriction_lines() -> list[str]:
                 "update_marker": "R",
                 "record_type": "RR",
                 "cf_marker": "C",
-                "railcard_code": "TWO",
+                "railcard_code": "YNG",
                 "sequence_no": "0002",
                 "ticket_code": "",
                 "route_code": "",
