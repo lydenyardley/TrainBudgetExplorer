@@ -4,8 +4,8 @@
 **Date:** 1 October 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0033 (the shared
 stylesheet), ADR-0047 (the station route fetches one hashed stylesheet)
-Settles the second half of S17 in
-`docs/audits/2026-09-27-reenvision.md`.
+Settles the second half of S17 in the re-envision pass, now carried by
+`docs/open-work.md`.
 
 ## Context
 

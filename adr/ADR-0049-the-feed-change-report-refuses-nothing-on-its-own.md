@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 1 October 2026
 **Relates to:** ADR-0035 (what a page may claim about the reference feed)
-Settles S34 in `docs/audits/2026-09-27-reenvision.md`.
+Settles S34 in the re-envision pass, now carried by `docs/open-work.md`.
 
 ## Context
 
