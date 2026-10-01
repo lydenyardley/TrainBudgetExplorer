@@ -1138,12 +1138,15 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("No railcard is selected, so this fare is shown at its standard price.",
                       self.html)
 
-    def test_a_card_whose_minimum_is_higher_says_so_rather_than_claiming_a_saving(self) -> None:
+    def test_a_card_whose_minimum_is_higher_shows_the_standard_fare(self) -> None:
         # LCN's SDR fare is £8.70. The card's discounted price would be £5.80,
-        # and the feed's £12.00 minimum is higher than that, so the card makes
-        # this fare dearer. The row must say the minimum is higher rather than
-        # presenting a "discount" that costs the reader money, and the count of
-        # discounted destinations must leave this one out.
+        # and the feed's £12.00 minimum is higher than that, so the card's own
+        # price for this fare is dearer than travelling without it. The reader is
+        # never charged the higher figure, because the page prices a row at the
+        # cheaper of the standard fare and the card's, and the count of
+        # discounted destinations leaves this fare out either way. What the
+        # drawer has to say is that the minimum is higher, so a reader who opens
+        # it does not read a "discount" that does not apply to this fare.
         row = next(r for r in self.payload["destinations"] if r["crs"] == "LCN")
         details = row["railcards"]["YNG"]
         self.assertEqual(row["adultPence"], 870)
