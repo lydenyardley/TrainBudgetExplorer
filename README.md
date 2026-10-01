@@ -410,8 +410,9 @@ from it, and a run whose station pages come out without journeys fails the
 release-manifest check rather than publishing a prices-only page under a
 workflow that promises times.
 
-That step is measured rather than assumed, against the real feed at Grantham,
-one origin, on the runner the workflow uses:
+That step is measured rather than assumed, and the release is the **whole
+network**, so it is measured on the whole network. One origin against the real
+feed, on this repository's own machine:
 
 | build | time |
 | --- | --- |
@@ -419,11 +420,38 @@ one origin, on the runner the workflow uses:
 | fares + timetable, cold index | 1 m 36 s |
 | fares + timetable, warm index | 11 s |
 
-The step's `timeout-minutes` is 10 — roughly four times the cold figure. The
-warm figure is why the workflow caches the timetable index: the cache file is
-named after a digest of the feed bytes and the stations it serves, so a cache
-from a different timetable is a different filename and is never opened. A stale
-restore is a miss, not a wrong answer.
+The whole set is a different shape of work, and it was measured rather than
+projected. ADR-0024 had put it at about two days, from an invented uniform feed
+in which every station priced about 2,500 destinations. The real feed's origins
+are small, and that is the whole difference:
+
+| | measured against the real feed |
+| --- | ---: |
+| priced origins | 2,718 |
+| destinations per origin | median 91, mean 116, max 851 |
+| fares and schedules loaded | 7,818,772 and 419,589 |
+| load before the first page | 279 s |
+| steady state, 3 workers on 12 CPU | 0.84 pages/s |
+| whole set at that rate | ~54 min, plus the load |
+
+Per-origin cost does not track destination count here: the origin pricing 851
+destinations took 110 s in isolation and the one pricing a single destination
+took 99 s. On GitHub's 2-vCPU runner that puts the set at about 81 minutes plus
+the load, and the step's `timeout-minutes` is 150. ADR-0024 is amended, and
+ADR-0050 is the decision that follows from the measurement.
+
+The warm figure above is still why the workflow caches the timetable index: the
+cache file is named after a digest of the feed bytes and the stations it serves,
+so a cache from a different timetable is a different filename and is never
+opened. A stale restore is a miss, not a wrong answer.
+
+Two gates read the result rather than trusting it. `tools/page_bytes.py --site
+_site` holds the release against the 800 MB target (measured: 498 MB over 2,714
+routes), because nothing else in the workflow reads the bytes and every other
+gate is satisfied by a release twice the size. And the browser sweep drives 24
+pages spread evenly across the 2,718 rather than the first 24 in name order,
+because a prefix of a whole-network site is the stations whose slugs start with
+A and B.
 
 1. Set `NRDP_USERNAME` and `NRDP_PASSWORD` in the local environment. Do not put
    either value in a command, source file, or chat message. The `.env` pattern is
