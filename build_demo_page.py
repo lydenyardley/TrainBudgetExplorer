@@ -2086,9 +2086,8 @@ def nre_attribution() -> str:
 # because the page ships it twice: as the text in the document, and as the
 # sentence the script falls back to if the shared picker list did not arrive.
 ONE_STATION_FIRST_USE = (
-    "This page is about one station, and it is the only one this site "
-    "was built for: everything below narrows the destinations "
-    "reachable from it."
+    "This is the only station this build has pages for, so the name above "
+    "is not a link."
 )
 
 
@@ -2111,11 +2110,7 @@ def first_use_sentence(payload: dict) -> str:
 
     if not picker_has_options(payload):
         return ONE_STATION_FIRST_USE
-    return (
-        "This page is about one station: <b>the station name</b> in the heading "
-        "opens a list of the others. Everything below narrows the destinations "
-        "from here."
-    )
+    return "Click the <b>station name</b> to start from somewhere else."
 
 
 # The payload's row lists, and the shape they ship in. Every row in a list

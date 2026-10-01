@@ -217,7 +217,15 @@ class DemoPageTest(unittest.TestCase):
         # S12: the navigation-versus-filter distinction, said once, where it is
         # true.
         self.assertIn('id="firstUse"', self.html)
-        self.assertIn("<b>the station name</b>", self.html)
+        self.assertIn("<b>station name</b>", self.html)
+        # The note is half of the opening sentence rather than a
+        # paragraph of its own: the page's promise and the one thing a
+        # reader cannot guess are read together, not two blocks apart.
+        self.assertLess(
+            self.html.index('id="pageIntro"'),
+            self.html.index('id="firstUse"'),
+        )
+        self.assertIn("</span></p>", self.html)
 
     def test_a_picker_option_carries_the_readers_search(self) -> None:
         # S06: changing origin corrects where they leave from, not the search
@@ -1553,10 +1561,16 @@ class DemoPageTest(unittest.TestCase):
         # fact that must not be a click away.
         self.assertIn('<details class="link-terms" id="linkTerms">', self.html)
         self.assertIn('id="linkTermsSummary"', self.html)
-        for note in ('id="linkNote"', 'id="disclosure"', 'id="buildMetadata"'):
+        for note in ('id="linkNote"', 'id="disclosure"'):
             self.assertLess(self.html.index('<details class="link-terms"'), self.html.index(note))
             self.assertLess(self.html.index(note), self.html.index("<table>"))
-        self.assertIn("About the ticket link, and how this page was built", self.html)
+        # The build stamp is reference material and went under the table
+        # with the rest of it, rather than sitting in the fold a reader has
+        # to get through before the first fare.
+        self.assertGreater(
+            self.html.index('id="buildMetadata"'), self.html.index("<table>")
+        )
+        self.assertIn("About the ticket link", self.html)
         self.assertIn('"About the ticket link, and how this site is paid"', self.html)
         self.assertIn("linkTerms.hidden =", self.html)
 
@@ -1581,8 +1595,8 @@ class DemoPageTest(unittest.TestCase):
         # written from the payload's own fact now.
         self.assertIn("function renderIntro()", self.html)
         self.assertIn("if (!DATA.hasJourneys)", self.html)
-        self.assertIn("no times or changes are shown", self.html)
-        self.assertIn("fastest journey time and the number of changes", self.html)
+        self.assertIn("no times are shown", self.html)
+        self.assertIn("with the fastest time and the fewest changes", self.html)
         # The static text is the fares-only sentence, so a page that has not
         # run this script yet cannot be promising times it will not show.
         intro = re.search(
@@ -2173,7 +2187,7 @@ class DemoPageTest(unittest.TestCase):
         # which left the sentence pointing at a word that was no longer there.
         self.assertNotIn("Change", render_page(payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0])
         with_control = render_page(self.payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0]
-        self.assertIn("<b>the station name</b>", with_control)
+        self.assertIn("<b>station name</b>", with_control)
 
     def test_a_destination_type_with_no_matches_gets_no_chip(self) -> None:
         # A chip that can only ever return nothing reads as a broken control,

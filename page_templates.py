@@ -163,17 +163,16 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      everywhere else; the number field keeps its own label, so nothing is
      announced twice. */
   .budget-prefix { user-select: none; }
-  /* The dot between the heading's three parts. Muted, because it is
-     punctuation rather than one of the two things the reader came to set:
-     at six rem a separator in the text colour is as loud as the words it is
-     separating. aria-hidden, because the three parts are one sentence to a
-     reader, and "middle dot" is not a word the page means to say. */
-  .heading-sep { color: var(--muted); font-size: .38em; padding: 0 .45em; vertical-align: middle; }
-  /* The amount and the separator after it, in one box that cannot wrap. A
-     break opportunity sits at the edge of an inline field whatever follows
-     it, so without this the second line starts with the dot -- a separator
-     opening a line reads as a bullet, and the dot belongs to the phrase
-     before it. */
+  /* "from" sits on the second line in the page's own voice rather than as
+     punctuation between the two halves. The middots it replaced were at
+     .38em in the muted colour, and at six-plus rem a pair of them either side
+     of the number the reader came to set said "and also" about a word that was
+     already a separate line. The line break is the separator. */
+  .heading-lead { color: var(--muted); margin-right: .15em; }
+  /* The amount and the words around it, in one box that cannot wrap. A break
+     opportunity sits at the edge of an inline field whatever follows it, so
+     without this the second line can begin with the number and the "from" can
+     be left at the end of the first. */
   .heading-slot { white-space: nowrap; }
   #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
@@ -630,18 +629,20 @@ __STATION_STYLE__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>from __ORIGIN_CONTROL__</h1>
+<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
-     prices-only build shows; a build with a timetable replaces it. -->
-<p class="sub" id="pageIntro">Every destination reachable by train for the budget in the heading.</p>
-<!-- The first-use note is written by first_use_sentence() per build, because
-     the one thing a first-time reader cannot guess -- what the Change control
-     in the heading does -- only exists on a build that wrote another
-     station's page. A one-station build points the reader at a control it does
-     not have. -->
-<p class="sub" id="firstUse">__FIRST_USE__</p>
+     prices-only build shows; a build with a timetable replaces it.
+
+     The first-use note is the second half of the same paragraph rather than a
+     paragraph of its own. It answers one question -- what the station name in
+     the heading does -- and a reader who has not clicked it should be able to
+     read that answer and the page's promise in one go, not in two blocks with a
+     line's gap between them. Two elements, because the build writes the second
+     one per build and the first one is written by script, and a reader cannot
+     tell where the sentence ended. -->
+<p class="sub" id="pageIntro">Every destination this feed prices from the station above, inside the budget.<span id="firstUse"> __FIRST_USE__</span></p>
 <!-- ADR-0047: shown only when the stylesheet did not arrive. The page is
      plain text in that state, and says so rather than leaving a reader to
      wonder why this station looks unlike every other one. -->
@@ -709,12 +710,11 @@ __THEME_TOGGLE__
   </div>
 </section>
 
-<p class="tag" id="modeNote"></p>  <p class="tag" id="priceSource" hidden></p>
-<!-- The conditions in the table are the fares feed's own wording. This is the
-     second opinion on it, and the reader gets it before the table rather than
-     after a row: a condition that has since changed is exactly what a reader
-     comparing two prices needs to know before, not after, they choose. -->
-<p class="tag" id="restrictionReference" hidden></p>
+<p class="tag" id="modeNote"></p>
+<!-- The one provenance line that stays above the table: how old the numbers
+     are. Everything else about where they came from is reference material and
+     sits under the table with the rest of it, where a reader goes when they
+     have decided to check rather than before they have decided to read. -->
 <p class="tag" id="freshness" hidden></p>
   <!-- C03, as ADR-0040 leaves it: what the ticket action costs is still
        stated above the first ticket action, because the line a reader sees is
@@ -723,10 +723,9 @@ __THEME_TOGGLE__
        These two paragraphs plus the build line were 57px of the 205px between
        the count and the table on the real page (finding, 29 September 2026). -->
   <details class="link-terms" id="linkTerms">
-    <summary id="linkTermsSummary">About the ticket link, and how this page was built</summary>
+    <summary id="linkTermsSummary">About the ticket link</summary>
     <p class="tag" id="linkNote" hidden></p>
     <p class="tag" id="disclosure" hidden></p>
-    <p class="tag" id="buildMetadata" hidden></p>
   </details>
 <!-- The count line belongs to the table below it, not to the panel above: on
      the real Grantham page it sat 205px above the first row, with six
@@ -762,11 +761,22 @@ __THEME_TOGGLE__
   <p>__NOTE__</p>
   <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type, and on the list this page opens in the cheapest fare of any ticket type for each destination. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
   <p>The times on this page are options in the timetable, not a booking. Unrestricted fares are valid on the services listed; an Advance single is valid only on a qualifying train, so no train is picked for you.</p>
+  <!-- Everything the page knows about where its numbers came from, in the one
+       place a reader goes to check them. These four lines stood between the
+       budget control and the first fare on every station page: the feed's
+       name and download date, the second opinion on the ticket conditions, the
+       build's own stamp, and -- when a build read an undated timetable -- the
+       caveat that every schedule in the feed was read. They are not deleted and
+       they are not shortened; they are below the results, which is where the
+       primary asset is not competing with them for the fold. -->
   <details class="method">
-    <summary>How these prices were calculated</summary>
+    <summary>Where these prices come from, and how they were calculated</summary>
     <p id="pricingBasis"></p>
     <p id="feedCoverage" class="tag"></p>
     <p id="railcardNote"></p>
+    <p class="tag" id="priceSource" hidden></p>
+    <p class="tag" id="restrictionReference" hidden></p>
+    <p class="tag" id="buildMetadata" hidden></p>
     <p class="tag" id="provenance"></p>
   </details>
   <nav class="footnav"><a href="__BASE__/">All stations</a> <a href="__BASE__/privacy/">Privacy</a></nav>
@@ -1325,10 +1335,10 @@ const MODE_WHY = {
 // -- and whichever set is open, a restricted fare is not interchangeable with
 // an unrestricted one, and the page cannot decode the feed's own validity text.
 const MODE_NOTE = {
-  cheapest: "The cheapest fare of any ticket type for each destination, so this list mixes: a return to the same place always costs more than a single to it, so most rows are a single. Use the ticket type above to see one kind of fare instead. An advance single is valid on a particular train only and is labelled where it appears; a restricted fare's condition is in the row's details.",
-  anytime: "Unrestricted Anytime Day Returns only: these fares are valid on any train on the route, so the prices can be compared with each other directly.",
-  return: "Every standard-class return the feed prices, including restricted off-peak and advance fares. A restricted fare is not valid on every train or at every time, so check the Conditions column before treating two prices here as the same thing.",
-  single: "Outbound singles rather than returns. An advance single is valid on a particular train only, and is labelled where it appears.",
+  cheapest: "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns. An advance fare needs a chosen train; a restricted fare's condition is in the row's details.",
+  anytime: "Unrestricted Anytime Day Returns: valid on any train on the route, so these prices compare with each other directly.",
+  return: "Every standard-class return the feed prices, restricted off-peak and advance included. A restricted fare is not valid on every train or at every time \u2014 its condition is in the row's details.",
+  single: "Outbound singles rather than returns. An advance single needs a chosen train, and is labelled where it appears.",
 };
 function renderModeNote() {
   const note = document.getElementById("modeNote");
@@ -2238,14 +2248,17 @@ function toggleDetail(row, destination, toggle) {
 function renderIntro() {
   const intro = document.getElementById("pageIntro");
   if (!intro) return;
-  if (!DATA.hasJourneys) {
-    intro.textContent = "Every destination this feed prices for the budget in the heading, " +
-      "with the fare and any conditions that come with it. This build has no timetable, " +
-      "so no times or changes are shown.";
-    return;
-  }
-  intro.textContent = "Every destination reachable by train for the budget in the heading, " +
-    "with the fastest journey time and the number of changes.";
+  // The first-use note is a child of this paragraph, so it is replaced by
+  // writing the first text node and leaving the span the build filled in alone.
+  // Setting textContent on the paragraph would delete the build's sentence
+  // along with the old one, and a station page with no sentence saying what the
+  // station name does is exactly the page the note exists to prevent.
+  const first = intro.firstChild;
+  const text = DATA.hasJourneys
+    ? "Every place you can reach from the station above, inside the budget, with the fastest time and the fewest changes."
+    : "Every place this feed prices from the station above, inside the budget. This build has no timetable, so no times are shown.";
+  if (first && first.nodeType === 3) first.nodeValue = text + " ";
+  else intro.insertBefore(document.createTextNode(text + " "), intro.firstChild);
 }
 
 function provenance() {
