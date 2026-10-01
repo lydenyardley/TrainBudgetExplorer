@@ -1364,7 +1364,11 @@ class PublishableSelectorTest(unittest.TestCase):
         # One header per restriction code the fixture's own fares carry, plus
         # the one that exercises the rest of the record types.
         self.assertEqual(self.db.restrictions.record_counts["RH"], 3)
-        self.assertEqual(self.db.restrictions.record_counts["RR"], 2)
+        # One pair of rules per reviewed card, because an RR record is
+        # keyed by the card it governs: a card with no rule of its own is
+        # not discounted at all, which is how the fixture came to offer
+        # one card in a control built to offer six.
+        self.assertEqual(self.db.restrictions.record_counts["RR"], 12)
         self.assertEqual(self.db.restrictions.headers["R1"].description, "PEAK TO LONDON")
         self.assertIn("YNG", self.db.restrictions.railcard_record_counts)
         self.assertEqual(self.plain_db.restrictions.gate_problem() is not None, True)

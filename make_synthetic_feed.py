@@ -192,9 +192,20 @@ REAL_SHAPE_FARES = (
 # has reviewed, so a fixture whose only cards are reviewed would never exercise
 # the difference. YNG is the reviewed card the page therefore prices, and the
 # rules and minimum fare below hang off it.
+# The six reviewed public railcards, with the party each one prices, measured
+# against the real feed on 1 October 2026. The fixture used to carry a single
+# card, under a code that is not in the reviewed set at all, so a page built
+# from it offered a select with one option in it -- the control that exists to
+# offer six. Bounds are the card's own, so the party filter has something to
+# take out: Two Together cannot price one traveller, and the Student Discount
+# Card cannot price two.
 RAILCARDS = (
-    ("TWO", "TWO TOGETHER RAILCARD", "2", "2"),
-    ("YNG", "16-25 RAILCARD", "1", "1"),
+    ("YNG", "16-25 RAILCARD", "1", "8"),
+    ("DIS", "DISABLED PERSONS RAILCARD", "1", "2"),
+    ("NEW", "NETWORK RAILCARD", "1", "4"),
+    ("SRN", "SENIOR RAILCARD", "1", "8"),
+    ("BB2", "STUDENT DISCOUNT CARD", "1", "1"),
+    ("2TR", "TWO TOGETHER RAILCARD", "2", "2"),
 )
 
 MINIMUM_FARES = (("YNG", "SDR", 1200),)
@@ -581,36 +592,47 @@ def _restriction_lines() -> list[str]:
             },
             RESTRICTION_LAYOUTS["TT"],
         ),
-        _line(
-            {
-                "update_marker": "R",
-                "record_type": "RR",
-                "cf_marker": "C",
-                "railcard_code": "YNG",
-                "sequence_no": "0001",
-                "ticket_code": "CDR",
-                "route_code": "00000",
-                "location": "",
-                "restriction_code": "",
-                "total_ban": "Y",
-            },
-            RESTRICTION_LAYOUTS["RR"],
-        ),
-        _line(
-            {
-                "update_marker": "R",
-                "record_type": "RR",
-                "cf_marker": "C",
-                "railcard_code": "YNG",
-                "sequence_no": "0002",
-                "ticket_code": "",
-                "route_code": "",
-                "location": "",
-                "restriction_code": "R9",
-                "total_ban": "",
-            },
-            RESTRICTION_LAYOUTS["RR"],
-        ),
+        # One pair of rules per card, because an RR record is keyed by the card
+        # it governs: a card with no rule of its own is not discounted at all,
+        # which is how the fixture came to offer one card rather than six. The
+        # pair is the same for each, and is the one shape worth exercising -- a
+        # total ban on one ticket, and a travel condition on everything else.
+        *[
+            _line(
+                {
+                    "update_marker": "R",
+                    "record_type": "RR",
+                    "cf_marker": "C",
+                    "railcard_code": card[0],
+                    "sequence_no": "0001",
+                    "ticket_code": "CDR",
+                    "route_code": "00000",
+                    "location": "",
+                    "restriction_code": "",
+                    "total_ban": "Y",
+                },
+                RESTRICTION_LAYOUTS["RR"],
+            )
+            for card in RAILCARDS
+        ],
+        *[
+            _line(
+                {
+                    "update_marker": "R",
+                    "record_type": "RR",
+                    "cf_marker": "C",
+                    "railcard_code": card[0],
+                    "sequence_no": "0002",
+                    "ticket_code": "",
+                    "route_code": "",
+                    "location": "",
+                    "restriction_code": "R9",
+                    "total_ban": "",
+                },
+                RESTRICTION_LAYOUTS["RR"],
+            )
+            for card in RAILCARDS
+        ],
         _line(
             {
                 "update_marker": "R",
