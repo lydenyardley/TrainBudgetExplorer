@@ -358,7 +358,15 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      from a block of six paragraphs, and that margin is part of why the first
      fare sat below the fold on a laptop. */
   #summary { margin: .6rem 0 .3rem; font-weight: 600; }
-  table { border-collapse: collapse; width: 100%; }
+  /* The table is as wide as its columns need and no wider. Stretched to the
+     page's 78rem with the station name absorbing the slack, the price sat
+     800px from the place it belongs to and the ticket action floated in the
+     middle of an otherwise empty row. At content width the six columns sit
+     together, the numbers stay near the names, and the list reads as a list.
+     `max-width` keeps a very long station name from pushing the last column
+     off a narrow screen; below the phone breakpoint the table stops being a
+     table at all. */
+  table { border-collapse: collapse; width: auto; max-width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   td[data-label]::before { content: none; }
   /* A column's width is not the header's to decide. Measured on the real
@@ -430,12 +438,12 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
     #rows > tr[data-crs]:hover > td:first-child { border-radius: .3rem 0 0 .3rem; }
     #rows > tr[data-crs]:hover > td:last-child { border-radius: 0 .3rem .3rem 0; }
   }
-  /* Reading across a row is the whole job, so the columns sit where the eye
-     expects them to: the station takes the slack and the numbers keep one
-     position each, and the actions stay tight at the end of the row rather
-     than being spread to the far edge of a 78rem page. */
-  #rows > tr > td:first-child, thead th:first-child { width: 100%; }
-  #rows > tr > td:last-child, thead th:last-child { width: 1%; white-space: nowrap; }
+  /* The action column never wraps its two controls onto two lines, which is
+     what used to decide when the table had to stack on a tablet. Written for
+     the results rows by name: the disclosure row is also a last child, and a
+     panel is prose, so the no-wrap reached the fare sentence and the feed
+     record and pushed the whole panel 70px past a 390px page. */
+  #rows > tr[data-crs] > td:last-child, thead th:last-child { white-space: nowrap; }
   /* The two halves of one fact, stacked, never side by side: a change count
      with a station after it on the same line reads as two columns. */
   td.num .was { display: block; }
@@ -768,7 +776,7 @@ __THEME_TOGGLE__
     <button id="shortlistClear" class="toggle" type="button" hidden>Clear</button>
   </div>
   <ul id="shortlistList" class="shortlist-chips"></ul>
-  <p id="shortlistEmpty" class="tag">Pick a place above to hold it here while you compare.</p>
+  <p id="shortlistEmpty" class="tag">Nothing held yet. It is a list to compare and share, not a booking.</p>
   <p id="shortlistLimit" class="tag" role="status"></p>
   <details class="shortlist-share" id="shortlistShareBox" hidden>
     <summary>Share this shortlist</summary>
@@ -2423,7 +2431,7 @@ function provenance() {
   if (linkTerms) {
     document.getElementById("linkTermsSummary").textContent = DATA.tracked && DATA.disclosure
       ? "About the ticket link, and how this site is paid"
-      : "About the ticket link, and how this page was built";
+      : "About the ticket link";
     linkTerms.hidden = !Array.from(linkTerms.querySelectorAll("p")).some((p) => !p.hidden);
   }
 }
