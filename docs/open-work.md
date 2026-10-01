@@ -59,31 +59,63 @@ argued for, because a suggestion without one is a wish.
 
 ### Needs a data source or a licence answer
 
-| | Suggestion | What it is for |
-|---|---|---|
-| **S08** | An opt-in "find my station" path, backed by a reviewed coordinate source, keeping manual name/code search as the default and explaining exactly what the permission does before asking | A traveller who knows their town but not the station's CRS code can still start, without silently collecting location data |
-| **S09** | Region, town or rail-network grouping, once a trustworthy geography source is chosen, with that source's provenance and coverage kept beside the station index | The origin directory stays navigable when a reader cannot use nearest-station lookup or cannot spell the station |
-| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set |
-| **S25** | Calendar handling, but only where the source supports it: bank holidays and service exceptions as first-class inputs, with a clear fallback where they are not | Fewer "typical" schedules are mistaken for holiday-specific service |
-| **S27** | A few evidence-backed discovery entry points — "cities under £20", "seaside under £20" — generated only from currently priceable destinations | A reader with a broad idea and no exact town gets a useful first click without editorial claims about popularity |
-| **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right |
+| | Suggestion | What it is for | Lyden's comment | Where it stands |
+|---|---|---|---|---|
+| **S08** | An opt-in "find my station" path, backed by a reviewed coordinate source, keeping manual name/code search as the default and explaining exactly what the permission does before asking | A traveller who knows their town but not the station's CRS code can still start, without silently collecting location data | | Open. It is the same data question as C27, and it is gated on the same named source. |
+| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open. The whole network now publishes with the national timetable, which is the aggregate case this is about. |
+| **S25** | Calendar handling, but only where the source supports it: bank holidays and service exceptions as first-class inputs, with a clear fallback where they are not | Fewer "typical" schedules are mistaken for holiday-specific service | | Open, and downstream of S24. A service-date label is what makes a fallback honest. |
+| **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right | **Implement** | Queued, after the railcard work, because a card changes the party size a link is built for. |
 
 ### Needs a product decision, not a source
 
-| | Suggestion | What it is for |
-|---|---|---|
-| **S35** | Provenance and approximation as compact confidence signals: distinguish a reviewed fare, a conditional fare, missing service data, classification coverage and seller-link confidence, without inventing a numeric score | A reader can assess the exact uncertainty instead of reading one generic disclaimer as applying to every row equally |
-| **S40** | Decide the public name before designing any identity assets; until then do not present "Rail Budget" as a settled brand | The site looks authored without committing to an unapproved name or to generic SaaS decoration |
+| | Suggestion | What it is for | Lyden's comment | Where it stands |
+|---|---|---|---|---|
+| **S35** | Provenance and approximation as compact confidence signals: distinguish a reviewed fare, a conditional fare, missing service data, classification coverage and seller-link confidence, without inventing a numeric score | A reader can assess the exact uncertainty instead of reading one generic disclaimer as applying to every row equally | **Implement** | Queued. The row already carries every input it needs, so this is presentation rather than new data. |
+| **S40** | Decide the public name before designing any identity assets; until then do not present "Rail Budget" as a settled brand | The site looks authored without committing to an unapproved name or to generic SaaS decoration | **Can you help me brainstorm brand/name ideas?** | Answered with a shortlist in `docs/name-ideas.md`. Nothing is named in the code until one is chosen. |
 
 ### Needs people, not code
 
-| | Suggestion | What it is for |
-|---|---|---|
-| **S43** | Short, task-focused sessions with the intended traveller: someone with a price ceiling and no destination has to find a usable day out, then explain the fare and time they chose | The next changes address real interpretation failures rather than adding features because they are technically possible |
-| **S44** | Instrument the existing tripwire before investing in a redesign — venue-level visits, comments and return signal only under an approved privacy approach | Effort stays bounded by the experiment, and a polished interface is not mistaken for demonstrated demand |
-| **S46** | Lightweight task telemetry without personal tracking, and only if it is necessary and permitted: a static "Was this shortlist useful?" or an optional feedback route | Qualitative signal without recording a reader's budget or filter state, and without turning a static experiment into a tracking product |
+| | Suggestion | What it is for | Lyden's comment | Where it stands |
+|---|---|---|---|---|
+| **S43** | Short, task-focused sessions with the intended traveller: someone with a price ceiling and no destination has to find a usable day out, then explain the fare and time they chose | The next changes address real interpretation failures rather than adding features because they are technically possible | I will get to this, once the product is a little closer to ready | Held deliberately. The owner's call, and the reasoning still holds. The session is worth more once there is a whole network to find a destination in rather than one station. |
+| **S44** | Instrument the existing tripwire before investing in a redesign: venue-level visits, comments and return signal only under an approved privacy approach | Effort stays bounded by the experiment, and a polished interface is not mistaken for demonstrated demand | I don't understand what this suggestion means | **Explained below.** No action; the tripwire's date is the owner's. |
 
----
+### What S44 means, in plain words
+
+The project already has a stop rule, and it is a date rather than a number.
+[ADR-0004](../adr/ADR-0004-staged-plan-and-stop-rules.md) sets a written review
+for **21 October 2026**. Two questions. Is there community traction, and does
+the owner still think the thing is worth keeping. If the answer is not clearly
+yes, the default is to park it, which means the docs stay and no further time
+goes into it.
+
+S44 is an argument about what to do before that date. It says that if you are
+about to spend a week making the page prettier, you should find out first whether anyone is
+arriving, arriving twice, or telling anyone else. And it says to measure that at
+the venues the traffic comes from, which are the community posts named in
+[PRODUCT.md](../PRODUCT.md), rather than by putting analytics on the site.
+
+The reason it says venues rather than the site is the licence and privacy
+position. This project can add a counter or a referrer to a page it serves.
+Recording what a reader typed, filtered or shortlisted is personal data with a
+different approval question attached, and the DTD feed licence is a separate
+gate again. Counting at the community-post level answers is anyone coming
+without answering anything on the page.
+
+The advice in one line is **do not spend the next week on polish before knowing
+whether anyone is using the thing**. It is not a request to build anything.
+
+## Rejected, with the reason
+
+Three suggestions were rejected by the owner on 1 October 2026. They are kept
+here rather than deleted, because a rejected suggestion with a reason stops
+the next person from re-deriving it.
+
+| | Suggestion | Why it is not worth doing |
+|---|---|---|
+| **S09** | Region, town or rail-network grouping once a geography source is chosen | The chooser already ranks all 2,718 priced stations and filters by name or code across them. Grouping adds a second way to browse a list nobody needs a second way to browse, and it needs the same geography source as S08 and C27 for no extra reach. |
+| **S27** | Discovery entry points such as "cities under £20" or "seaside under £20" | It is a curated editorial list dressed as a derived one. The project's rule is that a page says what the feed says and nothing more, and a landing page that decides which towns are worth a click is that page making a claim it has no evidence for. |
+| **S46** | A "Was this shortlist useful?" prompt or an optional feedback route | It is a tracker with a small payload, and it collects exactly the thing the page is careful not to collect. The same question is answered better by the S43 sessions, which are observed rather than recorded. |
 
 ## Questions a future design pass still has to answer
 
@@ -96,15 +128,42 @@ argued for, because a suggestion without one is a wish.
    can we go from anywhere" product meets exactly one origin. This is the only
    question in the 27 September critique that its own re-verification could not
    close, and it is a decision rather than a defect.
+   Answer: Should expose the whole station network
+   **Answered, and shipped.** The deploy workflow builds `--all-origins`, so
+   every one of the 2,718 priced stations has a page and the root is the
+   chooser offering all of them. The objection was cost, and it was entirely
+   ADR-0024's projection of about two days, measured on an invented uniform feed
+   where every station priced 2,500 destinations. The real feed's median origin
+   prices 91, and a whole-network build with journey times measures at about 81
+   minutes on a two-core runner. ADR-0024 is amended with the numbers, and
+   [ADR-0050](../adr/ADR-0050-the-release-is-the-whole-network.md) is the decision.
 2. **Is the Two Together enforcement the answer the brief wanted?** The solo case
    is now refused rather than shown, which the enforcement test holds. Whether
    the brief wanted that, or wanted an explicitly conditional per-person
    comparison instead, was never put to it.
+   Answer: I don't understand the question exactly, but Two Together is supposed to be just ONE of the entire collection of available railcards to choose from. Also, the default should be no railcards selected, until one is added, then it should be remembered by the browser
+   **Answered, and the question was the wrong shape.** Two Together was never
+   the only railcard the page knew about; it was the only one it offered. The
+   feed's catalogue holds 382 codes, and the passenger cards arrive in families:
+   16-25 is YNG, and Y3R for three years, YN3 bought online, RYP as a
+   repaperminted replacement. A reader holding any of them holds the same card,
+   so a railcard is now modelled as a product with the codes the feed carries for
+   it, and the reviewed set is six products rather than one card. None selected by
+   default, and a selection remembered by the browser, are both part of the page
+   migration that follows the model.
 3. **Does the local preview keep its own build step, or does the runner become a
    server for a folder the builder produces?** The concrete cost of the split has
    been fixed, so the question is open again rather than answered by a defect:
    the runner still shells out to the builder, which works, and no finding says
    it should not.
+   Answer: I don't know - apply the best-practice decision
+   **Answered.** Best practice for a static site with a build step is that the
+   two are separate commands, because a server that rebuilds on every start
+   cannot tell you what it is serving. `run.py` now serves `_site/` as it is and
+   says so, builds once on a clean checkout because there is nothing to serve
+   then, takes `--rebuild` to build again, and `--no-build` to refuse rather than
+   build what it was told not to.
+   [ADR-0051](../adr/ADR-0051-the-runner-serves-and-the-build-builds.md).
 
 ---
 
@@ -120,6 +179,9 @@ because a reader checking a closure wants the ADR and the test.
 | S17's second half — the page says where the budget stops, and the figure is the stop | ADR-0048 | `test_the_page_says_where_the_slider_stops_and_the_figure_is_the_stop`, the tamper that hardcoded £500.00, and the browser suite's two readings |
 | S34 — a human-readable feed-change report for the operator | ADR-0049 | `tools/test_feed_change_report.py` |
 | C27's sibling findings, C01–C31 | five passes, 27–28 September 2026 | the commits that carried each change; the finding ids that survive as reasons in the code (`C14` in `SHARED_CSS`) |
+| Question 1, the release coverage, settled by building every priced station rather than Grantham alone | ADR-0050 | `timeout-minutes: 150` against the measured extrapolation, and `tools/page_bytes.py --site _site` as the only step that reads the release's bytes |
+| A railcard is a product with the feed's codes for it, not a code | landed ahead of the page that consumes it, so each unit builds and verifies | `ReviewedRailcardTest` in `tests/test_atoc_fares.py`, six tests over families, aliases, bounds and the absent-code report |
+| Question 3, the runner, with the build and the serve as separate commands | ADR-0051 | `RunnerBuildOrServeTest`, four tests over the four combinations of a site existing, not existing, and a flag asking for a rebuild |
 
 ### The measurements three ADRs lean on
 
