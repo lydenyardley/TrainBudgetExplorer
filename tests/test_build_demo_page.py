@@ -412,11 +412,11 @@ class DemoPageTest(unittest.TestCase):
             r, g, b = rgb
             return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 
-        warn_hex = re.search(r"--warn: (#[0-9a-f]{6});", self.html)
+        warn_hex = re.search(r"--warn: (#[0-9a-f]{6});", self.stylesheet)
         self.assertIsNotNone(warn_hex, "no light --warn token in the shared block")
-        tint = re.search(r"--best:\s*rgba\((\d+), (\d+), (\d+), (\.\d+)\)", self.html)
+        tint = re.search(r"--best:\s*rgba\((\d+), (\d+), (\d+), (\.\d+)\)", self.stylesheet)
         self.assertIsNotNone(tint, "no --best tint in the shared block")
-        self.assertIn("tr.detail td { background: var(--best);", self.html)
+        self.assertIn("tr.detail td { background: var(--best);", self.stylesheet)
         warn = tuple(int(warn_hex.group(1)[i:i + 2], 16) for i in (1, 3, 5))
         alpha = float(tint.group(4))
         panel = tuple(int(part) * alpha + 255 * (1 - alpha) for part in tint.groups()[:3])
@@ -1090,6 +1090,21 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("DATA.railcardRules[details.rule]", self.html)
         self.assertIn("Exact DTD rule", self.html)
 
+    @property
+    def stylesheet(self) -> str:
+        """The CSS this page is served with, which is no longer inside it.
+
+        ADR-0047: the station route fetches one stylesheet rather than inlining
+        it, because the same 34.6 KB on 2,712 pages was 92 MB of a site measured
+        at 583 MB. A test that asserts a rule exists therefore asserts it
+        against the document the page loads -- one string, identical on every
+        station page, written beside them by the build -- rather than against
+        the page, which no longer carries any of it.
+        """
+        from page_templates import STATION_STYLESHEET
+
+        return STATION_STYLESHEET
+
     def test_a_ticked_row_shows_the_card_price_and_the_standard_fare(self) -> None:
         # Q3: a discounted number never stands alone in the cell. The page
         # builds the price cell so it can carry the standard fare the card was
@@ -1100,7 +1115,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('was.className = "was"', self.html)
         self.assertIn("if (price < standard)", self.html)
         self.assertIn('money(standard) + " standard"', self.html)
-        self.assertIn("td.num .was {", self.html)
+        self.assertIn("td.num .was {", self.stylesheet)
 
     def test_rule_records_are_hoisted_out_of_the_rows(self) -> None:
         rows = [
@@ -1573,27 +1588,71 @@ class DemoPageTest(unittest.TestCase):
         # column rather than three tracks side by side. At 1440px the
         # three-track version laid the refinements out as though a reader
         # wanted all of them at once, above the list they came for.
-        self.assertIn("grid-template-columns: minmax(0, 1fr)", self.html)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", self.stylesheet)
         self.assertIn('<section class="filter-bar"', self.html)
         self.assertIn('id="budget" type="range"', self.html)
         self.assertIn('id="budgetNumber" type="number"', self.html.split("<h1", 1)[1].split("</h1>", 1)[0])
         self.assertNotIn('id="budgetNumber" type="number"', self.html.split('<section class="filter-bar"', 1)[1])
 
-    def test_every_route_inlines_the_same_shared_stylesheet(self) -> None:
-        # S39: the palette, spacing, focus ring, links, navigation and
-        # disclosure styles have one source, inlined into each file at import
-        # time so the site still ships no external asset. A route's own block
-        # holds only what is its own, and a template that still held the
-        # placeholder would raise rather than ship unstyled text.
-        from page_templates import CHOOSER_TEMPLATE, PRIVACY, SHARED_CSS, TEMPLATE
+    def test_the_shared_stylesheet_has_one_source_and_the_station_route_fetches_it(self) -> None:
+        # S39: the palette, spacing, focus ring, links, navigation and disclosure
+        # styles have one source. A route's own block holds only what is its own,
+        # and a template that still held the placeholder would raise rather than
+        # ship unstyled text. ADR-0047 changed how a route gets that source, not
+        # what it is: the two single-page routes inline it, and the station route
+        # -- 2,712 pages carrying the same 34.6 KB -- fetches the one file the
+        # build writes.
+        from page_templates import (
+            CHOOSER_TEMPLATE,
+            PRIVACY,
+            SHARED_CSS,
+            STATION_CSS,
+            STATION_STYLESHEET,
+            TEMPLATE,
+        )
 
-        for name, template in (
-            ("chooser", CHOOSER_TEMPLATE),
-            ("station", TEMPLATE),
-            ("privacy", PRIVACY),
-        ):
+        for name, template in (("chooser", CHOOSER_TEMPLATE), ("privacy", PRIVACY)):
             self.assertIn(SHARED_CSS, template, f"{name} does not carry the shared stylesheet")
             self.assertNotIn("__SHARED_CSS__", template, f"{name} shipped the placeholder")
+        # The station route holds the link where the block used to be, and
+        # nothing else: the shared block is fetched, not restated, or the file
+        # would be back to being the same bytes on every page.
+        self.assertNotIn("__SHARED_CSS__", TEMPLATE, "the station template shipped the placeholder")
+        self.assertNotIn(SHARED_CSS, TEMPLATE, "the station page inlines the block it fetches")
+        self.assertIn("__STATION_STYLE__", TEMPLATE, "the station template has no stylesheet link")
+        self.assertIn(
+            build_demo_page.station_style_tag(self.payload["styleSrc"]),
+            self.html,
+            "the station page does not link the stylesheet this build wrote",
+        )
+        # The file it links is the shared block and this route's own rules, in
+        # that order -- the same bytes the inline <style> element held.
+        self.assertTrue(
+            STATION_STYLESHEET.startswith(SHARED_CSS), "the asset does not begin with the shared block"
+        )
+        self.assertTrue(
+            STATION_STYLESHEET.endswith(STATION_CSS.strip() + "\n"),
+            "the asset is not the shared block plus this route's own rules",
+        )
+        # The name is a digest of those bytes, so a changed stylesheet is a new
+        # file and a cached one can never be served beside a page built from
+        # another revision of it.
+        import hashlib
+
+        digest = hashlib.sha256(STATION_STYLESHEET.encode("utf-8")).hexdigest()[:12]
+        self.assertEqual(build_demo_page.station_style_asset_name(), f"station-{digest}.css")
+        self.assertIn(build_demo_page.station_style_asset_name(), self.html)
+        # A page that could not name the document would have no styling and no
+        # request for any, so render_page refuses rather than shipping it -- the
+        # same refusal with_shared() makes for a template that kept a
+        # placeholder.
+        with self.assertRaises(ValueError):
+            build_demo_page.render_page({**self.payload, "styleSrc": ""}, budget_pounds=20)
+        # The marker the page reads to know its stylesheet arrived is in the
+        # block, so a route that inlined it always answers yes and a route that
+        # fetched it answers from the browser rather than from a guess about
+        # whether a request is still in flight.
+        self.assertIn("--tbe-stylesheet: 1;", SHARED_CSS)
         # One palette, one focus ring, one footer -- each stated once in the
         # source, and present in all three rendered routes.
         # C14 again, in the new shape: a token with a light value but no
@@ -1638,21 +1697,25 @@ class DemoPageTest(unittest.TestCase):
                 analytics=False, link_mode="fallback", network=None, disclosure=None
             )
         )
-        for name, page in (("chooser", chooser), ("station", self.html), ("privacy", privacy)):
-            self.assertIn("--accent: #14509b;", page, f"{name} lost the shared palette")
+        for name, styled in (
+            ("chooser", chooser),
+            ("station", self.stylesheet),
+            ("privacy", privacy),
+        ):
+            self.assertIn("--accent: #14509b;", styled, f"{name} lost the shared palette")
             # The dark palette is a light-dark() pair now, not a media query, so
             # what a route has to carry is both values of one token.
             self.assertIn(
-                "--accent: light-dark(#14509b, #7db4f5);", page, f"{name} lost the dark palette"
+                "--accent: light-dark(#14509b, #7db4f5);", styled, f"{name} lost the dark palette"
             )
-            self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', page, f"{name} cannot be told to paint dark")
+            self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', styled, f"{name} cannot be told to paint dark")
             # C25: the shared block holds the 44px minimum on the anchor, not
             # only on a container around it, so the privacy page's single
             # navigation link is a 44px target rather than a 24px one that
             # happened to be 24px because of its line box.
             self.assertIn(
                 ".footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }",
-                page,
+                styled,
                 f"{name} restated the footer nav",
             )
         # One column for the whole site. The chooser used to state a width of
@@ -1661,8 +1724,10 @@ class DemoPageTest(unittest.TestCase):
         # which is most of what made them read as two products. The policy
         # page is the one exception, and deliberately: a document is read in
         # a measure, not in the width of a table.
-        for name, page in (("chooser", chooser), ("station", self.html)):
-            own = page.split(SHARED_CSS, 1)[1]
+        for name, own in (
+            ("chooser", chooser.split(SHARED_CSS, 1)[1]),
+            ("station", self.stylesheet.split(SHARED_CSS, 1)[1]),
+        ):
             self.assertNotIn("--page-max", own, f"{name} states a width of its own")
             self.assertNotIn("--page-pad", own, f"{name} states its own padding")
         self.assertIn(":root { --h1: 2rem; --page-max: 42rem; }", privacy)
@@ -1701,9 +1766,9 @@ class DemoPageTest(unittest.TestCase):
         # The two page defects the matrix found are fixed in the page itself,
         # so the numbers above are the ones the suite measures.
         # The dark value of --muted, as the second half of its light-dark() pair.
-        self.assertIn("--muted: light-dark(#5b6472, #a7b2c0)", self.html)
-        self.assertIn(".synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }", self.html)
-        self.assertIn(".feed-record summary { display: inline-flex; align-items: center; min-height: 24px;", self.html)
+        self.assertIn("--muted: light-dark(#5b6472, #a7b2c0)", self.stylesheet)
+        self.assertIn(".synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }", self.stylesheet)
+        self.assertIn(".feed-record summary { display: inline-flex; align-items: center; min-height: 24px;", self.stylesheet)
 
     def test_the_budget_is_kept_and_the_refinements_fold_at_every_width(self) -> None:
         # The fold was a phone-only disclosure driven by a media query and a
@@ -1725,9 +1790,9 @@ class DemoPageTest(unittest.TestCase):
             self.assertIn(group, folded, f"{group} is outside the disclosure")
         # The panel is closed until data-open says otherwise, and the summary
         # is written from that same state, so the two cannot disagree.
-        self.assertIn(".more-filters { display: block; }", self.html)
-        self.assertIn(".more-filters-panel { display: none; }", self.html)
-        self.assertIn('.more-filters[data-open="true"] .more-filters-panel { display: grid;', self.html)
+        self.assertIn(".more-filters { display: block; }", self.stylesheet)
+        self.assertIn(".more-filters-panel { display: none; }", self.stylesheet)
+        self.assertIn('.more-filters[data-open="true"] .more-filters-panel { display: grid;', self.stylesheet)
         self.assertIn('moreFilters.dataset.open = open ? "true" : "false";', self.html)
         self.assertIn('moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");', self.html)
         self.assertNotIn("display: contents", self.html)
@@ -1745,15 +1810,15 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("up to", heading)
         self.assertIn('id="budgetNumber"', heading)
         self.assertIn('id="changeOrigin"', heading)
-        self.assertIn("h1 { font-size: var(--h1);", self.html)
+        self.assertIn("h1 { font-size: var(--h1);", self.stylesheet)
         # The currency sign is inside the name a screen reader reads for the
         # heading. It was aria-hidden, so the heading announced "for up to 20"
         # with no unit while the page said "£20.00" everywhere else. The number
         # field keeps its own aria-label, so nothing is announced twice.
         self.assertIn('<span class="budget-prefix">&pound;</span>', heading)
         self.assertNotIn('<span class="budget-prefix" aria-hidden="true">', heading)
-        self.assertIn("--h1: clamp(2rem, 6vw, 6rem)", self.html)
-        self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.html)
+        self.assertIn("--h1: clamp(2rem, 6vw, 6rem)", self.stylesheet)
+        self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.stylesheet)
         self.assertNotIn("max-width: 32ch", self.html)
         self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
 
@@ -1799,8 +1864,8 @@ class DemoPageTest(unittest.TestCase):
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
-        self.assertIn('.toggle::after { content: ""; position: absolute; inset: -6px; }', self.html)
-        self.assertIn('.buy::after { content: ""; position: absolute; inset: -11px -4px; }', self.html)
+        self.assertIn('.toggle::after { content: ""; position: absolute; inset: -6px; }', self.stylesheet)
+        self.assertIn('.buy::after { content: ""; position: absolute; inset: -11px -4px; }', self.stylesheet)
 
     # -- the unpriced-origin page ------------------------------------------
 
@@ -1809,7 +1874,7 @@ class DemoPageTest(unittest.TestCase):
         # without this rule, hiding them does nothing and an unpriced page
         # shows a slider that cannot help. Regression: the Sleepy page shipped
         # with the controls still on screen under the unpriced message.
-        self.assertIn("[hidden] { display: none !important; }", self.html)
+        self.assertIn("[hidden] { display: none !important; }", self.stylesheet)
 
     def test_an_unpriced_origin_gets_its_own_first_sentence(self) -> None:
         # All three modes, not just the two the test used to empty: an unpriced
@@ -2130,10 +2195,10 @@ class DemoPageTest(unittest.TestCase):
         # "£10.1" over "0", which is a different number rather than a tighter
         # column. The header word was deciding the width, so neither half of
         # the table wraps, and the browser suite measures the painted lines.
-        self.assertIn("color: var(--muted); white-space: nowrap; }", self.html)
-        self.assertIn("font-variant-numeric: tabular-nums; white-space: nowrap; }", self.html)
+        self.assertIn("color: var(--muted); white-space: nowrap; }", self.stylesheet)
+        self.assertIn("font-variant-numeric: tabular-nums; white-space: nowrap; }", self.stylesheet)
         self.assertIn(".ticket-code { font-variant-numeric: tabular-nums; letter-spacing: .02em; white-space: nowrap; }",
-                      self.html)
+                      self.stylesheet)
 
     def test_the_count_line_sits_on_its_table(self) -> None:
         # Finding, 29 September 2026: on the real page the count sat 205px above
@@ -2147,7 +2212,7 @@ class DemoPageTest(unittest.TestCase):
             self.assertNotIn(moved, between)
 
     def test_keyboard_focus_is_visible_everywhere(self) -> None:
-        self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.html)
+        self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.stylesheet)
 
     def test_the_picker_hides_itself_when_there_is_nowhere_else_to_go(self) -> None:
         payload = dict(self.payload, stations=[])
@@ -2349,11 +2414,11 @@ class DemoPageTest(unittest.TestCase):
         # must stay a real table for desktop and assistive technology, and the
         # stylesheet must wrap cells rather than fix their width, so no cell can
         # sit outside the viewport however long a station name is.
-        self.assertIn("@media (max-width: 44rem)", self.html)
+        self.assertIn("@media (max-width: 44rem)", self.stylesheet)
         # From the first max-width block to the end of the stylesheet: the
         # footer nav has its own small block, and the table's rules must be
         # found wherever they sit.
-        reflow = self.html[self.html.index("table, tbody { display: block; }") - 200:].split("</style>")[0]
+        reflow = self.stylesheet[self.stylesheet.index("table, tbody { display: block; }") - 200:]
         self.assertIn("flex-wrap", reflow)
         self.assertNotIn("display: none", reflow.split("thead")[0])
         self.assertIn("thead { position:absolute; width:1px; height:1px;", reflow)
@@ -2955,6 +3020,87 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertIn("changeOrigin.replaceWith(stationName);", page)
         self.assertIn("originPicker.remove();", page)
         self.assertIn("fallbackNote.textContent = FIRST_USE_FALLBACK;", page)
+
+    def test_the_stylesheet_is_written_once_and_named_for_its_own_bytes(self) -> None:
+        # One file beside the pages, and every station page names it. The
+        # filename holds a digest of the stylesheet, so a changed stylesheet is
+        # a new file: a cached copy can never be served beside a page built
+        # from another revision of the CSS, and no build step has to be told to
+        # rename anything.
+        from page_templates import STATION_STYLESHEET
+
+        name = build_demo_page.station_style_asset_name()
+        assets = sorted(path.name for path in self.site.rglob("*.css"))
+        self.assertEqual(assets, [name], assets)
+        written = (self.site / name).read_text(encoding="utf-8")
+        self.assertEqual(written, STATION_STYLESHEET)
+        self.assertTrue(name.startswith("station-") and name.endswith(".css"), name)
+        self.assertRegex(name, r"^station-[0-9a-f]{12}\.css$")
+        self.assertIn(name, self.log, "the build says what it wrote and where")
+
+    def test_every_station_page_links_the_stylesheet_and_inlines_none_of_it(self) -> None:
+        pages = sorted((self.site / "from").glob("*/index.html"))
+        self.assertEqual(len(pages), 2)
+        for page in pages:
+            html = page.read_text(encoding="utf-8")
+            self.assertIn(build_demo_page.station_style_tag("/" + build_demo_page.station_style_asset_name()), html)
+            # Not inlined: the whole point is that 2,712 pages stop carrying the
+            # same 34.6 KB, so a page that still held a <style> element would
+            # mean the file is being fetched and paid for anyway.
+            self.assertNotIn("<style>", html)
+            # And the script stays inline, because it draws the page's own
+            # rows: a request that did not arrive would leave an empty table,
+            # which is not a failure mode the picker models (ADR-0047).
+            self.assertIn("const DATA = ", html)
+            self.assertIn("function render()", html)
+
+    def test_the_page_takes_the_switch_away_when_the_stylesheet_does_not_arrive(self) -> None:
+        # The picker's failure mode, one route down: a control that cannot do
+        # what it offers is removed rather than left inert, and the page says
+        # what state it is in. A switch that rewrites an attribute no rule reads
+        # is the same defect as a picker that opens an empty panel.
+        page = (self.site / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('class="sub" id="styleNote" hidden', page)
+        self.assertIn("function stylesheetArrived() {", page)
+        self.assertIn('.getPropertyValue("--tbe-stylesheet").trim() !== "";', page)
+        self.assertIn("if (!stylesheetArrived()) {", page)
+        self.assertIn("toggle.remove();", page)
+        self.assertIn("note.hidden = false;", page)
+        self.assertIn("styling did not load", page)
+        # Asked again once the page has loaded, because a stylesheet still in
+        # flight when the body exists has not failed yet.
+        self.assertIn('window.addEventListener("load", function () {', page)
+        # A page whose stylesheet is here keeps the switch, whatever the order
+        # the two events arrived in.
+        self.assertIn("    toggle.hidden = false;", page)
+        self.assertIn("if (toggle && !toggle.hidden) return;", page)
+
+    def test_the_crawl_resolves_a_stylesheet_a_page_asks_for(self) -> None:
+        # The crawl read href attributes only, so a page could have asked for a
+        # stylesheet the build never wrote and the run would still have said
+        # every internal link resolves. A shared document is a route like any
+        # other, and it is named in src as well as href.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            (site / "from" / "grantham").mkdir(parents=True)
+            (site / "from" / "grantham" / "index.html").write_text(
+                '<link rel="stylesheet" href="/station-abc.css">', encoding="utf-8"
+            )
+            broken = build_demo_page.crawl_internal_links(site)
+            self.assertEqual(len(broken), 1, broken)
+            self.assertIn("station-abc.css", broken[0])
+            (site / "station-abc.css").write_text(":root { --x: 1; }", encoding="utf-8")
+            self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+            # And a <script src> is followed now, which it was not: the
+            # picker's asset was named in one and the crawl never looked.
+            (site / "index.html").write_text(
+                '<script src="/stations.js"></script>', encoding="utf-8"
+            )
+            self.assertEqual(
+                [entry.split(" links to ")[1].split(",")[0] for entry in
+                 build_demo_page.crawl_internal_links(site)],
+                ["/stations.js"],
+            )
 
     def test_the_asset_is_the_whole_list_in_plain_objects(self) -> None:
         rows = build_demo_page.station_asset_rows(

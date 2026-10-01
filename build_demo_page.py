@@ -53,7 +53,13 @@ from atoc_knowledgebase import (
     load_ticket_restrictions,
 )
 from destination_coverage import UnsourcedReport, unnameable_from_tally
-from page_templates import CHEVRON, CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
+from page_templates import (
+    CHEVRON,
+    CHOOSER_TEMPLATE,
+    PRIVACY,
+    STATION_STYLESHEET,
+    TEMPLATE,
+)
 from retailer import (
     AFFILIATE_NETWORKS,
     DEFAULT_PROVIDER,
@@ -348,6 +354,12 @@ def write_page_atomic(path: Path, html: str) -> None:
 
 HREF_ATTR = re.compile(r'href="([^"]+)"')
 
+# The shared documents are named in src as well as in href -- the
+# station stylesheet in a <link href>, the picker's options in a
+# <script src> -- and a crawl that read only href would pass a site
+# whose every page asked for a file the build never wrote.
+SRC_ATTR = re.compile(r'src="([^"]+)"')
+
 # The chooser writes its station options from an embedded JSON array rather
 # than as markup, so the links a reader actually follows never appear as an
 # href attribute. They are still this site's contract, and a crawl that only
@@ -369,7 +381,11 @@ def internal_hrefs(html: str) -> list[str]:
     """
     return [
         href
-        for href in HREF_ATTR.findall(html) + EMBEDDED_HREF.findall(html)
+        for href in (
+            HREF_ATTR.findall(html)
+            + SRC_ATTR.findall(html)
+            + EMBEDDED_HREF.findall(html)
+        )
         if href.startswith("/") and not href.startswith("//")
     ]
 
@@ -389,14 +405,17 @@ def crawl_internal_links(out_dir: Path, base_path: str = "") -> list[str]:
     Returns a list of human-readable broken-link descriptions, empty when the
     site is internally consistent.
     """
+    # Every file this release publishes, not only its pages: a shared
+    # document is as much a route as a page is, and a request for one
+    # that was not written is a broken link like any other.
     written = {
         path.relative_to(out_dir).as_posix()
-        for path in out_dir.rglob("*.html")
+        for path in out_dir.rglob("*")
         if path.is_file()
     }
     broken: list[str] = []
     for page in sorted(out_dir.rglob("*")):
-        if not page.is_file() or page.suffix.lower() not in (".html", ".js"):
+        if not page.is_file() or page.suffix.lower() not in (".html", ".js", ".css"):
             continue
         source = page.relative_to(out_dir).as_posix()
         for href in internal_hrefs(page.read_text(encoding="utf-8")):
@@ -1894,6 +1913,9 @@ def build_payload(
         # its domain root (ADR-0024). The template carries it too, for the
         # links that are written as HTML rather than built in JS.
         "baseHref": with_base(base_path, "/"),
+        # The station route fetches one stylesheet, at the path this release is
+        # published at (ADR-0047). The picker sets its own the same way.
+        "styleSrc": with_base(base_path, "/" + station_style_asset_name()),
         # S45: the state is a fact about the build, so it is carried in the
         # payload rather than re-derived by each renderer.
         "synthetic": price_source == DEFAULT_PRICE_SOURCE,
@@ -2284,7 +2306,7 @@ def render_page(
         for value, label in DESTINATION_TYPE_FILTERS
         if value in used
     )
-    return (
+    page = (
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
         .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
@@ -2300,7 +2322,17 @@ def render_page(
         .replace("__ANALYTICS__", analytics)
         .replace("__SYNTHETIC__", "true" if payload.get("synthetic", True) else "false")
         .replace("__SYNTHETIC_BANNER__", synthetic_markup(payload.get("synthetic", True)))
+        .replace("__STATION_STYLE__", station_style_tag(payload.get("styleSrc", "")))
     )
+    # A station page with no stylesheet link is a page with no styling and no
+    # request for any, which reads as a broken page rather than a broken build.
+    # with_shared() cannot catch this one: the link needs the path this release
+    # is published at, which only the build knows (ADR-0033 inlined the block;
+    # ADR-0047 fetches it). Both ways of getting here are refused -- an
+    # unfilled placeholder, and a payload that never named the document.
+    if "__STATION_STYLE__" in page or '<link rel="stylesheet"' not in page:
+        raise ValueError("the station page shipped without a stylesheet link")
+    return page
 
 
 def synthetic_markup(synthetic: bool) -> str:
@@ -2471,6 +2503,49 @@ def render_privacy(
 # writes it, the page names it, and the link crawl reads it (ADR-0033, re-scoped
 # 30 September 2026 -- a page still carries its own destinations inline).
 STATION_ASSET_NAME = "stations.js"
+
+
+# The station route's stylesheet: the second shared document, and the
+# last one (ADR-0047). The page's own answer is in its own bytes; this
+# is the part of a station page that is the same on every page of the
+# route. The name holds a digest of the content, so a changed
+# stylesheet is a new file rather than a changed one -- a cached copy
+# can never be served beside a page built from another revision of the
+# CSS, and no build step has to be told to rename anything.
+STATION_STYLE_STEM = "station"
+
+
+def station_style_asset_name() -> str:
+    """The stylesheet's file name, from a digest of its own bytes."""
+    digest = hashlib.sha256(STATION_STYLESHEET.encode("utf-8")).hexdigest()[:12]
+    return f"{STATION_STYLE_STEM}-{digest}.css"
+
+
+def write_station_style(out_dir: Path) -> Path:
+    """The one stylesheet every station page fetches, written once."""
+    path = out_dir / station_style_asset_name()
+    write_page_atomic(path, STATION_STYLESHEET)
+    print(
+        f"wrote {path} ({len(STATION_STYLESHEET.encode('utf-8')):,} bytes) "
+        "for every station page's styling",
+        flush=True,
+    )
+    return path
+
+
+def station_style_tag(src: str) -> str:
+    """The one request a station page makes beyond itself.
+
+    A render-blocking <link> rather than a script that injects a style element:
+    the page is styled before it is painted, so there is no flash of plain text,
+    and a reader with no JavaScript still gets the layout and the dark palette.
+    Unlike the picker's tag this one is written for every station page, because
+    this document is not optional -- and a page whose copy does not arrive is
+    the case ADR-0047 has an answer for.
+    """
+    if not src:
+        return ""
+    return f'<link rel="stylesheet" href="{html.escape(src, quote=True)}">' + "\n"
 
 
 def picker_has_options(payload: dict) -> bool:
@@ -3094,6 +3169,7 @@ def main(argv: list[str] | None = None) -> int:
         # the wire encoding -- 168 KB a page as these objects -- and identical on
         # every page but the one row each page filters out (audit, 30 September
         # 2026, measured from this build's own output).
+        write_station_style(out_dir)
         station_rows = station_asset_rows(index, base_path)
         write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
         print(
@@ -3338,6 +3414,9 @@ def main(argv: list[str] | None = None) -> int:
         if entry["crs"] != payload["origin"]["crs"]
     ]
     out_dir.mkdir(parents=True, exist_ok=True)
+    # The station route's stylesheet, written once before the page that
+    # asks for it (ADR-0047).
+    write_station_style(out_dir)
     if index:
         station_page = out_dir / "from" / index[0]["slug"] / "index.html"
         write_page_atomic(

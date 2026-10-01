@@ -491,7 +491,9 @@ and `tools/check_commit_message.py` checks a message against them.
 git log -1 --format=%B | python tools/check_commit_message.py
 ```
 
-## The demo page`build_demo_page.py` writes one self-contained HTML file: every priced destination
+## The demo page
+
+`build_demo_page.py` writes one self-contained HTML file: every priced destination
 from an origin, with a budget slider, a settlement and character destination-type filter,
 and a choice of whether the budget covers one adult or two. The page is generated from
 
@@ -737,6 +739,7 @@ into the ADRs came with their command and keep it:
 | Figure | Command |
 |---|---|
 | a page split into stylesheet, script and inline payload, the bytes every page repeats, a folder totalled against the 800 MB target | `python tools/page_bytes.py --site _site` |
+| the whole network, measured against that target: 2,712 pages and 498 MB of 800 MB, or 583 MB before the stylesheet became a shared document | `python build_demo_page.py --feed feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html` then `python tools/page_bytes.py --site _cache/site_measure` |
 | unclassified destinations, the worst origins by share, and the rows the feed cannot name at all | `python destination_coverage.py --feed feeds/fares` |
 | the browser suite over the published routes, with its not-exercised count | `npx --yes --package playwright node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
 | which routes this release actually wrote | `_site/release-manifest.json` |

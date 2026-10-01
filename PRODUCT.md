@@ -114,7 +114,15 @@ the reader, and, where links are tracked, what it earns the site.
 - **One self-contained HTML file: no server, no build step, no external assets**
   (ADR-0010). No webfonts, no CDN imagery, no framework, nothing fetched at
   runtime. There are currently **no images, logos, icons, or font files in the
-  repository at all**, and designing one in means inlining it.
+  repository at all**, and designing one in means inlining it. A station page
+  fetches exactly two documents, and both are the same for every page of the
+  route: the picker's station list (`stations.js`) and this route's stylesheet
+  (`station-<digest>.css`). Neither is part of any page's own answer — the
+  destinations, fares, notices and provenance are all in the page's own bytes
+  (ADR-0033's fetch boundary, ADR-0047). The rule that comes with them: a page
+  whose shared document does not arrive stays readable and truthful, taking away
+  a control it cannot deliver rather than leaving it inert. The chooser and the
+  privacy page fetch neither.
 - **The reader picks the ticket, from three named sets.** The page opens on the
   cheapest fare of any ticket type to each destination, because the question a
   reader arrived with is a budget and not a ticket type (ADR-0044). The three

@@ -35,6 +35,12 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
     --ochre: #a65d00; --ochre: light-dark(#a65d00, #f0b35b);
     --best: rgba(20, 80, 155, .07); --best: light-dark(rgba(20, 80, 155, .07), rgba(125, 180, 245, .12));
     --field: #fff; --field: light-dark(#fff, #1c2127);
+    /* The stylesheet arrived. A route that fetches this block reads the
+       marker to know, and a route that inlined it can always answer yes
+       (ADR-0047). It is a token rather than a flag on <html> so the answer
+       is the browser's own, not a guess about whether a request is still
+       in flight. */
+    --tbe-stylesheet: 1;
     /* The warn token is the restricted fare's own words and the "advance"
        and "restricted" marks beside a code, and the cheapest list leads with
        exactly those rows (Q4), so it is measured where the text actually
@@ -256,72 +262,15 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
   .synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }
 """
 
-
-
-_PRIVACY_TEMPLATE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-__SHARED_THEME__
-<title>Privacy</title>
-<style>
-__SHARED_CSS__
-  /* C30: a policy page is read, not skimmed past. The shared --h1 scales to
-     6rem for the pages whose heading is the question a reader came to answer;
-     here it is sized for a document title, and the brand line that used to sit
-     above it is gone -- a small uppercase eyebrow above a large heading reads
-     as a marketing hero and competes with the document's own title. The same
-     argument is why the chooser no longer carries one. */
-  :root { --h1: 2rem; --page-max: 42rem; }
-  h1 { margin: 0 0 1rem; }
-  h2 { font-size: 1.15rem; }
-</style>
-</head>
-<body data-synthetic="__SYNTHETIC__">
-__SYNTHETIC_BANNER__
-<nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
-__THEME_TOGGLE__
-<main>
-<h1>Privacy</h1>
-<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
-<h2>What stays in the address bar</h2>
-<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
-<ul>
-<li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
-<li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
-</ul>
-<p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
-<h2>What this site does</h2>
-<ul>
-__PRACTICES__</ul>
-<h2>Ticket links</h2>
-<p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
-<h2>Hosting</h2>
-<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>
-<h2>Contact</h2>
-<p class="muted">__CONTACT__</p>
-</main>
-<footer>
-<p class="muted">__NOTE__</p>
-<nav class="footnav"><a href="__BASE__/">All stations</a></nav>
-</footer>
-</body>
-</html>
-"""
-
-
-
-_TEMPLATE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-__SHARED_THEME__
-<title>Train fares up to &pound;__BUDGET__ from __ORIGIN__</title>
-<style>
-__SHARED_CSS__
-  /* No width of its own: the column, the padding and the heading size are the
+# The station route's own stylesheet, which used to sit in its <style>
+# block beside the shared one. The two are still one string, because a
+# station page's CSS is byte-identical on every station page -- measured,
+# not assumed: the same 34.6 KB on all 2,712 pages of a full-network
+# build -- so it is written once as a hashed asset and fetched, and a
+# route whose copy does not arrive says so and loses the theme switch
+# rather than offering a control that cannot change a palette the page
+# has not got (ADR-0033's boundary, ADR-0047).
+STATION_CSS = """  /* No width of its own: the column, the padding and the heading size are the
      shared ones, so a station page and the chooser are the same page with
      different content. The table simply uses the width it is given. */
   /* The station slot wears the shared .origin-slot skin, so the same underline
@@ -572,7 +521,75 @@ __SHARED_CSS__
     td:last-child { margin-left: auto; }
     tr.detail td { flex: 1 1 100%; padding: .5rem 0; }
   }
+"""
+
+
+# The asset's bytes: the shared block, then this route's own rules, which is
+# exactly what the <style> element used to hold.
+STATION_STYLESHEET = SHARED_CSS + STATION_CSS
+
+_PRIVACY_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+__SHARED_THEME__
+<title>Privacy</title>
+<style>
+__SHARED_CSS__
+  /* C30: a policy page is read, not skimmed past. The shared --h1 scales to
+     6rem for the pages whose heading is the question a reader came to answer;
+     here it is sized for a document title, and the brand line that used to sit
+     above it is gone -- a small uppercase eyebrow above a large heading reads
+     as a marketing hero and competes with the document's own title. The same
+     argument is why the chooser no longer carries one. */
+  :root { --h1: 2rem; --page-max: 42rem; }
+  h1 { margin: 0 0 1rem; }
+  h2 { font-size: 1.15rem; }
 </style>
+</head>
+<body data-synthetic="__SYNTHETIC__">
+__SYNTHETIC_BANNER__
+<nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
+__THEME_TOGGLE__
+<main>
+<h1>Privacy</h1>
+<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
+<h2>What stays in the address bar</h2>
+<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
+<ul>
+<li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
+<li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
+</ul>
+<p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
+<h2>What this site does</h2>
+<ul>
+__PRACTICES__</ul>
+<h2>Ticket links</h2>
+<p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
+<h2>Hosting</h2>
+<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>
+<h2>Contact</h2>
+<p class="muted">__CONTACT__</p>
+</main>
+<footer>
+<p class="muted">__NOTE__</p>
+<nav class="footnav"><a href="__BASE__/">All stations</a></nav>
+</footer>
+</body>
+</html>
+"""
+
+
+
+_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+__SHARED_THEME__
+<title>Train fares up to &pound;__BUDGET__ from __ORIGIN__</title>
+__STATION_STYLE__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
@@ -590,6 +607,10 @@ __THEME_TOGGLE__
      station's page. A one-station build points the reader at a control it does
      not have. -->
 <p class="sub" id="firstUse">__FIRST_USE__</p>
+<!-- ADR-0047: shown only when the stylesheet did not arrive. The page is
+     plain text in that state, and says so rather than leaving a reader to
+     wonder why this station looks unlike every other one. -->
+<p class="sub" id="styleNote" hidden></p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <div id="originPicker" hidden>
@@ -2866,7 +2887,21 @@ SHARED_THEME = """<meta name="color-scheme" content="light dark">
   // The control, wired once the body exists. It ships hidden and is revealed
   // here: a button that cannot do anything without this script is a control
   // that lies, which is the same defect as the Change button this replaced.
-  document.addEventListener("DOMContentLoaded", function () {
+  //
+  // It is revealed only if the stylesheet is here to be changed. A route that
+  // fetches its stylesheet (ADR-0047) may not get it, and a switch that
+  // rewrites an attribute no rule reads is the picker's "a control that opens
+  // nothing" in a different dress: so the switch is taken away and the page
+  // says what state it is in, which is the picker's failure mode one route
+  // down. The marker is a token the stylesheet sets, so the answer is the
+  // browser's own rather than a guess about whether a request is still in
+  // flight -- and it is read again on load, because a stylesheet still
+  // arriving when the body exists has not failed yet.
+  function stylesheetArrived() {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue("--tbe-stylesheet").trim() !== "";
+  }
+  function wireTheme() {
     var root = document.documentElement;
     var toggle = document.getElementById("themeToggle");
     if (!toggle) return;
@@ -2876,6 +2911,17 @@ SHARED_THEME = """<meta name="color-scheme" content="light dark">
       toggle.setAttribute("aria-checked", String(dark));
       if (glyph) glyph.textContent = dark ? "\\u263E" : "\\u2600";
     }
+    if (!stylesheetArrived()) {
+      // Gone rather than inert, and the page says why it is plain text.
+      toggle.remove();
+      var note = document.getElementById("styleNote");
+      if (note) {
+        note.textContent = "This page\u2019s styling did not load, so it is plain"
+          + " text. Every price, time and restriction on it is still here.";
+        note.hidden = false;
+      }
+      return;
+    }
     paint(root.dataset.theme === "dark");
     toggle.hidden = false;
     toggle.addEventListener("click", function () {
@@ -2883,6 +2929,15 @@ SHARED_THEME = """<meta name="color-scheme" content="light dark">
       paint(dark);
       try { localStorage.setItem("tbe-theme", dark ? "dark" : "light"); } catch (e) { /* remembered for this page only */ }
     });
+  }
+  document.addEventListener("DOMContentLoaded", wireTheme);
+  window.addEventListener("load", function () {
+    // A page that was styled all along is left exactly as it is, so this
+    // only speaks when the switch is still hidden and the note still is.
+    var toggle = document.getElementById("themeToggle");
+    if (toggle && !toggle.hidden) return;
+    var note = document.getElementById("styleNote");
+    if (note && note.hidden) wireTheme();
   });
 </script>"""
 

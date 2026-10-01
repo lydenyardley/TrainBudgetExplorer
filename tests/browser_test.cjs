@@ -185,7 +185,8 @@ function requirePlaywright() {
  * The files a page asks for beyond itself, read from beside the page on disk.
  *
  * A page is served from memory, so a request it makes for anything else -- the
- * shared station-picker asset is the only one today -- has no directory to
+ * shared station-picker asset and the shared station stylesheet -- has no
+ * directory to
  * resolve against. The page names the asset in its own markup and the asset sits
  * beside the page's site root, so the reference is followed from the page rather
  * than guessed: whatever a page asks for by name is looked for up its own tree.
@@ -203,7 +204,7 @@ function sharedAssets(pages) {
     } catch (error) {
       continue;
     }
-    for (const match of html.matchAll(/<script[^>]+src="([^"]+)"/g)) {
+    for (const match of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="([^"]+)"/g)) {
       const name = path.basename(new URL(match[1], "http://x").pathname);
       if (files.has(name)) continue;
       let directory = path.dirname(entry.file);
@@ -240,12 +241,16 @@ function serve(bodies, assets = new Map()) {
       response.end("no such page");
       return;
     }
-    // The shared asset is JavaScript, not HTML: a script served as text/html is
+    // The shared documents are not HTML: a script served as text/html is
     // refused outright by a browser that sees a nosniff header anywhere above
-    // it, and this suite is about what the page does with the file.
+    // it, and a stylesheet served as anything but text/css is not applied at
+    // all. This suite is about what the page does with the file, so the file
+    // has to arrive as what it is.
     const type = pathname.endsWith(".js")
       ? "text/javascript; charset=utf-8"
-      : "text/html; charset=utf-8";
+      : pathname.endsWith(".css")
+        ? "text/css; charset=utf-8"
+        : "text/html; charset=utf-8";
     response.writeHead(200, { "content-type": type });
     response.end(body);
   });
@@ -3245,6 +3250,60 @@ async function runPage(browser, index, given, file, body, base) {
         JSON.stringify(firstUse)
       );
     }
+
+  // ADR-0047: the station route fetches one stylesheet, and a fetch can fail.
+  // The page's own answer is in its own bytes, so the question is not whether
+  // the page survives -- it does, because the rows travel inline -- but whether
+  // it is left offering a switch that cannot change a palette it does not have,
+  // which is the picker's "a control that opens nothing" one route down. The
+  // document is withheld on a second page in the same context, so the page
+  // under test keeps the styling every other check here is reading.
+  const WITHOUT_STYLE = [
+    "a page whose stylesheet does not arrive still lists its destinations",
+    "and it offers no theme switch it cannot deliver",
+    "and it says its styling did not load rather than looking broken",
+  ];
+  if (kind === "station") {
+    const bare = await context.newPage();
+    await bare.route("**/*.css", (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "no such stylesheet" })
+    );
+    await bare.goto(url);
+    const unstyled = await bare.evaluate(() => ({
+      rows: document.querySelectorAll("#rows tr[data-crs]").length,
+      summary: ((document.getElementById("summary") || {}).textContent || "").trim(),
+      prices: Array.from(document.querySelectorAll("#rows tr[data-crs]"))
+        .slice(0, 3)
+        .map((row) => (row.textContent || "").trim()),
+      switch: !!document.getElementById("themeToggle"),
+      note: (document.getElementById("styleNote") || {}).hidden,
+      noteText: ((document.getElementById("styleNote") || {}).textContent || "").trim(),
+      styled: getComputedStyle(document.documentElement)
+        .getPropertyValue("--tbe-stylesheet").trim(),
+    }));
+    check(
+      WITHOUT_STYLE[0],
+      unstyled.rows > 0 &&
+        /\d+ destinations?/.test(unstyled.summary) &&
+        unstyled.prices.every((text) => /\u00a3\d/.test(text)),
+      `${unstyled.rows} row(s), count line "${unstyled.summary}"`
+    );
+    check(
+      WITHOUT_STYLE[1],
+      unstyled.styled === "" && unstyled.switch === false,
+      `stylesheet marker "${unstyled.styled}", switch ${unstyled.switch ? "present" : "removed"}`
+    );
+    check(
+      WITHOUT_STYLE[2],
+      unstyled.note === false && /did not load/.test(unstyled.noteText),
+      unstyled.noteText || "(nothing said)"
+    );
+    await bare.close();
+  } else {
+    for (const name of WITHOUT_STYLE) {
+      check(name, notExercised("this route inlines its own stylesheet, so no request can fail"));
+    }
+  }
   } catch (error) {
     // A step that throws is a failed run, not a short one. The finally block
     // below reports whatever was checked, so this has to be carried out of the
