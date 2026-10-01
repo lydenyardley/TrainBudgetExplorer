@@ -4507,6 +4507,22 @@ class RunnerPassthroughTest(unittest.TestCase):
         # refusal -- not this line handing over the set they just declined.
         self.assertNotIn("--notices", self._command(notices=""))
 
+
+    def test_a_whole_network_run_asks_the_builder_for_this_machine_cores(self) -> None:
+        # Left at the builder's default of one worker, the 2,718-page set
+        # took over two and a half hours on this machine: each origin's page
+        # is independent and the work is CPU-bound, so one worker leaves
+        # every other core idle. The cap is eight because that is the
+        # builder's own default for --fast-all-origins, and nothing here has
+        # been measured past it.
+        command = self._command(all_origins=True)
+        self.assertIn("--workers", command)
+        workers = int(command[command.index("--workers") + 1])
+        self.assertEqual(workers, min(8, os.cpu_count() or 1))
+        # A single-origin run has one page to build, so a worker count says
+        # nothing there and passing one would only misreport the shape of the
+        # work.
+        self.assertNotIn("--workers", self._command(all_origins=False))
     def test_a_relative_demo_feed_path_is_still_synthetic(self) -> None:
         # The same folder arrives as "_demo_feed" on the command line and as an
         # absolute path from the default. Comparing the two as strings would let

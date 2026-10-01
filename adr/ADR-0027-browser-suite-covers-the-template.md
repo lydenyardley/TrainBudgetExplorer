@@ -109,7 +109,7 @@ the party unit, reporting the rows as unreachable, and then waiting thirty
 seconds for a button that could never appear.
 
 One check drives a state the page's own feed may not contain. Most real
-origents price no unrestricted Anytime Day Return at all — King's Cross has
+origins price no unrestricted Anytime Day Return at all — King's Cross has
 171 returns and none of those — so the check switches to whichever mode the
 payload says is empty. When a page prices all three, as the synthetic demo
 feed does, it empties one list in the page and switches to it, so the path is

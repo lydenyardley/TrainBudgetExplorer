@@ -87,3 +87,44 @@ network could present. Decisions 1–4 stand; what changes is the emphasis:
   same-day timetable refresh.
 - The invented-feed benchmark stays the instrument: rerun it whenever the
   search changes, and treat any superquadratic worsening as a stop signal.
+
+## Amended 1 October 2026: the real network is not that shape
+
+The two-day arithmetic above is a projection from an invented feed in which
+**every** origin prices about 2,500 destinations, and it is the whole of the
+reason this project did not publish its own network for a month. Measured
+against the real feed, the shape is nothing like it:
+
+| | invented feed (23 Sep) | real feed (1 Oct) |
+|---|---:|---:|
+| priced origins | 2,500 | **2,718** |
+| destinations per origin | ~2,500 each | **median 91, mean 116, max 851** |
+| one origin, with journeys | 543s | **94s to 110s**, and uncorrelated with its destination count |
+
+The search's superquadratic growth is real and decision 4 still stands. But it
+grows with the *work an origin asks for*, and the real network's origins are
+small: HPE prices 851 destinations and took 110s in isolation, ALG prices one
+and took 99s, and a median origin took 94s. The cost is the fixed timetable
+load, not the per-origin fan-out.
+
+Whole-network build, measured on the real feed with the national timetable,
+three workers on a 12-CPU machine:
+
+| | measured |
+|---|---:|
+| load before the first page | 279s |
+| first twenty pages | 79s |
+| steady state | **0.84 pages/s** |
+| whole set, extrapolated at that rate | **~54 min + 279s load** |
+
+So the honest cost of a whole-network build with journey times is about an hour
+and a half on a two-core runner, not two days, and the release that was held
+back on the two-day figure is affordable. ADR-0050 is the decision that follows.
+
+Decision 1 stands and is now the workflow's own setting: the full build is a
+scheduled batch rather than a per-push job. Decision 2 and decision 5 are
+superseded in practice -- the network is published with journeys, not
+prices-only -- because the per-origin cost turned out not to be what made
+prices-only attractive. Decision 3 still stands: no incremental per-origin
+rebuilds, and the homogeneity argument for them is unaffected by any of this.
+Decision 4 still stands: the search core is not rewritten.

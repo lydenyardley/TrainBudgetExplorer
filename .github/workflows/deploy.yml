@@ -216,14 +216,29 @@ jobs:
         # publish checklist §1 has confirmed, not to the project's default,
         # which has not been confirmed as monitored.
         #
-        # The bound is measured, not hoped for: 1m36s cold and 11s warm on the
-        # real feed, one origin, on the runner this runs on. Ten minutes is
-        # roughly four times the cold figure, which is enough for a busier
-        # runner and little enough that a build which has stopped making
-        # progress fails the day rather than occupying a runner until the job
-        # limit kills it. Raising it needs the measurement redone, not a
-        # hunch.
-        timeout-minutes: 10
+        # The bound is measured on the whole network, not on one origin. One
+        # origin is 1m36s cold and 11s warm, which is what this bound used to
+        # be set from; the release is now every priced station, and that is a
+        # different shape of work.
+        #
+        # Measured against the real feed with the national timetable, on a
+        # 12-CPU machine with three workers: 7,818,772 fares and 419,589
+        # schedules load in 279s before the first page, the first twenty pages
+        # then take 79s while the workers read their fare indexes, and the
+        # steady state is 0.84 pages/s. The real feed's origins are small --
+        # 2,718 of them, a median of 91 priced destinations and a mean of 116,
+        # against the roughly 2,500 each the invented uniform feed behind
+        # ADR-0024 was shaped like -- so per-origin cost does not grow with the
+        # destination count the way that ADR projected. The whole set
+        # extrapolates to about 54 minutes of page building plus the 279s load.
+        #
+        # GitHub's standard runner has 2 vCPUs, so two workers at roughly 0.28
+        # pages/s each put the set at about 81 minutes plus the load. 150
+        # minutes is nearly twice that: enough for a busier day, and little
+        # enough that a build which has stopped making progress fails rather
+        # than occupying a runner until the job limit kills it. Raising it
+        # needs the measurement redone, not a hunch.
+        timeout-minutes: 150
         if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
@@ -237,16 +252,38 @@ jobs:
           # is what supplies the journey times, so it is loaded for the date
           # being published rather than left out: without it the page's own
           # opening sentence would promise times it cannot show.
+          # Every priced station, not one of them. The release answers the
+          # product's premise -- where can we go from anywhere -- so a reader
+          # who arrives from any station finds a page there. The root is the
+          # chooser and a station lives at /from/<slug>/, which is the same
+          # contract the single-origin build already published, so this widens
+          # the coverage rather than changing the route model.
+          #
+          # The worker count is read from the runner rather than written down:
+          # the work is CPU-bound, so the useful worker count is the core
+          # count, and a runner with more cores than this repository's machine
+          # should get more workers for free.
           python build_demo_page.py \
             --feed feeds/fares \
             --timetable feeds/timetable \
             --knowledgebase feeds/knowledgebase \
             --date "$(date -u +%Y-%m-%d)" \
-            --origin GRA \
+            --all-origins \
+            --workers "$(python -c 'import os; print(max(2, os.cpu_count() or 2))')" \
             --out _site/index.html \
             --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
+
+      - name: Hold the site inside the byte budget
+        if: steps.feed_check.outputs.changed == 'true'
+        # A whole-network release is 498 MB of pages against a target of
+        # 800 MB, measured rather than projected (tools/page_bytes.py). Nothing
+        # else in this workflow can see that number grow: the manifest check
+        # counts routes, the journey check counts fields, and every one of
+        # them is still satisfied by a release twice the size. This is the one
+        # step that reads the bytes, and it refuses on its own.
+        run: python tools/page_bytes.py --site _site
 
       - name: Check the release manifest
         if: steps.feed_check.outputs.changed == 'true'
@@ -404,7 +441,7 @@ jobs:
             PAGES+=(_site/index.html _site/privacy/index.html)
             if [ -d _site/from ]; then
               PAGES+=(_site/from)
-              SWEEP="--sweep"
+              SWEEP="--sweep --max ${SWEEP_PAGES:-24}"
             fi
           fi
           npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}" $SWEEP

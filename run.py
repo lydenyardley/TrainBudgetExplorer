@@ -102,7 +102,12 @@ def build(args: argparse.Namespace) -> int:
     # "today" rather than an unfiltered mixture of permanent and overlay plans.
     cmd += ["--date", args.date or date.today().isoformat()]
     if args.all_origins:
-        cmd += ["--all-origins"]
+        # Each origin's page is independent and the work is CPU-bound, so the
+        # worker count is the core count. Left at the builder's default of one,
+        # the whole network took 2,718 / 0.28 pages/s -- over two and a half
+        # hours on this machine, and about a quarter of that with the cores
+        # this runner actually has.
+        cmd += ["--all-origins", "--workers", str(min(8, os.cpu_count() or 1))]
     if args.base_path:
         cmd += ["--base-path", args.base_path]
     # A real feed is a public build, and the builder refuses one that carries no
@@ -257,11 +262,18 @@ def main() -> int:
 
     if args.all_origins and not args.i_know_this_is_slow:
         # Guard the default path: `python run.py` must never silently start a
-        # hours-or-days build. The escape is one flag away (audit D1).
-        print("--all-origins builds one page per priced station, which at network "
-              "scale is a batch job measured in days (ADR-0024). Pass "
-              "--i-know-this-is-slow to run it anyway, or drop --all-origins for "
-              "the fast single-origin demo.", file=sys.stderr)
+        # build that takes the machine for an hour and a half. Measured on the
+        # real feed: 2,718 priced stations, and at roughly 0.28 pages/s per
+        # worker an eight-core machine finishes in about 20 minutes while a
+        # two-core one takes about 81. ADR-0024 projected days from an invented
+        # uniform feed and the real network is far kinder than that shape; the
+        # number here is the measured one. The escape is still one flag away
+        # (audit D1), because asking for it should be a decision.
+        print("--all-origins builds one page per priced station: 2,718 pages "
+              "against the real feed, measured at about 81 minutes on two cores "
+              "(ADR-0024, re-measured 1 October 2026; ADR-0050). Pass "
+              "--i-know-this-is-slow to run it anyway, or drop "
+              "--all-origins for the fast single-origin demo.", file=sys.stderr)
         return 2
 
     if not args.no_build:

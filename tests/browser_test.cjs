@@ -155,13 +155,31 @@ function expand(wanted) {
     else found.push(argument);
   }
   if (found.length > MAX_PAGES) {
+    // Evenly spread, not a prefix. The pages arrive in name order, so a prefix
+    // is the first N stations alphabetically and nothing after them: on a
+    // 2,718-page network --max 24 drove the A's and the B's and no station
+    // whose slug starts later than C. The sweep is here to find
+    // origin-specific template bugs, and a sample confined to one end of the
+    // alphabet cannot find one that only the far end has.
+    //
+    // Every MAX_PAGES-th page, which is deterministic, needs no seed, and
+    // always includes the first and last page of the list.
+    const step = found.length / MAX_PAGES;
+    const sample = [];
+    for (let index = 0; index < MAX_PAGES; index += 1) {
+      sample.push(found[Math.floor(index * step)]);
+    }
     // Loudly, because a bounded sweep that reads as a whole one is worse than
-    // no sweep: it would be a gate reporting on a sample and calling it the site.
+    // no sweep: it would be a gate reporting on a sample and calling it the
+    // site. The names are printed so a reader can see the spread rather than
+    // take the word for it.
     console.error(
-      `--max ${MAX_PAGES}: driving the first ${MAX_PAGES} of ${found.length} pages, ` +
-        `and ${found.length - MAX_PAGES} of them are not being tested.`
+      `--max ${MAX_PAGES}: driving ${sample.length} of ${found.length} pages, evenly ` +
+        `spread across the list rather than the first ${MAX_PAGES}. ` +
+        `${found.length - sample.length} of them are not being tested.`
     );
-    return found.slice(0, MAX_PAGES);
+    for (const page of sample) console.error(`  swept ${page}`);
+    return sample;
   }
   return found;
 }
