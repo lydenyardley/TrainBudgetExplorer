@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import pathlib
@@ -28,6 +29,7 @@ from atoc_timetable import TimetableDb
 from build_workers import (  # noqa: E402
     ONE_WORKER_FLOOR,
     PARENT_BYTES,
+    RESERVED_BYTES,
     WORKER_BYTES,
     free_memory_bytes,
     worker_budget,
@@ -5061,13 +5063,27 @@ class WorkerBudgetTest(unittest.TestCase):
             with self.subTest(free=free):
                 self.assertEqual(worker_budget(cores=12, free_bytes=free), 1)
 
-    def test_the_floor_sits_below_the_one_parallel_build_that_has_worked(self) -> None:
-        # The one parallel build with a measured outcome was four workers with
-        # 8 GB free. A floor above that would turn away the only configuration
-        # this project knows to work, which is how a measured ceiling stops
-        # being a ceiling and becomes a superstition.
-        self.assertLess(8 * self.GB, ONE_WORKER_FLOOR + self.GB)
-        self.assertGreater(8 * self.GB, ONE_WORKER_FLOOR)
+    def test_the_floor_is_the_larger_phase_and_not_the_sum_of_both(self) -> None:
+        # The parent loads both feeds and prices every origin; the workers then
+        # hold one timetable each. `build_demo_page.py` releases the parent's
+        # databases before the pool starts, so the two phases are sequential and
+        # the machine needs room for the larger, not for both at once. The sum
+        # was the right formula while the parent held its databases for the
+        # whole build, and it is 900 MB too high now.
+        self.assertEqual(
+            ONE_WORKER_FLOOR,
+            max(PARENT_BYTES, WORKER_BYTES) + RESERVED_BYTES,
+        )
+        self.assertLess(ONE_WORKER_FLOOR,
+                        PARENT_BYTES + WORKER_BYTES + RESERVED_BYTES)
+
+    def test_the_floor_still_covers_the_both_phases_case(self) -> None:
+        # The floor is a floor, not a target: a machine with less free than this
+        # cannot run the parent and the workers at all, so the build drops to
+        # one. Checked against a whole number of gigabytes because the reserve
+        # and the worker cost are both rounded up from a measurement.
+        self.assertLessEqual(ONE_WORKER_FLOOR, 7 * 10 ** 9)
+        self.assertGreater(ONE_WORKER_FLOOR, 6 * 10 ** 9)
 
     def test_the_core_count_still_bounds_it_from_below(self) -> None:
         # A two-core runner cannot use four workers whatever it has free.
@@ -5103,57 +5119,110 @@ class WorkerBudgetTest(unittest.TestCase):
         self.assertTrue(free is None or (isinstance(free, int) and free > 0))
 
     def test_the_figures_the_budget_is_built_from_are_the_measured_ones(self) -> None:
-        # The parent was measured at 4,110 MB and that stands. The worker floor
-        # here is the withdrawn 852 MB, not a current measurement: it came from
-        # the tool measuring a database it had already freed. The real figure is
-        # 2,188 MB, so this assertion no longer says the constant is justified --
-        # it says the constant must not be lowered, which is the half of the
-        # claim that still holds while WORKER_BYTES is deliberately unchanged.
-        # Raising it is a decision that needs a real four-worker build, not an
-        # edit to this test; see ADR-0057.
-        self.assertGreaterEqual(PARENT_BYTES, 4_110 * 10 ** 6)
-        self.assertGreaterEqual(WORKER_BYTES, 852 * 10 ** 6)
+        # Both constants are measurements now rather than recollections, so this
+        # pins each in both directions. One below the figure it came from hands
+        # out workers the machine cannot hold -- which is how this constant was
+        # wrong by a factor of 2.4 for as long as it stood at 900 MB. One well
+        # above refuses builds that would have finished.
+        #
+        # A little headroom is expected, because both are rounded up: the parent
+        # is 4,017 MB measured here against 4,110 recorded. Ten per cent is
+        # rounding up and not inventing, and it is what makes this catch a
+        # constant doubled by an edit that was not looking for it.
+        mb = 10 ** 6
+        self.assertGreaterEqual(PARENT_BYTES, 4_110 * mb)
+        self.assertLess(PARENT_BYTES, 4_110 * 1.1 * mb)
+        self.assertGreaterEqual(WORKER_BYTES, 2_188 * mb)
+        self.assertLess(WORKER_BYTES, 2_188 * 1.1 * mb)
 
     def test_four_workers_fitted_and_eight_did_not(self) -> None:
-        # The reconciliation ADR-0057 now records, held as arithmetic rather
-        # than prose. A worker measured at 2,188 MB through `init_worker` and
-        # `build_page_job`; the parent peaks at 4,110 MB and does not release
-        # it (see the test below). Four workers plus the parent is 12,858 MB
-        # against this machine's 15.8 GB, which is why the four-worker build in
-        # the committed log finished. Eight is 21,596 MB, which is why the
-        # eight-worker log holds a MemoryError rather than a page.
+        # The reconciliation ADR-0057 records, held as arithmetic rather than
+        # prose. A worker measures 2,188 MB through `init_worker` and
+        # `build_page_job`. The parent is not added: it releases its databases
+        # before the pool starts, so the workers are the whole of the tree's
+        # demand while they run.
+        #
+        # Four workers is 8,752 MB against this machine's 15.8 GB, which is why
+        # the four-worker build in the committed log finished. Eight is
+        # 17,504 MB, which is why the eight-worker log holds a MemoryError
+        # rather than a page. Note that four workers no longer fit in the 8 GB
+        # the old records describe: that observation predates the corrected
+        # worker figure and cannot be reproduced on today's feed.
         worker = 2_188
         machine = 15_800
-        self.assertLess(4 * worker + PARENT_BYTES // 10 ** 6, machine)
-        self.assertGreater(8 * worker + PARENT_BYTES // 10 ** 6, machine)
+        self.assertLess(4 * worker, machine)
+        self.assertGreater(8 * worker, machine)
+        self.assertGreater(4 * WORKER_BYTES, 8 * 10 ** 9)
 
-    def test_the_parent_still_holds_its_databases_when_the_pool_starts(self) -> None:
-        # `worker_budget` declines to divide free memory by a worker's cost, and
-        # one of its two stated reasons is that the parent has let most of its
-        # 4.1 GB go before the workers start producing pages. That is not what
-        # the source does: `fares` and `timetable` are function locals that stay
-        # bound across the `ProcessPoolExecutor` branch, and nothing drops them.
-        # If someone later adds the `del` that would make the comment true, this
-        # fails and the comment has to be rewritten with it -- which is the
-        # point. A budget premise that can be changed silently by an unrelated
-        # edit is not a premise.
-        source = (pathlib.Path(__file__).resolve().parent.parent
-                  / "build_demo_page.py").read_text(encoding="utf-8")
-        # Anchored on `out_dir = out.parent`, which is unique, rather than on
-        # `if args.all_origins:`, which is not: the file has an earlier branch
-        # of that name that decides how to load fares, and slicing from there
-        # sweeps in the prices-only branch's `timetable = None` -- which is that
-        # branch declining to load a timetable at all, not a release of one.
-        start = source.index("        out_dir = out.parent")
-        before = source[start:source.index("ProcessPoolExecutor(")]
-        releases = [statement for statement in
-                    ("del fares", "del timetable", "fares = None",
-                     "timetable = None", "gc.collect()")
-                    if statement in before]
-        self.assertEqual(
-            releases, [],
-            f"the parent now releases memory before the pool starts ({releases}), "
-            "so worker_budget's docstring is wrong until it is rewritten")
+    @staticmethod
+    def _worker_branch() -> tuple[ast.AST, ast.AST]:
+        """The two halves of the `if workers == 1` branch in the builder.
+
+        Returns (in-process body, pool body). Found through the AST rather than
+        by slicing the text, because the text of a 3,000-line module offers far
+        too many places to start from and none of them are the right one.
+        """
+        tree = ast.parse((pathlib.Path(__file__).resolve().parent.parent
+                          / "build_demo_page.py").read_text(encoding="utf-8"))
+        found = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.If)
+            and ast.unparse(node.test) in ("workers == 1", "max(1, args.workers) == 1")
+        ]
+        # Two sites assert on `workers`: the all-origins branch, which renders
+        # in-process or in the pool, and the fast path's own default. Only the
+        # first has a pool in its `orelse`.
+        with_pool = [node for node in found if node.orelse]
+        assert len(with_pool) == 1, f"expected one worker-count branch, got {len(with_pool)}"
+        branch = with_pool[0]
+        return branch.body, branch.orelse
+
+    @staticmethod
+    def _deleted_names(body: list[ast.stmt]) -> set[str]:
+        names: set[str] = set()
+        for node in ast.walk(ast.Module(body=list(body), type_ignores=[])):
+            if isinstance(node, ast.Delete):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        names.add(target.id)
+        return names
+
+    def test_the_pool_branch_releases_the_databases_the_workers_do_not_need(self) -> None:
+        # The budget divides free memory by a worker's cost and does not add the
+        # parent's, because `build_demo_page.py` drops `fares` and `timetable`
+        # before the pool starts. That premise lives in one place in the source,
+        # and if the release is moved, narrowed or deleted the division starts
+        # overcounting, so a machine gets more workers than it can hold. So the
+        # premise is pinned where it is written.
+        _in_process, pool = self._worker_branch()
+        released = self._deleted_names(pool)
+        self.assertIn("fares", released)
+        self.assertIn("timetable", released)
+
+    def test_the_in_process_branch_keeps_the_databases_it_renders_from(self) -> None:
+        # The other half, and the one a careless reader of the test above would
+        # break. With one worker the build renders in this process and puts both
+        # objects straight into `_WORKER`, so releasing them there would delete
+        # the databases the build is about to use. No number in this file can
+        # catch that; only the placement can.
+        in_process, _pool = self._worker_branch()
+        # Structurally rather than by text: `ast.unparse` normalises quotes, so
+        # a test written against the source's own spelling fails on `"` vs `'`
+        # and says nothing about the code.
+        handed = {
+            (node.targets[0].slice.value, node.value.id)
+            for node in ast.walk(ast.Module(body=list(in_process), type_ignores=[]))
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Subscript)
+            and isinstance(node.targets[0].value, ast.Name)
+            and node.targets[0].value.id == "_WORKER"
+            and isinstance(node.targets[0].slice, ast.Constant)
+            and isinstance(node.value, ast.Name)
+        }
+        self.assertIn(("fares", "fares"), handed)
+        self.assertIn(("timetable", "timetable"), handed)
+        self.assertEqual(self._deleted_names(in_process), set())
 
 
 class RunnerWorkerCountTest(unittest.TestCase):

@@ -87,35 +87,26 @@ PARENT_BYTES = 4_400 * MB
 
 #: What one worker costs for as long as it is assembling pages.
 #:
-#: The figures this constant was built from -- a 325 MB initialiser and an 852 MB
-#: worker sampled mid-build -- are withdrawn. Both came from
-#: `tools/measure_build_memory.py`, which loaded the national timetable without
-#: keeping a reference to it, so the sample read the arenas Python had already
-#: freed rather than the memory the load held. Measured properly, one worker
-#: holds 2,100 MB after `init_worker` and 2,188 MB assembling pages.
+#: Measured at 2,188 MB private, through the pool's own `init_worker` and
+#: `build_page_job` rather than a re-impression of them
+#: (`tools/measure_worker_pages.py`). It was 900 MB, and the two figures it came
+#: from were both measurements of a database the tool had already freed: a 325 MB
+#: initialiser and an 852 MB worker, against a real 2,100 MB and 2,188 MB.
 #:
-#: So this constant is 2.4x smaller than the figure it was derived from, and
-#: `worker_budget` will hand out more workers than the machine can hold. It is
-#: left at 900 MB deliberately. The 2.9 GB four-worker tree that appeared to
-#: contradict the corrected figure is explained in ADR-0057: its own largest
-#: process was 1.2 GB, so it was sampled while the pool was still parsing, and
-#: it was never a ceiling for a finished worker. The arithmetic now agrees at
-#: both four workers (12,858 MB, which fits) and eight (21,596 MB, which is the
-#: `MemoryError` in the eight-worker log).
+#: This is the whole of a worker's cost, because a worker parses the national
+#: timetable itself and keeps it for every page it builds. It is not a sum with
+#: the parent: `build_demo_page.py` releases `fares` and `timetable` before the
+#: pool starts, so the parent runs first and the workers run second. Measured
+#: on the real feed, that release sheds 4,000 MB of the 4,017 MB held and leaves
+#: the parent 36 MB.
 #:
-#: Raising this to the measured 2,200 MB would move `ONE_WORKER_FLOOR` from
-#: 7.3 GB to 8.6 GB, which turns a four-worker build into a one-worker build on
-#: a 15.8 GB machine for anyone with a desktop open. That is a decision about
-#: every machine and about CI, and it wants a real four-worker run rather than a
-#: corrected comment. See ADR-0057, and `tools/measure_worker_pages.py`.
-WORKER_BYTES = 900 * MB
+#: See ADR-0057 for the two figures this replaced and for why the four-worker
+#: tree that appeared to contradict them was a sample taken mid-parse.
+WORKER_BYTES = 2_200 * MB
 
 #: What the machine needs for everything that is not the build: the browser a
 #: reader is previewing in, the editor, the OS. A build that starves those
-#: fails in a way that reads as the build's fault. Set at 2 GB rather than a
-#: rounder 3 so that the one parallel build with a measured outcome -- four
-#: workers with 8 GB free, observed twice -- clears the floor below instead of
-#: being turned away by it.
+#: fails in a way that reads as the build's fault.
 RESERVED_BYTES = 2_000 * MB
 
 #: The largest count measured to finish a whole-network build on a 15.8 GB
@@ -123,10 +114,16 @@ RESERVED_BYTES = 2_000 * MB
 #: says there is not, and the measurement is what this file trusts.
 MAX_WORKERS = 4
 
-#: Below this much free memory the build drops to a single worker. It is the
-#: parent plus one worker plus what the machine needs for itself, which is the
-#: smallest parallel build that can finish at all.
-ONE_WORKER_FLOOR = PARENT_BYTES + WORKER_BYTES + RESERVED_BYTES
+#: Below this much free memory the build drops to a single worker.
+#:
+#: The larger of the two phases, not their sum, plus what the machine needs for
+#: itself. The parent loads both feeds and prices every origin; the workers then
+#: hold one timetable each. Those are sequential -- `build_demo_page.py` releases
+#: the parent's databases before the pool starts -- so a machine needs room for
+#: whichever is bigger, and counting both at once would refuse builds this
+#: machine can finish. The sum was correct while the parent held its databases
+#: for the whole build; it is 7.3 GB as a sum and 6.4 GB here.
+ONE_WORKER_FLOOR = max(PARENT_BYTES, WORKER_BYTES) + RESERVED_BYTES
 
 
 def free_memory_bytes() -> int | None:
@@ -176,29 +173,40 @@ def worker_budget(cores: int | None = None, free_bytes: int | None = None) -> in
     pool still builds, one page at a time, and saying so is better than
     refusing to build.
 
-    The middle ceiling is a single step rather than a division, and that is
-    deliberate. A division would ask a question this file cannot answer
-    honestly, because `WORKER_BYTES` is smaller than a real worker by a factor
-    of 2.4 (see its comment), and dividing free memory by a figure known to be
-    too low hands out more workers than the machine can hold. The step asks the
-    one question that has a measured answer -- is there room for the smallest
-    parallel build -- and otherwise trusts the ceiling, which is the largest
-    count observed to finish.
+    The middle ceiling is a division by `WORKER_BYTES`, and that is only
+    sound because the divisor is a measurement: one worker holds 2,200 MB,
+    measured through the pool's own `init_worker` and `build_page_job`. It was
+    not sound when this function refused to divide, and the refusal was right
+    for the wrong-looking reason -- `WORKER_BYTES` was 900 MB while a worker
+    held 2,188, so a division would have handed out roughly twice the workers
+    the machine could hold.
 
-    Note that the parent is still holding its own `fares` and `timetable` when
-    this returns and when the pool starts: `build_demo_page.py` keeps both in
-    locals across the `ProcessPoolExecutor` branch and never drops them. So the
-    step cannot be a division either -- the parent is committed for the whole
-    build, and `PARENT_BYTES` is counted for that reason.
+    The parent is not part of the divisor because it is not concurrent with the
+    workers. `build_demo_page.py` releases `fares` and `timetable` before the
+    pool starts -- the fare indexes the workers restore are already on disk, and
+    each worker parses the timetable itself -- which sheds 4,000 MB of the
+    4,017 MB the parent held. So the machine runs the parent first and the
+    workers second, and only the workers are counted here. `ONE_WORKER_FLOOR`
+    covers the other phase.
 
     A caller that passes ``free_bytes`` has already read it.
     """
     cores = cores or os.cpu_count() or 1
     if free_bytes is None:
         free_bytes = free_memory_bytes()
-    if free_bytes is not None and free_bytes < ONE_WORKER_FLOOR:
+    if free_bytes is None:
+        # The platform will not say. The measured ceiling is a better answer
+        # than the one worker a zero would produce.
+        return max(1, min(cores, MAX_WORKERS))
+    if free_bytes < ONE_WORKER_FLOOR:
+        # Not even the smallest parallel build fits. One worker still builds,
+        # one page at a time, and that beats refusing to build.
         return 1
-    return max(1, min(cores, MAX_WORKERS))
+    # `int` because a caller that passes a float count of gigabytes -- which is
+    # the natural thing to write -- would otherwise get a float back, and
+    # ProcessPoolExecutor is handed that float as its worker count.
+    affordable = int((free_bytes - RESERVED_BYTES) // WORKER_BYTES)
+    return max(1, min(cores, MAX_WORKERS, affordable))
 
 
 def build_page_job(job: dict) -> tuple[str, str, str]:

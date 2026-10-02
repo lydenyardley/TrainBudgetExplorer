@@ -1,30 +1,26 @@
 """Measure the peak of one pool worker while it is assembling pages.
 
-`build_workers.WORKER_BYTES` is 900 MB, and its own comment says where that came
-from: "The initialiser measures 325 MB and the largest worker sampled mid-build
-held 852 MB, so this is the upper of the two rather than the reassuring one."
+`build_workers.WORKER_BYTES` is 2,200 MB, from a worker measured at 2,188 MB
+through the functions below. It was 900 MB, and both of the figures that
+constant came from -- a 325 MB initialiser and an 852 MB worker -- were
+measurements of a database the measuring tool had already freed. See ADR-0057
+for that, and for why the four-worker ceiling cannot be re-measured on a 16 GB
+machine.
 
-The initialiser figure is re-derivable in-process and
-`tools/measure_build_memory.py` re-derives it on every run. The 852 MB is not: it
-came from sampling a real four-worker build, and the timetable index that build
-read was 14,468 schedules and 526,625 calling points. It is now 44,944 and
-1,341,600 -- three times the size -- so the number the budget leans on hardest
-is the one measured against the oldest data. Re-measuring it the obvious way
-needs about 8 GB free and two hours.
-
-This closes the gap without either. A pool worker does two things:
-`init_worker` restores the shared fare metadata and parses the whole national
-timetable, and then `build_page_job` assembles pages from jobs. Both happen in
-one process, so both happen here, through the very functions the pool calls --
-this measures the worker's body rather than a re-impression of it.
+This closes the gap without a whole-network build. A pool worker does two
+things: `init_worker` restores the shared fare metadata and parses the whole
+national timetable, and then `build_page_job` assembles pages from jobs. Both
+happen in one process, so both happen here, through the very functions the pool
+calls -- this measures the worker's body rather than a re-impression of it.
 
 What it deliberately does not do is restore a timetable from a pickle. The
-single-origin build path does that, and it costs far more memory than parsing
-does -- restoring GRN's focused cache alone reaches 859 MB private before a
-single page is assembled, where parsing the whole feed reaches 338 MB. A worker
-never pays that: `init_worker` passes no cache path. So a number taken from a
-single-origin build would overstate a worker by several hundred megabytes, and
-this is written to avoid exactly that.
+single-origin build path does, and it is cheaper than parsing, not dearer:
+restoring GRN's focused cache reaches about 859 MB private before a page is
+assembled, where parsing the whole feed holds about 2,100 MB. So a figure taken
+from a single-origin build would *understate* a real worker by more than a
+gigabyte, which is the more dangerous direction of the two -- it looks safe.
+`init_worker` passes no cache path and a worker never gets one, so the number
+this tool prints is the number a worker pays.
 
     python tools/measure_worker_pages.py --origins GRN,LCN
 """

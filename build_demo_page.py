@@ -21,6 +21,7 @@ import hashlib
 import html
 import json
 import functools
+import gc
 import os
 import pickle
 import re
@@ -3296,6 +3297,26 @@ def main(argv: list[str] | None = None) -> int:
             # order, so a slow early station cannot hide progress on the rest.
             from build_workers import build_page_job, init_worker
             from concurrent.futures import ProcessPoolExecutor, as_completed
+
+            # The parent is finished with every database it loaded. The fare
+            # indexes the workers restore are on disk by now, and each worker
+            # parses the national timetable itself in `init_worker`, so nothing
+            # below hands either object across the process boundary. Holding
+            # 4.1 GB here while four workers hold 8.7 GB is the peak that
+            # decides how many workers this machine can run at all -- and it is
+            # a peak the build pays for nothing.
+            #
+            # Pool-only, and that is not tidiness. The `workers == 1` branch
+            # above puts both names into `_WORKER` and renders in this process,
+            # so releasing them there would delete the databases the build is
+            # about to use. From here the all-origins branch returns without
+            # naming either again.
+            #
+            # `gc.collect` because the fares are millions of small objects and
+            # CPython returns their arenas when they are freed, not when the
+            # reference count happens to reach zero.
+            del fares, timetable, single_timetable
+            gc.collect()
 
             with ProcessPoolExecutor(
                 workers,
