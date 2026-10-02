@@ -28,7 +28,14 @@ subprocess.run(["git", "checkout", "--", "page_templates.py", "build_demo_page.p
                 "README.md", "adr/ADR-0055-the-runner-builds-what-the-reader-will-ask-for.md"],
                cwd=ROOT, check=True)
 
-for script in ("c1_columns.py", "c1b_css.py", "c2_cardnote.py", "c2b_drawer_listener.py", "c3_distill.py", "c4_shortlist.py", "c4b_shortlist_wiring.py", "c5_expander.py", "c6_table_width.py", "c7_picker.py", "c7b_slot.py", "c7c_picker_place.py", "c8_runner.py", "c9_fixture.py", "c10_chip_button.py", "c11_panel_wrap.py", "c12_bar_above_count.py", "c13_escape.py", "r1_real_feed_fixes.py", "r2_count_line.py", "r3_note_tests.py", "w6_whole_network_rate.py", "w7_rate_remainder.py", "w1_worker_budget.py", "w2_run_workers.py", "w3_deploy_workers.py", "w4_runner_notice.py", "w5_docs.py", "t1_tests.py", "t2_tests.py", "t3_tests.py", "t4_tests.py", "t5_tests.py", "t6_worker_tests.py"):
+for script in ("c1_columns.py", "c1b_css.py", "c2_cardnote.py", "c2b_drawer_listener.py", "c3_distill.py", "c4_shortlist.py", "c4b_shortlist_wiring.py", "c5_expander.py", "c6_table_width.py", "c7_picker.py", "c7b_slot.py", "c7c_picker_place.py", "c8_runner.py", "c9_fixture.py", "c10_chip_button.py", "c11_panel_wrap.py", "c12_bar_above_count.py", "c13_escape.py", "r1_real_feed_fixes.py", "r2_count_line.py", "r3_note_tests.py", "w6_whole_network_rate.py", "w7_rate_remainder.py", "w1_worker_budget.py", "w2_run_workers.py", "w3_deploy_workers.py", "w4_runner_notice.py", "w5_docs.py", "t1_tests.py", "t2_tests.py", "t3_tests.py", "t4_tests.py", "t5_tests.py", "t6_worker_tests.py",
+                # This pass: the five defects found by looking at a page.
+                # n1 narrow rows, n2 the railcard list, n3 the price note,
+                # n4 the journey facts, n5 the chip count, n6/n7/n8 their
+                # checks, n9 this registration.
+                "n1_narrow_rows.py", "n2_railcard_cards.py", "n3_was_ladder.py",
+                "n4_journey_facts.py", "n5_chip_space.py", "n6_tests.py",
+                "n7_browser.py", "n8_railcard_checks.py"):
     normalise_page()
     print("--", script)
     result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)

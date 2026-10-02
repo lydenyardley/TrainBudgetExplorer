@@ -1570,18 +1570,34 @@ def build_payload(
         crs: str,
         one,
         *,
-        with_journey: bool = True,
+        with_departures: bool = True,
         quality: str,
         journey_db: TimetableDb | None = timetable,
     ) -> dict:
-        journey = (
-            journey_db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
-            if journey_db and with_journey
-            else None
-        )
+        # The journey belongs to the origin and the destination, not to the
+        # ticket type, so it is read once per destination from the first
+        # timetable this build holds that has one: the row's own, then the
+        # page's. It used to be read from the row's own timetable only, so a
+        # destination three fare lists reach carried three different answers,
+        # and the cheapest list kept the one belonging to the fare that won.
+        # Where the cheapest fare is an advance single, that is the list built
+        # without a timetable, so the row said no service about a destination
+        # the same payload prices a 45-minute direct journey to.
+        searched = (journey_db,) if journey_db is timetable else (journey_db, timetable)
+        journey = None
+        for db in searched:
+            if db is None:
+                continue
+            journey = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
+            if journey:
+                break
+        # The departures do not fall back. They are the times this fare is good
+        # on, and an advance single's are only knowable from the separate
+        # outbound-single timetable; a return-set train listed under an advance
+        # single would be a time the reader cannot travel on that ticket.
         options = (
             journey_db.departures(origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit)
-            if journey_db and with_journey
+            if journey_db and with_departures
             else []
         )
         # Q2 (ADR-0045): a journey with a change is where a split ticket
@@ -1659,8 +1675,11 @@ def build_payload(
             "journeyState": (
                 "found"
                 if journey
+                # The build has no timetable to read, rather than this row's
+                # list not having one: the search above is what decides it, and
+                # it is the same search that decided `journey`.
                 else "no timetable in this build"
-                if journey_db is None
+                if all(db is None for db in searched)
                 else f"no service on {day.isoformat()}" if day
                 else "no service in this timetable"
             ),
@@ -1680,7 +1699,7 @@ def build_payload(
         destination_row(
             crs,
             one,
-            with_journey=single_timetable is not None,
+            with_departures=single_timetable is not None,
             quality="outbound single",
             journey_db=single_timetable,
         )
@@ -1801,7 +1820,8 @@ def build_payload(
         "singleDestinations": single_destinations,
         "anytimeDestinations": anytime_destinations,
         "singleJourneyNote": (
-            "Journey times are currently loaded for the return set; single-mode rows may show fares without times."
+            "Single fares are timed from the same timetable as the returns, because "
+            "this build loaded no separate outbound-single timetable."
             if single_timetable is None and timetable is not None
             else None
         ),
