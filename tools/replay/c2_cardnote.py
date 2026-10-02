@@ -385,3 +385,15 @@ patch(
         (OLD_DIALOG_CSS, NEW_DIALOG_CSS),
     ],
 )
+
+
+# The tests this change rewrote were rewritten by hand and the rewrite was never
+# made a patch script. That is what stopped the chain at r3_note_tests.py, whose
+# first anchor is a line only the rewrite produces. It lives in its own file
+# because it is eighty lines, and it is appended here rather than placed at the
+# head of this one so that the order of edits inside this script stays the order
+# they were made in.
+import runpy  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+runpy.run_path(str(_Path(__file__).resolve().parent / "c2_cardnote_tests.py"), run_name="__main__")
