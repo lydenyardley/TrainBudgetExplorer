@@ -124,7 +124,10 @@ if __name__ == "__main__":
                     # checkout holds, and name what it could not land. p2 the
                     # budget floor, in the page, in the checks that reach it,
                     # and in the test that pins the parser into the cache key.
-                    "p1_replay_driver.py", "p2_budget_floor.py"):
+                    "p1_replay_driver.py", "p2_budget_floor.py",
+                    # p3 the browser check that judged a restriction condition
+                    # by how it was spelled rather than by what it said.
+                    "p3_condition_rule.py"):
         normalise_page()
         print("--", script)
         result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
