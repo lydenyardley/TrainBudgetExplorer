@@ -251,3 +251,24 @@ patch(
         (OLD_SPLIT, NEW_SPLIT),
     ],
 )
+
+# The fare-code column became a fare-type cell, and the browser suite's wrap
+# check selects that column by class name. Both renames -- the page's and the
+# suite's -- were made by hand during the pass rather than by this script, so
+# the suite's rename was in no patch script at all. Replaying from before the
+# pass then produced a suite still asking for `.ticket-code` where the page had
+# already moved on, and the next script in the chain, r1, refused to apply
+# because its anchor expected the renamed selector. The chain stopped there and
+# stayed there: `.ticket-code` names nothing in the page, so the check silently
+# selected no column and nobody reading a green run would have known.
+#
+# This is the edit that was missing. It is here rather than in a later script
+# because this is the script that made the change it follows from.
+OLD_WRAP_SELECTOR = (
+    '        ...document.querySelectorAll("#rows td.num, #rows .ticket-code"),'
+)
+NEW_WRAP_SELECTOR = (
+    '        ...document.querySelectorAll("#rows td.num, #rows .fare-type"),'
+)
+
+patch("tests/browser_test.cjs", [(OLD_WRAP_SELECTOR, NEW_WRAP_SELECTOR)])
