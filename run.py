@@ -57,6 +57,7 @@ PORT_DEFAULT = 8741
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME  # noqa: E402
+from build_workers import free_memory_bytes, worker_budget  # noqa: E402
 
 
 def _feed_exists(path: Path) -> bool:
@@ -105,11 +106,27 @@ def build(args: argparse.Namespace) -> int:
     cmd += ["--date", args.date or date.today().isoformat()]
     if args.all_origins:
         # Each origin's page is independent and the work is CPU-bound, so the
-        # worker count is the core count. Left at the builder's default of one,
-        # the whole network took 2,718 / 0.28 pages/s -- over two and a half
-        # hours on this machine, and about a quarter of that with the cores
-        # this runner actually has.
-        cmd += ["--all-origins", "--workers", str(min(8, os.cpu_count() or 1))]
+        # worker count would be the core count if cores were the only thing
+        # that mattered. They are not: every worker is handed the whole
+        # national timetable, and min(8, cpu_count()) -- eight, here -- dies
+        # with a MemoryError in the pool initialiser after five minutes,
+        # reproducibly, having written no pages. The budget measures what a
+        # worker costs and asks the machine what it has, and caps the answer at
+        # the largest count measured to finish.
+        #
+        # Measured here, real feed, four workers: the feeds load in 145s, the
+        # pool takes a further 83s, and the pages then arrive at 0.77 pages/s,
+        # which puts the whole 2,712 at about 63 minutes from a cold start.
+        # Left at the builder's default of one worker that is 2,718 / 0.19 --
+        # nearly four hours.
+        # The free-memory figure is read once and named, because the count it
+        # produces is the number a reader would ask about and "1 worker" on its
+        # own does not say whether that was a choice or a shortage.
+        free = free_memory_bytes()
+        workers = worker_budget(free_bytes=free)
+        print(f"Building the whole network on {workers} worker(s)"
+              + (f", with {free / 1e9:.1f} GB free." if free is not None else "."))
+        cmd += ["--all-origins", "--workers", str(workers)]
     if args.base_path:
         cmd += ["--base-path", args.base_path]
     # A real feed is a public build, and the builder refuses one that carries no
@@ -305,11 +322,16 @@ def main() -> int:
 
     # The default is now the whole network, and this says what that costs
     # before it starts rather than after it has finished. Measured on the real
-    # feed: 2,718 priced stations at roughly 0.28 pages/s per worker, so about
-    # 20 minutes on eight cores and 81 on two (ADR-0024, re-measured 1 October
-    # 2026; ADR-0050). The fast single-origin page is still one flag away,
-    # because a build of one station is the right tool for working on one
-    # station and the wrong thing to double-click.
+    # feed with the national timetable, 2 October 2026, on this machine: 2,712
+    # priced stations at 0.19 pages/s per worker, so an hour of building per
+    # worker and about 63 minutes on the four workers the budget below chooses.
+    # A single worker is most of a working day. The old figure -- 20 minutes on
+    # eight cores -- was measured against a feed without the national timetable
+    # and an eight-worker build that now dies with a MemoryError, so it is
+    # withdrawn rather than qualified (ADR-0024, ADR-0050, ADR-0055). The fast
+    # single-origin page is still one flag away, because a build of one station
+    # is the right tool for working on one station and the wrong thing to
+    # double-click.
     if not args.all_origins and args.origin is None and not args.no_build:
         args.all_origins = True
         args.i_know_this_is_slow = True

@@ -22,11 +22,12 @@ from normalize import normalise_page  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent.parent
 CACHE = Path(__file__).resolve().parent
 
-subprocess.run(["git", "checkout", "--", "page_templates.py", "build_demo_page.py", "run.py", "make_synthetic_feed.py",
+subprocess.run(["git", "checkout", "--", "page_templates.py", "build_demo_page.py", "run.py",
+                "make_synthetic_feed.py", "build_workers.py", ".github/workflows/deploy.yml",
                 "tests/test_build_demo_page.py", "tests/test_atoc_fares.py"],
                cwd=ROOT, check=True)
 
-for script in ("c1_columns.py", "c1b_css.py", "c2_cardnote.py", "c2b_drawer_listener.py", "c3_distill.py", "c4_shortlist.py", "c4b_shortlist_wiring.py", "c5_expander.py", "c6_table_width.py", "c7_picker.py", "c7b_slot.py", "c7c_picker_place.py", "c8_runner.py", "c9_fixture.py", "c10_chip_button.py", "c11_panel_wrap.py", "c12_bar_above_count.py", "c13_escape.py", "t1_tests.py", "t2_tests.py", "t3_tests.py", "t4_tests.py", "t5_tests.py"):
+for script in ("c1_columns.py", "c1b_css.py", "c2_cardnote.py", "c2b_drawer_listener.py", "c3_distill.py", "c4_shortlist.py", "c4b_shortlist_wiring.py", "c5_expander.py", "c6_table_width.py", "c7_picker.py", "c7b_slot.py", "c7c_picker_place.py", "c8_runner.py", "c9_fixture.py", "c10_chip_button.py", "c11_panel_wrap.py", "c12_bar_above_count.py", "c13_escape.py", "w1_worker_budget.py", "w2_run_workers.py", "w3_deploy_workers.py", "w4_runner_notice.py", "t1_tests.py", "t2_tests.py", "t3_tests.py", "t4_tests.py", "t5_tests.py", "t6_worker_tests.py"):
     normalise_page()
     print("--", script)
     result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
