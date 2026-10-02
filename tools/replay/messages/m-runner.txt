@@ -1,0 +1,28 @@
+feat(run): build the whole network by default, and never serve a stale page
+
+`python run.py` built one station, so the page a contributor opened had a
+station name in its heading that was plain text: a single-origin build honestly
+refuses to render a picker with nowhere to go. The default is the network now,
+and it prints the measured cost before it starts -- about 20 minutes on eight
+cores, 81 on two -- and says that the next run serves what this one writes.
+`--origin GRA` is still the fast path and the notice names it.
+
+A build older than its sources is rebuilt as well. A page written before the
+last commit is a page from before the last commit, and nothing on the page says
+so, which is how a review happens against yesterday's fares. The check
+compares the builder, the template and the modules they import against the
+release manifest, because the manifest is written last and is the build's own
+completion stamp; a manifest that cannot be read answers no, so an unreadable
+answer is never the one that starts an hour-long build.
+
+ADR-0051's separation is kept: `--no-build` still refuses rather than builds,
+`--rebuild` still builds over an existing site, and the runner still says which
+of the three it did. The tests patch the freshness check and assert the
+decision, so they read the decision under test rather than this machine's file
+times.
+
+Read by running:
+
+  python -m unittest tests.test_build_demo_page.RunnerBuildOrServeTest -v
+
+Co-Authored-By: Codebuff <noreply@codebuff.com>

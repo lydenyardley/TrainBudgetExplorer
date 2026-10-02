@@ -1,0 +1,25 @@
+fix(page): build the table's header and cells from one list
+
+The header and the cells were written in two places and had drifted: the
+header read Station, Price, Time, Changes, Fare code, Tickets while the cells
+were written Station, Time, Changes, Price, Fare code, Tickets. So the Price
+column showed "No service", the Changes column showed the fare, and the Time
+column sat empty on the page that exists to price a journey.
+
+One list builds both now, and the row reads the way a reader reads: the
+station's name, the price, the time, the change count with the station a split
+would split at named under it, and the fare in the reader's own three words --
+Advance, Restricted, Regular. SDR, 2AS and BPS are a seller's vocabulary and
+they were the column, on every row, in front of the one number the reader came
+for; the code is in the row's own record, where the rest of what a seller asks
+for already was.
+
+Three absences now say which absence they are. A journey this build could not
+find has neither a duration nor a change count, and "Unknown" beside a real
+duration would be a lie, so the two columns are built from the same fact.
+
+Read by running:
+
+  python -m unittest tests.test_build_demo_page -v
+
+Co-Authored-By: Codebuff <noreply@codebuff.com>
