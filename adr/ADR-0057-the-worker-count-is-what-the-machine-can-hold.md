@@ -7,11 +7,13 @@ Date: 2 October 2026
 Accepted. Amends the way ADR-0055's whole-network default is carried out; the
 default itself stands.
 
-**Amended 2 October 2026.** The two worker figures in the table below are
-withdrawn: they were measured from a database the measuring tool had already
-freed. `WORKER_BYTES` is left unchanged pending one real four-worker build, and
-the recorded four-worker tree is now unexplained. The correction is under the
-table; the decision itself is not reopened.
+**Amended 2 and 3 October 2026.** The two worker figures in the table below
+were withdrawn on the 2nd: they were measured from a database the measuring tool
+had already freed. On the 3rd the recorded four-worker tree was explained -- it
+was sampled while the pool was still parsing -- and `WORKER_BYTES` was set to
+the measured 2,200 MB once the parent stopped holding its databases across the
+pool. The four-worker ceiling now needs about 32 GB of hardware to confirm;
+that is recorded in the decision, not hidden by it.
 
 ## Context
 
@@ -83,12 +85,13 @@ Corrected, through the pool's own `init_worker` and `build_page_job`:
 |---|---|
 | one worker, after `init_worker` | **2,100 MB** |
 | one worker, assembling pages | **2,188 MB** |
-| `build_workers.WORKER_BYTES`, which this ADR justifies | **900 MB** |
+| `build_workers.WORKER_BYTES`, which this ADR justified at the time | **900 MB** |
 
-So the per-worker budget is 2.4x smaller than the figure it was derived from,
+So the per-worker budget was 2.4x smaller than the figure it was derived from,
 and decision 3 below -- "the numbers are measured by a tool, not asserted in a
-comment" -- is the claim that failed: the tool was measuring a discarded object
-and reporting it as a measurement.
+comment" -- was the claim that failed: the tool was measuring a discarded object
+and reporting it as a measurement. The constant is now 2,200 MB; what still had
+to give before it could be is the decision beneath this correction.
 
 **The four-worker tree is explained, and it was never a contradiction.** The
 2.9 GB sample and the 2,188 MB worker are two readings of the same build at two
@@ -121,17 +124,54 @@ start -- so the pool begins while the parent is still committed. That is why
 `PARENT_BYTES` is counted, and it is the premise decision 2's single-step
 ceiling relies on when it declines to divide free memory by a per-worker cost.
 
-**`WORKER_BYTES` is deliberately left at 900 MB.** The evidence now points one
-way: a worker costs 2,188 MB, not 900 MB, and the tree arithmetic above is
-consistent with that at both four workers and eight. But the constant is not
-changed here, because changing it is a decision about every machine and about
-CI, and the figure that would replace it has been measured in one process on
-one feed. Raising it to 2,200 MB moves `ONE_WORKER_FLOOR` from 7.3 GB to
-8.6 GB, which on a 15.8 GB machine turns a four-worker build into a one-worker
-build for anyone whose desktop is open -- the opposite of the ceiling this ADR
-exists to enforce, and a consequence no single-process measurement can
-predict. That is a decision to make against a real four-worker run, not against
-a corrected comment.
+### Decision, 3 October 2026: the parent stops holding its databases
+
+The constant was left at 900 MB pending a four-worker run this machine could
+not do. It is now the measured figure instead, because the thing standing in
+the way of a four-worker run was not the cost of measuring it -- it was that
+the parent never gave its memory back.
+
+`build_demo_page.py` held `fares` and `timetable` in locals across the
+`ProcessPoolExecutor` branch, so the parent was still holding 4.1 GB while
+every worker held its own 2,188 MB. The two were concurrent, and 4 x 2,188 +
+4,110 = 12,858 MB is a figure no 16 GB machine can satisfy. The parent now
+releases both before the pool starts, which is free: the fare indexes the
+workers restore are already on disk, and each worker parses the timetable
+itself. Measured on the real feed, the release sheds 4,000 MB of the 4,017 MB
+held and leaves the parent 36 MB. That measurement also reproduced the parent's
+peak independently -- 4,017 MB against the 4,110 MB recorded above -- so
+`PARENT_BYTES` stands on a second reading rather than on one old sample.
+
+The release is in the pool branch only. With one worker the build renders in
+this process and puts both objects into `_WORKER`, so releasing them there
+would delete the databases the build is about to use.
+
+Three things follow, and they are the decision:
+
+- **`WORKER_BYTES` is 2,200 MB**, from the measured 2,188. It was 900 MB while a
+  worker held 2,188, which is how a constant could be 2.4x wrong for so long.
+- **`worker_budget` divides free memory by it**, which it refused to do while
+  the divisor was wrong. A division by a measurement is a division.
+- **`ONE_WORKER_FLOOR` is 6.4 GB**, the larger of the two phases plus the
+  reserve, rather than their sum. The parent runs first and the workers second,
+  so a machine needs room for the bigger one, not for both at once.
+
+Four workers now cost 8,800 MB, which is why a 16 GB machine -- this one, and
+GitHub's `ubuntu-latest -- correctly gets fewer than the ceiling of four. A
+release build on that hardware drops from about 54 minutes to most of a day,
+and that is the honest cost of the corrected constant rather than a reason to
+leave it wrong.
+
+**What this decision has not been checked against.** A four-worker tree cannot
+be run on 16 GB: it needs 8,800 MB of workers plus the 2,000 MB reserve, before
+the parent has parsed anything. Confirming the ceiling needs roughly 32 GB of
+RAM -- about 11 GB free, which is 16 GB of hardware with nothing else running,
+so in practice a larger machine. Until that run happens, the four-worker arm of
+the ceiling is inherited from `MAX_WORKERS` rather than re-measured, and
+`tools/measure_worker_pages.py` is what re-derives the per-worker figure. Every
+number in the decision above is measured in one process on one feed; the only
+unmeasured claim left is that four of them coexist, and it is the one that was
+already believed before this correction.
 
 The wall time that budget was chosen against: a whole-network build of the real
 feed, 2 October 2026, wrote 2,712 pages between 10:29:52 and 12:30:57. That is
@@ -199,3 +239,7 @@ python tools/measure_worker_pages.py --origins GRN,LCN
 python -m unittest tests.test_build_demo_page.WorkerBudgetTest
 python -m unittest discover -s tools -p "test_measure_worker_pages.py"
 ```
+
+Confirming the four-worker ceiling needs roughly 32 GB of RAM: about 11 GB free,
+so a 16 GB machine with nothing else running is not enough. On this project's
+own hardware, what re-derives without that is the per-worker figure.
