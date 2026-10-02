@@ -1353,13 +1353,16 @@ async function runPage(browser, index, given, file, body, base) {
     const afterDrag = await rows();
     check("the slider responds to a real drag", draggedBudget !== startBudget, `${startBudget} -> ${draggedBudget}`);
     check("a dragged-down budget drops rows", afterDrag < beforeDrag, `${beforeDrag} -> ${afterDrag}`);
-    // The floor empties the list unless the page's cheapest fare is itself a
-    // pound, which the slider cannot go below. Two adults at that budget is
-    // the same empty list, and is a move the reader can make, so the check
-    // takes it rather than reporting a defect the page has not got.
+    // The floor empties the list, because the floor is zero and no fare is.
+    // The check reads the floor off the control rather than naming a budget:
+    // a budget the test picks for itself is not one the reader can be shown
+    // reaching, and on a page pricing every fare at fifty pence a one-pound
+    // floor put thirteen rows in the list and reported them as a defect the
+    // page did not have.
     const floored = await page.evaluate(() => {
       if (document.getElementById("empty").hidden) {
-        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        setBudget(Number(document.getElementById("budget").min));
+        currentPage = 1;
         render();
       }
       return {
@@ -3334,17 +3337,19 @@ async function runPage(browser, index, given, file, body, base) {
     // S28: an empty list offers the moves that would fill it, and the first
     // move works when it is taken.
     const recovery = await page.evaluate(() => {
-      setBudget(1);
+      // The floor, read off the control, not a pound named here. A budget the
+      // check picks for itself is a budget the reader cannot necessarily
+      // reach, and on a page whose cheapest fare is under it the check was
+      // measuring a page that cannot be emptied rather than a page that was
+      // wrong: the real Grindleford page prices every outbound single at fifty
+      // pence, so a one-pound floor showed all thirteen of them and the empty
+      // state below -- with the moves that are its whole purpose -- was
+      // unreachable on that page at all.
+      const floor = Number(document.getElementById("budget").min);
+      setBudget(floor);
       currentPage = 1;
       render();
-      // A station whose cheapest fare is a pound still shows that row at every
-      // budget the control can hold; two adults at the same budget is the
-      // empty list a reader can actually reach.
-      if (document.getElementById("empty").hidden) {
-        document.querySelector('input[name="unit"][value="party"]').checked = true;
-        render();
-      }
-      if (document.getElementById("empty").hidden) return { actions: [] };
+      if (document.getElementById("empty").hidden) return { actions: [], floor };
       const actions = Array.from(document.querySelectorAll("#empty .toggle")).map((button) => button.textContent);
       const first = document.querySelector("#empty .toggle");
       if (first) first.click();
@@ -3352,12 +3357,14 @@ async function runPage(browser, index, given, file, body, base) {
         actions,
         rows: document.querySelectorAll("#rows tr").length,
         budget: document.getElementById("budgetNumber").value,
+        floor,
       };
     });
     check("an empty list says what would fill it", recovery.actions.length > 0, JSON.stringify(recovery));
     check(
       "and the first move it offers changes the answer",
-      recovery.actions.length > 0 && (recovery.rows > 0 || Number(recovery.budget) > 1),
+      recovery.actions.length > 0
+        && (recovery.rows > 0 || Number(recovery.budget) > recovery.floor),
       JSON.stringify(recovery)
     );
     await open(facts.affordable);

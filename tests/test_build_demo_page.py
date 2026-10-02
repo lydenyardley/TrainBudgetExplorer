@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import re
 import shutil
 import sys
@@ -4176,6 +4177,43 @@ class TimetableCachePruneTest(unittest.TestCase):
             build_demo_page.timetable_cache_path(feed, "GRN", {"NOT", "LCN"}),
             build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"}),
             "the focus set is a set, so its order is not part of the key",
+        )
+
+    def test_the_timetable_cache_key_covers_the_code_that_reads_the_feed(self) -> None:
+        # The key is the feed's bytes, the focus, and `source_fingerprint` --
+        # and the fingerprint covers atoc_timetable.py, so a change to how the
+        # feed is *read* invalidates the cache even when the bytes are the same.
+        # That is the case a fingerprint over the feed alone cannot catch, and
+        # it is not hypothetical: fixing how `0000` is read (that record is the
+        # CIF's absent marker, not midnight) changes no byte of the download and
+        # changes every calling point the cache holds. A build that kept the
+        # old pickle would serve the old timetables and say nothing.
+        self.assertIn("atoc_timetable.py", build_demo_page.SOURCE_FILES)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_timetable(root / "timetable")
+            before = build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"})
+            # Every source file the fingerprint hashes is read off disk and
+            # written back, so a one-byte change anywhere in the parser shows up
+            # in the cache name. Nothing is left edited: a suite that dirties
+            # the tree it runs in is a suite that cannot be trusted to report
+            # this at all.
+            touched = []
+            try:
+                for name in build_demo_page.SOURCE_FILES:
+                    source = pathlib.Path(build_demo_page.__file__).parent / name
+                    original = source.read_bytes()
+                    touched.append((source, original))
+                    source.write_bytes(original + b"\n")
+                build_demo_page.source_fingerprint.cache_clear()
+                after = build_demo_page.timetable_cache_path(feed, "GRN", {"LCN", "NOT"})
+            finally:
+                for source, original in touched:
+                    source.write_bytes(original)
+                build_demo_page.source_fingerprint.cache_clear()
+        self.assertNotEqual(
+            before, after,
+            "a change to any source file the parser reads is a different cache",
         )
 
     def test_a_build_says_whether_it_parsed_or_restored_the_timetable(self) -> None:

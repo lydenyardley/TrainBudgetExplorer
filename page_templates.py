@@ -693,7 +693,7 @@ __STATION_STYLE__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
+<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
@@ -728,7 +728,7 @@ __THEME_TOGGLE__
   <fieldset class="budget-track">
     <legend class="sr-only">Budget</legend>
     <label class="sr-only" for="budget">Budget in pounds</label>
-    <input id="budget" type="range" min="1" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
+    <input id="budget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
     <span class="tag" id="budgetHint">Drag to change the budget in the heading. It stops at the highest fare in the ticket type you are looking at — <span id="budgetCeiling">__CEILING_NOTE__</span>.</span>
   </fieldset>
   <div class="more-filters" id="moreFilters" data-open="false">
@@ -1310,8 +1310,20 @@ function sizeBudgetField() {
   const digits = Math.max(1, String(budgetNumber.value || "1").length);
   budgetNumber.style.width = digits + "ch";
 }
-function setBudget(value) {
-  const safe = Math.max(1, Math.min(Number(budget.max) || 1, Number(value) || 1));
+// The floor is zero, not one pound. Every outbound single from the real
+  // Grindleford page is fifty pence, so a floor of £1 left the
+  // slider's lowest position showing all thirteen of them: the empty state, and
+  // the recovery moves that are the entire point of it, could not be reached
+  // there at all. A budget of £0 matches no fare, which is what a
+  // reader who drags the control all the way down has asked for. The clamp no
+  // longer reads a deliberate zero as a missing value either --
+  // `Number(value) || 1` would, and that is the bug a naive edit to this line
+  // leaves behind.
+  function setBudget(value) {
+  const wanted = Number(value);
+  const top = Number(budget.max);
+  const safe = Math.max(0, Math.min(Number.isFinite(top) ? top : 0,
+                                    Number.isFinite(wanted) ? wanted : 0));
   budget.value = String(safe);
   budgetNumber.value = String(safe);
   sizeBudgetField();
@@ -3001,7 +3013,7 @@ function writeUrlNow(push) {
 function readState() {
   const params = new URLSearchParams(window.location.search);
   return {
-    budget: Number(params.get("budget")),
+    budget: params.has("budget") ? Number(params.get("budget")) : null,
     mode: params.get("mode"),
     unit: params.get("party") === "2" ? "party" : null,
     railcard: params.get("card"),
@@ -3013,7 +3025,9 @@ function readState() {
   };
 }
 function applyState(state) {
-  if (Number.isFinite(state.budget) && state.budget > 0) setBudget(state.budget);
+  if (state.budget !== null && Number.isFinite(state.budget) && state.budget >= 0) {
+    setBudget(state.budget);
+  }
   for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
     if (input.value === state.mode) input.checked = true;
   }
@@ -3155,7 +3169,7 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="1" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>__ORIGIN_CLAUSE__</h1>
+<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>__ORIGIN_CLAUSE__</h1>
 __CHOOSER_INTRO__
 __ORDERING_NOTE__
 <ul id="picks"></ul>
@@ -3186,14 +3200,17 @@ function matches(station, needle) {
 }
 if (budgetNumber) {
   const storedBudget = new URLSearchParams(window.location.search).get("budget");
-  if (storedBudget && Number(storedBudget) > 0) budgetNumber.value = storedBudget;
+  if (storedBudget !== null && storedBudget !== "" && Number(storedBudget) >= 0) {
+    budgetNumber.value = storedBudget;
+  }
 }
 // C15: the heading is the page's most prominent promise, and it is written from
 // the same resolved budget as the field, the tab title and every outgoing link,
 // so the sentence a reader reads, the title their tab list shows, and the budget
 // the page they open next is given cannot disagree.
 function resolvedBudget() {
-  return Math.max(1, Number(budgetNumber.value) || 1);
+  const value = Number(budgetNumber.value);
+  return Math.max(0, Number.isFinite(value) ? value : 0);
 }
 function syncChooserBudget() {
   const value = resolvedBudget();
