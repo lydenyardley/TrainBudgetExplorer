@@ -1,0 +1,30 @@
+fix(page): one shortlist control, and the list where the action is
+
+Every row carried a button reading "Shortlist". Twenty rows is twenty copies of
+the same word, repeated on the rows the reader was not choosing; pressing one
+changed the button's own text, so the row changed width and the ground shifted
+under a reader who was comparing rows; and the list it produced was a section
+below the table, 205px under the fold, so the confirmation was somewhere other
+than where the reader was looking.
+
+One select above the table replaces all of them, and it lists exactly the
+destinations on the page being looked at. A place already on the strip is not
+offered again: the strip is the record of what is held, and a second way to add
+the same place is a control that silently does nothing. Each chip is the
+station's name, its price, and a way to take it off the list; the name is a
+button that takes the reader back to the row, because a chip is a way back
+rather than a destination.
+
+The strip sits above the count line, not between it and the table. The count
+describes the rows under it, and the two were 89px apart with a row of controls
+in the gap.
+
+Eight places is the limit and the limit is said on the page, not only to a
+screen reader: a control that stops responding with no explanation is the one
+thing a reader cannot act on.
+
+Read by running:
+
+  python -m unittest tests.test_build_demo_page -v
+
+Co-Authored-By: Codebuff <noreply@codebuff.com>
