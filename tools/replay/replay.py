@@ -136,7 +136,11 @@ if __name__ == "__main__":
                     # was taken while the pool was still parsing, and the
                     # parent does not release its databases before the
                     # pool starts -- with the test that holds both.
-                    "p5_four_worker_tree.py"):
+                    "p5_four_worker_tree.py",
+                    # p6 the parent releases its databases before the pool,
+                    # so the worker cost is the whole of a concurrent build
+                    # and the budget can be the measurement.
+                    "p6_parent_releases.py"):
         normalise_page()
         print("--", script)
         result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
