@@ -1047,9 +1047,8 @@ async function runPage(browser, index, given, file, body, base) {
           word: (row.querySelector(".fare-kind") || {}).textContent || "",
         };
       });
-      // The mix is the mix of the rows on screen: the count line describes the
-      // list the reader is looking at, and a budget that leaves one row leaves
-      // one kind of fare in it.
+      // The mix among the rows on screen, kept for the second half of the check:
+      // every kind of fare a reader can see must be one the line names.
       const kinds = {};
       for (const crs of shown.map((row) => row.crs)) {
         const wanted = cheapest.get(crs);
@@ -1058,12 +1057,25 @@ async function runPage(browser, index, given, file, body, base) {
           ? "single" : wanted.quality === "unrestricted Anytime Day Return" ? "Anytime Day Return" : "return";
         kinds[word] = (kinds[word] || 0) + 1;
       }
+      // The counts the line states for itself. It describes every destination
+      // the budget admits, which is not the twenty rows on screen and not the
+      // page's private list either -- `available` is local to render(). So the
+      // line is asked to agree with itself, which is the guarantee that matters
+      // and the only one that can be read off it.
+      const line = document.getElementById("summary").textContent;
+      const total = Number((/([0-9,]+) destinations?/.exec(line) || [0, "0"])[1].replace(/,/g, ""));
+      const named = [];
+      for (const m of line.matchAll(/([0-9,]+) (Anytime Day Returns?|singles?|returns?)\b/g)) {
+        named.push({ word: m[2], count: Number(m[1].replace(/,/g, "")) });
+      }
       return {
         mode: document.querySelector('input[name="ticketMode"]:checked').value,
         expected: cheapest.size,
         pageCount: typeof cheapestDestinations === "function" ? cheapestDestinations().length : null,
         shown,
         kinds,
+        total,
+        named,
         summary: document.getElementById("summary").textContent,
       };
     });
@@ -1088,15 +1100,23 @@ async function runPage(browser, index, given, file, body, base) {
       JSON.stringify(headline.shown.map((row) => row.crs))
     );
     const kinds = Object.entries(headline.kinds);
-    const namedKinds = kinds.filter(([word, count]) =>
-      new RegExp(`\\b${count} ${count === 1 ? word : word + "s"}\\b`).test(headline.summary)
-    );
+    // Every kind of fare among the rows on screen is named by the line, and the
+    // line's own counts add up to the total it states. The second half is the
+    // one that cannot be satisfied by a coincidence of a small fixture: a line
+    // that says "266 destinations ... 2 singles, 264 returns" is either right
+    // about its own arithmetic or it is not.
+    const namedSum = headline.named.reduce((total, entry) => total + entry.count, 0);
+    const unseen = kinds.filter(([word]) => !headline.named.some(
+      (entry) => entry.word.replace(/s$/, "").toLowerCase() === word.toLowerCase()
+    ));
     check(
       "and the count line names the mix of ticket types it is showing",
       headline.shown.length === 0
         ? notExercised("this page shows no row to count")
-        : namedKinds.length === kinds.length,
-      JSON.stringify({ kinds: headline.kinds, summary: headline.summary })
+        : unseen.length === 0 &&
+          headline.named.length > 0 &&
+          namedSum === headline.total,
+      JSON.stringify({ kinds: headline.kinds, total: headline.total, named: headline.named, summary: headline.summary })
     );
     const partyBasis = await page.evaluate(() => {
       document.querySelector('input[name="unit"][value="party"]').checked = true;
@@ -1162,9 +1182,12 @@ async function runPage(browser, index, given, file, body, base) {
         }
         return count;
       };
+      // `.changes` is excluded because the station a journey changes at is put
+      // on its own line under the count on purpose (ADR-0045). Counting its
+      // two lines as a wrap is the check measuring the design.
       const cells = [
         ...document.querySelectorAll("thead th"),
-        ...document.querySelectorAll("#rows td.num, #rows .fare-type"),
+        ...document.querySelectorAll("#rows td.num:not(.changes), #rows .fare-type"),
       ];
       const wrapped = [];
       for (const el of cells) {
@@ -2682,6 +2705,14 @@ async function runPage(browser, index, given, file, body, base) {
     // meant to be written.
     const drawerChoice = await page.evaluate(() => {
       const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
+      // A card that prices a row is not a card that discounts one. On a real
+      // page the first card in the list is the 16-25, whose price is the £12
+      // DTD minimum on every fare below it, so it prices everything and lowers
+      // nothing -- and every check about a discounted row then failed on a page
+      // that has none. Prefer a card that actually lowers a price; fall back to
+      // one that merely prices something, which is a real answer about rows the
+      // card cannot help rather than a substitute for one.
+      let anyPriced = null;
       for (const card of DATA.railcards || []) {
         for (const adults of [2, 1]) {
           if (!(card.minAdults <= adults && adults <= card.maxAdults)) continue;
@@ -2689,10 +2720,17 @@ async function runPage(browser, index, given, file, body, base) {
             const detail = (d.railcards || {})[card.key];
             return detail && detail.pricePence !== null;
           });
-          if (priced.length) return { key: card.key, adults };
+          if (!priced.length) continue;
+          const discounted = priced.filter((d) => {
+            const detail = d.railcards[card.key];
+            const standard = adults === 2 ? d.partyPence : d.adultPence;
+            return detail.pricePence < standard;
+          });
+          if (discounted.length) return { key: card.key, adults, discounted: discounted.length };
+          if (!anyPriced) anyPriced = { key: card.key, adults, discounted: 0 };
         }
       }
-      return null;
+      return anyPriced;
     });
     const noteRows = drawerChoice
       ? await page.evaluate((choice) => {
@@ -2837,8 +2875,13 @@ async function runPage(browser, index, given, file, body, base) {
     });
     check(
       "a changed journey names the station a split ticket would change at",
+      // The note says "the station above" and the name is in the row above, so
+      // repeating it in the note would be saying the same word twice on one
+      // line of screen. What has to hold is that the note points at this row's
+      // own station rather than at some other one.
       split && split.changed
-        ? Boolean(split.changed.note) && split.changed.note.includes(split.changed.name) && /split ticket/.test(split.changed.note)
+        ? Boolean(split.changed.note) && /split ticket/.test(split.changed.note) &&
+          /station above|station below|this station/.test(split.changed.note)
         : notExercised("no destination on this page changes"),
       JSON.stringify(split && split.changed || null)
     );

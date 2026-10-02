@@ -1226,8 +1226,19 @@ class DemoPageTest(unittest.TestCase):
         # two labelled figures a reader can compare.
         self.assertIn("const cardBeatsStandard =", self.html)
         self.assertIn("details.pricePence < destination.adultPence", self.html)
-        self.assertIn("does not reduce this fare", self.html)
+        self.assertIn("does not reduce it", self.html)
         self.assertIn("This row is priced at the cheaper of the two", self.html)
+        # The note leads with the figure in the row. It used to lead with the
+        # card's own price, which on a real page is the DTD minimum and is
+        # routinely the larger number: a reader looking at a £2.70 fare was
+        # shown £12.00 first and had to work out which one was theirs.
+        # priceOf() is what the Price cell renders, so the two cannot disagree.
+        self.assertIn('"This fare is " + money(priceOf(destination)) + ", and "', self.html)
+        self.assertLess(
+            self.html.index('"This fare is " + money(priceOf(destination))'),
+            self.html.index('money(details.pricePence) + " per adult, because the minimum fare'),
+            "the note must open with the row's price, not with the card's",
+        )
         # The minimum is named as what it is, in the branch where the card
         # does help, rather than as a discount that made the fare dearer.
         self.assertIn("is the price here, so the discount took it no lower.", self.html)
@@ -1240,7 +1251,11 @@ class DemoPageTest(unittest.TestCase):
         # The label is read from the variable, not spelled out, so the test
         # reads the variable and the two sentences the note branches into.
         self.assertIn("const card = railcards[railcardSelect.value];", self.html)
-        self.assertIn('card.label + " does not reduce this fare. Its own price here is "', self.html)
+        # The card is named by the variable, and the sentence is split across
+        # two lines of source with the label at the end of the first, so the
+        # test reads the two halves rather than a sentence that no line holds.
+        self.assertIn('+ ", and " + card.label +', self.html)
+        self.assertIn('" does not reduce it.', self.html)
         self.assertIn('card.label + " cannot be applied to this fare.', self.html)
         # With no card chosen there is nothing to explain, so there is no
         # paragraph: the control above already says the prices are standard,
@@ -1272,7 +1287,7 @@ class DemoPageTest(unittest.TestCase):
         # The drawer's own wording for that case: it says the card does not help
         # here, gives both numbers, and names the minimum as the reason, so a
         # reader who opens it is not left reading a discount the row did not get.
-        self.assertIn("does not reduce this fare.", self.html)
+        self.assertIn("does not reduce it.", self.html)
         self.assertIn("because the minimum fare the feed applies to this ", self.html)
         self.assertIn("This row is priced at the cheaper of the two", self.html)
 
