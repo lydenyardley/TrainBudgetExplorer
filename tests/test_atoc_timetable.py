@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from atoc_timetable import (
+    CIF_INTERMEDIATE,
     CIF_ORIGIN,
     CIF_SCHEDULE,
     CIF_TERMINUS,
@@ -282,6 +283,154 @@ class TiplocNormalizationTest(unittest.TestCase):
         self.assertEqual(timetable.crs_for_tiploc("NOTT"), "NOT")
         self.assertIsNotNone(timetable.station_for_tiploc("NOTT"))
         self.assertNotIn("NOTT", timetable.cif_crs_by_tiploc)
+
+
+class PassingStopTest(unittest.TestCase):
+    """A train that passes a station is not a journey from it.
+
+    The CIF has a field for the pass-through time and the feed uses it: the
+    public arrival and departure are left as `0000`, which is not midnight
+    because the format has no midnight -- a time after midnight is written
+    2400 to 2949. Read as a clock time, `0000` manufactured a departure from
+    every station on the network at minute zero.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_timetable(self.root / "timetable")
+        # The stations file carries the TIPLOC-to-CRS mapping and is what this
+        # test needs from the synthetic feed. Its timetable is not: it has a
+        # Grindleford to Lincoln service of its own that is quicker than the one
+        # written below, so it would be the journey found either way and the
+        # test would pass without ever exercising a passing stop.
+        (self.feed / "timetable.mca").unlink()
+
+    def _schedule(self, uid: str, passing: bool) -> list[str]:
+        """NOT to LCN, calling at GRN or passing through it."""
+        schedule = [
+            _line(
+                {
+                    "record_type": "BS",
+                    "transaction_type": "N",
+                    "train_uid": uid,
+                    "date_runs_from": "260921",
+                    "date_runs_to": "261211",
+                    "days": "1111110",
+                },
+                CIF_SCHEDULE,
+            ),
+            _line(
+                {"record_type": "LO", "location": "NOTT   ", "scheduled_departure": "0900",
+                 "public_departure": "0900"},
+                CIF_ORIGIN,
+            ),
+        ]
+        if passing:
+            # The feed's own shape: the pass-through time is recorded, and both
+            # public times are the absent marker.
+            schedule.append(
+                _line(
+                    {"record_type": "LI", "location": "GRNT   ", "scheduled_pass": "1000",
+                     "public_arrival": "0000", "public_departure": "0000"},
+                    CIF_INTERMEDIATE,
+                )
+            )
+        else:
+            schedule.append(
+                _line(
+                    {"record_type": "LI", "location": "GRNT   ", "scheduled_arrival": "0955",
+                     "scheduled_departure": "1000", "public_arrival": "0955",
+                     "public_departure": "1000"},
+                    CIF_INTERMEDIATE,
+                )
+            )
+        schedule.append(
+            _line(
+                {"record_type": "LT", "location": "LINC   ", "scheduled_arrival": "1115",
+                 "public_arrival": "1115"},
+                CIF_TERMINUS,
+            )
+        )
+        return schedule
+
+    def test_a_train_that_passes_a_station_is_not_boardable_there(self) -> None:
+        (self.feed / "pass.mca").write_text(
+            "\n".join(self._schedule("T90001", passing=True)) + "\n", encoding="utf-8"
+        )
+        timetable = TimetableDb().load_feed(self.feed)
+        self.assertEqual(timetable.crs_for_tiploc("GRNT"), "GRN")
+        # The stop is in the schedule and the station is known, so this is not a
+        # parse failure: the service is there and simply does not call.
+        schedule = next(s for s in timetable.schedules if s.train_uid == "T90001")
+        self.assertIn("GRNT", [s.tiploc for s in schedule.stops])
+        self.assertIsNone(
+            timetable.best_journey("GRN", "LCN", day=MONDAY),
+            "a train that does not stop at Grindleford cannot be boarded there",
+        )
+
+    def test_a_train_that_does_call_is_still_boardable_and_timed(self) -> None:
+        # The control. Without it a parser that found nothing at all would pass.
+        (self.feed / "call.mca").write_text(
+            "\n".join(self._schedule("T90002", passing=False)) + "\n", encoding="utf-8"
+        )
+        timetable = TimetableDb().load_feed(self.feed)
+        journey = timetable.best_journey("GRN", "LCN", day=MONDAY)
+        self.assertIsNotNone(journey, "a train that calls at Grindleford is boardable")
+        self.assertEqual(journey.duration, 75, "09:55 at Grindleford to 11:15 at Lincoln")
+
+    def test_no_journey_departs_at_minute_zero(self) -> None:
+        # The symptom in one assertion, over both services on the same feed.
+        (self.feed / "both.mca").write_text(
+            "\n".join(self._schedule("T90003", passing=True))
+            + "\n"
+            + "\n".join(self._schedule("T90004", passing=False))
+            + "\n",
+            encoding="utf-8",
+        )
+        timetable = TimetableDb().load_feed(self.feed)
+        for destination in ("LCN", "NOT"):
+            journey = timetable.best_journey("GRN", destination, day=MONDAY)
+            if journey is None:
+                continue
+            self.assertGreater(
+                journey.duration, 0,
+                f"GRN to {destination} was timed as {journey.duration} minutes",
+            )
+
+
+class TimetableFocusTest(unittest.TestCase):
+    """The timetable index is scoped to the stations the page can show.
+
+    It was scoped to the stations a return reaches, which is a narrower set:
+    the outbound-single list reaches thirteen more on a real page. Those
+    stations had no services in the index, so each was a row reading "No
+    service" and "Unknown" -- a statement about the build wearing the voice of
+    a statement about the network.
+
+    This reads the wiring rather than driving the build. The behaviour needs
+    the real feed and a station reachable only as an outbound single, which no
+    synthetic fixture has; the behavioural guard is the browser check that no
+    row claims no service for a destination the page's own payload times, and
+    that check can only fail on a real page. This one runs everywhere.
+    """
+
+    def test_the_focus_set_covers_every_list_the_page_composes(self) -> None:
+        source = Path(__file__).resolve().parent.parent / "build_demo_page.py"
+        code = source.read_text(encoding="utf-8")
+        start = code.index("focus_destinations: set[str] = set()")
+        block = code[start:code.index("cache_path = (", start)]
+        for query in (
+            "page_destinations_within",
+            "page_single_destinations_within",
+            "publishable_destinations_within",
+        ):
+            self.assertIn(
+                query, block,
+                f"the timetable focus set does not include {query}, so one of the "
+                f"three lists the page composes has no services in the index",
+            )
 
 
 if __name__ == "__main__":

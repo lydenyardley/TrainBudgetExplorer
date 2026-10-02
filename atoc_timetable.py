@@ -209,9 +209,25 @@ MSN_EXTENSIONS = frozenset({"msn"})
 
 
 def _minutes(value: str) -> int | None:
-    """Read a CIF time as minutes past midnight. Blank means the train does not stop."""
+    """Read a CIF time as minutes past midnight. Blank means the train does not stop.
+
+    So does `0000`, and that is not a detail of the format. The CIF has no
+    midnight: a time after it is written 2400 to 2949, so `0000` can only be
+    the marker for "no time of this kind here". A train that passes a station
+    is recorded that way -- its real time is in the pass-through field, which
+    nothing here reads, and its public times are left `0000`.
+
+    Read as a clock time it was midnight, which is a departure: 0 is not None,
+    so the departure index took every station on the network to have a service
+    leaving at minute zero, and every one of them was a train passing through.
+    Measured on the real Grindleford page, that made Manchester eleven minutes
+    away and Liverpool seven, because the duration was measured from a
+    departure at midnight to a real arrival.
+    """
     digits = value.strip()
     if len(digits) < 4 or not digits[:4].isdigit():
+        return None
+    if digits[:4] == "0000":
         return None
     return int(digits[0:2]) * 60 + int(digits[2:4])
 
