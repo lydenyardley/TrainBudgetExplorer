@@ -85,9 +85,22 @@ MB = 1_000_000
 #: ignored it would ignore the moment the machine is most committed.
 PARENT_BYTES = 4_400 * MB
 
-#: What one worker costs for as long as it is assembling pages. The initialiser
-#: measures 325 MB and the largest worker sampled mid-build held 852 MB, so
-#: this is the upper of the two rather than the reassuring one.
+#: What one worker costs for as long as it is assembling pages.
+#:
+#: The figures this constant was built from -- a 325 MB initialiser and an 852 MB
+#: worker sampled mid-build -- are withdrawn. Both came from
+#: `tools/measure_build_memory.py`, which loaded the national timetable without
+#: keeping a reference to it, so the sample read the arenas Python had already
+#: freed rather than the memory the load held. Measured properly, one worker
+#: holds 2,100 MB after `init_worker` and 2,188 MB assembling pages.
+#:
+#: So this constant is 2.4x smaller than the figure it was derived from, and
+#: `worker_budget` will hand out more workers than the machine can hold. It is
+#: left at 900 MB deliberately: the recorded four-worker build says four workers
+#: fitted in 2.9 GB, which cannot be true at 2.1 GB each, and one real build is
+#: needed to settle that before a new number can be justified. Changing it here
+#: would change the worker count on every machine and in CI on the strength of a
+#: contradiction. See ADR-0057, and `tools/measure_worker_pages.py`.
 WORKER_BYTES = 900 * MB
 
 #: What the machine needs for everything that is not the build: the browser a
