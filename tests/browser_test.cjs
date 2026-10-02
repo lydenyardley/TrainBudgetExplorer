@@ -3092,6 +3092,25 @@ async function runPage(browser, index, given, file, body, base) {
       JSON.stringify(split && split.direct || null)
     );
 
+// Does this condition tell a reader something its restriction code does not?
+//
+// The defect it stands for is a panel that prints the code and calls it a
+// condition. Three ways to do that, all rejected: nothing at all, the code
+// itself, or a string built only from the code's own letters. Digits are
+// dropped before comparing, because `B31` beside `B3` is the code again with a
+// digit on the end, not a condition. Everything else
+// is the feed's wording and is allowed to be as terse as the feed wrote it --
+// `OFF-PEAK` beside `B3` says something, and the suite is not in a position
+// to improve on the feed's phrasing.
+function saysMoreThan(condition, code) {
+  const text = (condition || "").trim();
+  if (!text) return false;
+  const letters = (value) => (value || "").toUpperCase().replace(/[^A-Z]/g, "");
+  const said = letters(text);
+  const bare = letters(code);
+  if (!said) return false;
+  return said !== bare && ![...said].every((character) => bare.includes(character));
+}
     // S19, with the finding of 29 September 2026 on top: the condition is
     // still a sentence rather than a bare code, and the feed's own vocabulary
     // is still folded away -- but on the real page that same sentence stood in
@@ -3113,6 +3132,9 @@ async function runPage(browser, index, given, file, body, base) {
           validity: (cell.querySelector(".validity") || {}).textContent || "",
           restricted: cell.dataset.status === "restricted",
           record,
+          // The restriction this condition describes, so the check can ask
+          // whether the condition says anything the code does not.
+          restriction: record[1] || "",
           summary: (cell.querySelector(".feed-record summary") || {}).textContent || "",
           // The code is in the record now, under the "Ticket" label, and the
           // row itself carries the word a reader can act on.
@@ -3134,11 +3156,21 @@ async function runPage(browser, index, given, file, body, base) {
         // restriction code says what the condition is as well; a row with no
         // condition in the feed is not given one, which is why the sentence
         // and the condition are checked separately.
+        //
+        // The condition is judged against the code it belongs to, not by how
+        // it is spelled. It used to be rejected for opening with one to four
+        // capitals, which on the real feed rejects 624 of the 841 descriptions
+        // in the file -- `OFF-PEAK`, `NTH ADVANCE`, `NOT VALID BEFORE 0915
+        // MON-FRI`, `BAN ALL DAY`. Those are the conditions a reader needs,
+        // they are the feed's own wording, and paraphrasing them is a
+        // licencee's risk. Counted over the whole file: no description is
+        // empty and none equals its own code, so the page was never printing a
+        // bare one. What must not happen is the code restated as prose.
         conditions.found.every(
           (cell) =>
             cell.sentence.length > 10 &&
             !/^[A-Z0-9]{1,4}\b/.test(cell.sentence) &&
-            (!cell.restricted || (cell.readable.length > 10 && !/^[A-Z0-9]{1,4}\b/.test(cell.readable)))
+            (!cell.restricted || saysMoreThan(cell.readable, cell.restriction))
         ),
       JSON.stringify(conditions.found[0] || null) +
         ` rows=${conditions.rows} toggles=${conditions.toggles}`
@@ -3154,6 +3186,59 @@ async function runPage(browser, index, given, file, body, base) {
             ["Advance", "Restricted", "Regular"].includes(cell.word)
         ),
       JSON.stringify(conditions.found[0] || null)
+    );
+    // The rule above is worth stating on its own, because the page has 841
+    // codes to choose from and a reader can only act on the ones that are
+    // explained. A condition that is its own code is the failure; a condition
+    // the feed wrote tersely is not.
+    check(
+      "no row prints its restriction code as though it were the condition",
+      conditions.found.every(
+        (cell) => !cell.restricted || saysMoreThan(cell.readable, cell.restriction)
+      ),
+      JSON.stringify(
+        conditions.found.filter((cell) => cell.restricted && !saysMoreThan(cell.readable, cell.restriction))
+      )
+    );
+    // The rule above is the one the whole check rests on, and it was wrong once
+    // already: it used to reject a condition for opening with one to four
+    // capitals, which rejects 624 of the 841 descriptions in the real file. A
+    // rule that has been wrong in the generous direction will be wrong in the
+    // other one next, so the cases that separate them are named here rather
+    // than left to whoever reads it next.
+    const ruleCases = [
+      // Conditions the real feed writes tersely. Every one of these was
+      // reported as a defect, and none of them is a code.
+      ["OFF-PEAK", "B3", true],
+      ["NTH ADVANCE", "NT", true],
+      ["NOT VALID BEFORE 0915 MON-FRI", "TU", true],
+      ["BAN ALL DAY", "ZZ", true],
+      ["IEC OFF-PEAK", "1U", true],
+      // The condition being its own code, in every disguise a page might
+      // print it in. These are the defect the rule exists for.
+      ["", "B3", false],
+      ["   ", "B3", false],
+      ["B3", "B3", false],
+      ["b3", "B3", false],
+      ["  B3  ", "B3", false],
+      ["3B", "B3", false],
+      ["BB333", "B3", false],
+      ["-B3-", "B3", false],
+      ["B3 (2)", "B3", false],
+      // The code with a digit on the end, which is the code again. Digits are
+      // dropped before comparing precisely so this cannot pass.
+      ["B31", "B3", false],
+      ["B3 1", "B3", false],
+      // A code with something else attached says something, and is allowed.
+      ["B3 OFF-PEAK", "B3", true],
+    ];
+    const wrongRule = ruleCases
+      .filter(([text, code, want]) => saysMoreThan(text, code) !== want)
+      .map(([text, code, want]) => ({ text, code, want, got: saysMoreThan(text, code) }));
+    check(
+      "the condition rule accepts the feed's terse wording and rejects a bare code",
+      wrongRule.length === 0,
+      JSON.stringify(wrongRule)
     );
     // C08: where the feed states what a restriction permits, the row prints it
     // beside the condition rather than leaving the reader with a code. Judged
