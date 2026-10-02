@@ -48,6 +48,17 @@ measurements do not support a formula:
 | the largest worker sampled while assembling pages | **852 MB** |
 | a four-worker tree, sampled mid-build | **2.9 GB** total, parent down to 120 MB |
 
+The wall time that budget was chosen against: a whole-network build of the real
+feed, 2 October 2026, wrote 2,712 pages between 10:29:52 and 12:30:57. That is
+121 minutes at 0.093 pages/s per worker on four workers, and about two hours
+from a cold start including the 145s feed load, the 83s pool start and the
+chooser. An earlier note in this file put it at 63 minutes, from a nine-minute
+window early in a build; that window held the cheapest stations in the set, and
+the error was a factor of two. The release workflow's own comment records
+0.84 pages/s and 54 minutes from "the first twenty pages" -- the same mistake on
+a different machine, left standing here because correcting it needs that run,
+not this edit.
+
 A four-worker build asks for 4.1 GB plus four workers and finishes; eight asks
 for 4.1 GB plus eight and dies, with 8 GB free at the time. The arithmetic does
 not explain the failure, and something transient during eight simultaneous
@@ -69,7 +80,7 @@ different problems for whoever is waiting for the build.
 
 ## Consequences
 
-- A machine with room to spare builds the network in about 63 minutes; one
+- A machine with room to spare builds the network in about two hours; one
   without builds it on a single worker in most of a day, and says so.
 - The release workflow can no longer ask a twelve-core runner for twelve
   workers. It called `max(2, os.cpu_count())`, which had the same exposure in

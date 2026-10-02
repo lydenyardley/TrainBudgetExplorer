@@ -115,10 +115,12 @@ def build(args: argparse.Namespace) -> int:
         # the largest count measured to finish.
         #
         # Measured here, real feed, four workers: the feeds load in 145s, the
-        # pool takes a further 83s, and the pages then arrive at 0.77 pages/s,
-        # which puts the whole 2,712 at about 63 minutes from a cold start.
-        # Left at the builder's default of one worker that is 2,718 / 0.19 --
-        # nearly four hours.
+        # pool takes a further 83s, and the 2,712 pages then take 121 minutes at
+        # 0.37 pages/s -- about two hours from a cold start. The first 239 pages
+        # arrive at 0.77 pages/s, because the builder works through the origin
+        # list and the early ones are priced for a handful of destinations; a
+        # stopwatch over those is not a stopwatch over the work. One worker is
+        # 2,712 / 0.093 -- most of a working day.
         # The free-memory figure is read once and named, because the count it
         # produces is the number a reader would ask about and "1 worker" on its
         # own does not say whether that was a choice or a shortage.
@@ -322,13 +324,18 @@ def main() -> int:
 
     # The default is now the whole network, and this says what that costs
     # before it starts rather than after it has finished. Measured on the real
-    # feed with the national timetable, 2 October 2026, on this machine: 2,712
-    # priced stations at 0.19 pages/s per worker, so an hour of building per
-    # worker and about 63 minutes on the four workers the budget below chooses.
-    # A single worker is most of a working day. The old figure -- 20 minutes on
-    # eight cores -- was measured against a feed without the national timetable
-    # and an eight-worker build that now dies with a MemoryError, so it is
-    # withdrawn rather than qualified (ADR-0024, ADR-0050, ADR-0055). The fast
+    # feed with the national timetable, 2 October 2026, on this machine, by a
+    # whole-network build rather than by a stopwatch over its first minutes:
+    # 2,712 priced stations in 121 minutes of page building at 0.093 pages/s
+    # per worker, so about two hours from a cold start on the four workers the
+    # budget below chooses, and most of a working day on one.
+    #
+    # The figure this replaces was itself wrong twice over -- "20 minutes on
+    # eight cores" came from a feed without the national timetable, and the 63
+    # minutes that followed came from the first nine minutes of a build, which
+    # are the cheapest stations in the set. A rate taken from the first tenth of
+    # the work is not a rate for the work. Both are withdrawn rather than
+    # qualified (ADR-0024, ADR-0050, ADR-0055, ADR-0057). The fast
     # single-origin page is still one flag away, because a build of one station
     # is the right tool for working on one station and the wrong thing to
     # double-click.
