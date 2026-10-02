@@ -36,8 +36,13 @@ fix appears not to work.
 
 **1. The default build is the whole network, and it says what that costs before it
 starts.** `python run.py` builds one page per priced station, prints the measured
-cost (about 20 minutes on eight cores, 81 on two — ADR-0024, re-measured
-1 October 2026), and says that the next run will serve what this writes. The
+cost, and says that the next run will serve what this writes. The cost was
+originally recorded here as about 20 minutes on eight cores, 81 on two. That was
+measured without the national timetable, and the eight-worker build it assumed
+dies with a MemoryError (ADR-0057). Re-measured with the timetable on a 15.8 GB
+machine, 2 October 2026: 0.19 pages/s per worker, so about 63 minutes on the
+four workers that machine can hold and most of a working day on one. The figure
+in this decision is withdrawn rather than qualified. The
 `--i-know-this-is-slow` guard is gone, because the default no longer needs
 consent: the question ADR-0051's guard asked — *are you sure you want an hour?* —
 is answered in the first line of output instead of by a refusal.
