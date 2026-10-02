@@ -90,21 +90,48 @@ and decision 3 below -- "the numbers are measured by a tool, not asserted in a
 comment" -- is the claim that failed: the tool was measuring a discarded object
 and reporting it as a measurement.
 
-**`WORKER_BYTES` is deliberately left at 900 MB.** The corrected figures say the
-four-worker budget does not hold; the recorded four-worker tree above says four
-workers fitted in 2.9 GB with the parent down to 120 MB, which cannot be true if
-one worker holds 2.1 GB. Both cannot be right, and one of them has now been
-shown to be a measurement error, so the honest position is that this ADR holds
-one good measurement, one bad one withdrawn, and one unexplained. Changing the
-constant would change the worker count on every machine and in CI on the strength
-of a contradiction rather than a measurement.
+**The four-worker tree is explained, and it was never a contradiction.** The
+2.9 GB sample and the 2,188 MB worker are two readings of the same build at two
+different moments, and the arithmetic separates them without another run.
 
-Settling it needs one run this machine could not do: a real four-worker
-build, which needs about 10 GB free. Two things are already true and do not wait
-for it. `tools/measure_build_memory.py` now holds its subject, and
-`tools/measure_worker_pages.py` measures a worker's real peak without needing
-four workers -- it calls `init_worker` and `build_page_job` in one process
-rather than re-implementing them.
+The sample that produced 2.9 GB also recorded its own largest process at
+1.2 GB. One worker holds 2,188 MB from the moment `init_worker` returns until it
+answers its last job, so a process at 1.2 GB is a worker partway through
+`TimetableDb().load_feed` -- the parse that takes 79 seconds and ends at 2,100
+MB. Four workers at that instant hold about 4 x 1.2 = 4.8 GB, and a tree of
+4.9 GB against a machine of 15.8 GB is a build with room, not a build in
+trouble. The sample was taken while the pool was still initialising, which is
+the one moment the tree is at its cheapest and the one moment a sampler is most
+likely to catch, because it is the moment the operator is watching for progress.
+
+What the sample cannot be is a ceiling for a steady-state worker, and this ADR
+previously used it as one. The committed four-worker log settles what a finished
+worker costs: it loaded 419,589 schedules and 7,700,987 calling points, wrote
+2,712 pages and exited cleanly. At the measured 2,188 MB that is 4 x 2,188 =
+8,748 MB of workers, plus the parent's 4,110 MB peak, and the sum -- 12,858 MB
+-- fits inside 15.8 GB with room to spare. Four workers were never the problem
+on this machine. Eight were, and the same arithmetic says why with nothing left
+over: 8 x 2,188 + 4,110 = 21,596 MB against 15,800 MB. The `MemoryError` in
+`_cache/w8b.log` is not a transient nobody can account for. It is this sum.
+
+The parent's own share is not released while the pool runs. `build_demo_page.py`
+holds `fares` and `timetable` in locals across the `ProcessPoolExecutor` branch
+and never drops them -- there is no `del` and no `gc.collect` before the workers
+start -- so the pool begins while the parent is still committed. That is why
+`PARENT_BYTES` is counted, and it is the premise decision 2's single-step
+ceiling relies on when it declines to divide free memory by a per-worker cost.
+
+**`WORKER_BYTES` is deliberately left at 900 MB.** The evidence now points one
+way: a worker costs 2,188 MB, not 900 MB, and the tree arithmetic above is
+consistent with that at both four workers and eight. But the constant is not
+changed here, because changing it is a decision about every machine and about
+CI, and the figure that would replace it has been measured in one process on
+one feed. Raising it to 2,200 MB moves `ONE_WORKER_FLOOR` from 7.3 GB to
+8.6 GB, which on a 15.8 GB machine turns a four-worker build into a one-worker
+build for anyone whose desktop is open -- the opposite of the ceiling this ADR
+exists to enforce, and a consequence no single-process measurement can
+predict. That is a decision to make against a real four-worker run, not against
+a corrected comment.
 
 The wall time that budget was chosen against: a whole-network build of the real
 feed, 2 October 2026, wrote 2,712 pages between 10:29:52 and 12:30:57. That is

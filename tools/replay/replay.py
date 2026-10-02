@@ -131,7 +131,12 @@ if __name__ == "__main__":
                     # p4 the correction to ADR-0057: two worker figures
                     # withdrawn as the measurement of a freed object, and the
                     # two comments that quoted them corrected in place.
-                    "p4_adr0057_correction.py"):
+                    "p4_adr0057_correction.py",
+                    # p5 the four-worker tree reconciled: the 2.9 GB sample
+                    # was taken while the pool was still parsing, and the
+                    # parent does not release its databases before the
+                    # pool starts -- with the test that holds both.
+                    "p5_four_worker_tree.py"):
         normalise_page()
         print("--", script)
         result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
