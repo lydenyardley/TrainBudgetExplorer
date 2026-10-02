@@ -40,9 +40,12 @@ cost, and says that the next run will serve what this writes. The cost was
 originally recorded here as about 20 minutes on eight cores, 81 on two. That was
 measured without the national timetable, and the eight-worker build it assumed
 dies with a MemoryError (ADR-0057). Re-measured with the timetable on a 15.8 GB
-machine, 2 October 2026: 0.19 pages/s per worker, so about 63 minutes on the
+machine, 2 October 2026: 0.093 pages/s per worker, so about two hours on the
 four workers that machine can hold and most of a working day on one. The figure
-in this decision is withdrawn rather than qualified. The
+in this decision is withdrawn rather than qualified, and so is the 63 minutes
+that replaced it here an hour earlier: that came from the first nine minutes of
+a build, which are the cheapest stations in the set, and a rate taken from the
+first tenth of the work is not a rate for the work. The
 `--i-know-this-is-slow` guard is gone, because the default no longer needs
 consent: the question ADR-0051's guard asked — *are you sure you want an hour?* —
 is answered in the first line of output instead of by a refusal.

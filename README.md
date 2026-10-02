@@ -1092,8 +1092,9 @@ python run.py
 
 That builds one page per priced station from the current feed, serves it at
 http://localhost:8741, and opens your browser. It says what that costs before it
-starts — about an hour on four workers, measured against the national timetable
-on a 15.8 GB machine — and the next run serves what the first one wrote and
+starts — about two hours on four workers, measured by a whole-network build
+against the national timetable on a 15.8 GB machine — and the next run serves
+what the first one wrote and
 starts immediately. The worker count comes from what the machine has free rather
 than from how many cores it has, because every worker holds the whole timetable;
 a machine short of memory builds on one worker rather than dying (ADR-0057).
