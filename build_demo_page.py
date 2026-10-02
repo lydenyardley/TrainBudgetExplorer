@@ -2758,14 +2758,28 @@ def main(argv: list[str] | None = None) -> int:
             )
     cache_path: Path | None = None
     if args.timetable:
+        # Every station the page can show, not only the ones a return reaches.
+        # It was the returns alone, and the outbound-single list reaches
+        # thirteen more on a real page -- Bolton, Blackpool North, Chorley,
+        # Edge Hill among them -- whose services were therefore never in the
+        # index at all. Each of them was a row reading "No service" and
+        # "Unknown", which is not a fact about those stations. It is a fact
+        # about which stations this build asked the timetable about.
+        # The three lists the page composes are the three the index must cover.
         focus_destinations: set[str] = set()
         if not args.all_origins and args.origin in fares.locations_by_crs:
-            focus_destinations = {
-                row.crs
-                for row in fares.page_destinations_within(
+            for rows in (
+                fares.page_destinations_within(
                     args.origin, EVERYTHING_PENCE, adults=1, day=day
-                )
-            }
+                ),
+                fares.page_single_destinations_within(
+                    args.origin, EVERYTHING_PENCE, adults=1, day=day
+                ),
+                fares.publishable_destinations_within(
+                    args.origin, EVERYTHING_PENCE, adults=1, day=day
+                ),
+            ):
+                focus_destinations.update(row.crs for row in rows)
         cache_path = (
             timetable_cache_path(args.timetable, args.origin, focus_destinations)
             if not args.all_origins

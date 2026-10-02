@@ -35,7 +35,11 @@ for script in ("c1_columns.py", "c1b_css.py", "c2_cardnote.py", "c2b_drawer_list
                 # checks, n9 this registration.
                 "n1_narrow_rows.py", "n2_railcard_cards.py", "n3_was_ladder.py",
                 "n4_journey_facts.py", "n5_chip_space.py", "n6_tests.py",
-                "n7_browser.py", "n8_railcard_checks.py"):
+                "n7_browser.py", "n8_railcard_checks.py",
+                # The journey-data pass, in the order it was found: the test
+                # first, then the fix it fails without.
+                "n11_passing_stop_test.py", "n12_zero_times.py",
+                "n13_focus_destinations.py", "n14_focus_test.py"):
     normalise_page()
     print("--", script)
     result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
