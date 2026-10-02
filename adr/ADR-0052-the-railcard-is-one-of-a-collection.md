@@ -74,10 +74,25 @@ reader from another and a stored card must not travel to a page whose feed price
 nothing for it. The address carries `card=<code>` as well, so a shared link is
 the same search.
 
-**A card that cannot cover the party on screen is removed from the list**, rather
-than left there to be picked and then ignored. The bounds are the feed's own
-records for that card. Two Together is two adults, the 16-25 is one to eight,
-the Student card is one.
+**A card that cannot cover the party on screen cannot be chosen**, rather than
+left there to be picked and then ignored. The bounds are the feed's own records
+for that card. Two Together is two adults, the 16-25 is one to eight, the
+Student card is one.
+
+*Amended 2 October 2026.* This originally read "is removed from the list", and
+removal turned out to cost more than it bought. Two Together's bounds are 2 to
+2 and the default page shows one adult, so it was the one card the selector
+lost on every page a reader opened by default, and its absence read as "this
+page does not price Two Together" rather than "not for the party you have on
+screen". Every card the build prices is now listed, and one that cannot cover
+the party on screen is struck out of choosing with the reason in its own label.
+
+The guarantee this record was protecting is unchanged and, if anything,
+tighter. Removal existed so the page would never show a price nobody could
+buy, and a disabled `<option>` prevents that at least as strictly as removing
+the option does: a disabled option cannot hold a value, so `priceOf` and
+`cardFor` cannot read one. What removal also did, and was never asked to do,
+was hide a card the feed prices.
 
 **A card code this page does not price is ignored**, rather than read as a card
 the reader holds. A link can arrive from a station whose feed carries a card this

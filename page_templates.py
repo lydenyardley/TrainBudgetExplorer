@@ -406,7 +406,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   /* The price the card was taken off, in the same cell as the price: a
      discounted number never stands alone (Q3), and the second number is
      quieter because the first is the one the reader asked for. */
-  td.num .was { color: var(--muted); font-size: .875em; }
+  td.num .was { color: var(--muted); font-size: .8em; }
   /* The destination and its three-letter code, which a seller asks for. The
      name carries the weight and the code recedes, because the code identifies
      the place to a booking system and says nothing to a reader. */
@@ -467,7 +467,8 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .heritage-proof a:hover, .heritage-proof a:focus-visible { color: var(--accent); }
   /* A chip's count is part of its label, so it sits inside the chip and is
      never the only thing carrying the type's name. */
-  .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em; }
+  .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em;
+               margin-left: .35rem; }
   #typeRule { display: block; margin: .35rem 0 0; }
   #clearTypes { margin-top: .35rem; }
   /* S19: the condition is the sentence; the record is folded under it. */
@@ -578,18 +579,45 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
     table, tbody { display: block; }
     thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
              clip-path: inset(50%); white-space:nowrap; border:0; }
-    tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: .1rem .75rem;
-         padding: .5rem 0; border-bottom: 1px solid var(--line); }
-    td[data-label]::before { content: attr(data-label) " "; color: var(--muted); font-size: .78rem;
+    /* One rule per row, and the row is what draws it. Every cell kept the
+       border the table gave it and drew a line at its own height, so a stacked
+       row carried up to six horizontal lines at six different heights, none of
+       them reaching the row's own. The cells are the row's contents now and
+       draw nothing, which is the only arrangement in which the lines line up.
+       `th, td` rather than `td`, because the base rule this cancels is a
+       `th, td` pair and a media query adds no specificity of its own. */
+    th, td { border-bottom: 0; }
+    /* One cell per line, the full width, rather than a flex line that wrapped
+       wherever it happened to fit. The wrap is what made a row's cells
+       different heights from each other. */
+    tr { display: block; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+    /* Two columns of the same width in every cell: the label, then the value.
+       A fixed track rather than `max-content`, so "CHANGES" and "PRICE" do not
+       each size a column of their own and leave the values ragged. */
+    td { display: grid; grid-template-columns: 5rem minmax(0, 1fr); column-gap: .55rem;
+         align-items: baseline; border: 0; padding: 0; }
+    td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .78rem;
                              text-transform: uppercase; letter-spacing: .04em; }
-    td:first-child { flex: 1 1 100%; padding-left: 0; }
+    /* Every element inside a cell is part of its value, so it belongs in the
+       value track and takes its own line there when there is more than one.
+       This is what keeps the standard fare under a discounted price, and the
+       change station under the count, off the same line as the number beside
+       it -- the reason both are `display: block` on a wide screen. */
+    td > * { grid-column: 2; }
+    /* The destination and the row's actions carry no label, so they take the
+       whole width rather than the value track. */
+    td:first-child, td:last-child { display: block; }
     td.num { text-align: left; }
-    /* On a phone the numbers and the fare type share the line under the
-       destination, and the actions take the line below them: `margin-left:
-       auto` pushed them to the right edge, which is where the thumb is, and
+    /* The panel a row opens belongs to the row above it. It had a rule under it
+       of its own, so opening one destination drew a second line across the page
+       and read as another destination. The actions stay inline in the cell
+       rather than pushed to the right edge, which is where the thumb is and
        where a stray tap buys a ticket. */
-    td:last-child { margin-left: 0; }
-    tr.detail td { flex: 1 1 100%; padding: .5rem 0; }
+    tr.detail { padding: 0; border-bottom: 0; }
+    /* `border-bottom` is named here and not left to the `th, td` rule above,
+       because the base `tr.detail td` rule that this cancels is one selector
+       deeper and wins on specificity whatever order the two are written in. */
+    tr.detail td { padding: .5rem 0 .55rem; border-bottom: 0; }
   }
 """
 
@@ -930,8 +958,9 @@ if (railcardKeys.length) {
 }
 
 // The party a chosen card covers, from the feed's own records for it. A card
-// that needs two travellers cannot price one reader's journey, and the page says
-// so rather than offering a number nobody could buy.
+// that needs two travellers cannot price one reader's journey, and the page
+// says so in the list rather than offering a number nobody could buy: the
+// option is there and marked, and cannot be chosen.
 function cardCoversParty(card) {
   const adults = unit() === "party" ? 2 : 1;
   return card.minAdults <= adults && adults <= card.maxAdults;
@@ -1183,17 +1212,37 @@ function syncRailcardParty() {
   // then left the options alone, so a party of two was still offered a card the
   // feed says prices one traveller; the browser suite found it by asking which
   // options a party of two can see.
-  const offered = railcardKeys.filter((key) => cardCoversParty(railcards[key]));
+  //
+  // Every card this build priced is listed, including the ones that cannot
+  // price the party on screen. They used to be removed, and the one card the
+  // default page lost that way was Two Together -- two adults exactly, on a
+  // page showing one -- so a reader who owns it could not find out the page
+  // prices it at all. The card is listed and struck out of choosing instead,
+  // which keeps ADR-0052's actual guarantee: a disabled option cannot hold a
+  // value, so nothing downstream can read a card price nobody could buy. The
+  // sentence in the option is the feed's own bound, so the reason is on screen
+  // rather than inferred from an absence.
+  const adults = unit() === "party" ? 2 : 1;
   const wanted = railcardSelect.value;
   railcardSelect.replaceChildren();
   const none = document.createElement("option");
   none.value = "";
   none.textContent = "No railcard";
   railcardSelect.append(none);
-  for (const key of offered) {
+  const offered = [];
+  for (const key of railcardKeys) {
+    const card = railcards[key];
     const option = document.createElement("option");
     option.value = key;
-    option.textContent = railcards[key].label;
+    if (cardCoversParty(card)) {
+      option.textContent = card.label;
+      offered.push(key);
+    } else {
+      option.textContent = card.label + (adults < card.minAdults
+        ? " (needs " + card.minAdults + " adults)"
+        : " (covers up to " + card.maxAdults + " adult" + (card.maxAdults === 1 ? "" : "s") + ")");
+      option.disabled = true;
+    }
     railcardSelect.append(option);
   }
   // The reader's choice survives the rebuild when the party on screen still
