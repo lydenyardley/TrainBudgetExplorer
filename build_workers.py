@@ -96,11 +96,18 @@ PARENT_BYTES = 4_400 * MB
 #:
 #: So this constant is 2.4x smaller than the figure it was derived from, and
 #: `worker_budget` will hand out more workers than the machine can hold. It is
-#: left at 900 MB deliberately: the recorded four-worker build says four workers
-#: fitted in 2.9 GB, which cannot be true at 2.1 GB each, and one real build is
-#: needed to settle that before a new number can be justified. Changing it here
-#: would change the worker count on every machine and in CI on the strength of a
-#: contradiction. See ADR-0057, and `tools/measure_worker_pages.py`.
+#: left at 900 MB deliberately. The 2.9 GB four-worker tree that appeared to
+#: contradict the corrected figure is explained in ADR-0057: its own largest
+#: process was 1.2 GB, so it was sampled while the pool was still parsing, and
+#: it was never a ceiling for a finished worker. The arithmetic now agrees at
+#: both four workers (12,858 MB, which fits) and eight (21,596 MB, which is the
+#: `MemoryError` in the eight-worker log).
+#:
+#: Raising this to the measured 2,200 MB would move `ONE_WORKER_FLOOR` from
+#: 7.3 GB to 8.6 GB, which turns a four-worker build into a one-worker build on
+#: a 15.8 GB machine for anyone with a desktop open. That is a decision about
+#: every machine and about CI, and it wants a real four-worker run rather than a
+#: corrected comment. See ADR-0057, and `tools/measure_worker_pages.py`.
 WORKER_BYTES = 900 * MB
 
 #: What the machine needs for everything that is not the build: the browser a
@@ -170,14 +177,19 @@ def worker_budget(cores: int | None = None, free_bytes: int | None = None) -> in
     refusing to build.
 
     The middle ceiling is a single step rather than a division, and that is
-    deliberate. Dividing the free memory by the per-worker cost gives a number
-    the measurements do not support: at 8 GB free it permits four workers and
-    at 4 GB it permits one, but a four-worker tree was measured holding 2.9 GB
-    in total, because the parent has let most of its 4.1 GB go by the time the
-    workers are producing pages. A formula that fits one sample and not the
-    other is a formula to distrust, so this asks the one question that has a
-    measured answer -- is there room for the smallest parallel build -- and
-    otherwise trusts the ceiling.
+    deliberate. A division would ask a question this file cannot answer
+    honestly, because `WORKER_BYTES` is smaller than a real worker by a factor
+    of 2.4 (see its comment), and dividing free memory by a figure known to be
+    too low hands out more workers than the machine can hold. The step asks the
+    one question that has a measured answer -- is there room for the smallest
+    parallel build -- and otherwise trusts the ceiling, which is the largest
+    count observed to finish.
+
+    Note that the parent is still holding its own `fares` and `timetable` when
+    this returns and when the pool starts: `build_demo_page.py` keeps both in
+    locals across the `ProcessPoolExecutor` branch and never drops them. So the
+    step cannot be a division either -- the parent is committed for the whole
+    build, and `PARENT_BYTES` is counted for that reason.
 
     A caller that passes ``free_bytes`` has already read it.
     """

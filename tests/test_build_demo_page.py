@@ -5114,6 +5114,47 @@ class WorkerBudgetTest(unittest.TestCase):
         self.assertGreaterEqual(PARENT_BYTES, 4_110 * 10 ** 6)
         self.assertGreaterEqual(WORKER_BYTES, 852 * 10 ** 6)
 
+    def test_four_workers_fitted_and_eight_did_not(self) -> None:
+        # The reconciliation ADR-0057 now records, held as arithmetic rather
+        # than prose. A worker measured at 2,188 MB through `init_worker` and
+        # `build_page_job`; the parent peaks at 4,110 MB and does not release
+        # it (see the test below). Four workers plus the parent is 12,858 MB
+        # against this machine's 15.8 GB, which is why the four-worker build in
+        # the committed log finished. Eight is 21,596 MB, which is why the
+        # eight-worker log holds a MemoryError rather than a page.
+        worker = 2_188
+        machine = 15_800
+        self.assertLess(4 * worker + PARENT_BYTES // 10 ** 6, machine)
+        self.assertGreater(8 * worker + PARENT_BYTES // 10 ** 6, machine)
+
+    def test_the_parent_still_holds_its_databases_when_the_pool_starts(self) -> None:
+        # `worker_budget` declines to divide free memory by a worker's cost, and
+        # one of its two stated reasons is that the parent has let most of its
+        # 4.1 GB go before the workers start producing pages. That is not what
+        # the source does: `fares` and `timetable` are function locals that stay
+        # bound across the `ProcessPoolExecutor` branch, and nothing drops them.
+        # If someone later adds the `del` that would make the comment true, this
+        # fails and the comment has to be rewritten with it -- which is the
+        # point. A budget premise that can be changed silently by an unrelated
+        # edit is not a premise.
+        source = (pathlib.Path(__file__).resolve().parent.parent
+                  / "build_demo_page.py").read_text(encoding="utf-8")
+        # Anchored on `out_dir = out.parent`, which is unique, rather than on
+        # `if args.all_origins:`, which is not: the file has an earlier branch
+        # of that name that decides how to load fares, and slicing from there
+        # sweeps in the prices-only branch's `timetable = None` -- which is that
+        # branch declining to load a timetable at all, not a release of one.
+        start = source.index("        out_dir = out.parent")
+        before = source[start:source.index("ProcessPoolExecutor(")]
+        releases = [statement for statement in
+                    ("del fares", "del timetable", "fares = None",
+                     "timetable = None", "gc.collect()")
+                    if statement in before]
+        self.assertEqual(
+            releases, [],
+            f"the parent now releases memory before the pool starts ({releases}), "
+            "so worker_budget's docstring is wrong until it is rewritten")
+
 
 class RunnerWorkerCountTest(unittest.TestCase):
     """That `python run.py` asks the budget rather than counting cores.
