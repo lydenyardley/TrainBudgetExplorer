@@ -1878,7 +1878,14 @@ function journeyCell(destination, column) {
   // row to find. It sits under the count now, in the column whose header is
   // the word "Changes".
   const via = interchangeLine(destination);
-  if (via) cell.append(via);
+  // The station sits on its own line under the count, so this cell is two
+  // lines tall by design. It says so in the markup, because the check that
+  // measures wrapped numbers cannot otherwise tell that from a number that
+  // ran out of room.
+  if (via) {
+    cell.classList.add("changes");
+    cell.append(via);
+  }
   return cell;
 }
 
@@ -2196,10 +2203,15 @@ function cardNote(destination) {
     // discounted price before the minimum is not one of them, and recomputing it
     // here would put a second copy of the rounding rule in the page, where it
     // could drift from the build's.
+    // The figure first is the one in the row, not the card's. On a real page
+    // the card's own price is often the DTD minimum -- £12.00 on a fare the
+    // reader is looking at for £2.70 -- and opening a note with the larger
+    // number makes the reader hunt for the one that is theirs. priceOf() is
+    // the same figure the Price cell renders, so the two cannot disagree.
     note.textContent =
-      card.label + " does not reduce this fare. Its own price here is " +
-      money(details.pricePence) + " per adult, against a standard fare of " +
-      money(destination.adultPence) + ", because the minimum fare the feed applies to this " +
+      "This fare is " + money(priceOf(destination)) + ", and " + card.label +
+      " does not reduce it. The card's own price here is " +
+      money(details.pricePence) + " per adult, because the minimum fare the feed applies to this " +
       "ticket is " + money(details.minimumFarePence) +
       ". This row is priced at the cheaper of the two, so travelling without the card would " +
       "cost the same.";
