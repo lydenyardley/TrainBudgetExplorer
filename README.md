@@ -1092,8 +1092,12 @@ python run.py
 
 That builds one page per priced station from the current feed, serves it at
 http://localhost:8741, and opens your browser. It says what that costs before it
-starts — about 20 minutes on eight cores, 81 on two — and the next run serves
-what the first one wrote and starts immediately. The runner also rebuilds when
+starts — about an hour on four workers, measured against the national timetable
+on a 15.8 GB machine — and the next run serves what the first one wrote and
+starts immediately. The worker count comes from what the machine has free rather
+than from how many cores it has, because every worker holds the whole timetable;
+a machine short of memory builds on one worker rather than dying (ADR-0057).
+The runner also rebuilds when
 the builder, the template or the fare maths is newer than the build it would
 serve, so a page cannot quietly be yesterday's (ADR-0055). The runner removes any
 station page folder a *previous* single-origin build left behind, reading the
