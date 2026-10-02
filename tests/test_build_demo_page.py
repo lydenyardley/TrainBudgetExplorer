@@ -5103,10 +5103,14 @@ class WorkerBudgetTest(unittest.TestCase):
         self.assertTrue(free is None or (isinstance(free, int) and free > 0))
 
     def test_the_figures_the_budget_is_built_from_are_the_measured_ones(self) -> None:
-        # The parent was measured at 4,110 MB and the largest worker sampled
-        # mid-build at 852 MB. The constants are rounded up from those, so a
-        # future edit that lowers them below the measurement is caught here
-        # rather than by a MemoryError.
+        # The parent was measured at 4,110 MB and that stands. The worker floor
+        # here is the withdrawn 852 MB, not a current measurement: it came from
+        # the tool measuring a database it had already freed. The real figure is
+        # 2,188 MB, so this assertion no longer says the constant is justified --
+        # it says the constant must not be lowered, which is the half of the
+        # claim that still holds while WORKER_BYTES is deliberately unchanged.
+        # Raising it is a decision that needs a real four-worker build, not an
+        # edit to this test; see ADR-0057.
         self.assertGreaterEqual(PARENT_BYTES, 4_110 * 10 ** 6)
         self.assertGreaterEqual(WORKER_BYTES, 852 * 10 ** 6)
 

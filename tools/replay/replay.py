@@ -127,7 +127,11 @@ if __name__ == "__main__":
                     "p1_replay_driver.py", "p2_budget_floor.py",
                     # p3 the browser check that judged a restriction condition
                     # by how it was spelled rather than by what it said.
-                    "p3_condition_rule.py"):
+                    "p3_condition_rule.py",
+                    # p4 the correction to ADR-0057: two worker figures
+                    # withdrawn as the measurement of a freed object, and the
+                    # two comments that quoted them corrected in place.
+                    "p4_adr0057_correction.py"):
         normalise_page()
         print("--", script)
         result = subprocess.run([sys.executable, str(CACHE / script)], cwd=ROOT)
