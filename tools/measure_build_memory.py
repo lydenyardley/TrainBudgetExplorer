@@ -93,17 +93,36 @@ class Trace:
 
 
 def measure_worker(args: argparse.Namespace) -> None:
-    """What one worker's initialiser costs: shared fare metadata, then the timetable."""
+    """What one worker's initialiser costs: shared fare metadata, then the timetable.
+
+    Both databases are bound to a name, and until this commit neither was. The
+    load was a temporary: the statement completed, the object had no referrers,
+    CPython freed it, and the sample that followed read the arenas Python had
+    not returned to the OS rather than the memory the load had held. Measured
+    against the real feed the difference is not subtle -- 1,918 MB private with
+    the reference kept, 316 MB without it -- and the figure this function has
+    been printing, "one worker's initialiser peaks at 338 MB", is the second
+    one. A worker holds that timetable for every page it builds, so 338 MB was
+    never a figure about a worker at all.
+
+    Holding the reference also gives the peak a meaning: it is what a worker
+    holds from its initialiser until it answers its first job, which is the
+    figure `build_workers.WORKER_BYTES` is supposed to cover.
+    """
     trace = Trace()
     trace.say("start")
     common_cache, _index_dir = fares_index_cache_paths(args.feed)
-    FaresDb.load_fare_common(common_cache)
-    trace.say("shared fare metadata")
+    fares = FaresDb.load_fare_common(common_cache)
+    trace.say(f"shared fare metadata ({len(fares.locations_by_crs):,} locations)")
     if args.timetable:
-        TimetableDb().load_feed(args.timetable)
-        trace.say("whole national timetable")
-    print(f"\none worker's initialiser peaks at {trace.peak:,} MB private "
-          f"(the budget assumes {WORKER_BYTES // MB:,} MB)")
+        timetable = TimetableDb().load_feed(args.timetable)
+        stats = timetable.stats()
+        trace.say(f"whole national timetable ({stats['schedules']:,} schedules, "
+                  f"{stats['calling_points']:,} calling points)")
+        assert stats["schedules"] > 0, "the timetable was dropped before the peak"
+    budget = WORKER_BYTES // MB
+    print(f"\none worker's initialiser peaks at {trace.peak:,} MB private")
+    print(f"the budget assumes {budget:,} MB ({trace.peak - budget:+,} MB against it)")
 
 
 def measure_parent(args: argparse.Namespace) -> None:
