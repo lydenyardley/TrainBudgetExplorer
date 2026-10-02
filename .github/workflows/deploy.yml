@@ -259,17 +259,21 @@ jobs:
           # contract the single-origin build already published, so this widens
           # the coverage rather than changing the route model.
           #
-          # The worker count is read from the runner rather than written down:
-          # the work is CPU-bound, so the useful worker count is the core
-          # count, and a runner with more cores than this repository's machine
-          # should get more workers for free.
+          # The worker count is read from the runner rather than written down,
+          # because a runner with more memory than this repository's machine
+          # should get more workers for free. It was os.cpu_count() alone,
+          # which is a core count wearing a memory claim: every worker is
+          # handed the whole national timetable, and eight of them die with a
+          # MemoryError in the pool initialiser having written no pages. The
+          # budget measures what a worker costs, asks the runner what it has,
+          # and caps the answer at the largest count measured to finish.
           python build_demo_page.py \
             --feed feeds/fares \
             --timetable feeds/timetable \
             --knowledgebase feeds/knowledgebase \
             --date "$(date -u +%Y-%m-%d)" \
             --all-origins \
-            --workers "$(python -c 'import os; print(max(2, os.cpu_count() or 2))')" \
+            --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
             --out _site/index.html \
             --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \

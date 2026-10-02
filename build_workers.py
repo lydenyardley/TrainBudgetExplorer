@@ -12,6 +12,8 @@ object() sentinels that cannot cross a process boundary at all.
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from atoc_fares import FaresDb
@@ -74,6 +76,104 @@ def init_worker(
     else:
         _WORKER["fares"] = FaresDb().load_feed(feed)
     _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
+
+
+MB = 1_000_000
+
+#: What the parent holds while it prepares the build, measured above. It is
+#: counted because the pool starts before the parent has let go, so a cap that
+#: ignored it would ignore the moment the machine is most committed.
+PARENT_BYTES = 4_400 * MB
+
+#: What one worker costs for as long as it is assembling pages. The initialiser
+#: measures 325 MB and the largest worker sampled mid-build held 852 MB, so
+#: this is the upper of the two rather than the reassuring one.
+WORKER_BYTES = 900 * MB
+
+#: What the machine needs for everything that is not the build: the browser a
+#: reader is previewing in, the editor, the OS. A build that starves those
+#: fails in a way that reads as the build's fault. Set at 2 GB rather than a
+#: rounder 3 so that the one parallel build with a measured outcome -- four
+#: workers with 8 GB free, observed twice -- clears the floor below instead of
+#: being turned away by it.
+RESERVED_BYTES = 2_000 * MB
+
+#: The largest count measured to finish a whole-network build on a 15.8 GB
+#: machine. Above this the arithmetic says there is room and the measurement
+#: says there is not, and the measurement is what this file trusts.
+MAX_WORKERS = 4
+
+#: Below this much free memory the build drops to a single worker. It is the
+#: parent plus one worker plus what the machine needs for itself, which is the
+#: smallest parallel build that can finish at all.
+ONE_WORKER_FLOOR = PARENT_BYTES + WORKER_BYTES + RESERVED_BYTES
+
+
+def free_memory_bytes() -> int | None:
+    """How much memory this machine can hand a build right now, in bytes.
+
+    None when the platform will not say, which is a different thing from zero:
+    a caller that cannot read the figure falls back on the measured ceiling,
+    and a caller that reads zero falls to one worker.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            class MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", wintypes.DWORD),
+                    ("dwMemoryLoad", wintypes.DWORD),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(MemoryStatusEx)
+            ok = ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+            return int(status.ullAvailPhys) if ok else None
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+        return None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def worker_budget(cores: int | None = None, free_bytes: int | None = None) -> int:
+    """How many workers an ``--all-origins`` build should use here.
+
+    Three ceilings, narrowest first: the cores there are, whether the machine
+    can hold the parent and one worker and itself at the same time, and the
+    largest count measured to finish. Never zero -- a build that cannot have a
+    pool still builds, one page at a time, and saying so is better than
+    refusing to build.
+
+    The middle ceiling is a single step rather than a division, and that is
+    deliberate. Dividing the free memory by the per-worker cost gives a number
+    the measurements do not support: at 8 GB free it permits four workers and
+    at 4 GB it permits one, but a four-worker tree was measured holding 2.9 GB
+    in total, because the parent has let most of its 4.1 GB go by the time the
+    workers are producing pages. A formula that fits one sample and not the
+    other is a formula to distrust, so this asks the one question that has a
+    measured answer -- is there room for the smallest parallel build -- and
+    otherwise trusts the ceiling.
+
+    A caller that passes ``free_bytes`` has already read it.
+    """
+    cores = cores or os.cpu_count() or 1
+    if free_bytes is None:
+        free_bytes = free_memory_bytes()
+    if free_bytes is not None and free_bytes < ONE_WORKER_FLOOR:
+        return 1
+    return max(1, min(cores, MAX_WORKERS))
 
 
 def build_page_job(job: dict) -> tuple[str, str, str]:
