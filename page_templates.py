@@ -362,15 +362,21 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      from a block of six paragraphs, and that margin is part of why the first
      fare sat below the fold on a laptop. */
   #summary { margin: .6rem 0 .3rem; font-weight: 600; }
-  /* The table is as wide as its columns need and no wider. Stretched to the
-     page's 78rem with the station name absorbing the slack, the price sat
-     800px from the place it belongs to and the ticket action floated in the
-     middle of an otherwise empty row. At content width the six columns sit
-     together, the numbers stay near the names, and the list reads as a list.
-     `max-width` keeps a very long station name from pushing the last column
-     off a narrow screen; below the phone breakpoint the table stops being a
-     table at all. */
-  table { border-collapse: collapse; width: auto; max-width: 100%; }
+  /* The table is the width of the page. It was content-width instead, on the
+     recorded grounds that stretched to the page's 78rem the price sat 800px
+     from the place it belongs to and the ticket action floated in the middle
+     of an otherwise empty row; the reader asked for a full-width results
+     table, and that is the call, so the objection is kept here rather than
+     deleted with the rule it argued for.
+
+     What stops the row coming apart is the pair of rules below rather than the
+     width: every numeric column is nowrap, so a column is as wide as its
+     widest number and no wider, and the slack all lands in the station name.
+     The price and the ticket action stay in the same part of the row as the
+     place they belong to. `max-width` still keeps a very long station name
+     from pushing the last column off a narrow screen, and below the phone
+     breakpoint the table stops being a table at all. */
+  table { border-collapse: collapse; width: 100%; max-width: 100%; }
   th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
   td[data-label]::before { content: none; }
   /* A column's width is not the header's to decide. Measured on the real
@@ -489,8 +495,17 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .shortlist-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
   .shortlist-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
                      color: var(--muted); font-weight: 700; }
-  #shortlistPick { width: auto; min-width: 14rem; min-height: 2.75rem; }
-  #shortlistPick:disabled { opacity: .6; }
+  /* The hold column is one narrow cell at the left of the row, and it is
+     deliberately not the last, so the rule that keeps the ticket action on one
+     line still has a last column to hold. The box is the platform's own: a
+     tick drawn in CSS is a mark the browser's focus ring and the reader's own
+     settings do not know how to sit around. The label around it is what makes
+     the target 44px -- the mark stays the size a checkbox is meant to be and
+     the thing a finger aims at is a cell-sized square. */
+  th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; }
+  .hold-target { display: inline-flex; align-items: center; justify-content: center;
+                 min-width: 2.75rem; min-height: 2.75rem; cursor: pointer; }
+  .hold-box { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
   .shortlist-controls .toggle { margin-left: 0; min-height: 2.75rem; }
   .shortlist-chips { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem;
                      margin: .55rem 0 0; padding: 0; }
@@ -807,8 +822,7 @@ __THEME_TOGGLE__
      what the list beneath them contains. -->
 <section class="shortlist-bar" id="shortlistBar" aria-label="Shortlist" hidden>
   <div class="shortlist-controls">
-    <label class="shortlist-label" for="shortlistPick">Shortlist</label>
-    <select id="shortlistPick"></select>
+    <span class="shortlist-label">Shortlist</span>
     <button id="shortlistCopy" class="toggle" type="button" hidden>Copy</button>
     <button id="shortlistClear" class="toggle" type="button" hidden>Clear</button>
   </div>
@@ -827,7 +841,7 @@ __THEME_TOGGLE__
      provenance paragraphs between them (finding, 29 September 2026). -->
 <p id="summary" role="status" aria-live="polite"></p>
 <table>
-  <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col" class="hold">Hold</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="empty" hidden></div>
@@ -1118,7 +1132,7 @@ function budgetCeiling() {
 // A prices-only build has no times to show, and two columns of dashes are
 // noise where a shorter table is honest: the columns stand down entirely.
 if (!DATA.hasJourneys) {
-  for (const th of document.querySelectorAll("thead th:nth-child(3), thead th:nth-child(4)")) th.remove();
+  for (const th of document.querySelectorAll("thead th:nth-child(4), thead th:nth-child(5)")) th.remove();
 }
 const columnCount = () => document.querySelectorAll("thead th").length;
 
@@ -1846,7 +1860,7 @@ function render() {
     // the Changes column showed the fare. A prices-only build stands two of
     // these columns down, and it stands down the same two here and in the
     // header for the same reason.
-    const cells = [stationCell(destination), priceCell(destination)];
+    const cells = [holdCell(destination), stationCell(destination), priceCell(destination)];
     if (DATA.hasJourneys) {
       cells.push(journeyCell(destination, "Time"), journeyCell(destination, "Changes"));
     }
@@ -1887,6 +1901,43 @@ function render() {
 // asks for, and the World Heritage proof where the feed names one. The station
 // is the widest thing in the row, so the column takes the slack and the
 // numbers beside it keep one position each.
+// The way a place is held. ADR-0054 replaced a button on every row with one
+// select above the table, on the grounds that twenty controls is a wall of
+// controls; the reader asked for the checkbox back on each row, which is the
+// other honest answer to the same problem -- the control sits beside the thing
+// it acts on, and a place is held by ticking the row you are already reading
+// rather than by finding its name in a list of names.
+function holdCell(destination) {
+  const cell = document.createElement("td");
+  cell.className = "hold";
+  cell.dataset.label = "Hold";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.className = "hold-box";
+  // Read from the list rather than remembered per row: every render rebuilds
+  // these cells, and a box that kept its own state across a mode change would
+  // claim a place is held when the row is now priced as something else.
+  box.checked = inShortlist(destination.crs);
+  // Named per row. A column of unticked boxes is a column of controls with no
+  // name of their own, and what a screen reader announces has to say which
+  // place this one holds.
+  box.setAttribute("aria-label", "Hold " + destination.name + " in the shortlist");
+  box.addEventListener("change", () => {
+    toggleShortlist(destination.crs);
+    // The list is capped, and a refused addition says so on the strip rather
+    // than adding. The browser has already ticked the box by then, so it goes
+    // back to what is actually held: a ticked box beside a place that is not
+    // on the strip is a shortlist the reader cannot account for.
+    box.checked = inShortlist(destination.crs);
+  });
+  // The label is the target, not decoration: clicking anywhere in the cell
+  // holds the place, which is what a 44px square means.
+  const target = document.createElement("label");
+  target.className = "hold-target";
+  target.append(box);
+  cell.append(target);
+  return cell;
+}
 function stationCell(destination) {
   const cell = document.createElement("td");
   cell.dataset.label = "Station";
@@ -2744,7 +2795,6 @@ const shortlistBar = document.getElementById("shortlistBar");
 // function that guarded on the old id was quietly doing nothing on a page
 // without one.
 const shortlist = shortlistBar;
-const shortlistPick = document.getElementById("shortlistPick");
 const shortlistShareBox = document.getElementById("shortlistShareBox");
 const shortlistLimit = document.getElementById("shortlistLimit");
 const shortlistList = document.getElementById("shortlistList");
@@ -2853,38 +2903,8 @@ function renderShortlist() {
   if (shortlistStatus && !shortlistStatus.textContent) {
     shortlistStatus.textContent = kept.length ? kept.length + " shortlisted." : "";
   }
-  renderShortlistPicker();
 }
 
-// The select that replaces twenty buttons. Its options are the destinations on
-// the page the reader is looking at, so it is never longer than the list above
-// it, and a place already on the strip is not offered again: the list is the
-// record of what is held, and a second way to add the same place is a control
-// that silently does nothing.
-function renderShortlistPicker() {
-  if (!shortlistPick) return;
-  const onPage = Array.from(document.querySelectorAll("#rows tr[data-crs]"))
-    .map((row) => row.dataset.crs)
-    .filter((crs) => !inShortlist(crs));
-  const wanted = shortlistPick.value;
-  shortlistPick.replaceChildren();
-  const prompt = document.createElement("option");
-  prompt.value = "";
-  prompt.textContent = onPage.length ? "Add a place from this page" : "Nothing on this page to add";
-  shortlistPick.append(prompt);
-  for (const crs of onPage) {
-    const row = document.querySelector('#rows tr[data-crs="' + crs + '"]');
-    const name = row ? row.querySelector(".station-name") : null;
-    const option = document.createElement("option");
-    option.value = crs;
-    option.textContent = name ? name.textContent : crs;
-    shortlistPick.append(option);
-  }
-  shortlistPick.disabled = onPage.length === 0;
-  // Re-rendering the table rebuilds the select, and a reader who had it open
-  // has not chosen yet; the placeholder is the honest state to return to.
-  shortlistPick.value = wanted && onPage.includes(wanted) ? wanted : "";
-}
 function shortlistText() {
   const kept = shortlisted();
   const what = unit() === "party" ? "for the two of us" : "each";
@@ -2923,21 +2943,6 @@ if (shortlistCopy) {
     } catch (error) {
       show();
     }
-  });
-}
-// The select is the way in. It is a change rather than a click because a
-// <select> has no click to hang a handler on that means anything, and because
-// the browser's own list is the control: one tap to open, one to choose, and
-// the choice is made in the same gesture the reader used to look at the page.
-if (shortlistPick) {
-  shortlistPick.addEventListener("change", () => {
-    const crs = shortlistPick.value;
-    if (!crs || inShortlist(crs)) return;
-    toggleShortlist(crs);
-    // Focus goes back to the control rather than staying on an option that no
-    // longer exists: renderShortlist() rebuilds the option list, and a select
-    // left with no matching option drops to its placeholder silently.
-    shortlistPick.focus({ preventScroll: true });
   });
 }
 if (shortlistClear) {
