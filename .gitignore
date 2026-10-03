@@ -42,6 +42,11 @@ _browser_feed/
 _demo_site/
 _site_base/
 
+# A named subset build's output (build_stations.py). Its own folder rather than
+# _site/, which the runner owns and tidies, so neither build deletes the other's
+# station pages.
+_stations/
+
 # The station classification cache a build writes beside the feed it read.
 location-types.json
 *.location-types.json

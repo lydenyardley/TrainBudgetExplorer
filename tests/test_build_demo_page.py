@@ -3128,6 +3128,148 @@ class UnpricedOriginNoteTest(unittest.TestCase):
         )
 
 
+class OnlyStationsCliTest(unittest.TestCase):
+    """`--only-stations`: a few stations, and still one site.
+
+    The flag exists so a person can build two stations to read without paying
+    for the other 2,710. What must not change is the contract underneath it: the
+    chooser offers what was written, the release manifest names what was
+    written, and a code the feed does not price is refused rather than quietly
+    dropped -- because a subset that quietly drops one of the two codes you
+    named is a build that lies about what it wrote.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(
+            root / "fares", include_unserved_station=True, include_restrictions=True
+        )
+        self.timetable = build_synthetic_timetable(root / "timetable")
+        self.out = root / "site" / "index.html"
+
+    def build(self, *extra: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = build_demo_page.main(
+                [
+                    "--feed",
+                    str(self.feed),
+                    "--timetable",
+                    str(self.timetable),
+                    "--all-origins",
+                    "--out",
+                    str(self.out),
+                    *extra,
+                ]
+            )
+        return code, out.getvalue(), err.getvalue()
+
+    def page(self, slug: str) -> str:
+        return (self.out.parent / "from" / slug / "index.html").read_text(encoding="utf-8")
+
+    def written_slugs(self) -> list[str]:
+        from_dir = self.out.parent / "from"
+        if not from_dir.is_dir():
+            return []
+        return sorted(child.name for child in from_dir.iterdir())
+
+    def test_only_the_named_station_gets_a_page(self) -> None:
+        code, said, _ = self.build("--only-stations", "GRN")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.written_slugs(), ["grantham"])
+        self.assertRegex(said, r"Building 1 of the feed's [\d,]+ priceable station\(s\): GRN")
+
+    def test_two_named_stations_are_one_site_with_one_chooser(self) -> None:
+        code, _, _ = self.build("--only-stations", "GRN,NOT")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.written_slugs(), ["grantham", "nottingham"])
+        chooser = (self.out.parent / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/from/grantham/", chooser)
+        self.assertIn("/from/nottingham/", chooser)
+
+    def test_the_station_list_offers_the_subset_and_nothing_else(self) -> None:
+        self.build("--only-stations", "GRN")
+        stations_js = (self.out.parent / build_demo_page.STATION_ASSET_NAME).read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"name":"GRANTHAM"', stations_js)
+        self.assertNotIn("NOTTINGHAM", stations_js)
+
+    def test_the_release_manifest_names_the_subset(self) -> None:
+        self.build("--only-stations", "GRN")
+        manifest = json.loads(
+            (self.out.parent / build_demo_page.RELEASE_MANIFEST_NAME).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            sorted(manifest["routes"]), ["/", "/from/grantham/", "/privacy/"]
+        )
+
+    def test_a_subset_page_is_a_full_page_not_a_summary(self) -> None:
+        # The point of the flag is a page you can read: with the timetable
+        # loaded it must carry what the prices-only build of the same station
+        # cannot show. Asserted as a difference between the two builds rather
+        # than against any wording, because the wording is the template's
+        # business and this is the flag's.
+        self.build("--only-stations", "GRN")
+        with_times = self.page("grantham")
+        second = Path(self._tmp.name) / "prices"
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = build_demo_page.main(
+                [
+                    "--feed",
+                    str(self.feed),
+                    "--all-origins",
+                    "--only-stations",
+                    "GRN",
+                    "--out",
+                    str(second / "index.html"),
+                ]
+            )
+        self.assertEqual(code, 0)
+        without_times = (second / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        # The page says so in its own payload, which is the build's answer and
+        # not the template's wording: "no timetable in this build" also appears
+        # in the template's shortlist fallback, so it would pass either way.
+        self.assertIn('"hasJourneys":true', with_times)
+        self.assertIn('"hasJourneys":false', without_times)
+
+    def test_a_code_the_feed_does_not_price_is_refused_and_nothing_is_written(self) -> None:
+        code, _, err = self.build("--only-stations", "GRN,ZZZ")
+        self.assertEqual(code, 2)
+        self.assertIn("ZZZ", err)
+        self.assertFalse(self.out.parent.exists(), "a refused build must write nothing")
+
+    def test_lowercase_and_spaced_codes_are_accepted(self) -> None:
+        code, said, _ = self.build("--only-stations", " grn , not ")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.written_slugs(), ["grantham", "nottingham"])
+        self.assertIn("GRN, NOT", said)
+
+    def test_no_code_at_all_is_refused_rather_than_building_nothing(self) -> None:
+        code, _, err = self.build("--only-stations", " , ")
+        self.assertEqual(code, 2)
+        self.assertIn("no code", err)
+
+    def test_without_all_origins_the_flag_is_refused_rather_than_ignored(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = build_demo_page.main(
+                [
+                    "--feed",
+                    str(self.feed),
+                    "--only-stations",
+                    "GRN,NOT",
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("--all-origins", err.getvalue())
+
+
 class AllOriginsCliTest(unittest.TestCase):
     """The whole `--all-origins` run, because the output folder is the product.
 

@@ -1091,10 +1091,8 @@ python run.py
 ```
 
 That builds one page per priced station from the current feed, serves it at
-http://localhost:8741, and opens your browser. It says what that costs before it
-starts — about two hours on four workers, measured by a whole-network build
-against the national timetable on a 15.8 GB machine — and the next run serves
-what the first one wrote and
+http://localhost:8741, and opens your browser. The next run serves what the
+first one wrote and
 starts immediately. The worker count comes from what the machine has free rather
 than from how many cores it has, because every worker holds the whole timetable;
 a machine short of memory builds on one worker rather than dying (ADR-0057).
@@ -1104,6 +1102,50 @@ serve, so a page cannot quietly be yesterday's (ADR-0055). The runner removes an
 station page folder a *previous* single-origin build left behind, reading the
 release manifest to tell which folders this build wrote. Close the window (or
 Ctrl+C) to stop.
+
+### What a whole-network build costs, measured
+
+The default run is **prices only**: `run.py` reads `feeds/fares` and loads no
+timetable unless `--with-timetable` is given. On this machine — free memory
+moving between 0.1 GB and 4.5 GB over the run, so `worker_budget` returned 1 —
+that is **2,712 pages in 23 min 38 s, 1.91 pages/s**, 592 MB of output, about
+30 s of which is loading fares.
+
+Journey times need `--with-timetable`, which loads the national timetable and is
+the build the rest of these figures describe:
+
+| Workers | Whole network, fares *and* timetable |
+| --- | --- |
+| 1 | 8 h 06 m |
+| 2 | ~4 h 15 m |
+| 3 | ~2 h 50 m |
+| 4 (16 GB GitHub runner) | ~2 h 10 m |
+
+Which is a long time to wait for a page you are not going to read all of. For one
+station, or two, use the script below instead.
+
+**To build just Grantham and Nottingham, fares *and* timetable, in one command:**
+
+```
+double-click build_stations.bat   (Windows), or run
+python build_stations.py
+```
+
+That builds exactly those two stations against the real feeds in `feeds/fares`
+and `feeds/timetable`, writes their pages, a two-station chooser and the privacy
+page into `_stations/` (which is not what `run.py` serves, so the two never
+fight), and serves it at http://localhost:8742. Measured end to end on this
+machine: **under five minutes**, with `--workers 1` because two timetable-holding
+workers do not fit in this machine's free memory; the script prints a warning if
+there is not even room for one. It takes `--timetable`, `--knowledgebase`,
+`--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
+codes as bare arguments (`python build_stations.py LEI`).
+
+Underneath it is one flag on the builder itself, usable without the script:
+`python build_demo_page.py --all-origins --only-stations GRA,NOT` builds
+exactly those stations, and refuses an unknown code rather than quietly building
+all 2,712 of them. Add `--timetable feeds/timetable` for journey times, or leave
+it off for prices only.
 
 Useful variants: `--origin GRA` for the fast single-station page — its root at
 `/`, that one station under `/from/<slug>/`, and the privacy page, with a root
