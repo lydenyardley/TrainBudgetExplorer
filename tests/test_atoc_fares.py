@@ -14,6 +14,7 @@ import unittest
 from unittest import mock
 
 import atoc_fares
+import atoc_restrictions
 from datetime import date
 from pathlib import Path
 
@@ -43,6 +44,25 @@ from atoc_fares import (
     is_pseudo_station,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
+from atoc_restrictions import RESTRICTION_LAYOUTS
+
+
+def _restriction_header(code: str, description: str, outward: str) -> str:
+    """One real ``RH`` record, written through the layout the parser reads."""
+    return _line(
+        {
+            "record_type": "RH",
+            "restriction_code": code,
+            "description": description,
+            "desc_out": outward,
+            "desc_rtn": "Return",
+            "type_out": "N",
+            "type_rtn": "N",
+            "change_ind": "Y",
+            "cf_marker": "C",
+        },
+        RESTRICTION_LAYOUTS["RH"],
+    )
 
 
 class PseudoStationTest(unittest.TestCase):
@@ -1490,22 +1510,41 @@ class ReviewedRailcardTest(unittest.TestCase):
 
 
 class AdvanceFareTest(unittest.TestCase):
-    """One definition of "advance", asked two ways.
+    """One definition of "advance", asked through the fares database.
 
     The page labels an Advance single differently from a walk-up fare, so the
-    test that decides it has to agree with the ticket catalogue. A fare the DTD
-    marks with restriction code AS is train-specific whatever the ticket is
-    called, and a ticket called ADVANCE is train-specific whatever code it
-    carries.
+    test that decides it has to agree with the feed. A ticket called ADVANCE
+    is train-specific whatever code it carries, and a restriction the ``.RST``
+    file describes as "valid on date&train shown only" is train-specific
+    whatever the ticket is called. The second test reads the file rather than
+    naming one code: this build recognised AS alone, so the 51 other codes the
+    feed describes the same way reached the page as ordinary singles, and GA
+    among them is on every LNER promotion, Edinburgh included (audit A9).
     """
 
     def test_a_restriction_code_alone_marks_the_fare_advance(self) -> None:
-        self.assertTrue(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", " as "))
-        self.assertFalse(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", "RH"))
-        self.assertFalse(atoc_fares.is_advance_fare("SUPER OFFPEAK DAY R", ""))
+        fares = atoc_fares.FaresDb()
+        self.assertTrue(fares.is_advance_fare("SUPER OFFPEAK DAY R", " as "))
+        self.assertFalse(fares.is_advance_fare("SUPER OFFPEAK DAY R", "RH"))
+        self.assertFalse(fares.is_advance_fare("SUPER OFFPEAK DAY R", ""))
+
+    def test_a_code_the_restriction_file_calls_a_date_and_train_is_advance(self) -> None:
+        fares = atoc_fares.FaresDb()
+        fares.restrictions.headers["GA"] = atoc_restrictions.parse_header(
+            _restriction_header("GA", "IEC ADVANCE", "VALID ON DATE&TRAIN SHOWN ONLY.LTD CHANGE.NO RFND")
+        )
+        fares.restrictions.headers["ZZ"] = atoc_restrictions.parse_header(
+            _restriction_header("ZZ", "ANYTHING", "VALID ON ANY TRAIN")
+        )
+        # The LNER promotion that reached the page as a walk-up single.
+        self.assertTrue(fares.is_advance_fare("LNER PROMO STD", "GA"))
+        self.assertFalse(fares.is_advance_fare("LNER PROMO STD", "ZZ"))
+        # A code the file does not describe is not claimed either way.
+        self.assertFalse(fares.is_advance_fare("LNER PROMO STD", "QQ"))
 
     def test_a_ticket_name_alone_marks_the_fare_advance(self) -> None:
-        self.assertTrue(atoc_fares.is_advance_fare("ANYTIME ADVANCE DAY S", ""))
+        fares = atoc_fares.FaresDb()
+        self.assertTrue(fares.is_advance_fare("ANYTIME ADVANCE DAY S", ""))
         self.assertTrue(
             atoc_fares.TicketType("2AS", "ADVANCE", "2", "S", True).is_advance
         )
@@ -1518,7 +1557,7 @@ class AdvanceFareTest(unittest.TestCase):
         # the shape the feed gives an unnamed catalogue record.
         self.assertFalse(atoc_fares.is_advance_ticket(None))
         self.assertFalse(atoc_fares.is_advance_ticket(""))
-        self.assertFalse(atoc_fares.is_advance_fare(None, None))
+        self.assertFalse(atoc_fares.FaresDb().is_advance_fare(None, None))
 
 
 if __name__ == "__main__":
