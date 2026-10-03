@@ -15,6 +15,14 @@ the measured 2,200 MB once the parent stopped holding its databases across the
 pool. The four-worker ceiling now needs about 32 GB of hardware to confirm;
 that is recorded in the decision, not hidden by it.
 
+**Amended 3 October 2026, later.** The whole-network run this file had been
+waiting on happened, so the release workflow's own timing comment is corrected
+rather than left standing, and its bound moved from 150 to 300 minutes because a
+private repository's runner is half the size of a public one's. The same day
+brought the first measured prices-only whole-network build -- 2,712 pages in
+23 min 38 s on one worker -- which is what `run.bat` actually does. Both are in
+the decision below.
+
 ## Context
 
 ADR-0055 made `python run.py` build the whole network, and the runner chose its
@@ -179,10 +187,57 @@ feed, 2 October 2026, wrote 2,712 pages between 10:29:52 and 12:30:57. That is
 from a cold start including the 145s feed load, the 83s pool start and the
 chooser. An earlier note in this file put it at 63 minutes, from a nine-minute
 window early in a build; that window held the cheapest stations in the set, and
-the error was a factor of two. The release workflow's own comment records
+the error was a factor of two. The release workflow's own comment recorded
 0.84 pages/s and 54 minutes from "the first twenty pages" -- the same mistake on
-a different machine, left standing here because correcting it needs that run,
-not this edit.
+a different machine -- and was left standing here pending that run.
+
+### 3 October 2026: the workflow's figures, and what a prices-only build costs
+
+The run this file was waiting on has happened, so the release workflow's own
+comment is corrected rather than left standing: it now carries the
+whole-network figures above -- 121 minutes at 0.093 pages/s per worker on four
+workers -- and withdraws its own 0.84 pages/s and 54 minutes as the
+first-twenty-pages measurement they were.
+
+**The workflow's bound moved from 150 minutes to 300, and the reason is this
+ADR.** The worker count is read from the runner, and GitHub's standard Linux
+runners are not one machine: `ubuntu-latest` is 4 vCPU / 16 GB for a public
+repository and 2 vCPU / 8 GB for a private one (docs.github.com, "GitHub-hosted
+runners reference"). The same workflow is therefore a four-worker build in one
+case and a two-worker build in the other, and 150 minutes covered only the
+first. At the measured per-worker rate:
+
+| workers | page building | from a cold start |
+|---|---|---|
+| 4 (a 16 GB runner) | 121 min | ~130 min |
+| 3 | 162 min | ~170 min |
+| 2 (an 8 GB runner) | 243 min | ~255 min |
+| 1 | 8 h 06 m | longer than any bound GitHub sets |
+
+300 minutes is the slowest runner that can still finish. It costs nothing when
+the build is fast, because a hosted job is billed for the minutes it actually
+runs; 150 was not a cheaper build, it was a build that failed on a private
+repository and published nothing. Raising it again needs this table re-measured.
+
+**A prices-only whole-network build, measured for the first time.** Every wall
+time above is a build that loaded the national timetable, and `run.bat` does not:
+the runner's default build omits the timetable, so the double-click path is a
+different shape of work and had no measured rate at all. Measured on the real
+feed on this machine, 3 October 2026, one worker, prices only:
+
+| | |
+|---|---|
+| station pages | **2,712 in 1,418s -- 23 min 38 s, at 1.91 pages/s** |
+| fares feed load | about 30s, from the pickle the earlier builds left |
+| output | 592 MB of pages |
+| memory | 1.4 GB free at launch, down to 0.08 GB while the feeds loaded |
+
+It is not comparable with the table above, and that is the point: a worker that
+never holds the timetable assembles a page for about a tenth of the price, so
+`run.bat` on this machine is a 25-minute build and not the 8 hours the
+with-timetable figures imply. Two numbers for one project is not a
+contradiction; they are two different builds, and the flag between them is
+`--with-timetable`.
 
 A four-worker build asks for 4.1 GB plus four workers and finishes; eight asks
 for 4.1 GB plus eight and dies, with 8 GB free at the time. The arithmetic does
@@ -226,9 +281,16 @@ different problems for whoever is waiting for the build.
 ADR-0024's and ADR-0055's "about 20 minutes on eight cores, 81 on two". That
 figure was measured without the national timetable, and the eight-worker build
 it assumed does not complete. ADR-0055's decision 1 now carries the re-measured
-figure and says the old one is withdrawn rather than qualified. The release
-workflow's own recorded 54 minutes of page building plus a 279s load at three
-workers is a measurement of a different machine and is left standing.
+figure and says the old one is withdrawn rather than qualified.
+
+The release workflow's recorded 54 minutes of page building plus a 279s load at
+three workers was left standing for one day after this file said it would be,
+and is withdrawn now: it was the first twenty pages, and the whole-network run
+on the same feed is 121 minutes at four times the worker count. Its 81-minute
+figure for a two-vCPU runner goes with it, because `ubuntu-latest` is 4 vCPU /
+16 GB for a public repository and 2 vCPU / 8 GB for a private one -- so the
+runner is either twice the machine that comment assumed or the same size with
+half the memory, and neither case is 81 minutes.
 
 ## Read by running
 

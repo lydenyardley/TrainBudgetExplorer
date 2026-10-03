@@ -221,24 +221,45 @@ jobs:
         # be set from; the release is now every priced station, and that is a
         # different shape of work.
         #
-        # Measured against the real feed with the national timetable, on a
-        # 12-CPU machine with three workers: 7,818,772 fares and 419,589
-        # schedules load in 279s before the first page, the first twenty pages
-        # then take 79s while the workers read their fare indexes, and the
-        # steady state is 0.84 pages/s. The real feed's origins are small --
-        # 2,718 of them, a median of 91 priced destinations and a mean of 116,
-        # against the roughly 2,500 each the invented uniform feed behind
-        # ADR-0024 was shaped like -- so per-origin cost does not grow with the
-        # destination count the way that ADR projected. The whole set
-        # extrapolates to about 54 minutes of page building plus the 279s load.
+        # Measured against the real feed with the national timetable, 2 October
+        # 2026, on a 15.8 GB 12-CPU machine: a whole-network build wrote 2,712
+        # pages between 10:29:52 and 12:30:57. That is 121 minutes at 0.093
+        # pages/s per worker on four workers, after a 145s feed load and an 83s
+        # pool start -- about 130 minutes from a cold start. The real feed's
+        # origins are small -- 2,712 of them, a median of 91 priced
+        # destinations and a mean of 116, against the roughly 2,500 each the
+        # invented uniform feed behind ADR-0024 was shaped like -- so per-origin
+        # cost does not grow with the destination count the way that ADR
+        # projected.
         #
-        # GitHub's standard runner has 2 vCPUs, so two workers at roughly 0.28
-        # pages/s each put the set at about 81 minutes plus the load. 150
-        # minutes is nearly twice that: enough for a busier day, and little
-        # enough that a build which has stopped making progress fails rather
-        # than occupying a runner until the job limit kills it. Raising it
-        # needs the measurement redone, not a hunch.
-        timeout-minutes: 150
+        # The 0.84 pages/s and 54 minutes this replaces were taken from "the
+        # first twenty pages", which are the cheapest stations in the set: the
+        # same first-tenth-of-the-work mistake ADR-0057 withdrew from this
+        # project's own 63-minute figure, out by a factor of two both times.
+        # Withdrawn here for the same reason, by the same run.
+        #
+        # The bound has to fit the slowest runner this workflow can land on, not
+        # the fastest, because the worker count is read from the runner's free
+        # memory -- and GitHub's standard Linux runners are not one machine.
+        # `ubuntu-latest` is 4 vCPU / 16 GB for a public repository and 2 vCPU /
+        # 8 GB for a private one (docs.github.com, "GitHub-hosted runners
+        # reference"), so the same workflow is a four-worker build in one case
+        # and a two-worker build in the other. At the measured 0.093 pages/s per
+        # worker, with the load and pool start added:
+        #
+        #     workers   page building   from a cold start
+        #     4 (16GB)  121 min         ~130 min
+        #     3         162 min         ~170 min
+        #     2 (8GB)   243 min         ~255 min
+        #     1         8 h 06 m        longer than any bound GitHub sets
+        #
+        # 300 minutes is the slowest runner that can still finish, plus the
+        # load. It costs nothing when the build is fast, because a hosted job is
+        # billed for the minutes it actually runs; the old 150 was not a cheaper
+        # build, it was a build that failed at 150 on a private repository and
+        # published nothing. Raising it again needs the measurement redone, not a
+        # hunch, and the measurement is the table above.
+        timeout-minutes: 300
         if: steps.feed_check.outputs.changed == 'true'
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
