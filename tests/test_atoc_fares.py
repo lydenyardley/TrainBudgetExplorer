@@ -1685,6 +1685,22 @@ class ConditionalFareTest(unittest.TestCase):
         rows = db.page_single_destinations_within("GRN", 1_000_000)
         self.assertNotIn("BJD", {row.ticket_code for row in rows})
 
+    def test_a_return_named_not_for_travel_is_rejected(self) -> None:
+        # Priced at 100p so it would win the slot outright. The real ZZZ
+        # carries a plausible price and a blank restriction, so a fixture
+        # priced above the incumbent passes whether or not the selector
+        # rejects it, which is a test of the fixture.
+        db = self._with(self._db(), "ZZZ", "NOT FOR TRAVEL", 100, ticket_type="R")
+        rows = db.page_destinations_within("GRN", 1_000_000)
+        self.assertNotIn("ZZZ", {row.ticket_code for row in rows})
+
+    def test_an_ordinary_return_is_still_published(self) -> None:
+        # The marker test is on names, so it is worth asserting the fare the
+        # page exists to publish still passes it.
+        db = self._with(self._db(), "QQR", "ANYTIME DAY R", 900, ticket_type="R")
+        rows = {row.crs: row for row in db.page_destinations_within("GRN", 1_000_000)}
+        self.assertEqual(rows["NOT"].ticket_code, "QQR")
+
     def test_the_reason_names_the_fact_rather_than_the_three_conditions(self) -> None:
         # The table started as child, group and event and now holds a staff
         # pass, so the tally key that names those three would understate what

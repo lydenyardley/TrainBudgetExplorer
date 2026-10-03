@@ -50,6 +50,8 @@ DROPPED_REASONS = (
     "fare_with_no_ticket_type",
     "ticket_is_not_a_standard_return",
     "ticket_is_not_one_a_reader_can_buy",
+    "ticket_is_not_for_public_sale",
+    "ticket_is_not_for_public_sale",
     "fare_to_the_origin_itself",
     "fare_above_the_budget",
     "cheaper_index_already_held",

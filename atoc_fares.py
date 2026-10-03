@@ -706,6 +706,18 @@ def looks_like_fare_construction(name: str) -> bool:
     return any(marker in upper for marker in FARE_CONSTRUCTION_NAME_MARKERS)
 
 
+def is_not_for_public_sale(name: str | None) -> bool:
+    """Whether the catalogue's own name says this fare is not on sale.
+
+    Upper-cases first, so the caller cannot get this wrong by passing a name
+    it already upper-cased or one it did not. Shared by the single and return
+    selectors, because when the two held their own copy the return half was
+    never added to and a fare called NOT FOR TRAVEL reached a page.
+    """
+    upper = (name or "").upper()
+    return any(marker in upper for marker in NOT_FOR_PUBLIC_SALE_MARKERS)
+
+
 def is_pseudo_station(crs: str) -> bool:
     """A fare-construction point rather than a place a reader can stand.
 
@@ -730,6 +742,20 @@ def is_pseudo_station(crs: str) -> bool:
 # minimum with restriction GA. Keep the names explicit so a future catalogue
 # rename cannot silently reintroduce them, while the ITX name check catches
 # new members of the same family.
+# Names the catalogue gives a fare that is not on sale. The single selector
+# has always tested these and the return selector did not, which let a
+# standard return called ZZZ NOT FOR TRAVEL through to a page: 1,001 live rows
+# out of Cameron Bridge with a blank restriction and a plausible price. One
+# tuple read by both selectors is the fix, because a literal duplicated in two
+# places is how the two drifted apart.
+NOT_FOR_PUBLIC_SALE_MARKERS = (
+    "NOT FOR TRAVEL",
+    "TEST",
+    "DUMMY",
+    "FOR TEST",
+    "COMP",
+)
+
 PLACEHOLDER_TICKET_CODES = frozenset({
     "EIS", "EIF", "IF1", "IF3", "IS0", "IS1", "IS3", "LIS", "LIF",
     # A GBP 9,998.00 sentinel on one Lincolnshire pair, not an ITX name and so
@@ -2813,8 +2839,6 @@ class FaresDb:
         count that files a child's fare under "not a standard single" cannot
         answer what happened to a destination.
         """
-        not_for_sale = ("NOT FOR TRAVEL", "TEST", "DUMMY", "FOR TEST", "COMP")
-
         def reject(fare: Fare, ticket: TicketType) -> str | None:
             if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
                 return CONDITIONAL_REASON
@@ -2823,7 +2847,7 @@ class FaresDb:
             name = ticket.name.upper()
             if fare.ticket_code in PLACEHOLDER_TICKET_CODES or "ITX" in name:
                 return "ticket_is_a_catalogue_placeholder"
-            if any(marker in name for marker in not_for_sale):
+            if is_not_for_public_sale(name):
                 return "ticket_is_not_for_public_sale"
             return None
 
@@ -2839,6 +2863,10 @@ class FaresDb:
         cheapest return either. The catalogue placeholder test stays, and its
         own reason, because a placeholder is a different mistake from a fare
         that is real and simply not the reader's.
+
+        The not-for-public-sale test the single selector has always run runs
+        here too. It was missing, and a fare the catalogue calls NOT FOR
+        TRAVEL reached a page through the gap.
         """
 
         def reject(fare: Fare, ticket: TicketType) -> str | None:
@@ -2846,10 +2874,11 @@ class FaresDb:
                 return CONDITIONAL_REASON
             if not ticket.is_standard_return:
                 return "ticket_is_not_a_standard_return"
-            if fare.ticket_code in PLACEHOLDER_TICKET_CODES:
+            name = ticket.name.upper()
+            if fare.ticket_code in PLACEHOLDER_TICKET_CODES or "ITX" in name:
                 return "ticket_is_a_catalogue_placeholder"
-            if "ITX" in ticket.name.upper():
-                return "ticket_is_a_catalogue_placeholder"
+            if is_not_for_public_sale(name):
+                return "ticket_is_not_for_public_sale"
             return None
 
         return reject
