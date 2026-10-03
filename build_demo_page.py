@@ -2691,7 +2691,7 @@ def render_chooser(
         title_suffix = only["name"]
     else:
         origin_clause = (
-            '<span id="originClause"> from <span class="origin-slot" id="originField">'
+            '<span id="originClause"> from <span class="origin-slot-wrap" id="originField">'
             '<input id="originSearch" type="search" placeholder="station" autocomplete="off" '
             'aria-label="The station you are starting from" aria-describedby="pickStatus" '
             'aria-controls="picks"></span></span>'

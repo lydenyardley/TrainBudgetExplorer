@@ -95,7 +95,10 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      a dark page. The text inside the column stays left-aligned: this centres
      the measure, not the prose. */
   html { background: var(--bg); }
-  body { margin: 0 auto; padding: var(--page-pad); max-width: var(--page-max);
+  /* No padding above the content. The heading's own margin is the space
+     above the heading, and a gutter above it as well put the first fare
+     further below the fold than it needed to be. */
+  body { margin: 0 auto; padding: 0 var(--page-pad); max-width: var(--page-max);
          background: var(--bg); color: var(--fg);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   /* 1.2, not the 1.35 a paragraph wants: at six rem the line box is most of a
@@ -103,8 +106,11 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      separate sentences. balance splits the long question into two lines of
      similar length instead of one long and one short, which is the difference
      between a heading and a paragraph that happens to be large. */
+  /* Half an em, in the heading's own size: the space above the page's
+     question, and the only space above it now that the body has no top
+     padding. */
   h1 { font-size: var(--h1); line-height: 1.06; letter-spacing: -.03em; font-weight: 700;
-       text-wrap: balance; }
+       text-wrap: balance; margin: .5em 0; }
   h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
   p, li { margin: .4rem 0; }
   a { color: var(--accent); }
@@ -200,15 +206,35 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      characters typed, which scrolled the page 1,739px sideways. ch scales with
      the heading's own size, so 18 of them fit the column on a wide screen, and
      the viewport share is what fits on a narrow one. */
-  .origin-slot-wrap #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
-                               padding: .05rem .15rem; border: 0; outline: 0;
-                               background: transparent; color: inherit; font: inherit;
-                               font-weight: inherit; letter-spacing: inherit;
-                               caret-color: var(--accent); }
+  /* Not scoped to one route. The chooser's field and a station page's field are
+     the same control in the same sentence, and a reader who moved between
+     them was getting the browser's own input on one and this one on the
+     other. */
+  #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
+                  padding: .05rem .15rem; border: 0; outline: 0;
+                  background: transparent; color: inherit; font: inherit;
+                  font-weight: inherit; letter-spacing: inherit;
+                  caret-color: var(--accent); }
   @supports not (field-sizing: content) {
-    .origin-slot-wrap #originSearch { width: 9ch; }
+    #originSearch { width: 9ch; }
   }
-  .origin-slot-wrap #originSearch::placeholder { color: var(--muted); opacity: 1; }
+  #originSearch::placeholder { color: var(--muted); opacity: 1; }
+  /* The rest of the name the reader is halfway through is shown by selecting
+     it inside the field, so the only thing to say is that the selection is
+     quieter than the text, rather than a second copy of the text drawn
+     behind the field and kept in step with its caret and width. */
+  #originSearch::selection { background: color-mix(in srgb, var(--muted) 38%, transparent);
+                                 color: var(--fg); }
+  /* The list under an open station field, on both routes. It is placed from
+     the field's own rectangle by the script rather than anchored to a
+     wrapper, because the field is a word in the middle of a heading, and
+     the only thing that knows where that word is at this width is the
+     browser. Fixed, so no element has to become its ancestor and no list
+     has to move inside a heading, which a heading may not hold, to be drawn
+     under the word the reader just clicked. */
+  .under-field { position: fixed; z-index: 5; margin: 0; padding: .3rem 0;
+    background: var(--bg); border: 1px solid var(--line); border-radius: .4rem;
+    box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .2); max-height: 58vh; overflow-y: auto; }
   /* One drawn disclosure mark, used by both the refinements control and the
      station slot. Authored rather than a character: a character has no stroke
      weight of its own, is styled differently by every font, and the one this
@@ -323,8 +349,14 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .more-filters[data-open="true"] .more-filters-toggle { margin-bottom: .9rem; border-color: var(--accent); }
   .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
   .more-filters-panel { display: none; }
-  .more-filters[data-open="true"] .more-filters-panel { display: grid; grid-template-columns: 1fr;
-                                                          gap: 1.1rem; align-items: start; }
+  .more-filters[data-open="true"] .more-filters-panel { display: grid;
+                                                          grid-template-columns: repeat(2, minmax(0, 1fr));
+                                                          gap: 1.1rem 2rem; align-items: start; }
+  /* Which ticket, and whose budget, are one decision, so the two controls
+     that make it share a row and the reader can see that they belong
+     together. The destination chips take the full width under them,
+     because half of that row wraps every chip onto two lines. */
+  .more-filters[data-open="true"] .destination-filter { grid-column: 1 / -1; }
   .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
                                       text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
@@ -574,8 +606,13 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   /* Scoped by id: the results-table rules above would give the dock's four
      numbers the station column's width and leave the columns ragged. */
   #shortlistDock table { width: 100%; max-width: 46rem; margin: 0 auto; }
-  #shortlistDock th { text-align: left; font-size: .72rem; padding: .2rem .4rem; }
-  #shortlistDock td { padding: .28rem .4rem; border-bottom: 1px solid var(--line); }
+  /* A heading stands over its own column. It had less padding than the row
+     cells and a forced left alignment, so PRICE, TIME and CHANGES sat to
+     the left of the figures underneath them. The shared rules already
+     align a heading and a cell the same way, so the dock states neither. */
+  #shortlistDock th { font-size: .72rem; }
+  #shortlistDock th, #shortlistDock td { padding: .28rem .4rem; }
+  #shortlistDock td { border-bottom: 1px solid var(--line); }
   #shortlistDock td.num { text-align: right; }
   #shortlistDock .shortlist-dock-name { padding: 0; border: 0; background: transparent;
         color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
@@ -646,7 +683,11 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      row actions stop wrapping onto a second line, so the stacked layout keeps
      the band between 640 and 704px that the table cannot hold. */
   @media (max-width: 44rem) {
-    body { padding: 1rem .75rem; }
+    body { padding: 0 .75rem; }
+    /* Two controls side by side need 700px, which is the same measurement
+       that keeps the results table above this breakpoint. Below it they
+       stack, as everything else on the page does. */
+    .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: 1fr; }
     table, tbody { display: block; }
     #shortlistDock table { display: table; }
     #shortlistDock tbody { display: table-row-group; }
@@ -964,6 +1005,7 @@ __THEME_TOGGLE__
 
 __STATIONS_SRC__<script>
 __LIST_KEYS__
+__STATION_FIELD__
 const DATA = __DATA__;
 const FIRST_USE_FALLBACK = __FIRST_USE_FALLBACK__;
 // Each row list arrives as a column list and a table of cells, because every row
@@ -2020,12 +2062,10 @@ function holdCell(destination) {
   // place this one holds.
   box.setAttribute("aria-label", "Hold " + destination.name + " in the shortlist");
   box.addEventListener("change", () => {
-    toggleShortlist(destination.crs);
     // The list is capped, and a refused addition says so on the strip rather
-    // than adding. The browser has already ticked the box by then, so it goes
-    // back to what is actually held: a ticked box beside a place that is not
-    // on the strip is a shortlist the reader cannot account for.
-    box.checked = inShortlist(destination.crs);
+    // than adding. The browser has already ticked the box by then, and
+    // renderShortlist puts every box back to what the list actually holds.
+    toggleShortlist(destination.crs);
   });
   // The label is the target, not decoration: clicking anywhere in the cell
   // holds the place, which is what a 44px square means.
@@ -2818,8 +2858,7 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
 
   // The field is moved into the slot rather than duplicated, so there is one
   // input in the document and the heading's own accessible name is the one
-  // that gets typed into. Moving it back on close keeps the DOM where the
-  // script that reads it expects it after a navigation.
+  // that gets typed into.
   function setPicker(open) {
     changeOrigin.setAttribute("aria-expanded", String(open));
     originPicker.hidden = !open;
@@ -2833,7 +2872,7 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
       originSearch.select();
     } else {
       changeOrigin.hidden = false;
-      if (originSearch.parentElement !== originPicker) originSearch.remove();
+      originSearch.remove();
       // Escape is a keyboard exit, and focus returns to the control that
       // opened the picker rather than dropping to the top of the page.
       changeOrigin.focus();
@@ -2843,20 +2882,27 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   changeOrigin.addEventListener("click", () => {
     setPicker(changeOrigin.getAttribute("aria-expanded") !== "true");
   });
-  // The listener is on the field rather than on the panel, because the field
-  // is moved out of the panel and into the heading while the picker is open.
-  // A listener on the panel alone meant Escape -- pressed in the field, which
-  // is the only place a reader can press it -- bubbled past it and did nothing.
-  originSearch.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") setPicker(false);
-  });
   originPicker.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setPicker(false);
   });
-  originSearch.addEventListener("input", renderPicks);
+  // The field's own behaviour -- the completion, Tab and Enter, Escape, and the
+  // click on the page that puts the station name back -- is the shared block,
+  // because the chooser asks for the same three things. Walking away is one
+  // path and it only acts while the picker is open, or every click on a
+  // closed page would pull focus back to the station name.
+  attachStationField({
+    field: originSearch,
+    stations: DATA.stations,
+    dropdown: originPicker,
+    inside: [originPicker],
+    onChange: () => renderPicks(),
+    onCancel: () => {
+      if (changeOrigin.getAttribute("aria-expanded") === "true") setPicker(false);
+    },
+  });
   // The picker is the field's other half -- the same selector, reached from the
-  // heading -- so it answers the same two keys through the same block. The
-  // Escape handler above closes the whole picker; this only adds the way in.
+  // heading -- so it answers the same two keys through the same block. Escape
+  // from an option goes back to the field; Escape from the field closes it.
   wireListKeys(originSearch, originPicks);
 } else if (changeOrigin) {
   // The shared station list did not arrive, so this control can only open
@@ -3042,6 +3088,15 @@ function renderShortlist() {
   // mode -- leaves the list rather than sitting in it as a name with no price.
   shortlistCodes = kept.map((destination) => destination.crs);
   shortlistList.replaceChildren(...kept.map(shortlistRow));
+  // Every row's tick is this list, drawn on the row. Anything that empties the
+  // shortlist takes the ticks with it: the Clear above the table, the Clear in
+  // the dock, and a place leaving the ticket mode the reader is looking at.
+  // Without this the page showed two places held and a list of none, and the
+  // reader had to tick the boxes off by hand to believe the page.
+  for (const box of document.querySelectorAll("#rows input.hold-box")) {
+    const row = box.closest("tr[data-crs]");
+    if (row) box.checked = inShortlist(row.dataset.crs);
+  }
   // The dock appears on the first place shortlisted and leaves with the last,
   // because a strip holding nothing is a bar across the bottom of the screen
   // for no reason a reader can see.
@@ -3312,9 +3367,16 @@ __SHARED_CSS__
      things a reader can change are the two gaps in the heading, and the list
      below answers them. A one-station release has one gap, because the second
      already has an answer. */
-  /* No width of its own either: see the token in the shared block. */
-  h1 { margin: 0 0 .7rem; }
+  /* No width of its own either, and no margin of its own: the heading is the
+     same sentence at the same size as a station page's, and the space above
+     it is the shared one. The only difference between this route and a
+     station page is which half of the sentence is already filled in. */
   .sub { margin: 0 0 .3rem; }
+  /* While the field is in use the list is the field's dropdown: under it, on
+     its own surface, one column of names. With the field empty and left
+     alone it is a chooser's own content again, in the flow, in columns,
+     because a chooser nobody has touched yet is a directory. */
+  #picks.under-field { grid-template-columns: minmax(0, 1fr); }
   #orderingNote { margin: 0 0 1.6rem; }
   /* One cell per station, as many across as the column holds: at 78rem a
      single row per station put a station's own count most of a screen away
@@ -3355,6 +3417,7 @@ __ORDERING_NOTE__
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
 <script>
 __LIST_KEYS__
+__STATION_FIELD__
 const STATIONS = __STATIONS__;
 // What the tab and every retitle say after the budget. A release that
 // priced one station names it; a chooser says what it is for.
@@ -3366,6 +3429,10 @@ const pick = document.getElementById("originSearch");
 const budgetNumber = document.getElementById("budgetNumber");
 const originClause = document.getElementById("originClause");
 const capMessage = document.getElementById("capMessage");
+// Every station is listed while the field is empty, because that is what a
+// chooser is for: a reader who has not chosen a station is reading a
+// directory of every one. Once there is a name in the field the list is a
+// search result, and forty matches is more than anybody reads.
 const CHOOSER_LIMIT = 40;
 function matches(station, needle) {
   if (!needle) return true;
@@ -3410,8 +3477,9 @@ function render() {
   // and the whole list is what it offers.
   const needle = pick ? pick.value.trim().toLowerCase() : "";
   const wanted = STATIONS.filter((station) => matches(station, needle));
+  const cap = needle ? CHOOSER_LIMIT : wanted.length;
   picks.replaceChildren();
-  for (const station of wanted.slice(0, CHOOSER_LIMIT)) {
+  for (const station of wanted.slice(0, cap)) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = station.href;
@@ -3433,10 +3501,10 @@ function render() {
     picks.append(item);
   }
   if (capMessage) {
-    capMessage.textContent = wanted.length > CHOOSER_LIMIT
-      ? "Showing " + CHOOSER_LIMIT + " of " + wanted.length + " matching stations. Refine the search to see the rest."
+    capMessage.textContent = wanted.length > cap
+      ? "Showing " + cap + " of " + wanted.length + " matching stations. Refine the search to see the rest."
       : "";
-    capMessage.hidden = wanted.length <= CHOOSER_LIMIT;
+    capMessage.hidden = wanted.length <= cap;
   }
   // The no-match wording answers typed input; with an empty field it would
   // quote nothing back at the reader, so it stays hidden instead.
@@ -3461,7 +3529,17 @@ if (budgetNumber) {
 // The field the whole page exists for, and the one a reader arrives at. It is
 // focused rather than merely present: the caret in the heading is what says the
 // page is waiting for a station, without a label above it saying so.
-if (pick) pick.addEventListener("input", render);
+//
+// Its three behaviours -- completing the name in the field, Tab and Enter to
+// accept it, and the list moving under it while it is in use -- are the
+// shared block, the same one a station page's heading uses.
+attachStationField({
+  field: pick,
+  stations: STATIONS,
+  dropdown: picks,
+  inside: [picks],
+  onChange: () => render(),
+});
 // The budget slot has been clickable across its whole width since it was
 // written, and the station slot is the other half of the same sentence: both
 // are a gap in the heading that the reader fills in. Clicking the slot -- not
@@ -3532,6 +3610,140 @@ LIST_KEYS_JS = """function wireListKeys(field, list) {
     event.preventDefault();
     if (next) next.focus();
   });
+}"""
+
+
+# One station field. A station page's heading and the chooser's heading ask a
+# reader to do the same three things -- narrow the list under it as they type,
+# see the rest of the name they are typing in the field, and walk away without
+# having changed anything -- so they are answered here once rather than twice.
+# The route supplies the field, the list and the stations; it keeps ownership of
+# what each of them draws.
+STATION_FIELD_JS = """function attachStationField(options) {
+  const field = options.field;
+  if (!field) return null;
+  const stations = options.stations || [];
+  const inside = options.inside || [];
+  const onChange = options.onChange || function () {};
+  const onUse = options.onUse || function () {};
+  const onCancel = options.onCancel || function () {};
+  const dropdown = options.dropdown || null;
+  const CAP = options.cap || 544;
+  // Past this the field scrolls its own value and the part the reader typed
+  // leaves the window, so a longer completion is worse than none.
+  const COMPLETE_LIMIT = 18;
+
+  const selected = () => field.selectionEnd > field.selectionStart;
+  function commit() {
+    if (selected()) field.setSelectionRange(field.value.length, field.value.length);
+  }
+  // The rest of the name, inside the field, selected so it reads as a suggestion
+  // rather than as what was typed. Only a prefix is completed this way, and only
+  // with the caret at the end of the text, so a reader editing the middle of a
+  // word is never rewritten underneath themselves.
+  function complete() {
+    const typed = field.value;
+    if (!typed) return;
+    if (field.selectionStart !== typed.length || field.selectionEnd !== typed.length) return;
+    const wanted = typed.trim().toLowerCase();
+    if (!wanted) return;
+    for (const station of stations) {
+      if (station.name.toLowerCase().indexOf(wanted) !== 0) continue;
+      if (station.name.length <= typed.length || station.name.length > COMPLETE_LIMIT) return;
+      field.value = station.name;
+      field.setSelectionRange(typed.length, field.value.length);
+      return;
+    }
+  }
+  const inUse = () => document.activeElement === field || field.value.trim() !== "";
+  // The list is drawn under the field from the field's own rectangle. Nothing
+  // on the page is made into its ancestor for that, and nothing moves in the
+  // document to make it possible: the field is a word in the middle of a
+  // heading, and a heading may not hold a list.
+  function place() {
+    if (!dropdown || !dropdown.classList.contains("under-field")) return;
+    const box = field.getBoundingClientRect();
+    const width = Math.min(CAP, Math.max(box.width, window.innerWidth * 0.9));
+    const left = Math.max(0, Math.min(box.left, window.innerWidth - width - 8));
+    dropdown.style.left = left + "px";
+    dropdown.style.top = box.bottom + 4 + "px";
+    dropdown.style.width = width + "px";
+  }
+  const follow = () => place();
+  function enterUse() {
+    if (dropdown && !dropdown.classList.contains("under-field")) {
+      dropdown.classList.add("under-field");
+      window.addEventListener("scroll", follow, { passive: true });
+      window.addEventListener("resize", follow);
+    }
+    place();
+    // Twice, because taking the list out of the flow shortens the page, and a
+    // heading with balanced lines rebalances when the page under it changes
+    // height -- which moves the field the list was just placed against.
+    requestAnimationFrame(place);
+  }
+  function leaveUse() {
+    if (dropdown && dropdown.classList.contains("under-field")) {
+      dropdown.classList.remove("under-field");
+      dropdown.style.left = "";
+      dropdown.style.top = "";
+      dropdown.style.width = "";
+      window.removeEventListener("scroll", follow);
+      window.removeEventListener("resize", follow);
+    }
+  }
+  const reportUse = () => {
+    const used = inUse();
+    if (used) enterUse();
+    else leaveUse();
+    onUse(used);
+  };
+  const isInside = (target) => {
+    if (!target) return false;
+    if (field.contains(target)) return true;
+    return inside.some((element) => element && element.contains(target));
+  };
+  field.addEventListener("input", () => {
+    complete();
+    onChange(field.value);
+    // The completion widens the field, and a heading with balanced lines
+    // rebalances around a wider word, which moves the field the list was
+    // placed against. Placed again on the next frame, once it has settled.
+    requestAnimationFrame(place);
+  });
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" || event.key === "Enter") {
+      // A key with nothing half-typed belongs to the page: Tab moves on, Enter
+      // is the browser's own.
+      if (!selected()) return;
+      event.preventDefault();
+      commit();
+      onChange(field.value);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    }
+  });
+  // A click inside the field is a reader placing the caret, and the browser
+  // drops a selection on its own.
+  field.addEventListener("mousedown", commit);
+  field.addEventListener("focus", reportUse);
+  field.addEventListener("blur", () => {
+    commit();
+    reportUse();
+  });
+  // A pointerdown anywhere else on the page is the reader saying they are done
+  // here. It is on the document rather than on a wrapper so that a click on the
+  // page's own prose closes the field too, which is the whole of the promise.
+  document.addEventListener("pointerdown", (event) => {
+    if (isInside(event.target)) return;
+    commit();
+    reportUse();
+    onCancel();
+  });
+  return { complete: complete, commit: commit, reportUse: reportUse };
 }"""
 
 
@@ -3640,6 +3852,7 @@ def with_shared(template: str) -> str:
         ("__THEME_TOGGLE__", THEME_TOGGLE, "theme control"),
         ("__CHEVRON__", CHEVRON, "disclosure mark"),
         ("__LIST_KEYS__", LIST_KEYS_JS, "list keyboard block"),
+        ("__STATION_FIELD__", STATION_FIELD_JS, "station field block"),
     ):
         filled = filled.replace(placeholder, block)
         if placeholder in filled:
