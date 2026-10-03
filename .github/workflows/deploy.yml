@@ -187,6 +187,35 @@ jobs:
         # district stopped hiding the settlement its name carries (ADR-0026).
         run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1533
 
+      - name: Gate the published price per minute
+        # A price on its own is not a fact a reader can act on. Divided by the
+        # fastest journey the timetable offers for that pair it either is one or
+        # it is not, and the second case is the kind of defect nobody sees while
+        # 2,500 pages go by: the reader is quoted half a penny a minute for a
+        # two-hour trip, or nine thousand for a single fare. The gate prices
+        # what the page's own three selectors publish, so a fare it calls
+        # publishable is a fare a page would show.
+        #
+        # The band is measured, not chosen. On the 24 September 2026 feed, 99.4%
+        # of the 136,704 rows on a journey of five minutes or more fall between
+        # 1 and 100 pence a minute, the median is 29, and the bounds sit outside
+        # the 1st and 99th percentiles. Journeys under five minutes are held to
+        # a minimum rather than a rate, so they are counted and excluded rather
+        # than measured as 1,400 pence a minute.
+        #
+        # Five codes sit outside the band today and are recorded as reviewed
+        # exceptions in the tool, each with the range it was measured at: a
+        # staff pass at 5p, two Wag concession fares at 10p, a GBP 0.50 sale
+        # advance on 556 rows, and one GBP 9,998.00 sentinel. They are a
+        # baseline rather than a licence: any other code outside the band fails
+        # this step and names itself.
+        #
+        # Cost is two feeds and one timetable parse, measured at 112s on the
+        # real feed at this checkout, which is why it runs before the build
+        # rather than after it -- a refusal here costs a parse and a refusal
+        # after the build costs both.
+        run: python tools/check_fare_rate.py --feed feeds/fares/dtd-fares.zip --timetable feeds/timetable
+
       - name: Restore the timetable index
         # The timetable parse is the expensive part of this build, and it is
         # skipped entirely when the focused index is already on disk: measured
