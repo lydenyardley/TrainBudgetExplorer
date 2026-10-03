@@ -1024,7 +1024,19 @@ class TimetableDb:
                 else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
             )
             earliest_onward = arrival_at_interchange + max(wait, 1)
-            if best is not None and earliest_onward >= best.arrival:
+            # The prune is a lower bound on this journey's DURATION, which is
+            # what the search ranks on. An onward service cannot arrive before
+            # it departs, so this journey is at least this long whatever it
+            # catches, and a candidate whose floor is already no better than
+            # the best held cannot win (audit A11).
+            #
+            # It used to ask whether earliest_onward was after best.arrival
+            # instead. That is a different question, and ranking by duration
+            # while pruning by arrival time discards journeys that leave later
+            # and arrive barely any later: Grantham to Alfreton read 122
+            # minutes when the same database holds 67, and 28 of Grantham's 101
+            # destinations were wrong that way.
+            if best is not None and earliest_onward - departure >= best.duration:
                 continue
             entries = self._departures.get(interchange_crs)
             if not entries:
@@ -1090,10 +1102,14 @@ class TimetableDb:
         _one_change_from, so best_journey() and departures() cannot read the
         data differently -- the divergence that let an 81-second un-indexed
         copy sit beside a 1.7-second indexed one for a whole release.
+
+        Every departure is asked, and there is no early break. There was one,
+        on the grounds that a journey leaving after the best journey arrives
+        cannot beat it. That holds for the earliest arrival, not for the
+        shortest duration this function promises, so the break threw away
+        departures on the strength of a ranking it was not doing (audit A11).
         """
         for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
-            if best is not None and departure >= best.arrival:
-                break
             best = self._one_change_from(
                 origin_crs,
                 destination_crs,
