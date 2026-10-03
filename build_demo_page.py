@@ -1197,6 +1197,15 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="write one page per priceable station under out's folder, plus the chooser",
     )
     parser.add_argument(
+        "--only-stations",
+        default=None,
+        help=(
+            "with --all-origins: build only these origin codes, comma-separated "
+            "(GRA,NOT). Still one site -- one chooser, one station list, one "
+            "release manifest -- so a subset costs build time and nothing else"
+        ),
+    )
+    parser.add_argument(
         "--fast-all-origins",
         action="store_true",
         help="build every station page in prices-only parallel mode, report live "
@@ -2717,6 +2726,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.workers == 1:
             args.workers = min(8, os.cpu_count() or 1)
 
+    # Checked here rather than left to be ignored, because the two flags mean
+    # different builds and a subset asked for without the set it is a subset of
+    # would otherwise build the one origin --origin names and say nothing about
+    # the codes that were named.
+    if args.only_stations and not args.all_origins:
+        print(
+            "error: --only-stations names a subset of a whole-network build, so it "
+            "needs --all-origins. Without it this build writes only --origin.",
+            file=sys.stderr,
+        )
+        return 2
+
     day: date | None = None
     if args.date:
         try:
@@ -3150,6 +3171,43 @@ def main(argv: list[str] | None = None) -> int:
             for crs in sorted(fares.locations_by_crs)
             if not is_pseudo_station(crs)
         ]
+        # A handful of stations is still one site, not several builds: one
+        # chooser, one station list beside it, one release manifest, and nothing
+        # linking to a page that was not written. That is what makes a two-station
+        # build reviewable in minutes rather than a whole-network build's hours.
+        #
+        # A code this feed does not price as a departure point is refused rather
+        # than dropped, including a zone or coach pseudo-station: a typo that
+        # quietly builds one station instead of two is a build that lies about
+        # what it wrote, and the chooser would go on offering what it did write.
+        if args.only_stations:
+            wanted = {
+                code.strip().upper()
+                for code in args.only_stations.split(",")
+                if code.strip()
+            }
+            missing = sorted(wanted - set(origins))
+            if missing:
+                print(
+                    "error: --only-stations names code(s) this feed does not price "
+                    f"as an origin: {', '.join(missing)}",
+                    file=sys.stderr,
+                )
+                return 2
+            if not wanted:
+                print(
+                    "error: --only-stations named no code, which would build no "
+                    "station page at all.",
+                    file=sys.stderr,
+                )
+                return 2
+            chosen = len(origins)
+            origins = [crs for crs in origins if crs in wanted]
+            print(
+                f"Building {len(origins)} of the feed's {chosen:,} priceable "
+                f"station(s): {', '.join(origins)}",
+                flush=True,
+            )
         if args.fast_all_origins:
             print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
         priced_counts: dict[str, int] = {}

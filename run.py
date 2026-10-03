@@ -273,6 +273,42 @@ def sources_are_newer() -> bool:
     return False
 
 
+def serve(site: Path, port: int, *, open_browser: bool = True) -> int:
+    """Serve `site` on 127.0.0.1:`port` until Ctrl+C.
+
+    A function rather than a block inside `main()` because two entry points now
+    need it and neither should own a second copy of a local HTTP server: the
+    runner serves `_site/`, and `build_stations.py` serves a subset build. The
+    handler is defined in here for the same reason -- the quiet one is this
+    project's server, and the only one a reader's browser should meet.
+
+    Returns a process exit code, so a caller can `return serve(...)`.
+    """
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, fmt, *log_args):  # keep the terminal for the build, not request spam
+            pass
+
+    # Threaded: one reader, but browsers open parallel connections for
+    # sub-resources and a second tab must not stall the first (audit B4).
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    where_we_were = Path.cwd()
+    os.chdir(site)
+    try:
+        with socketserver.ThreadingTCPServer(("127.0.0.1", port), Quiet) as httpd:
+            url = f"http://localhost:{port}/"
+            print(f"Serving {site.name} at {url}  (Ctrl+C to stop)")
+            if open_browser:
+                threading.Timer(0.8, webbrowser.open, args=(url,)).start()
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                print("\nStopped.")
+    finally:
+        os.chdir(where_we_were)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build the site and serve it at http://localhost:<port>")
@@ -377,24 +413,7 @@ def main() -> int:
         print("Serving the existing _site/ without rebuilding it. Pass --rebuild to"
               " build again first.")
 
-    os.chdir(SITE)
-
-    class Quiet(http.server.SimpleHTTPRequestHandler):
-        def log_message(self, fmt, *log_args):  # keep the terminal for the build, not request spam
-            pass
-
-    # Threaded: one reader, but browsers open parallel connections for
-    # sub-resources and a second tab must not stall the first (audit B4).
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer(("127.0.0.1", args.port), Quiet) as httpd:
-        url = f"http://localhost:{args.port}/"
-        print(f"Serving {SITE.name} at {url}  (Ctrl+C to stop)")
-        threading.Timer(0.8, webbrowser.open, args=(url,)).start()
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nStopped.")
-    return 0
+    return serve(SITE, args.port)
 
 
 if __name__ == "__main__":
