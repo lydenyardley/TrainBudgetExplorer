@@ -1680,6 +1680,40 @@ class ConditionalFareTest(unittest.TestCase):
         self.assertIn("XD3", atoc_fares.PLACEHOLDER_TICKET_CODES)
         self.assertNotIn("XD3", atoc_fares.CONDITIONAL_TICKET_CODES)
 
+    def test_a_fare_the_feed_says_needs_another_ticket_cannot_win(self) -> None:
+        # BCF FRIENDS&FAMILY is priced at GBP 1.00 and won 678 slots before
+        # this rule. Its restriction says ONLY VALID WITH TfWM SEASON TKT
+        # HOLDER, so a reader without a season ticket cannot buy it. The rule
+        # is the feed's sentence rather than a code, so the next fare the file
+        # describes this way is caught without anyone typing its code.
+        fares = self._db()
+        fares.restrictions.headers["FH"] = atoc_restrictions.parse_header(
+            _restriction_header("FH", "SEASON", "ONLY VALID WITH TfWM SEASON TKT HOLDER")
+        )
+        flow_id = next(iter(fares.fares_by_flow))
+        fares.fares_by_flow[flow_id]["BCF"] = Fare("BCF", 100, "FH")
+        fares.ticket_types["BCF"] = TicketType("BCF", "FRIENDS&FAMILY", "2", "R", False)
+        rows = fares.page_destinations_within("GRN", 1_000_000)
+        self.assertNotIn("BCF", {row.ticket_code for row in rows})
+
+    def test_a_time_restricted_fare_is_still_published(self) -> None:
+        # The check is that the restriction demands another ticket, not that
+        # it demands anything. EGS EVENING DAY is a real product restricted to
+        # after 1830. Priced at 50p so it would take the slot outright, because
+        # a fixture priced above the fixture's 100p incumbent passes whether
+        # or not the rule rejects it.
+        fares = self._db()
+        fares.restrictions.headers["EF"] = atoc_restrictions.parse_header(
+            _restriction_header(
+                "EF", "EVENING", "ONLY VALID ON JOURNEYS FROM 1830 MONDAY TO SUNDAY"
+            )
+        )
+        flow_id = next(iter(fares.fares_by_flow))
+        fares.fares_by_flow[flow_id]["EGS"] = Fare("EGS", 50, "EF")
+        fares.ticket_types["EGS"] = TicketType("EGS", "EVENING DAY S", "2", "S", False)
+        rows = fares.page_single_destinations_within("GRN", 1_000_000)
+        self.assertIn("EGS", {row.ticket_code for row in rows})
+
     def test_a_staff_pass_cannot_win_the_cheapest_single_slot(self) -> None:
         db = self._with(self._db(), "BJD", "AWC STAFF", 5)
         rows = db.page_single_destinations_within("GRN", 1_000_000)
