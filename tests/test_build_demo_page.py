@@ -1104,9 +1104,15 @@ class DemoPageTest(unittest.TestCase):
         # than a copy of itself: the box is ticked from what is held, so a row
         # rebuilt by a render cannot claim a place is held when it is not.
         self.assertIn("box.checked = inShortlist(destination.crs);", self.html)
-        self.assertIn("box.checked = inShortlist(destination.crs);\n  });", self.html)
-        # And it is put back when the list refuses it, which is the one case
-        # where the browser's ticked box and the shortlist disagree.
+        # Every box is put back from the list in one place, and it is that one
+        # place which makes a row's own handler unnecessary: clearing the list
+        # emptied the strip and the dock and left every row still ticked, because
+        # nothing but the click handler ever put the boxes back.
+        self.assertIn(
+            'for (const box of document.querySelectorAll("#rows input.hold-box")) {',
+            self.html,
+        )
+        self.assertIn("if (row) box.checked = inShortlist(row.dataset.crs);", self.html)
         self.assertIn("const SHORTLIST_LIMIT = 8;", self.html)
 
     def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
@@ -2557,8 +2563,12 @@ class DemoPageTest(unittest.TestCase):
         # The one row is still the release: the page to open, with its count.
         self.assertIn("/from/cark/", chooser)
         self.assertIn('"destinations":5', chooser.replace(" ", ""))
-        # A chooser's field is optional now, so the script cannot assume it.
-        self.assertIn('if (pick) pick.addEventListener("input", render);', chooser)
+        # A chooser's field is optional now, so the script cannot assume it. It
+        # is wired through the shared field block, which owns the typing and
+        # hands the route back the value.
+        self.assertIn("attachStationField({", chooser)
+        self.assertIn("onChange: () => render(),", chooser)
+        self.assertIn("field: pick,", chooser)
         self.assertIn('const needle = pick ? pick.value.trim().toLowerCase() : "";', chooser)
         self.assertIn("if (pick) pick.focus();", chooser)
         # The list is the whole page's answer, so it is still built and counted.
@@ -2589,7 +2599,11 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_chooser_explains_a_truncated_match_list(self) -> None:
         chooser = render_chooser([], budget_pounds=20)
-        self.assertIn("Showing \" + CHOOSER_LIMIT + \" of \" + wanted.length", chooser)
+        # The cap is the number of rows drawn, which is forty while there is a
+        # search to run and every station when there is not, so a chooser lists
+        # the whole directory rather than its first forty names.
+        self.assertIn("const cap = needle ? CHOOSER_LIMIT : wanted.length;", chooser)
+        self.assertIn("Showing \" + cap + \" of \" + wanted.length", chooser)
         self.assertIn("Refine the search to see the rest", chooser)
 
     def test_the_chooser_counts_destinations_in_the_singular_when_there_is_one(self) -> None:
@@ -4847,7 +4861,8 @@ class RouteManifestTest(unittest.TestCase):
             root = Path(tmp)
             self.build_site(root, "--all-origins")
             chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
-            self.assertIn('if (pick) pick.addEventListener("input", render)', chooser)
+            self.assertIn("attachStationField({", chooser)
+            self.assertIn("onChange: () => render(),", chooser)
 
     def test_the_chooser_links_to_the_privacy_page(self) -> None:
         # The root page is where a reader starts, so the thing that says what

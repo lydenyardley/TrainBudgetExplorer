@@ -337,7 +337,9 @@ async function checkChooser(page, url, check) {
     return {
       text: seen(el).replace(/\u2060/g, "").replace(/\s+/g, " ").trim(),
       field: (document.getElementById("budgetNumber") || {}).value || "",
-      slot: Boolean(el.querySelector(".origin-slot")),
+      // The shared slot class, which is what a station page's slot wears too: the
+      // chooser's field is that slot with nothing in it yet.
+      slot: Boolean(el.querySelector(".origin-slot-wrap")),
       placeholder: (document.getElementById("originSearch") || {}).placeholder || "",
     };
   });
@@ -351,6 +353,58 @@ async function checkChooser(page, url, check) {
     heading.slot && heading.placeholder === "station",
     JSON.stringify(heading)
   );
+  // The chooser's field is the same control as a station page's, so the three
+  // behaviours are checked here as well and against this page's own list.
+  const wholeList = await page.evaluate(() => ({
+    shown: document.querySelectorAll("#picks a").length,
+    total: typeof STATIONS === "undefined" ? 0 : STATIONS.length,
+    first: typeof STATIONS === "undefined" || !STATIONS.length ? null : STATIONS[0],
+  }));
+  check(
+    "every station on the site is listed while the field is empty",
+    wholeList.total > 0 && wholeList.shown === wholeList.total,
+    JSON.stringify({ shown: wholeList.shown, total: wholeList.total })
+  );
+  if (wholeList.first && wholeList.first.name.length > 4) {
+    const letters = wholeList.first.name.slice(0, 3);
+    await page.fill("#originSearch", "");
+    await page.type("#originSearch", letters, { delay: 10 });
+    await page.waitForTimeout(80);
+    const completed = await page.evaluate(() => {
+      const field = document.getElementById("originSearch");
+      const list = document.getElementById("picks");
+      const f = field.getBoundingClientRect();
+      const l = list.getBoundingClientRect();
+      return {
+        value: field.value,
+        start: field.selectionStart,
+        end: field.selectionEnd,
+        position: getComputedStyle(list).position,
+        gap: Math.round(l.top - f.bottom),
+        options: list.querySelectorAll("a").length,
+        sideScroll:
+          Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+      };
+    });
+    check(
+      `typing ${letters} in the chooser's field completes the station's name, and the list is drawn under the field`,
+      completed.value === wholeList.first.name &&
+        completed.start === letters.length &&
+        completed.end === wholeList.first.name.length &&
+        completed.position === "fixed" &&
+        completed.gap >= 0 &&
+        completed.gap < 40 &&
+        completed.options > 0 &&
+        completed.sideScroll <= 0,
+      JSON.stringify({ letters, station: wholeList.first.name, completed })
+    );
+    await page.fill("#originSearch", "");
+  } else {
+    check(
+      "typing in the chooser's field completes the station's name, and the list is drawn under the field",
+      notExercised("this release lists no station a reader could type")
+    );
+  }
   // A placeholder is text a reader has to read, so it is measured like text:
   // muted is the design call, and still meeting AA is the floor under it. The
   // colour is painted onto a canvas over the page rather than parsed out of
@@ -626,7 +680,9 @@ async function checkReleaseRoot(page, url, check) {
     return {
       text: el.textContent.replace(/\u2060/g, "").replace(/\s+/g, " ").trim(),
       station: named ? named.textContent.trim() : "",
-      slot: Boolean(el.querySelector(".origin-slot")),
+      // The shared slot class, which is what a station page's slot wears too: the
+      // chooser's field is that slot with nothing in it yet.
+      slot: Boolean(el.querySelector(".origin-slot-wrap")),
       fields: el.querySelectorAll("input").length,
     };
   });
@@ -4125,15 +4181,44 @@ function saysMoreThan(condition, code) {
           stacked.inScreen && stacked.overflow <= 0,
         JSON.stringify(stacked)
       );
+      const headings = await page.evaluate(() => {
+        const head = document.querySelector("#shortlistDock th.num");
+        const cell = document.querySelector("#shortlistDock tbody td.num");
+        if (!head || !cell) return null;
+        const h = head.getBoundingClientRect();
+        const c = cell.getBoundingClientRect();
+        return {
+          align: getComputedStyle(head).textAlign,
+          left: Math.round(h.left - c.left),
+          right: Math.round(h.right - c.right),
+        };
+      });
+      check(
+        "a dock heading stands over its own column",
+        Boolean(headings) && headings.align === "right" &&
+          Math.abs(headings.left) < 1.5 && Math.abs(headings.right) < 1.5,
+        JSON.stringify(headings)
+      );
       await page.evaluate(() => { document.getElementById("shortlistDockClear").click(); });
       const cleared = await page.evaluate(() => ({
         rows: document.querySelectorAll("#shortlistDockList tr").length,
         hidden: document.getElementById("shortlistDock").hidden,
         padding: document.body.style.paddingBottom,
+        // The tick on a row is the shortlist drawn on the row, so clearing the
+        // list has to clear them. It did not: the boxes kept their ticks and the
+        // page showed two places held above a list of none.
+        ticked: Array.from(document.querySelectorAll("#rows input.hold-box"))
+          .filter((box) => box.checked).length,
+        listed: document.querySelectorAll("#shortlistList li").length,
       }));
       check(
         "the dock's own Clear empties it and takes the strip off the screen",
         cleared.rows === 0 && cleared.hidden === true && cleared.padding === "",
+        JSON.stringify(cleared)
+      );
+      check(
+        "and clearing the shortlist clears the tick on every row",
+        cleared.ticked === 0 && cleared.listed === 0 && dock.cells.length > 0,
         JSON.stringify(cleared)
       );
     } else {
@@ -4149,6 +4234,57 @@ function saysMoreThan(condition, code) {
       }
     }
 
+    // The space above the page is the heading's own margin and the body's side
+    // gutters only. Measured rather than asserted, because a gutter above the
+    // content and a heading margin are two answers to one question and the
+    // second one was silently the wrong one.
+    const gutters = await page.evaluate(() => {
+      const body = getComputedStyle(document.body);
+      const h1 = document.querySelector("h1");
+      const heading = getComputedStyle(h1);
+      return {
+        top: parseFloat(body.paddingTop),
+        side: parseFloat(body.paddingLeft),
+        margin: parseFloat(heading.marginTop),
+        size: parseFloat(heading.fontSize),
+      };
+    });
+    check(
+      "the body has side gutters and none above the heading",
+      gutters.top === 0 && gutters.side > 0,
+      JSON.stringify(gutters)
+    );
+    check(
+      "and the heading carries half an em of its own size above it",
+      Math.abs(gutters.margin - gutters.size / 2) < 1,
+      JSON.stringify(gutters)
+    );
+    // Two controls that make one decision share a row.
+    // Opened only if it is shut. The suite has already opened this panel
+    // elsewhere, and a second click on an open one closes it, which measures
+    // three zero-height rectangles.
+    const openedThePanel = await page.evaluate(() => document.getElementById("moreFilters").dataset.open !== "true");
+    if (openedThePanel) {
+      await page.click("#moreFiltersToggle");
+      await page.waitForTimeout(80);
+    }
+    const filterRow = await page.evaluate(() => {
+      const ticket = document.querySelector(".ticket-filter").getBoundingClientRect();
+      const party = document.querySelector(".party-filter").getBoundingClientRect();
+      const types = document.querySelector(".destination-filter").getBoundingClientRect();
+      return {
+        ticket: Math.round(ticket.top),
+        party: Math.round(party.top),
+        types: Math.round(types.top),
+        beside: party.left > ticket.right - 2,
+      };
+    });
+    check(
+      "the party control sits beside the ticket control on the same row",
+      Math.abs(filterRow.ticket - filterRow.party) < 2 && filterRow.beside && filterRow.types > filterRow.party,
+      JSON.stringify(filterRow)
+    );
+    if (openedThePanel) await page.click("#moreFiltersToggle");
     // The three layout rules a reader scrolling ninety rows is relying on: the
     // headings stay, the action column does not widen, and the page controls
     // are not welded to the table's last row.
@@ -4424,6 +4560,85 @@ function saysMoreThan(condition, code) {
       await page.fill("#originSearch", query);
       await page.keyboard.press("Escape");
       check("Escape closes the picker", !(await page.locator("#originPicker").isVisible()));
+      // The completion, driven from a station this page actually lists rather
+      // than from a name a fixture happens to carry, so the check is a test of
+      // the field and not of the feed.
+      const firstStation = await page.evaluate(() => (DATA.stations || [])[0] || null);
+      if (firstStation && firstStation.name.length > 4) {
+        const letters = firstStation.name.slice(0, 3);
+        await page.click("#changeOrigin");
+        await page.fill("#originSearch", "");
+        await page.type("#originSearch", letters, { delay: 10 });
+        await page.waitForTimeout(80);
+        const typed = await page.evaluate(() => {
+          const field = document.getElementById("originSearch");
+          return {
+            value: field.value,
+            start: field.selectionStart,
+            end: field.selectionEnd,
+          };
+        });
+        check(
+          `typing ${letters} completes the station's name in the field, with the rest of it selected`,
+          typed.value === firstStation.name &&
+            typed.start === letters.length &&
+            typed.end === firstStation.name.length,
+          JSON.stringify({ letters, station: firstStation.name, typed })
+        );
+        await page.keyboard.press("Tab");
+        const accepted = await page.evaluate(() => {
+          const field = document.getElementById("originSearch");
+          return { value: field.value, start: field.selectionStart, end: field.selectionEnd };
+        });
+        check(
+          "and Tab accepts the rest of the name as text",
+          accepted.value === firstStation.name && accepted.start === accepted.end,
+          JSON.stringify(accepted)
+        );
+        // Where the list is drawn, measured against the field it belongs to.
+        const placed = await page.evaluate(() => {
+          const field = document.getElementById("originSearch").getBoundingClientRect();
+          const list = document.getElementById("originPicker");
+          const box = list.getBoundingClientRect();
+          return {
+            gap: Math.round(box.top - field.bottom),
+            position: getComputedStyle(list).position,
+            aligned: Math.abs(box.left - field.left) < 200,
+            options: list.querySelectorAll("a").length,
+          };
+        });
+        check(
+          "the list of stations is drawn under the field, not two paragraphs further down",
+          placed.position === "fixed" && placed.gap >= 0 && placed.gap < 40 && placed.aligned && placed.options > 0,
+          JSON.stringify(placed)
+        );
+        // Walking away: a click on the page, not in the field and not in the list.
+        await page.mouse.click(24, 520);
+        await page.waitForTimeout(120);
+        const walked = await page.evaluate(() => ({
+          field: Boolean(document.getElementById("originSearch")),
+          picker: Boolean(document.getElementById("originPicker")),
+          name: (document.getElementById("changeOrigin") || { textContent: "" }).textContent.replace(/\s+/g, " ").trim(),
+          expanded: (document.getElementById("changeOrigin") || {}).getAttribute
+            ? document.getElementById("changeOrigin").getAttribute("aria-expanded")
+            : null,
+        }));
+        check(
+          "a click on the page puts the station's name back where the field was",
+          walked.field === false && walked.name.length > 0 && walked.expanded === "false",
+          JSON.stringify(walked)
+        );
+        await page.evaluate(() => { document.getElementById("changeOrigin").focus(); });
+      } else {
+        for (const name of [
+          "typing a station's first letters completes the name in the field",
+          "and Tab accepts the rest of the name as text",
+          "the list of stations is drawn under the field",
+          "a click on the page puts the station's name back where the field was",
+        ]) {
+          check(name, notExercised("this page lists no station a reader could type"));
+        }
+      }
       check("and focus returns to the heading station control", await page.evaluate(() => document.activeElement && document.activeElement.id === "changeOrigin"));
       // The field the reader types in lives in the heading while the picker is
       // open, so Escape has to be caught where the key is actually pressed.
