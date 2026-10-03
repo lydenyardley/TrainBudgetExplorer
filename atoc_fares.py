@@ -732,6 +732,10 @@ def is_pseudo_station(crs: str) -> bool:
 # new members of the same family.
 PLACEHOLDER_TICKET_CODES = frozenset({
     "EIS", "EIF", "IF1", "IF3", "IS0", "IS1", "IS3", "LIS", "LIF",
+    # A GBP 9,998.00 sentinel on one Lincolnshire pair, not an ITX name and so
+    # not caught by the check below. It is not a fare, so it belongs here
+    # rather than among the conditional tickets, which are real.
+    "XD3",
 })
 
 
@@ -758,6 +762,11 @@ CONDITIONAL_TICKET_CODES = frozenset({
     "GF3",  # ADVANCE GROUP 3
     "GF4",  # ADVANCE GROUP 4
     "GF5",  # ADVANCE GROUP 5
+    "BJD",  # AWC STAFF
+    "DGA", "DGB", "DGC",  # SALE ADVANCE, all three on route 00429
+    "COR",  # WAG CONCES RTN
+    "COS",  # WAG CONCES SGL
+    "KWA",  # KID WITH ADULT
     "FG3",  # ANYTIME GROUP 3
     "FG4",  # ANYTIME GROUP 4
     "FG5",  # ANYTIME GROUP 5
@@ -835,10 +844,13 @@ CONDITIONAL_TICKET_CODES = frozenset({
     "TCS",  # UNDER 16 SINGLE
 })
 
-# The tally key for a fare that lost the slot because of who it is priced for.
-# Named once here because three places read it: both selectors, the page's
-# empty-page note, and the coverage report that counts the loss.
-CONDITIONAL_REASON = "ticket_is_a_child_group_or_event_fare"
+# The tally key for a fare that lost the slot because a reader cannot buy it at
+# the price it quotes. Named once here because three places read it: both
+# selectors, the page's empty-page note, and the coverage report that counts
+# the loss. The wording names the reason rather than the three conditions the
+# table started with, because a staff pass and a staff concession are the same
+# fact about a fare and a reader does not care which category it came from.
+CONDITIONAL_REASON = "ticket_is_not_one_a_reader_can_buy"
 
 
 def _offsets(spec: tuple[tuple[str, int], ...]) -> dict[str, tuple[int, int]]:

@@ -20,7 +20,6 @@ from check_fare_rate import (
     MIN_JOURNEY_MINUTES,
     RATE_CEILING_PENCE_PER_MINUTE,
     RATE_FLOOR_PENCE_PER_MINUTE,
-    REVIEWED_RATE_EXCEPTIONS,
     describe,
     main,
     outside_band,
@@ -46,43 +45,45 @@ class BandTest(unittest.TestCase):
         # GBP 8.00 over 40 minutes is 20 pence a minute, near the measured
         # median of 28.70. It must not be reported.
         rows = [row("SDS", 800, 40)]
-        self.assertEqual(outside_band(rows, known={}), [])
+        self.assertEqual(outside_band(rows), [])
 
     def test_a_fare_below_the_floor_is_an_offender(self) -> None:
         rows = [row("QQ1", 5, 145, "A NEW STAFF PASS")]
-        self.assertEqual(len(outside_band(rows, known={})), 1)
+        self.assertEqual(len(outside_band(rows)), 1)
 
     def test_a_fare_above_the_ceiling_is_an_offender(self) -> None:
         rows = [row("QQ2", 999_800, 108, "A NEW SENTINEL")]
-        self.assertEqual(len(outside_band(rows, known={})), 1)
+        self.assertEqual(len(outside_band(rows)), 1)
 
     def test_a_short_journey_is_not_measured_as_a_rate(self) -> None:
         # A GBP 14.00 minimum across one minute is 1,400 pence a minute and a
         # correct price. Measuring it as a rate would make it the loudest
         # offender in every run and the gate would be noise.
         rows = [row("SDR", 1400, 1, "ANYTIME DAY R")]
-        self.assertEqual(outside_band(rows, known={}), [])
+        self.assertEqual(outside_band(rows), [])
         # The exclusion is on duration, not on a ceiling the fare could clear,
         # and it ends at the threshold: five minutes is measured.
-        self.assertEqual(len(outside_band([row("QQ4", 1, 5, "TOO CHEAP")], known={})), 1)
+        self.assertEqual(len(outside_band([row("QQ4", 1, 5, "TOO CHEAP")])), 1)
 
     def test_the_excluded_rows_are_a_small_share_of_the_feed(self) -> None:
         # Recorded so the exclusion cannot quietly widen. The real feed holds
         # 10,274 such rows of 146,978 published.
         self.assertEqual(MIN_JOURNEY_MINUTES, 5)
 
-    def test_a_reviewed_code_is_not_an_offender(self) -> None:
-        for code in REVIEWED_RATE_EXCEPTIONS:
-            self.assertIn(code, REVIEWED_RATE_EXCEPTIONS)
+    def test_there_is_no_exception_list_to_hide_behind(self) -> None:
+        # The gate once carried five reviewed codes, which meant a family
+        # reaching a page for an implausible rate was excused instead of
+        # removed. Those five are excluded by the selectors now, so the gate
+        # has nothing to excuse and a new family has nothing to hide behind.
+        self.assertFalse(hasattr(check_fare_rate, "REVIEWED_RATE_EXCEPTIONS"))
         rows = [row("BJD", 5, 145, "AWC STAFF")]
-        self.assertEqual(outside_band(rows), [])
-
-    def test_a_reviewed_code_does_not_excuse_a_second_family(self) -> None:
-        # The point of keying the review by code: DGA being on the list excuses
-        # DGA, and nothing else.
-        rows = [row("QQ3", 5, 145, "ANOTHER PASS")]
         self.assertEqual(len(outside_band(rows)), 1)
-        self.assertEqual(outside_band([row("DGA", 5, 145, "SALE ADVANCE")]), [])
+
+    def test_every_fare_outside_the_band_is_an_offender(self) -> None:
+        # The failure this replaced: an offender carrying a name that had been
+        # accepted once. It now fails like any other.
+        rows = [row("QQ3", 5, 145, "ANOTHER PASS"), row("DGA", 5, 145, "SALE ADVANCE")]
+        self.assertEqual(len(outside_band(rows)), 2)
 
     def test_the_bounds_bracket_the_measured_distribution(self) -> None:
         # Guards a bounds edit that would either trip on ordinary fares or
@@ -181,6 +182,31 @@ class MainTest(unittest.TestCase):
             code = main(self.FEED_ARGS)
         self.assertEqual(code, 2)
         self.assertIn("will not guess", stderr.getvalue())
+
+    def test_a_clean_run_says_every_fare_is_plausible(self) -> None:
+        # The success line names what was checked, so a green gate is not
+        # silence that could mean the run measured nothing.
+        fares = mock.Mock()
+        fares.locations_by_crs = {"GRA": mock.Mock()}
+        fares.nlcs_by_crs = {"GRA": {"1"}}
+        fares.page_single_destinations_within.return_value = [
+            mock.Mock(crs="NOT", best_pence=800, ticket_code="SDS", ticket_name="ANYTIME DAY S")
+        ]
+        fares.page_destinations_within.return_value = []
+        fares.publishable_destinations_within.return_value = []
+        db = mock.Mock()
+        db.return_value.load_feed.return_value = fares
+        timetable = mock.Mock()
+        timetable.return_value.load_feed.return_value = self._timetable()
+        with mock.patch.object(check_fare_rate, "FaresDb", db), mock.patch.object(
+            check_fare_rate, "TimetableDb", timetable
+        ), mock.patch.object(check_fare_rate, "fastest_by_pair", return_value={("GRA", "NOT"): 40}), \
+            mock.patch.object(Path, "exists", return_value=True):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["--feed", "f.zip", "--timetable", "tt"])
+        self.assertEqual(code, 0)
+        self.assertIn("every published fare is a plausible price", out.getvalue())
 
     def test_a_clean_run_exits_zero(self) -> None:
         fares = mock.Mock()

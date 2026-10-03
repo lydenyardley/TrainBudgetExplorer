@@ -1652,9 +1652,46 @@ class ConditionalFareTest(unittest.TestCase):
     def test_the_table_holds_the_codes_the_feed_actually_used(self) -> None:
         # Guard against a future edit that empties the table, which would
         # silently put every child's fare back on the page.
-        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 100)
+        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 107)
         for code in ("CTS", "CTR", "TKS", "TKR", "SPN", "S05", "ENT"):
             self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
+
+    def test_the_sale_advance_family_is_closed_not_just_the_code_named(self) -> None:
+        # The rate gate found DGB at GBP 1.00 and stayed silent on DGC at
+        # GBP 2.00, because a rate inside the band is not evidence that a
+        # fare is purchasable. All three are one product on route 00429, so
+        # excluding the one the gate named would leave two live.
+        for code in ("DGA", "DGB", "DGC"):
+            self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
+
+    def test_a_staff_and_a_concession_fare_are_also_excluded(self) -> None:
+        # These are not children and not parties, and a reader cannot buy
+        # either at the price the feed quotes: a staff pass at 5p and a
+        # concession at 10p are the same fact about a fare as an UNDER 11
+        # single, so they are excluded by the same rule.
+        for code in ("BJD", "COS", "COR", "DGA", "KWA"):
+            self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
+
+    def test_a_sentinel_is_a_placeholder_and_not_a_conditional_fare(self) -> None:
+        # XD3 at GBP 9,998.00 is not a fare at all, so it belongs with the
+        # catalogue placeholders. Keeping the two tables apart means a
+        # conditional fare can be argued about without re-deciding what a
+        # placeholder is.
+        self.assertIn("XD3", atoc_fares.PLACEHOLDER_TICKET_CODES)
+        self.assertNotIn("XD3", atoc_fares.CONDITIONAL_TICKET_CODES)
+
+    def test_a_staff_pass_cannot_win_the_cheapest_single_slot(self) -> None:
+        db = self._with(self._db(), "BJD", "AWC STAFF", 5)
+        rows = db.page_single_destinations_within("GRN", 1_000_000)
+        self.assertNotIn("BJD", {row.ticket_code for row in rows})
+
+    def test_the_reason_names_the_fact_rather_than_the_three_conditions(self) -> None:
+        # The table started as child, group and event and now holds a staff
+        # pass, so the tally key that names those three would understate what
+        # it excludes.
+        self.assertEqual(
+            atoc_fares.CONDITIONAL_REASON, "ticket_is_not_one_a_reader_can_buy"
+        )
 
     def test_an_ordinary_fare_is_not_treated_as_conditional(self) -> None:
         # A word in a name must not be the rule. The selectors are keyed by

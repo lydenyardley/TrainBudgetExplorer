@@ -49,7 +49,7 @@ DROPPED_REASONS = (
     "flow_with_no_fare",
     "fare_with_no_ticket_type",
     "ticket_is_not_a_standard_return",
-    "ticket_is_a_child_group_or_event_fare",
+    "ticket_is_not_one_a_reader_can_buy",
     "fare_to_the_origin_itself",
     "fare_above_the_budget",
     "cheaper_index_already_held",

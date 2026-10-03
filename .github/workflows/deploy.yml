@@ -203,12 +203,16 @@ jobs:
         # a minimum rather than a rate, so they are counted and excluded rather
         # than measured as 1,400 pence a minute.
         #
-        # Five codes sit outside the band today and are recorded as reviewed
-        # exceptions in the tool, each with the range it was measured at: a
-        # staff pass at 5p, two Wag concession fares at 10p, a GBP 0.50 sale
-        # advance on 556 rows, and one GBP 9,998.00 sentinel. They are a
-        # baseline rather than a licence: any other code outside the band fails
-        # this step and names itself.
+        # The band has no exception list behind it, and that is the design
+        # rather than an omission. An earlier version excused five codes by
+        # review, which meant a family reaching a page for an implausible rate
+        # was recorded instead of removed, and the next family could hide
+        # behind it. Removing that list is what made this step find DGB SALE
+        # ADVANCE at GBP 1.00 over 213 minutes, which the five would have
+        # excused. Fares a reader cannot buy are excluded by the selectors in
+        # atoc_fares instead, so none of them is published and none reaches
+        # here. Anything else outside the band fails this step and names
+        # itself.
         #
         # Cost is two feeds and one timetable parse, measured at 112s on the
         # real feed at this checkout, which is why it runs before the build

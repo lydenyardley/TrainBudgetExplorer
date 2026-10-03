@@ -1343,8 +1343,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 # traffic, not reasons a destination is missing, so they are never listed.
 UNPRICED_REASONS = {
     "ticket_is_not_a_standard_return": "fares that are not standard returns",
-    "ticket_is_a_child_group_or_event_fare": (
-        "fares a reader cannot buy alone, such as a child or a group fare"
+    "ticket_is_not_one_a_reader_can_buy": (
+        "fares a reader cannot buy at the price they are quoted at, "
+        "such as a child, a group, a staff or a concession fare"
     ),
     "flow_not_yet_valid": "flows not yet valid",
     "flow_expired": "flows past their last valid day",
