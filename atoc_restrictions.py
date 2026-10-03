@@ -437,6 +437,34 @@ class RestrictionIndex:
         "DATE/TRAIN",
     )
 
+    # A fare the file says is valid only alongside another ticket: a season
+    # ticket, an early-bird season, a lunch voucher. A reader without that
+    # ticket cannot buy it, so it cannot be the cheapest fare on a page.
+    # Measured on the 24 September 2026 feed: FH, NA, TK and MV say so, and
+    # BCF FRIENDS&FAMILY is the standard fare riding on one of them.
+    #
+    # Tested on the file's own sentence rather than listed by code, for the
+    # reason the markers above give. The reviewed tables answer for fares the
+    # feed does not describe; this one answers for fares it does.
+    REQUIRES_ANOTHER_TICKET_MARKERS = (
+        "ONLY VALID WITH",
+        "HOLDER",
+    )
+
+    # A fare the file says is valid only alongside another ticket: a season
+    # ticket, an early-bird season, a lunch voucher. A reader without that
+    # ticket cannot buy it, so it cannot be the cheapest fare on a page.
+    # Measured on the 24 September 2026 feed: FH, NA, TK and MV say so, and
+    # BCF FRIENDS&FAMILY is the standard fare riding on one of them.
+    #
+    # Tested on the file's own sentence rather than listed by code, for the
+    # reason the markers above give. The reviewed tables answer for fares the
+    # feed does not describe; this one answers for fares it does.
+    REQUIRES_ANOTHER_TICKET_MARKERS = (
+        "ONLY VALID WITH",
+        "HOLDER",
+    )
+
     def binds_to_date_and_train(self, code: object) -> bool:
         """Whether a restriction binds its fare to one date and train."""
         text = str(code or "").strip().upper()
@@ -447,6 +475,46 @@ class RestrictionIndex:
             return False
         described = f"{header.description} {header.outward_text}".upper()
         return any(marker in described for marker in self.DATE_AND_TRAIN_MARKERS)
+
+    def requires_another_ticket(self, code: object) -> bool:
+        """Whether the file says this fare is valid only with another ticket.
+
+        Distinct from a date-and-train binding, which is about when and what
+        you travel rather than what you must already hold. Both are the
+        reader's precondition, so both keep a fare off a page.
+        """
+        text = str(code or "").strip().upper()
+        if not text:
+            return False
+        header = self.headers.get(text)
+        if header is None:
+            return False
+        described = (
+            f"{header.description} {header.outward_text} {header.return_text}"
+        ).upper()
+        return any(
+            marker in described for marker in self.REQUIRES_ANOTHER_TICKET_MARKERS
+        )
+
+    def requires_another_ticket(self, code: object) -> bool:
+        """Whether the file says this fare is valid only with another ticket.
+
+        Distinct from a date-and-train binding, which is about when and what
+        you travel rather than what you must already hold. Both are the
+        reader's precondition, so both keep a fare off a page.
+        """
+        text = str(code or "").strip().upper()
+        if not text:
+            return False
+        header = self.headers.get(text)
+        if header is None:
+            return False
+        described = (
+            f"{header.description} {header.outward_text} {header.return_text}"
+        ).upper()
+        return any(
+            marker in described for marker in self.REQUIRES_ANOTHER_TICKET_MARKERS
+        )
 
     def gate_problem(self) -> str | None:
         """Why a fare must not be published, or ``None`` when the file is usable.

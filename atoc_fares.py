@@ -2830,6 +2830,7 @@ class FaresDb:
 
     @staticmethod
     def _displayable_single_rejection(
+        restrictions,
         include_conditional: bool = False,
     ) -> Callable[[Fare, TicketType], str | None]:
         """The reviewed rule for a single a page may quote, or why not.
@@ -2841,6 +2842,8 @@ class FaresDb:
         """
         def reject(fare: Fare, ticket: TicketType) -> str | None:
             if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+                return CONDITIONAL_REASON
+            if restrictions.requires_another_ticket(fare.restriction_code):
                 return CONDITIONAL_REASON
             if not ticket.is_standard_single:
                 return "ticket_is_not_a_standard_single"
@@ -2855,6 +2858,7 @@ class FaresDb:
 
     @staticmethod
     def _displayable_return_rejection(
+        restrictions,
         include_conditional: bool = False,
     ) -> Callable[[Fare, TicketType], str | None]:
         """The same rule for a return, which the feed prices the same way.
@@ -2871,6 +2875,8 @@ class FaresDb:
 
         def reject(fare: Fare, ticket: TicketType) -> str | None:
             if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+                return CONDITIONAL_REASON
+            if restrictions.requires_another_ticket(fare.restriction_code):
                 return CONDITIONAL_REASON
             if not ticket.is_standard_return:
                 return "ticket_is_not_a_standard_return"
@@ -2919,7 +2925,9 @@ class FaresDb:
             railcard=railcard,
             party_budget=party_budget,
             tally=tally,
-            selector=self._displayable_return_rejection(include_conditional),
+            selector=self._displayable_return_rejection(
+                self.restrictions, include_conditional
+            ),
             day=day,
         )
 
@@ -2952,7 +2960,9 @@ class FaresDb:
             railcard=railcard,
             party_budget=party_budget,
             tally=tally,
-            selector=self._displayable_single_rejection(include_conditional),
+            selector=self._displayable_single_rejection(
+                self.restrictions, include_conditional
+            ),
             day=day,
         )
         return rows
