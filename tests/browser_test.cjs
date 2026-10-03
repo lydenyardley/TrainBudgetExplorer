@@ -299,6 +299,12 @@ function daysSince(iso) {
  * STATIONS array and the list it builds from that array -- the suite never
  * names a station here either.
  */
+// The last column takes the width of its own content and no more. The
+// tolerance is a pixel and a half: a sub-pixel border and a rounded box can
+// put a fraction on either side of the widest cell without the column being
+// any wider than what is in it.
+const cellsAreContentWide = (column) => column.width <= column.content + 1.5;
+
 async function checkChooser(page, url, check) {
   const listed = await page.evaluate(() => STATIONS.map((s) => ({ name: s.name, crs: s.crs, href: s.href })));
   const budget = await page.inputValue("#budgetNumber");
@@ -4000,6 +4006,260 @@ function saysMoreThan(condition, code) {
         (await page.evaluate(() => document.getElementById("shortlistEmpty").textContent)) || ""
       );
     }
+
+    // 7e. The dock: the shortlist held at the foot of the screen, and the four
+    // layout promises a reader scrolling a long table depends on. Read out of
+    // the rendered page, because every one of them is a claim about geometry
+    // that a template string cannot settle.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(facts.affordable);
+    const dockAtRest = await page.evaluate(() => {
+      const dock = document.getElementById("shortlistDock");
+      return {
+        exists: Boolean(dock),
+        hidden: dock ? dock.hidden : null,
+        codes: typeof shortlistCodes === "undefined" ? null : shortlistCodes.length,
+      };
+    });
+    check(
+      "the shortlist dock is on the page and shows nothing while nothing is shortlisted",
+      dockAtRest.exists === true && dockAtRest.codes === 0 && dockAtRest.hidden === true,
+      JSON.stringify(dockAtRest)
+    );
+    const dock = await page.evaluate(() => {
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      const boxes = Array.from(document.querySelectorAll("#rows tr[data-crs] .hold-box"));
+      if (boxes.length < 2) return { rows: boxes.length };
+      boxes[0].click();
+      boxes[1].click();
+      const read = (tr) => Array.from(tr.children).map((td) => td.textContent.trim());
+      const element = document.getElementById("shortlistDock");
+      const box = element.getBoundingClientRect();
+      return {
+        rows: element.querySelectorAll("#shortlistDockList tr").length,
+        hidden: element.hidden,
+        position: getComputedStyle(element).position,
+        atFootOfScreen: Math.round(box.bottom) === window.innerHeight,
+        cells: Array.from(element.querySelectorAll("#shortlistDockList tr")).map((tr) => {
+          const crs = tr.dataset.crs;
+          const row = document.querySelector('#rows tr[data-crs="' + crs + '"]');
+          return {
+            crs,
+            here: read(tr),
+            there: row ? read(row) : null,
+            drop: Boolean(tr.querySelector(".shortlist-drop")),
+            labelled: (tr.querySelector(".shortlist-drop") || {}).getAttribute
+              ? tr.querySelector(".shortlist-drop").getAttribute("aria-label") || ""
+              : "",
+          };
+        }),
+      };
+    });
+    if (dock.rows >= 2) {
+      check(
+        "shortlisting a place puts a row in a dock held at the foot of the screen",
+        dock.rows === 2 && dock.hidden === false && dock.position === "fixed" && dock.atFootOfScreen,
+        JSON.stringify({ rows: dock.rows, hidden: dock.hidden, position: dock.position, foot: dock.atFootOfScreen })
+      );
+      // The dock row is compared with the row it came from rather than with a
+      // sentence written here: a shortlist that showed a different price or a
+      // different journey than the table would be a comparison of nothing.
+      // The results row carries a code and a second price the dock has no room
+      // for, so each fact is checked against its own cell's leading token.
+      check(
+        "a dock row names its station, price, time and changes, and agrees with the row above",
+        dock.cells.every((entry) => {
+          const [name, price, time, changes] = entry.here;
+          const there = entry.there;
+          if (!there || there.length < 5) return false;
+          return (
+            there[1].startsWith(name) &&
+            /^£\d/.test(price) &&
+            there[2].trim().startsWith(price) &&
+            there[3] === time &&
+            there[4].split(/\s+/)[0] === changes
+          );
+        }),
+        JSON.stringify(dock.cells)
+      );
+      check(
+        "and every dock row can be taken off the shortlist from the dock itself",
+        dock.cells.every((entry) => entry.drop && new RegExp("^Remove " + entry.here[0] + " from").test(entry.labelled)),
+        JSON.stringify(dock.cells.map((entry) => entry.labelled))
+      );
+      const tail = await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+        const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+        const last = rows[rows.length - 1].getBoundingClientRect();
+        const element = document.getElementById("shortlistDock").getBoundingClientRect();
+        return {
+          lastBottom: Math.round(last.bottom),
+          dockTop: Math.round(element.top),
+          padding: document.body.style.paddingBottom,
+          viewport: window.innerHeight,
+        };
+      });
+      check(
+        "the dock covers no results: the last row ends above it at the foot of the page",
+        tail.lastBottom <= tail.dockTop && tail.lastBottom <= tail.viewport && parseFloat(tail.padding) > 0,
+        JSON.stringify(tail)
+      );
+      await page.setViewportSize({ width: 390, height: 720 });
+      const stacked = await page.evaluate(() => {
+        const element = document.getElementById("shortlistDock");
+        const row = element.querySelector("#shortlistDockList tr");
+        return {
+          table: getComputedStyle(element.querySelector("table")).display,
+          body: getComputedStyle(element.querySelector("tbody")).display,
+          cell: row ? getComputedStyle(row.children[0]).display : null,
+          overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
+          inScreen: Math.round(element.getBoundingClientRect().width) <= window.innerWidth,
+        };
+      });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      check(
+        "the dock keeps its four columns on a phone rather than stacking every cell",
+        stacked.table === "table" && stacked.body === "table-row-group" && stacked.cell === "table-cell" &&
+          stacked.inScreen && stacked.overflow <= 0,
+        JSON.stringify(stacked)
+      );
+      await page.evaluate(() => { document.getElementById("shortlistDockClear").click(); });
+      const cleared = await page.evaluate(() => ({
+        rows: document.querySelectorAll("#shortlistDockList tr").length,
+        hidden: document.getElementById("shortlistDock").hidden,
+        padding: document.body.style.paddingBottom,
+      }));
+      check(
+        "the dock's own Clear empties it and takes the strip off the screen",
+        cleared.rows === 0 && cleared.hidden === true && cleared.padding === "",
+        JSON.stringify(cleared)
+      );
+    } else {
+      for (const name of [
+        "shortlisting a place puts a row in a dock held at the foot of the screen",
+        "a dock row names its station, price, time and changes, and agrees with the row above",
+        "and every dock row can be taken off the shortlist from the dock itself",
+        "the dock covers no results: the last row ends above it at the foot of the page",
+        "the dock keeps its four columns on a phone rather than stacking every cell",
+        "the dock's own Clear empties it and takes the strip off the screen",
+      ]) {
+        check(name, notExercised(`this page lists ${dock.rows} row(s) to choose from`));
+      }
+    }
+
+    // The three layout rules a reader scrolling ninety rows is relying on: the
+    // headings stay, the action column does not widen, and the page controls
+    // are not welded to the table's last row.
+    //
+    // Measured on a page with the budget wide open and no shortlist on it, which
+    // is the state a reader comparing two fares is actually in. It matters for
+    // all three of these checks and for a different reason in each: the dock is
+    // a fixed strip across the foot of the screen and every measurement below
+    // is of the results table; a page of one result has one page of results, so
+    // nav#pagination is hidden and its margin is nothing to measure; and a page
+    // of one result is too short to scroll its own table under the heading.
+    await page.setViewportSize({ width: 1280, height: 600 });
+    await open(facts.affordable);
+    await page.evaluate(() => {
+      if (typeof shortlistCodes !== "undefined" && shortlistCodes.length) {
+        document.getElementById("shortlistClear").click();
+      }
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+    });
+    const stuckHeadings = await page.evaluate(() => {
+      const table = document.getElementById("rows").closest("table");
+      const tableTop = table.getBoundingClientRect().top + window.scrollY;
+      const furthest = document.documentElement.scrollHeight - window.innerHeight;
+      if (tableTop > furthest) return { reachable: false, tableTop: Math.round(tableTop), furthest };
+      window.scrollTo(0, tableTop);
+      const th = table.querySelector("thead th");
+      const style = getComputedStyle(th);
+      return {
+        reachable: true,
+        scrolled: window.scrollY,
+        top: Math.round(th.getBoundingClientRect().top),
+        position: style.position,
+        background: style.backgroundColor,
+      };
+    });
+    check(
+      "the column headings stay at the top of the screen once the table is scrolled",
+      stuckHeadings.reachable === true &&
+        stuckHeadings.scrolled > 0 &&
+        stuckHeadings.position === "sticky" &&
+        stuckHeadings.top === 0 &&
+        !/rgba\(0, 0, 0, 0\)|transparent/.test(stuckHeadings.background),
+      JSON.stringify(stuckHeadings)
+    );
+    const lastColumn = await page.evaluate(() => {
+      const table = document.getElementById("rows").closest("table");
+      const th = table.querySelector("thead th:last-child");
+      const cells = Array.from(table.querySelectorAll("#rows tr[data-crs] > td:last-child"));
+      // The width the content asks for, not the width it was given. scrollWidth
+      // cannot answer this: a stretched cell's scrollWidth is the cell's own
+      // width, so a column holding 108px of nothing measured as exactly as
+      // narrow as one holding nothing but content, and the check passed either
+      // way. A clone in a max-content box is the honest measurement -- the
+      // browser lays it out at the width its content needs and no other.
+      const host = document.createElement("div");
+      host.style.cssText = "position:absolute;left:-9999px;top:0;width:max-content;";
+      document.body.append(host);
+      const wanted = cells.map((td) => {
+        const clone = td.cloneNode(true);
+        clone.style.width = "max-content";
+        host.replaceChildren(clone);
+        return Math.ceil(clone.getBoundingClientRect().width);
+      });
+      host.remove();
+      const station = table.querySelector("thead th:nth-child(2)");
+      return {
+        width: Math.round(th.getBoundingClientRect().width),
+        content: Math.max.apply(null, wanted),
+        station: Math.round(station.getBoundingClientRect().width),
+        table: Math.round(table.getBoundingClientRect().width),
+      };
+    });
+    check(
+      "the last column is only as wide as the content in it",
+      cellsAreContentWide(lastColumn),
+      JSON.stringify(lastColumn)
+    );
+    const spacing = await page.evaluate(() => {
+      const nav = document.getElementById("pagination");
+      const table = document.getElementById("rows").closest("table");
+      return {
+        hidden: nav.hidden,
+        pages: document.getElementById("pageStatus").textContent,
+        margin: getComputedStyle(nav).marginTop,
+        gap: Math.round(nav.getBoundingClientRect().top - table.getBoundingClientRect().bottom),
+      };
+    });
+    check(
+      "nav#pagination has room between it and the table",
+      spacing.hidden === false &&
+        parseFloat(spacing.margin) > 0 &&
+        spacing.gap >= parseFloat(spacing.margin) - 1,
+      JSON.stringify(spacing)
+    );
+    const thirdRow = page.locator("#rows tr[data-crs]").nth(2);
+    if (await thirdRow.count()) {
+      await thirdRow.hover();
+      const tint = await thirdRow.evaluate(
+        (tr) => getComputedStyle(tr.firstElementChild).backgroundColor
+      );
+      check(
+        "a results row is tinted under the pointer",
+        tint !== "" && !/rgba\(0, 0, 0, 0\)|transparent/.test(tint),
+        tint
+      );
+    } else {
+      check("a results row is tinted under the pointer", notExercised("this page lists fewer than three rows"));
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
 
     // 8. The origin picker: search, navigate, and the no-match wording
     // (ADR-0019). Choosing a station is navigation, so the link must go to
