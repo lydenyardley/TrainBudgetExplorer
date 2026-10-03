@@ -1061,10 +1061,28 @@ function cheapestDestinations() {
   for (const key of Object.values(MODE_LISTS)) {
     for (const destination of DATA[key] || []) {
       const held = cheapest.get(destination.crs);
-      if (!held || priceOf(destination) < priceOf(held)) cheapest.set(destination.crs, destination);
+      // The card price decides which fare is cheapest, and the standard
+      // breaks a tie. Without the tie-break a card that made two fares equal
+      // silently swapped the row, and the cell then named a standard fare the
+      // reader had not been shown: an outbound single at 375p became a return
+      // at 380p the moment a card was ticked.
+      if (!held || isCheaperThan(destination, held)) cheapest.set(destination.crs, destination);
     }
   }
   return Array.from(cheapest.values());
+}
+// Cheaper for this reader, then cheaper to begin with. Both numbers, so the
+// answer does not depend on the order the payload happens to list things in.
+function isCheaperThan(candidate, held) {
+  const price = priceOf(candidate);
+  const other = priceOf(held);
+  if (price !== other) return price < other;
+  return standardPrice(candidate) < standardPrice(held);
+}
+// The fare before any card is applied, which is the number the cell names as
+// the standard one a discount came from.
+function standardPrice(destination) {
+  return unit() === "party" ? destination.partyPence : destination.adultPence;
 }
 function activeDestinations() {
   const mode = ticketMode();
@@ -1181,8 +1199,7 @@ function priceCell(destination) {
   const cell = document.createElement("td");
   cell.className = "num";
   cell.dataset.label = "Price";
-  const party = unit() === "party";
-  const standard = party ? destination.partyPence : destination.adultPence;
+  const standard = standardPrice(destination);
   const price = priceOf(destination);
   const amount = document.createElement("span");
   amount.className = "price";
