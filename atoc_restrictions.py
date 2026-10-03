@@ -424,6 +424,30 @@ class RestrictionIndex:
             self._active_railcard_cache[code] = cached
         return cached
 
+    # The wording this file uses for a fare that is only valid on one named
+    # date and train. A fare bound this way is yield-managed whatever its
+    # ticket is called, and a page that presents it as a walk-up price is
+    # offering a number no reader can walk up and buy. The test is on the
+    # file's own sentence rather than a list of codes because this feed
+    # describes 52 codes this way today, and the next revision may
+    # describe a code this build has never seen.
+    DATE_AND_TRAIN_MARKERS = (
+        "DATE&TRAIN",
+        "DATE AND TRAIN",
+        "DATE/TRAIN",
+    )
+
+    def binds_to_date_and_train(self, code: object) -> bool:
+        """Whether a restriction binds its fare to one date and train."""
+        text = str(code or "").strip().upper()
+        if not text:
+            return False
+        header = self.headers.get(text)
+        if header is None:
+            return False
+        described = f"{header.description} {header.outward_text}".upper()
+        return any(marker in described for marker in self.DATE_AND_TRAIN_MARKERS)
+
     def gate_problem(self) -> str | None:
         """Why a fare must not be published, or ``None`` when the file is usable.
 

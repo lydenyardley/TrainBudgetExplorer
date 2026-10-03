@@ -25,6 +25,7 @@ from make_synthetic_feed import _line, build_synthetic_timetable
 
 SUNDAY = date(2026, 9, 27)
 MONDAY = date(2026, 9, 28)
+TUESDAY = date(2026, 9, 29)
 
 
 class TimetableParserTest(unittest.TestCase):
@@ -186,6 +187,144 @@ class TimetableParserTest(unittest.TestCase):
         self.assertEqual(format_minutes(50), "50m")
         self.assertEqual(format_minutes(60), "1h")
         self.assertEqual(format_minutes(95), "1h35")
+
+
+class FocusedLoadHonoursADroppedOverlayTest(unittest.TestCase):
+    """A focused load must not resurrect a schedule an overlay replaced.
+
+    The focus keeps a schedule calling at a requested station and drops one
+    calling at none of them. An overlay supersedes the permanent schedule of
+    its own train identity, so when the overlay is the record that misses the
+    focus, dropping it brought the permanent back and the page offered a
+    journey on a service that was not running that day (audit A10).
+
+    T10002 runs Grantham to Lincoln every day. The overlay below reworks the
+    same train on Mondays as Nottingham to Newark, which touches neither the
+    focused origin nor the focused destination, so the focus has to drop it and
+    still honour it. Monday is what makes this test sharp: the permanent runs
+    then too, so forgetting the dropped overlay puts the permanent back and the
+    page offers a train that is not running.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        feed = build_synthetic_timetable(Path(self._tmp.name) / "timetable")
+        monday_overlay = [
+            _line(
+                {
+                    "record_type": "BS",
+                    "transaction_type": "N",
+                    "train_uid": "T10002",
+                    "date_runs_from": "260921",
+                    "date_runs_to": "261211",
+                    "days": "1000000",
+                    "stp_indicator": "O",
+                },
+                CIF_SCHEDULE,
+            ),
+            _line(
+                {
+                    "record_type": "LO",
+                    "location": "NOTT",
+                    "scheduled_departure": "0915",
+                    "public_departure": "0915",
+                },
+                CIF_ORIGIN,
+            ),
+            _line(
+                {
+                    "record_type": "LT",
+                    "location": "NWRK",
+                    "scheduled_arrival": "1005",
+                    "public_arrival": "1005",
+                },
+                CIF_TERMINUS,
+            ),
+        ]
+        (feed / "overlay.mca").write_text("\n".join(monday_overlay) + "\n", encoding="utf-8")
+        self.feed = feed
+
+    def _serves_on(self, timetable: TimetableDb, day: date) -> set[str]:
+        """Which loaded schedules run on a day and call at Lincoln."""
+        crs_by_index = {
+            index: tuple(timetable.crs_for_tiploc(stop.tiploc) for stop in schedule.stops)
+            for index, schedule in enumerate(timetable.schedules)
+        }
+        return {
+            timetable.schedules[index].train_uid
+            for index in timetable.active_schedules(day)
+            if "LCN" in (crs_by_index.get(index) or ())
+        }
+
+    def test_a_dropped_overlay_still_supersedes_its_permanent_schedule(self) -> None:
+        whole = TimetableDb().load_feed(self.feed)
+        focused = TimetableDb().load_feed(
+            self.feed, focus_origin="GRN", focus_destinations={"LCN"}
+        )
+        # Monday: the overlay is the service, and it works Nottingham to Newark,
+        # so T10002 does not call at Lincoln in either load.
+        self.assertNotIn("T10002", self._serves_on(whole, MONDAY))
+        self.assertNotIn("T10002", self._serves_on(focused, MONDAY))
+        # Every other day the overlay is not running, so the permanent is.
+        self.assertIn("T10002", self._serves_on(whole, TUESDAY))
+        self.assertIn("T10002", self._serves_on(focused, TUESDAY))
+
+    def test_a_dropped_cancellation_still_removes_its_permanent_schedule(self) -> None:
+        feed = build_synthetic_timetable(Path(self._tmp.name) / "cancelled")
+        cancelled = [
+            _line(
+                {
+                    "record_type": "BS",
+                    "transaction_type": "N",
+                    "train_uid": "T10002",
+                    "date_runs_from": "260921",
+                    "date_runs_to": "261211",
+                    "days": "1000000",
+                    "stp_indicator": "C",
+                },
+                CIF_SCHEDULE,
+            ),
+            _line(
+                {
+                    "record_type": "LO",
+                    "location": "NOTT",
+                    "scheduled_departure": "0915",
+                    "public_departure": "0915",
+                },
+                CIF_ORIGIN,
+            ),
+            _line(
+                {
+                    "record_type": "LT",
+                    "location": "NWRK",
+                    "scheduled_arrival": "1005",
+                    "public_arrival": "1005",
+                },
+                CIF_TERMINUS,
+            ),
+        ]
+        (feed / "cancelled.mca").write_text("\n".join(cancelled) + "\n", encoding="utf-8")
+        whole = TimetableDb().load_feed(feed)
+        focused = TimetableDb().load_feed(
+            feed, focus_origin="GRN", focus_destinations={"LCN"}
+        )
+        self.assertNotIn("T10002", self._serves_on(whole, MONDAY))
+        self.assertNotIn("T10002", self._serves_on(focused, MONDAY))
+        self.assertIn("T10002", self._serves_on(focused, TUESDAY))
+
+    def test_the_focused_load_keeps_the_permanent_and_drops_the_overlay(self) -> None:
+        focused = TimetableDb().load_feed(
+            self.feed, focus_origin="GRN", focus_destinations={"LCN"}
+        )
+        kept = [
+            schedule.stp_indicator
+            for schedule in focused.schedules
+            if schedule.train_uid == "T10002"
+        ]
+        # The memory the focus saves is kept: the permanent is loaded, and the
+        # overlay is remembered only as a fact about a date.
+        self.assertEqual(kept, ["P"])
 
 
 class TiplocNormalizationTest(unittest.TestCase):

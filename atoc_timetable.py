@@ -269,6 +269,49 @@ class CallingPoint:
         return self.public_departure if self.public_departure is not None else self.departure
 
 
+def _runs_on_window(day: date, date_from: str, date_to: str, days: str) -> bool:
+    """Whether a date window and weekday pattern include a date.
+
+    One place, because a schedule and a dropped overlay are both asked
+    whether they run on a date, and a schedule that answers one way while
+    its own overlay answers the other is how a superseded service comes
+    back to life.
+    """
+    start = _date(date_from)
+    if start is not None and day < start:
+        return False
+    end = _date(date_to)
+    if end is not None and day > end:
+        return False
+    if len(days) < 7:
+        return True
+    return days[day.weekday()] == "1"
+
+
+@dataclass(frozen=True, slots=True)
+class _SupersedingRecord:
+    """An overlay or cancellation the focus filter dropped, kept as a fact.
+
+    A schedule calling at none of the focused stations cannot serve one, so
+    the focus drops it. But an overlay supersedes the permanent schedule of
+    its own train identity and a cancellation removes it, so dropping one
+    resurrects the permanent it was written to replace, and the page then
+    offers a journey on a service that is not running that day (audit A10).
+    An overlay and a cancellation leave the permanent inactive in the same
+    way, so what decides it is the record's dates and weekday pattern and
+    none of its calling points. Three short strings a record, not a service
+    with a whole timetable, so the memory the focus saves is kept.
+    """
+
+    date_from: str
+    date_to: str
+    days: str
+    stp_indicator: str
+
+    def runs_on(self, day: date) -> bool:
+        return _runs_on_window(day, self.date_from, self.date_to, self.days)
+
+
 @dataclass(frozen=True)
 class Schedule:
     train_uid: str
@@ -280,15 +323,7 @@ class Schedule:
 
     def runs_on(self, day: date) -> bool:
         """Whether the schedule runs on a date, before overlays and cancellations."""
-        start = _date(self.date_from)
-        if start is not None and day < start:
-            return False
-        end = _date(self.date_to)
-        if end is not None and day > end:
-            return False
-        if len(self.days) < 7:
-            return True
-        return self.days[day.weekday()] == "1"
+        return _runs_on_window(day, self.date_from, self.date_to, self.days)
 
 
 @dataclass
@@ -372,6 +407,9 @@ class TimetableDb:
         # A focused load keeps only schedules touching the requested stations.
         # None means the normal complete database used by audit and analysis.
         self._focus_tiplocs: set[str] | None = None
+        # Overlays and cancellations the focus dropped, by train identity, so
+        # the activity test can still honour them (audit A10).
+        self._superseding: dict[str, list[_SupersedingRecord]] = {}
         self._service_window: tuple[tuple[str, str], int] | None = None
 
     # -- loading ---------------------------------------------------------
@@ -627,6 +665,15 @@ class TimetableDb:
             if self._focus_tiplocs is not None and not any(
                 stop.tiploc in self._focus_tiplocs for stop in state.stops
             ):
+                if state.stp_indicator in ("O", "C"):
+                    self._superseding.setdefault(state.train_uid, []).append(
+                        _SupersedingRecord(
+                            state.date_from,
+                            state.date_to,
+                            state.days,
+                            state.stp_indicator,
+                        )
+                    )
                 return
             self.schedules.append(
                 Schedule(
@@ -729,9 +776,18 @@ class TimetableDb:
         for train_uid, bucket in buckets.items():
             if bucket["overlay"]:
                 active.extend(bucket["overlay"])
-            elif train_uid not in cancelled:
+            elif train_uid not in cancelled and not self._superseded(train_uid, day):
                 active.extend(bucket["permanent"])
         return sorted(active)
+
+    def _superseded(self, train_uid: str, day: date) -> bool:
+        """Whether the focus dropped an overlay or cancellation covering this date.
+
+        The record is not in ``schedules``, because it calls nowhere the
+        focus asked about. Its dates still decide whether the permanent
+        schedule of the same train runs on this day.
+        """
+        return any(record.runs_on(day) for record in self._superseding.get(train_uid, ()))
 
     def _ensure_indexes(self, day: date | None = None) -> None:
         if self._departures is not None and self._index_day == day:

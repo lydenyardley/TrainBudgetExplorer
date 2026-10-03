@@ -39,7 +39,6 @@ from atoc_fares import (
     FaresDb,
     PLACEHOLDER_TICKET_CODES,
     format_pence,
-    is_advance_fare,
     is_pseudo_station,
     location_lookup_candidates,
 )
@@ -1653,7 +1652,7 @@ def build_payload(
             "destinationTypes": fares.destination_types(crs),
             "heritageSites": fares.heritage_sites(crs),
             "ticket": one.ticket_code,
-            "isAdvance": is_advance_fare(one.ticket_name, one.restriction_code),
+            "isAdvance": fares.is_advance_fare(one.ticket_name, one.restriction_code),
             "quality": quality,
             "offPeak": one.off_peak,
             "restrictionCode": one.restriction_code,

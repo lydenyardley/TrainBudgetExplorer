@@ -935,19 +935,17 @@ REVIEWED_PUBLIC_RAILCARDS: dict[str, dict[str, object]] = {
     "BB2": {"label": "Student Discount Card", "codes": ()},
 }
 
-ADVANCE_RESTRICTION_CODE = "AS"
+# The one restriction code this project reviewed and pinned by hand. The
+# feed's own ``.RST`` wording decides the rest, but a synthetic or
+# truncated feed carries no restriction descriptions at all, and EMR
+# advances must still be recognised there. Pinning it keeps the test a
+# catalogue can answer without a restriction file.
+ADVANCE_RESTRICTION_CODES = frozenset({"AS"})
 
 
 def is_advance_ticket(name: object) -> bool:
     """Whether a ticket name identifies a yield-managed, train-specific fare."""
     return bool(re.search(r"\bADV(?:ANCE)?\b", str(name or "").upper()))
-
-
-def is_advance_fare(ticket_name: object, restriction_code: object) -> bool:
-    """Whether a published fare row is an Advance single, by either test."""
-    return is_advance_ticket(ticket_name) or str(
-        restriction_code or ""
-    ).strip().upper() == ADVANCE_RESTRICTION_CODE
 
 
 @dataclass(frozen=True)
@@ -2510,6 +2508,24 @@ class FaresDb:
             if needle in railcard.name.lower():
                 return code
         return None
+
+    def is_advance_fare(self, ticket_name: object, restriction_code: object) -> bool:
+        """Whether a fare row is valid on one named date and train only.
+
+        A ticket called ADVANCE is train-specific whatever code it carries,
+        and a code the ``.RST`` file describes as "valid on date&train shown
+        only" is train-specific whatever the ticket is called. The second
+        test reads the restriction file rather than naming one code: this
+        build recognised AS alone, so the 51 other codes the feed describes
+        the same way -- GA among them, on every LNER promotion -- reached
+        the page as an ordinary walk-up single (audit A9).
+        """
+        code = str(restriction_code or "").strip().upper()
+        return (
+            is_advance_ticket(ticket_name)
+            or code in ADVANCE_RESTRICTION_CODES
+            or self.restrictions.binds_to_date_and_train(code)
+        )
 
     def minimum_fare(
         self, railcard_code: str, ticket_code: str, day: date | None = None
