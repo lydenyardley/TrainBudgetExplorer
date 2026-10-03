@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 import destination_coverage
@@ -383,6 +383,175 @@ class MainTest(unittest.TestCase):
                 code = destination_coverage.main([*self.FEED, "--unsourced-ceiling", "0"])
         self.assertEqual(code, 2)
         self.assertIn("ceiling of 0", stderr.getvalue())
+
+
+class ConditionalLossReportTest(unittest.TestCase):
+    """The loss is a set difference, so a rejected fare row is not a lost row.
+
+    A destination only counts as lost when the reviewed run no longer reaches
+    it. Two rejected fare rows can leave every destination priced, so a report
+    that counted the rows would overstate the loss.
+    """
+
+    def _fare(self, crs, pence, code="SDR", name="ANYTIME DAY R", kind="R"):
+        return mock.Mock(
+            crs=crs,
+            station=f"{crs} STATION",
+            best_pence=pence,
+            ticket_code=code,
+            ticket_name=name,
+        )
+
+    def _db(self, kept_single, all_single, kept_return, all_return):
+        fares = mock.Mock()
+        fares.page_single_destinations_within.side_effect = (
+            lambda *a, **k: all_single if k.get("include_conditional") else kept_single
+        )
+        fares.page_destinations_within.side_effect = (
+            lambda *a, **k: all_return if k.get("include_conditional") else kept_return
+        )
+        return fares
+
+    def test_a_destination_the_child_fare_held_is_counted_lost(self) -> None:
+        fares = self._db(
+            kept_single=[self._fare("NOT", 100, "2AS", "ADVANCE", "S")],
+            all_single=[self._fare("NOT", 10, "CTS", "UNDER 11 SINGLE", "S")],
+            kept_return=[],
+            all_return=[],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure(fares, "GRA")
+        # NOT is still priced, so no destination was lost. The price moved.
+        self.assertEqual(report.lost_by_origin(), {})
+        self.assertEqual(report.message(), "")
+
+    def test_a_destination_nothing_else_prices_is_lost(self) -> None:
+        fares = self._db(
+            kept_single=[self._fare("LCN", 900, "SDS", "ANYTIME DAY S", "S")],
+            all_single=[
+                self._fare("LCN", 900, "SDS", "ANYTIME DAY S", "S"),
+                self._fare("HUL", 99_900, "SPN", "LNER GRP SGL", "S"),
+            ],
+            kept_return=[],
+            all_return=[],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure(fares, "GRA")
+        self.assertEqual(report.lost_by_origin(), {"GRA": 1})
+        self.assertEqual(report.singles_by_origin(), {"GRA": 1})
+        self.assertEqual(report.returns_by_origin(), {"GRA": 0})
+
+    def test_an_origin_that_keeps_nothing_is_named(self) -> None:
+        # The outcome worth a person's attention. It is reported apart from the
+        # ordinary loss so it cannot be averaged away in the total.
+        fares = self._db(
+            kept_single=[],
+            all_single=[self._fare("HUL", 99_900, "SPN", "LNER GRP SGL", "S")],
+            kept_return=[],
+            all_return=[self._fare("CDF", 5, "ENT", "TFW EVENT CON", "R")],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure(fares, "GRA")
+        self.assertEqual(report.empties_the_origin(), ["GRA"])
+        self.assertIn("keep no destination at all", report.message())
+
+    def test_the_summary_names_the_totals_and_the_worst_shares(self) -> None:
+        # The share is against what the origin reached with the conditional
+        # fares in, two stations, so losing one reads as 50%. Against what it
+        # kept it would read as 100%, which says nothing about the origin.
+        fares = self._db(
+            kept_single=[
+                self._fare("LCN", 900, "SDS", "ANYTIME DAY S", "S"),
+                self._fare("NOT", 100, "2AS", "ADVANCE", "S"),
+            ],
+            all_single=[
+                self._fare("LCN", 900, "SDS", "ANYTIME DAY S", "S"),
+                self._fare("NOT", 100, "2AS", "ADVANCE", "S"),
+                self._fare("HUL", 99_900, "SPN", "LNER GRP SGL", "S"),
+            ],
+            kept_return=[],
+            all_return=[],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure_all(fares, ["GRA"])
+        message = report.message()
+        self.assertIn("1 destinations across 1 of 1 origins", message)
+        self.assertIn("33% of GRA's 3", message)
+
+    def test_a_clean_feed_says_nothing_at_all(self) -> None:
+        fares = self._db(
+            kept_single=[self._fare("LCN", 900)],
+            all_single=[self._fare("LCN", 900)],
+            kept_return=[self._fare("NOT", 1160)],
+            all_return=[self._fare("NOT", 1160)],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure_all(fares, ["GRA"])
+        self.assertEqual(report.lost_by_origin(), {})
+        self.assertEqual(report.message(), "")
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            report.report()
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_the_loss_is_counted_from_destinations_not_from_rejected_fares(self) -> None:
+        # Two cheap child fares on one destination the feed also prices for an
+        # adult. Two fares are rejected and no destination is lost, which is the
+        # difference the report exists to get right.
+        fares = self._db(
+            kept_single=[self._fare("NOT", 100, "2AS", "ADVANCE", "S")],
+            all_single=[
+                self._fare("NOT", 5, "CTS", "UNDER 11 SINGLE", "S"),
+                self._fare("NOT", 7, "TKS", "CHILD FLTFARE S", "S"),
+            ],
+            kept_return=[],
+            all_return=[],
+        )
+        report = destination_coverage.ConditionalLossReport()
+        report.measure(fares, "GRA")
+        self.assertEqual(report.lost_by_origin(), {})
+        self.assertEqual(report._totals, 1)
+
+
+class ConditionalLossMainTest(unittest.TestCase):
+    FEED = ["--feed", "."]
+
+    def _mocks(self):
+        fares = mock.Mock()
+        location = mock.Mock()
+        location.name = "GRANTHAM"
+        fares.locations_by_crs = {"GRA": location}
+        fares.priced_destinations_within.return_value = [mock.Mock(crs="LCN", station="LINCOLN")]
+        fares.destination_type.return_value = "town"
+        # The child's fare holds Hull, which nothing else prices, so the
+        # destination is genuinely lost rather than merely repriced.
+        single = mock.Mock(crs="LCN", station="LINCOLN", best_pence=900, ticket_code="SDS")
+        child = mock.Mock(crs="HUL", station="HULL", best_pence=99_900, ticket_code="SPN")
+        fares.page_single_destinations_within.side_effect = (
+            lambda *a, **k: [single, child] if k.get("include_conditional") else [single]
+        )
+        fares.page_destinations_within.side_effect = lambda *a, **k: []
+        return fares
+
+    def test_the_flag_prints_a_table_and_leaves_the_exit_code_alone(self) -> None:
+        fares = self._mocks()
+        out = io.StringIO()
+        with mock.patch.object(destination_coverage, "FaresDb") as db:
+            db.return_value.load_feed.return_value = fares
+            with redirect_stdout(out):
+                code = destination_coverage.main([*self.FEED, "--conditional-loss"])
+        self.assertEqual(code, 0)
+        self.assertIn("GRA loses 1 destinations", out.getvalue())
+        self.assertIn("(1 singles, 0 returns)", out.getvalue())
+
+    def test_without_the_flag_the_run_prints_no_loss_table(self) -> None:
+        fares = self._mocks()
+        out = io.StringIO()
+        with mock.patch.object(destination_coverage, "FaresDb") as db:
+            db.return_value.load_feed.return_value = fares
+            with redirect_stdout(out):
+                destination_coverage.main([*self.FEED])
+        self.assertEqual(out.getvalue(), "")
 
 
 if __name__ == "__main__":

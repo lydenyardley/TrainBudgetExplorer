@@ -72,6 +72,128 @@ def unnameable_from_tally(tally: dict[str, int]) -> int:
     return sum(tally.get(reason, 0) for reason in UNNAMEABLE_REASONS)
 
 
+class ConditionalLossReport:
+    """The destinations each origin loses to the conditional-fare rule.
+
+    Counted from the two selectors' answers rather than from the fare rows the
+    loop rejected, because a rejected fare usually changes nothing. In a
+    60-origin sample the loop rejected 2,450 single fare rows and 30 origins
+    lost any destination at all, so a tally of rejected fares would overstate
+    the loss by two orders of magnitude.
+    """
+
+    def __init__(self) -> None:
+        self._lost: dict[str, int] = {}
+        self._singles_lost: dict[str, int] = {}
+        self._returns_lost: dict[str, int] = {}
+        self._kept: dict[str, int] = {}
+        self._reach: dict[str, int] = {}
+        self._totals = 0
+        self._origins = 0
+        self._emptied: list[str] = []
+
+    def measure(self, fares: FaresDb, origin_crs: str, day=None) -> int:
+        """Record what one origin loses. Returns that origin's lost count."""
+        options = {"adults": 1, "day": day}
+        kept_singles = fares.page_single_destinations_within(
+            origin_crs, EVERYTHING_PENCE, **options
+        )
+        kept_returns = fares.page_destinations_within(
+            origin_crs, EVERYTHING_PENCE, **options
+        )
+        every_single = fares.page_single_destinations_within(
+            origin_crs, EVERYTHING_PENCE, include_conditional=True, **options
+        )
+        every_return = fares.page_destinations_within(
+            origin_crs, EVERYTHING_PENCE, include_conditional=True, **options
+        )
+
+        kept = {row.crs for row in kept_singles} | {row.crs for row in kept_returns}
+        singles = {row.crs for row in every_single}
+        returns = {row.crs for row in every_return}
+        lost = (singles | returns) - kept
+        singles_lost = len(singles - kept)
+        returns_lost = len(returns - kept)
+
+        key = origin_crs.strip().upper()
+        self._kept[key] = len(kept)
+        self._reach[key] = len(singles | returns)
+        if lost:
+            self._lost[key] = len(lost)
+            self._singles_lost[key] = singles_lost
+            self._returns_lost[key] = returns_lost
+            if not kept:
+                self._emptied.append(key)
+        self._totals += len(kept)
+        self._origins += 1
+        return len(lost)
+
+    def measure_all(self, fares: FaresDb, origins, day=None) -> int:
+        """Measure a list of origins. Returns how many lost anything."""
+        for crs in origins:
+            self.measure(fares, crs, day)
+        return len(self._lost)
+
+    def lost_by_origin(self) -> dict[str, int]:
+        """Destinations lost, per origin, worst first. Absent means nothing."""
+        return dict(sorted(self._lost.items(), key=lambda item: (-item[1], item[0])))
+
+    def singles_by_origin(self) -> dict[str, int]:
+        """Of the loss, how much is the single list. Absent means none."""
+        return dict(self._singles_lost)
+
+    def returns_by_origin(self) -> dict[str, int]:
+        """Of the loss, how much is the return list. Absent means none."""
+        return dict(self._returns_lost)
+
+    def empties_the_origin(self) -> list[str]:
+        """Origins that keep no destination at all once the rule applies."""
+        return list(self._emptied)
+
+    def message(self) -> str:
+        """The summary, or an empty string when nothing was lost anywhere."""
+        if not self._lost:
+            return ""
+        ranked = self.lost_by_origin()
+        # The share is against what the origin reached with the conditional
+        # fares in, because that is the only figure the two runs share. Against
+        # what it kept, an origin that loses one of four reads as 100% and one
+        # the rule empties divides by zero.
+        shares = []
+        for origin, count in list(ranked.items())[:3]:
+            reach = self._reach.get(origin, 0)
+            if reach:
+                shares.append(f"{round(100 * count / reach)}% of {origin}'s {reach}")
+        summary = (
+            f"{sum(ranked.values()):,} destinations across {len(ranked)} of "
+            f"{self._origins} origins are lost once a child, group or event fare "
+            f"cannot win the cheapest slot, counted against {self._totals:,} that remain"
+        )
+        if shares:
+            summary += ". Worst shares: " + "; ".join(shares)
+        if self._emptied:
+            summary += (
+                f". {len(self._emptied)} origins keep no destination at all: "
+                + ", ".join(self._emptied[:10])
+            )
+        return summary
+
+    def report(self) -> None:
+        """Print the summary to stderr when there is something to say."""
+        if message := self.message():
+            print(f"warning: {message}", file=sys.stderr)
+
+    def print_table(self) -> None:
+        """Print every origin that lost anything, one line each."""
+        singles = self.singles_by_origin()
+        returns = self.returns_by_origin()
+        for origin, count in self.lost_by_origin().items():
+            print(
+                f"  {origin} loses {count} destinations "
+                f"({singles.get(origin, 0)} singles, {returns.get(origin, 0)} returns)"
+            )
+
+
 class UnsourcedReport:
     """The unsourced destinations a build published, deduped by station.
 
@@ -327,6 +449,13 @@ def main(argv: list[str] | None = None) -> int:
         "the recorded value for the current feed lives in the CI workflow, so "
         "the count cannot regrow silently between review passes",
     )
+    parser.add_argument(
+        "--conditional-loss",
+        action="store_true",
+        help="report the destinations each origin loses when a child, group or "
+        "event fare cannot win its cheapest slot, measured by asking the page's "
+        "own selectors both ways",
+    )
     args = parser.parse_args(argv)
 
     fares = FaresDb().load_feed(args.feed) if args.feed.exists() else None
@@ -345,7 +474,14 @@ def main(argv: list[str] | None = None) -> int:
     report = UnsourcedReport()
     report.from_feed(fares, origins)
     report.report()
-    return report.exit_code(args.fail_on_unsourced, ceiling=args.unsourced_ceiling)
+    code = report.exit_code(args.fail_on_unsourced, ceiling=args.unsourced_ceiling)
+
+    if args.conditional_loss:
+        loss = ConditionalLossReport()
+        loss.measure_all(fares, origins)
+        loss.report()
+        loss.print_table()
+    return code
 
 
 if __name__ == "__main__":
