@@ -60,38 +60,6 @@ RATE_CEILING_PENCE_PER_MINUTE = 600.0
 # rows is printed so this is never a silent narrowing.
 MIN_JOURNEY_MINUTES = 5
 
-# Fares the feed prices outside the band on purpose, or for reasons of its
-# own, and which the 24 September 2026 download was measured to contain.
-# Each is recorded with the range it was measured at, so a person can see what
-# was accepted rather than that something was.
-#
-# This is a baseline, not a licence. A code that was not on this list and
-# falls outside the band fails the build, which is the whole point of the
-# gate: it catches a new family, and a code already here cannot hide a second
-# family behind it.
-REVIEWED_RATE_EXCEPTIONS: dict[str, dict[str, object]] = {
-    "BJD": {
-        "name": "AWC STAFF",
-        "note": "a staff pass, 5p on the current feed, which no reader can buy",
-    },
-    "COS": {
-        "name": "WAG CONCES SGL",
-        "note": "a concession single, 10p on the current feed",
-    },
-    "COR": {
-        "name": "WAG CONCES RTN",
-        "note": "the concession return, 10p on the current feed",
-    },
-    "DGA": {
-        "name": "SALE ADVANCE",
-        "note": "a GBP 0.50 advance, 556 rows on the current feed",
-    },
-    "XD3": {
-        "name": "Std Busns LCN",
-        "note": "a GBP 9,998.00 sentinel the feed prices on one Lincolnshire pair",
-    },
-}
-
 # Above this many offenders the run prints the codes and counts rather than
 # every row, because a gate that fails on every fare is not telling anyone
 # anything new. The families are always printed in full.
@@ -180,15 +148,20 @@ def outside_band(
     *,
     floor: float = RATE_FLOOR_PENCE_PER_MINUTE,
     ceiling: float = RATE_CEILING_PENCE_PER_MINUTE,
-    known: dict[str, dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
-    """The rows outside the band, ignoring any the review already recorded."""
-    known = REVIEWED_RATE_EXCEPTIONS if known is None else known
+    """The rows outside the band.
+
+    No exception list, and that is the point. This gate once carried five
+    reviewed codes, which meant a family that reached a page for an implausible
+    rate was excused rather than removed. Those five are now excluded by the
+    page selectors instead, so none of them is published, so none reaches here
+    and nothing needs excusing. A baseline that cannot fire is a loophole the
+    next family would hide behind.
+    """
     return [
         row
         for row in rows
         if row["minutes"] >= MIN_JOURNEY_MINUTES
-        and row["ticket"] not in known
         and not (floor <= float(row["rate"]) <= ceiling)
     ]
 
@@ -230,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--report",
         action="store_true",
-        help="print every rate outside the band, including the reviewed exceptions",
+        help="print every rate outside the band, which is also what a failure prints",
     )
     parser.add_argument("--floor", type=float, default=RATE_FLOOR_PENCE_PER_MINUTE)
     parser.add_argument("--ceiling", type=float, default=RATE_CEILING_PENCE_PER_MINUTE)
@@ -265,25 +238,11 @@ def main(argv: list[str] | None = None) -> int:
         middle = rates[len(rates) // 2]
         print(f"  median {middle:.2f} pence per minute, from {rates[0]:.2f} to {rates[-1]:.2f}")
 
-    if args.report:
-        everything = outside_band(rows, floor=args.floor, ceiling=args.ceiling, known={})
-        print(describe(everything, args.floor, args.ceiling) if everything else "every rate is inside the band")
-
     offenders = outside_band(rows, floor=args.floor, ceiling=args.ceiling)
+    if args.report:
+        print(describe(offenders, args.floor, args.ceiling) if offenders else "no fare is outside the band")
     if not offenders:
-        known_rows = [
-            row
-            for row in measured
-            if row["ticket"] in REVIEWED_RATE_EXCEPTIONS
-            and not (args.floor <= float(row["rate"]) <= args.ceiling)
-        ]
-        if known_rows:
-            families = sorted({str(row["ticket"]) for row in known_rows})
-            print(
-                f"  reviewed exceptions in force, outside the band by the review's "
-                f"own account: {len(known_rows):,} rows in {len(families)} codes "
-                f"({', '.join(families)})"
-            )
+        print("every published fare is a plausible price for its journey")
         return 0
 
     print(describe(offenders, args.floor, args.ceiling), file=sys.stderr)
