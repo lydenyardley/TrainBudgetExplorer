@@ -960,11 +960,38 @@ async function runPage(browser, index, given, file, body, base) {
     await page.check(chip);
     const shown = await rows();
     const text = await page.textContent("#rows");
-    const wanted = expected.rows.slice(0, pageSize);
+    // The rows are compared as a set against the payload rather than as the
+    // first pageSize of it. The table sorts by the price on screen and shows
+    // PAGE_SIZE of them, so those are not the same twenty rows once a type
+    // carries more than fit on a page -- which is every real feed and none of
+    // the fixtures, because a fixture's whole list fits on one page. On
+    // Nottingham's 29 small towns the slice named nine rows living on the
+    // second page and the check reported a correctly filtered table as broken.
+    //
+    // Four things have to hold instead, and each is about the table rather
+    // than about one ordering: every row shown is one of this type, as many
+    // are shown as fit on a page, every one of them is named on screen, and
+    // they run cheapest first by the price in the payload.
+    const rendered = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((row) => row.dataset.crs)
+    );
+    const byCrs = new Map(expected.rows.map((d) => [d.crs, d]));
+    const fits = Math.min(expected.rows.length, pageSize);
+    // A row the payload does not carry is a defect this check has to be able to
+    // report, not a crash. `byCrs.get(crs).adultPence` on one throws before the
+    // membership test below can say so, and a suite that dies on a regression
+    // reports the exception instead of the thing that is wrong.
+    const prices = rendered
+      .filter((crs) => byCrs.has(crs))
+      .map((crs) => byCrs.get(crs).adultPence);
     check(
       matched,
-      shown === wanted.length && wanted.every((destination) => text.includes(destination.name)),
-      `${shown} rows; expected ${wanted.length} of ${expected.rows.length}`
+      shown === fits &&
+        shown === rendered.length &&
+        rendered.every((crs) => byCrs.has(crs)) &&
+        rendered.every((crs) => text.includes(byCrs.get(crs).name)) &&
+        prices.every((pence, i) => i === 0 || prices[i - 1] <= pence),
+      `${shown} rows of ${expected.rows.length} ${type} (${fits} fit a page); shown ${rendered.join(" ")}`
     );
     await page.uncheck(chip);
     return expected;
@@ -3058,9 +3085,34 @@ async function runPage(browser, index, given, file, body, base) {
         setBudget(budgetCeiling());
         currentPage = 1;
         render();
-        const changed = list.find((d) => (d.changeStations || []).length);
-        if (!changed) continue;
-        const direct = list.find((d) => !(d.changeStations || []).length);
+        const changesAt = (d) => (d.changeStations || []).length;
+        // The table holds one page of twenty rows and the list behind it holds
+        // every destination in the mode, so on a real page the first changed
+        // journey is usually not the one on screen. noteFor answers null for a
+        // row the page has not rendered, and a check that reads null reports a
+        // missing note on a page that prints one -- Nottingham said Derby had
+        // no split ticket when the note is there on page three. So the page
+        // holding the row is rendered first, and the direct counterpart is
+        // taken from that same page: a direct row on another page is not one a
+        // reader can set the changed row beside.
+        const onScreen = () =>
+          Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((r) => r.dataset.crs);
+        const changedRows = list.filter(changesAt);
+        let changed = changedRows.find((d) => onScreen().includes(d.crs));
+        if (!changed) {
+          const elsewhere = changedRows.find((d) => {
+            const at = list.indexOf(d);
+            if (at < 0) return false;
+            currentPage = Math.floor(at / PAGE_SIZE) + 1;
+            render();
+            return onScreen().includes(d.crs);
+          });
+          if (!elsewhere) continue;
+          changed = elsewhere;
+        }
+        const direct = onScreen()
+          .map((crs) => list.find((d) => d.crs === crs))
+          .find((d) => d && !changesAt(d));
         const read = {
           mode,
           changed: { crs: changed.crs, name: changed.changeStations[0].name, note: noteFor(changed) },
