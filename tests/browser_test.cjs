@@ -3557,9 +3557,17 @@ function saysMoreThan(condition, code) {
         // file; tests/test_build_demo_page.py refuses the doubled kind.)
         feedDate: DATA.feedDate || null,
         staleAfterDays: DATA.staleAfterDays,
+        // null rather than false when the build carries no timetable. A
+        // prices-only page prints no service window because it has none, and
+        // asking it for one is a check that cannot pass on a whole build shape
+        // -- the sibling `verdict` below already reads the prices-only sentence
+        // as the right answer to its own question. Nothing in this suite had
+        // been run against a prices-only page until now, which is the same blind
+        // spot ADR-0058 records for a list longer than one page: a case that was
+        // never swept cannot fail.
         window: DATA.timetableFrom
           ? new RegExp(humanDate(DATA.timetableFrom) + " to " + humanDate(DATA.timetableTo)).test(line.textContent)
-          : false,
+          : null,
         verdict: DATA.timetableFrom
           ? (days(DATA.timetableFrom) < 0
             ? /has not started yet/.test(line.textContent)
@@ -3580,7 +3588,13 @@ function saysMoreThan(condition, code) {
       };
     });
     check("the page says how old its numbers are", fresh.shown && fresh.text.length > 20, fresh.text);
-    check("the timetable sentence carries the feed's own service window", fresh.window, `${fresh.text} (${JSON.stringify(fresh.window)})`);
+    check(
+      "the timetable sentence carries the feed's own service window",
+      fresh.window === null
+        ? notExercised("this build prices fares only, so there is no service window to print")
+        : fresh.window,
+      `${fresh.text} (${JSON.stringify(fresh.window)})`
+    );
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
 
     // 7f. The conditions in the table are the fares feed's own wording; the
