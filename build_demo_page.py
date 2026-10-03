@@ -1347,6 +1347,12 @@ UNPRICED_REASONS = {
         "fares a reader cannot buy at the price they are quoted at, "
         "such as a child, a group, a staff or a concession fare"
     ),
+    "ticket_is_not_for_public_sale": (
+        "fares the catalogue marks as not for public sale"
+    ),
+    "ticket_is_not_for_public_sale": (
+        "fares the catalogue marks as not for public sale"
+    ),
     "flow_not_yet_valid": "flows not yet valid",
     "flow_expired": "flows past their last valid day",
     "flow_with_no_fare": "flows carrying no fare",
