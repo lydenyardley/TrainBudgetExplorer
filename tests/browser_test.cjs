@@ -3771,12 +3771,14 @@ function saysMoreThan(condition, code) {
       render();
       const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
       if (rows.length < 2) return { rows: rows.length };
-      const pick = document.getElementById("shortlistPick");
-      // One select rather than a button on every row, so adding a place is
-      // choosing it from the list of places this page shows.
+      // One checkbox on each row rather than a select above the table: the
+      // control is beside the place it acts on, and holding a place is a tick
+      // rather than finding its name in a list of names. Driven by click, so
+      // what runs is the gesture a reader makes rather than a state set behind
+      // their back.
       const add = (row) => {
-        pick.value = row.dataset.crs;
-        pick.dispatchEvent(new Event("change"));
+        const box = row.querySelector(".hold-box");
+        if (box) box.click();
       };
       const first = rows[0];
       const second = rows[1];
@@ -3795,7 +3797,18 @@ function saysMoreThan(condition, code) {
           text: li.textContent,
           title: (li.querySelector(".shortlist-name") || {}).title || "",
         }));
-      const offered = Array.from(pick.options).map((option) => option.value).filter(Boolean);
+      // Every rendered row's box against the list itself, in both directions:
+      // a box ticked for a place that is not held is a row claiming something
+      // the strip does not say, and a held place with an unticked box is one
+      // the reader cannot see they are carrying.
+      const boxes = Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((row) => ({
+        crs: row.dataset.crs,
+        name: (row.querySelector(".station-name") || {}).textContent || "",
+        held: Boolean((row.querySelector(".hold-box") || {}).checked),
+        label: row.querySelector(".hold-box")
+          ? row.querySelector(".hold-box").getAttribute("aria-label") || ""
+          : "",
+      }));
       const held = shortlistCodes.slice();
       // The chip is a place and its price. The place and the price are read
       // off the table row the chip came from, and the order from the strip
@@ -3843,7 +3856,7 @@ function saysMoreThan(condition, code) {
       const share = document.getElementById("shortlistShare").textContent;
       return {
         both, asPair, asSolo, chipsAgainstRows, byMode, share, address,
-        offered,
+        boxes,
         rowCount: rows.length,
         held,
         names: both.map((text) => text.slice(0, 24)),
@@ -3855,7 +3868,8 @@ function saysMoreThan(condition, code) {
         "and each chip is a way back to the row it came from",
         "and a place leaves the list when its fare is no longer on the page",
         "and the list is a list of places, not a booking",
-        "one select adds a place, and a held place is not offered again",
+        "every row carries a box, and a held place's box is ticked",
+        "and a box is named for the place it holds",
         "and the held places are announced, not just drawn",
         "the shortlist is in the address, so it can be shared",
         "a refresh brings the shortlist back",
@@ -3900,10 +3914,23 @@ function saysMoreThan(condition, code) {
         (await page.textContent("#shortlistEmpty")) || ""
       );
       check(
-        "one select adds a place, and a held place is not offered again",
-        shortlist.offered.length === shortlist.rowCount - 2 &&
-          shortlist.offered.every((crs) => !shortlist.held.includes(crs)),
-        JSON.stringify({ offered: shortlist.offered, held: shortlist.held })
+        "every row carries a box, and a held place's box is ticked",
+        shortlist.boxes.length === shortlist.rowCount &&
+          shortlist.boxes.every((row) => row.held === shortlist.held.includes(row.crs)) &&
+          shortlist.held.every((crs) => {
+            const row = shortlist.boxes.find((box) => box.crs === crs);
+            return row && row.held;
+          }),
+        JSON.stringify({ boxes: shortlist.boxes, held: shortlist.held })
+      );
+      // A column of unticked boxes is a column of controls with no name of
+      // their own, so each one has to say which place it holds.
+      check(
+        "and a box is named for the place it holds",
+        shortlist.boxes.every(
+          (row) => /^Hold .+ in the shortlist$/.test(row.label) && row.label.includes(row.name)
+        ),
+        JSON.stringify(shortlist.boxes.slice(0, 4))
       );
       const wanted = await page.evaluate(() => shortlistCodes);
       check(

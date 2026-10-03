@@ -1040,13 +1040,25 @@ class DemoPageTest(unittest.TestCase):
         # list to somebody else as a link. Nothing about it implies a booking.
         self.assertIn('id="shortlistBar" aria-label="Shortlist"', self.html)
         self.assertIn("not a booking", self.html)
-        # One control, above the table, rather than a named button on every
-        # row: twenty rows carried twenty copies of the same word, and
-        # pressing one changed its own text and reflowed the table.
-        self.assertIn('id="shortlistPick"', self.html)
-        self.assertIn("function renderShortlistPicker()", self.html)
-        self.assertIn("shortlistPick.addEventListener(\"change\"", self.html)
+        # One control per row, and it is a checkbox rather than a button:
+        # ADR-0054 put a single select above the table in place of twenty
+        # buttons, and the reader asked for the control back on each row. What
+        # is being kept from that decision is the part it was right about --
+        # no twenty copies of the same word, and no control whose text changes
+        # when it is pressed.
+        self.assertNotIn('id="shortlistPick"', self.html)
+        self.assertNotIn("function renderShortlistPicker()", self.html)
         self.assertNotIn("shortlist-toggle", self.html)
+        self.assertIn("function holdCell(destination)", self.html)
+        self.assertIn('box.type = "checkbox"', self.html)
+        self.assertIn('box.setAttribute("aria-label", "Hold "', self.html)
+        # The column the boxes live in is a column of the header too, or the
+        # table has a cell with no heading above it.
+        self.assertIn('<th scope="col" class="hold">Hold</th>', self.html)
+        self.assertIn(
+            "const cells = [holdCell(destination), stationCell(destination), priceCell(destination)];",
+            self.html,
+        )
         # ... and the places it holds are drawn where the control is.
         self.assertLess(
             self.html.index('id="shortlistBar"'),
@@ -1075,12 +1087,14 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(
             "if (shortlistLimit) shortlistLimit.textContent = message;", self.html
         )
-        # One control for the whole page rather than a button on every row:
-        # twenty rows is twenty buttons that all say the same thing, and a
-        # reader comparing prices wants one list, not twenty ways of making
-        # it. The select's own options are the rows on this page.
-        self.assertIn('document.querySelectorAll("#rows tr[data-crs]")', self.html)
-        self.assertIn(".filter((crs) => !inShortlist(crs));", self.html)
+        # The control is on every row, and what it shows is the list rather
+        # than a copy of itself: the box is ticked from what is held, so a row
+        # rebuilt by a render cannot claim a place is held when it is not.
+        self.assertIn("box.checked = inShortlist(destination.crs);", self.html)
+        self.assertIn("box.checked = inShortlist(destination.crs);\n  });", self.html)
+        # And it is put back when the list refuses it, which is the one case
+        # where the browser's ticked box and the shortlist disagree.
+        self.assertIn("const SHORTLIST_LIMIT = 8;", self.html)
 
     def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
         # A full-network build is hours long and publishes thousands of
@@ -1382,7 +1396,11 @@ class DemoPageTest(unittest.TestCase):
         html = render_page(payload, budget_pounds=20)
         script = page_script(html)
         self.assertIn("if (!DATA.hasJourneys)", script)
-        self.assertIn("nth-child(3), thead th:nth-child(4)", script)
+        # Positions, not names: the columns are removed by index, so this is
+        # where Time and Changes live -- fourth and fifth, after the hold
+        # column the table gained. If a column is added in front of them again
+        # this is the assertion that says so.
+        self.assertIn("nth-child(4), thead th:nth-child(5)", script)
         # The detail rows must span whatever the table actually has.
         self.assertIn("cell.colSpan = columnCount()", script)
         # And the footer still says what the page is missing.
@@ -2410,7 +2428,10 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
         self.assertNotIn('<th scope="col">Fare</th>', self.html)
         self.assertNotIn('<th scope="col">Conditions</th>', self.html)
-        self.assertEqual(self.html.count('<th scope="col"'), 6)
+        # Six columns, plus the one the hold checkbox sits in: the count is
+        # here to catch a column appearing or vanishing unnoticed, which is
+        # how the header and the cells drifted apart once before.
+        self.assertEqual(self.html.count('<th scope="col"'), 7)
 
     def test_no_numeric_column_can_wrap(self) -> None:
         # Measured on the real Grantham page: the Price column was 56px wide

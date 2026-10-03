@@ -1,6 +1,6 @@
 # ADR-0046: A row list ships as a table of cells and a pool of repeated values
 
-**Status:** Accepted
+**Status:** Accepted, and amended on the table's width. See the note below.
 **Date:** 30 September 2026
 **Relates to:** ADR-0033 (what a route may fetch; the amendment of the same day),
 ADR-0032 (measurement needs a written plan), ADR-0010 (one self-contained file)
@@ -119,3 +119,22 @@ and the payload 64% smaller than the morning's.
 - **Thin the network to fit** (drop origins, or publish prices only for some
   stations). It would meet the target by publishing less, which is the opposite
   of the product: the site's value is that any station in it has a page.
+
+## Amended 3 October 2026: the table is the width of the page
+
+The table was content width -- `width: auto` inside a body capped at 78rem --
+on the recorded grounds that stretched across, the price sat 800px from the
+place it belongs to and the ticket action floated in the middle of an otherwise
+empty row. The reader asked for a full-width results table, and that is the
+call, so the rule is `width: 100%` and the objection is kept in the stylesheet
+rather than deleted with the rule it argued for.
+
+What keeps the row from coming apart is not the width but the pair of rules
+already there: every numeric column is nowrap, so a column is exactly as wide as
+its widest number, and the slack all lands in the station name. Measured at
+1440px: the table is 1176px, which is the body's content box exactly, no header
+or numeric cell wraps to a second line, and the price sits 353px from the name's
+left edge -- the same gap it has at every width, because the name column is what
+grows. The objection was about the numbers drifting away from the places they
+belong to, and those rules were already preventing it; the width was not what
+was holding them together.
