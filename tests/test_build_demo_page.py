@@ -2444,7 +2444,14 @@ class DemoPageTest(unittest.TestCase):
         # Six columns, plus the one the hold checkbox sits in: the count is
         # here to catch a column appearing or vanishing unnoticed, which is
         # how the header and the cells drifted apart once before.
-        self.assertEqual(self.html.count('<th scope="col"'), 7)
+        #
+        # Counted inside the results table rather than across the page. The
+        # shortlist dock is a second table with its own four headings, and a
+        # document-wide count would make the dock's arrival look like two new
+        # columns in the results table -- which is exactly the drift this
+        # assertion exists to catch, now pointing at the wrong table.
+        results_header = self.html.split("<table>")[1].split("</thead>")[0]
+        self.assertEqual(results_header.count('<th scope="col"'), 7)
 
     def test_no_numeric_column_can_wrap(self) -> None:
         # Measured on the real Grantham page: the Price column was 56px wide

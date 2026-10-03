@@ -386,6 +386,16 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      so each column is as wide as the widest number in it (finding, 29
      September 2026). */
   th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+  /* The headings stay with the rows. A reader scrolled to the fortieth fare is
+     reading a number with nothing above it that says what the number is, and
+     these are the only words on the page that name its own columns. Sticky
+     needs a background of its own: the cells are transparent, so without one
+     the rows show through the letters. --bg is the page's own canvas, so the
+     heading sits on the same surface whichever theme is on. */
+  thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+  /* A row brought into view from the shortlist lands under the stuck heading
+     unless it reserves the heading's height first. */
+  #rows > tr[data-crs] { scroll-margin-top: 3.2rem; }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
             border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
             margin-left: .75rem; cursor: pointer; position: relative; }
@@ -444,9 +454,11 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      never reads as "this is the best fare", and it is skipped on touch, where
      there is no pointer to hover and the tint would stick. */
   @media (hover: hover) {
-    #rows > tr[data-crs]:hover > td { background: var(--field); }
-    #rows > tr[data-crs]:hover > td:first-child { border-radius: .3rem 0 0 .3rem; }
-    #rows > tr[data-crs]:hover > td:last-child { border-radius: 0 .3rem .3rem 0; }
+    #rows > tr[data-crs]:hover > td, #shortlistDock tbody tr:hover > td { background: var(--field); }
+    #rows > tr[data-crs]:hover > td:first-child, #shortlistDock tbody tr:hover > td:first-child {
+      border-radius: .3rem 0 0 .3rem; }
+    #rows > tr[data-crs]:hover > td:last-child, #shortlistDock tbody tr:hover > td:last-child {
+      border-radius: 0 .3rem .3rem 0; }
   }
   /* The action column never wraps its two controls onto two lines, which is
      what used to decide when the table had to stack on a tablet. Written for
@@ -454,6 +466,17 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      panel is prose, so the no-wrap reached the fare sentence and the feed
      record and pushed the whole panel 70px past a 390px page. */
   #rows > tr[data-crs] > td:last-child, thead th:last-child { white-space: nowrap; }
+  /* The action column is as wide as its own controls and no wider. Measured on
+     the real Grantham page at 1280px, the table is 1176px and that column
+     took 268px of it, 108px more than its widest cell needs; the slack went
+     nowhere in particular and left the ticket action floating in an empty
+     column. A one-pixel width is the way to say "take what your content
+     needs" to an auto-width table: the surplus moves to the station name,
+     which is the column the recorded finding above says should carry it.
+     Written for the cells and not only the header, because the same finding
+     is that a header setting a column's width is what made PRICE wrap and a
+     price read as a different number. */
+  #rows > tr[data-crs] > td:last-child, thead th:last-child { width: 1px; }
   /* The two halves of one fact, stacked, never side by side: a change count
      with a station after it on the same line reads as two columns. */
   td.num .was { display: block; }
@@ -526,6 +549,38 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .shortlist-share { margin-top: .5rem; }
   .shortlist-share summary { min-height: 44px; display: inline-flex; align-items: center;
                              color: var(--accent); cursor: pointer; }
+  /* The dock: the shortlist held at the foot of the screen, so a reader who has
+     scrolled a hundred rows down can still see what they are comparing and take
+     one place off it without scrolling back. The strip above the table (S26)
+     owns the controls and the share link; this owns the rows. Both read the one
+     shortlist state, so neither can call a place shortlisted when the other calls
+     it dropped.
+
+     The journey facts were cut from the chips above for making every chip three
+     lines tall. They are here because this is a fixed strip with room for a row of
+     four numbers, not a chip in a flow competing with the fold. The height is
+     capped and scrolls: eight shortlisted places must not take the screen. */
+  .shortlist-dock { position: fixed; inset: auto 0 0 0; z-index: 3; max-height: 42vh;
+                    overflow: auto; background: var(--bg); border-top: 1px solid var(--line);
+                    box-shadow: 0 -.25rem .7rem rgba(0, 0, 0, .14);
+                    /* A rem of its own rather than the page's own gutter: the dock
+                       spans the whole viewport where the page is a centred column,
+                       and the gutter token belongs to the shared stylesheet, which
+                       a route is not allowed to restate. */
+                    padding: .45rem 1rem .55rem; }
+  .shortlist-dock-head { display: flex; flex-wrap: wrap; align-items: center;
+                          gap: .6rem; margin-bottom: .25rem; }
+  .shortlist-dock-head .toggle { margin-left: auto; min-height: 2.75rem; }
+  /* Scoped by id: the results-table rules above would give the dock's four
+     numbers the station column's width and leave the columns ragged. */
+  #shortlistDock table { width: 100%; max-width: 46rem; margin: 0 auto; }
+  #shortlistDock th { text-align: left; font-size: .72rem; padding: .2rem .4rem; }
+  #shortlistDock td { padding: .28rem .4rem; border-bottom: 1px solid var(--line); }
+  #shortlistDock td.num { text-align: right; }
+  #shortlistDock .shortlist-dock-name { padding: 0; border: 0; background: transparent;
+        color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+  #shortlistDock .shortlist-dock-name:hover { text-decoration: underline; }
+  #shortlistDock td.dock-drop-cell { width: 1px; }
   .empty-actions .toggle { min-height: 44px; }
   /* The railcard, said in the row's own words, in the row's own disclosure. It
      was a dialog with a Close button and a definition list of three numbers
@@ -538,6 +593,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .card-note[data-state=available] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .9rem; }
+  nav#pagination { margin-top: 1.5rem; }
   .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
   /* The two actions a row keeps beside buying, inside the row's own panel: the
@@ -592,6 +648,10 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   @media (max-width: 44rem) {
     body { padding: 1rem .75rem; }
     table, tbody { display: block; }
+    #shortlistDock table { display: table; }
+    #shortlistDock tbody { display: table-row-group; }
+    #shortlistDock tr { display: table-row; padding: 0; }
+    #shortlistDock td { display: table-cell; }
     thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
              clip-path: inset(50%); white-space:nowrap; border:0; }
     /* One rule per row, and the row is what draws it. Every cell kept the
@@ -602,6 +662,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
        `th, td` rather than `td`, because the base rule this cancels is a
        `th, td` pair and a media query adds no specificity of its own. */
     th, td { border-bottom: 0; }
+    thead th { position: static; }
     /* One cell per line, the full width, rather than a flex line that wrapped
        wherever it happened to fit. The wrap is what made a row's cells
        different heights from each other. */
@@ -853,6 +914,25 @@ __THEME_TOGGLE__
 </nav>
 
 </main>
+
+<!-- The dock is the shortlist at the foot of the screen. It is hidden until a
+     place is on it, so a page with nothing shortlisted carries no dock and
+     gives its rows the whole window. The row headings name the four facts
+     because a reader comparing two places is reading columns, and the
+     columns need the same names the results table gives them. -->
+<aside class="shortlist-dock" id="shortlistDock" hidden aria-label="Shortlisted places">
+  <div class="shortlist-dock-head">
+    <span class="shortlist-label">Shortlist</span>
+    <span class="tag" id="shortlistDockCount"></span>
+    <button id="shortlistDockClear" class="toggle" type="button">Clear</button>
+  </div>
+  <table>
+    <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th>
+      <th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th>
+      <th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+    <tbody id="shortlistDockList"></tbody>
+  </table>
+</aside>
 
 <footer>
   __NRE_CREDIT__
@@ -2819,6 +2899,10 @@ const shortlistStatus = document.getElementById("shortlistStatus");
 const shortlistEmpty = document.getElementById("shortlistEmpty");
 const shortlistShare = document.getElementById("shortlistShare");
 const shortlistClear = document.getElementById("shortlistClear");
+const shortlistDock = document.getElementById("shortlistDock");
+const shortlistDockList = document.getElementById("shortlistDockList");
+const shortlistDockCount = document.getElementById("shortlistDockCount");
+const shortlistDockClear = document.getElementById("shortlistDockClear");
 const shortlistCopy = document.getElementById("shortlistCopy");
 const shortlistBox = document.getElementById("shortlistBox");
 
@@ -2860,6 +2944,22 @@ function setShortlistStatus(text) {
 // travels with the name; the journey facts did too, and made every chip three
 // lines tall on a phone, where the strip is the only thing between the reader
 // and the fold. The place's own row still has them.
+// The remove control, built once. Two renderings of the shortlist exist --
+// the strip above the table and the dock at the foot of the screen -- and a
+// cross drawn twice is a cross that will one day mean two things.
+function dropButton(destination) {
+  const drop = document.createElement("button");
+  drop.type = "button";
+  drop.className = "shortlist-drop";
+  // A drawn cross, not the letter x and not an emoji: it is the only icon on
+  // the page, and it is drawn at the same weight as the rule it sits on.
+  drop.innerHTML = '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">'
+    + '<path d="M1 1 L11 11 M11 1 L1 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  drop.setAttribute("aria-label", "Remove " + destination.name + " from the shortlist");
+  drop.addEventListener("click", () => toggleShortlist(destination.crs));
+  return drop;
+}
+
 function shortlistRow(destination) {
   const item = document.createElement("li");
   item.className = "shortlist-chip";
@@ -2876,17 +2976,55 @@ function shortlistRow(destination) {
   const price = document.createElement("span");
   price.className = "shortlist-price";
   price.textContent = money(priceOf(destination));
-  const drop = document.createElement("button");
-  drop.type = "button";
-  drop.className = "shortlist-drop";
-  // A drawn cross, not the letter x and not an emoji: it is the only icon on
-  // the page, and it is drawn at the same weight as the rule it sits on.
-  drop.innerHTML = '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">'
-    + '<path d="M1 1 L11 11 M11 1 L1 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
-  drop.setAttribute("aria-label", "Remove " + destination.name + " from the shortlist");
-  drop.addEventListener("click", () => toggleShortlist(destination.crs));
-  item.append(name, price, drop);
+  item.append(name, price, dropButton(destination));
   return item;
+}
+
+// One shortlisted place as a row of the dock's table: the four facts the reader
+// is comparing, read through the same helpers the results table reads, so a
+// place cannot show one duration in the table and another in the dock. A
+// journey this build could not find says so here rather than showing a zero
+// (journeyCell, same rule).
+function dockRow(destination) {
+  const missing = destination.journeyState !== "found";
+  const row = document.createElement("tr");
+  row.dataset.crs = destination.crs;
+  const name = document.createElement("td");
+  const label = document.createElement("button");
+  label.type = "button";
+  label.className = "shortlist-dock-name";
+  label.textContent = destination.name;
+  label.title = "Show " + destination.name + " in the list above";
+  label.addEventListener("click", () => focusDestinationRow(destination.crs));
+  name.append(label);
+  const price = document.createElement("td");
+  price.className = "num";
+  price.textContent = money(priceOf(destination));
+  const time = document.createElement("td");
+  time.className = missing ? "num missing" : "num";
+  time.textContent = missing ? "No service" : duration(destination.minutes);
+  const changes = document.createElement("td");
+  changes.className = missing ? "num missing" : "num";
+  changes.textContent = missing ? "Unknown" : changeCount(destination.changes);
+  const drop = document.createElement("td");
+  drop.className = "dock-drop-cell";
+  drop.append(dropButton(destination));
+  row.append(name, price, time, changes, drop);
+  return row;
+}
+
+// The dock is fixed to the foot of the screen, so the page has to end above
+// it. The height is read back from the rendered dock rather than guessed,
+// because the height depends on how many places are shortlisted, on the
+// width, and on which theme is on.
+function padForDock() {
+  // Guarded like the rest of the shortlist, because the resize listener below
+  // runs on any page this script reaches and a page with no dock has no dock
+  // to measure.
+  if (!shortlistDock) return;
+  document.body.style.paddingBottom = shortlistDock.hidden
+    ? ""
+    : (shortlistDock.offsetHeight + 16) + "px";
 }
 
 function focusDestinationRow(crs) {
@@ -2904,6 +3042,17 @@ function renderShortlist() {
   // mode -- leaves the list rather than sitting in it as a name with no price.
   shortlistCodes = kept.map((destination) => destination.crs);
   shortlistList.replaceChildren(...kept.map(shortlistRow));
+  // The dock appears on the first place shortlisted and leaves with the last,
+  // because a strip holding nothing is a bar across the bottom of the screen
+  // for no reason a reader can see.
+  if (shortlistDock) {
+    shortlistDock.hidden = kept.length === 0;
+    shortlistDockList.replaceChildren(...kept.map(dockRow));
+    if (shortlistDockCount) {
+      shortlistDockCount.textContent = kept.length + (kept.length === 1 ? " place" : " places");
+    }
+    padForDock();
+  }
   const empty = kept.length === 0;
   if (shortlistEmpty) shortlistEmpty.hidden = !empty;
   if (shortlistBar) shortlistBar.hidden = false;
@@ -2962,14 +3111,17 @@ if (shortlistCopy) {
     }
   });
 }
-if (shortlistClear) {
-  shortlistClear.addEventListener("click", () => {
+if (shortlistClear || shortlistDockClear) {
+  const clearShortlist = () => {
     shortlistCodes = [];
     setShortlistStatus("");
     renderShortlist();
     writeUrl();
-  });
+  };
+  if (shortlistClear) shortlistClear.addEventListener("click", clearShortlist);
+  if (shortlistDockClear) shortlistDockClear.addEventListener("click", clearShortlist);
 }
+window.addEventListener("resize", padForDock);
 
 // The address is the search (S05). A reader who has already decided a budget
 // and a ticket type, then refreshes, or shares the tab, or presses Back, must
