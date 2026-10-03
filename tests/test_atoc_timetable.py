@@ -24,6 +24,11 @@ from atoc_timetable import (
 from make_synthetic_feed import _line, build_synthetic_timetable
 
 SUNDAY = date(2026, 9, 27)
+TUESDAY = date(2026, 9, 29)
+# The synthetic feed is written in the CIF line ending, and these tests add
+# records to it by hand. Naming it keeps a literal out of every writer
+# below, where an escaped pair is one refactor away from a real newline.
+EOL = chr(13) + chr(10)
 MONDAY = date(2026, 9, 28)
 TUESDAY = date(2026, 9, 29)
 
@@ -187,6 +192,212 @@ class TimetableParserTest(unittest.TestCase):
         self.assertEqual(format_minutes(50), "50m")
         self.assertEqual(format_minutes(60), "1h")
         self.assertEqual(format_minutes(95), "1h35")
+
+
+class BestJourneyIsTheShortestTest(unittest.TestCase):
+    """best_journey must return the shortest journey the database holds.
+
+    The search ranks by duration, so every prune it applies has to be a bound on
+    duration. It used to prune on arrival time and to break out of the departure
+    loop on an arrival-time test, which is sound for the earliest arrival and
+    not for the shortest duration: Grantham to Alfreton read 122 minutes when
+    the same database held 67, and 28 of Grantham's 101 destinations were wrong
+    that way (audit A11).
+
+    The proof here is an enumeration with no prune at all, which is what
+    "shortest" has to mean for the test to be worth anything. A direct journey
+    is found by a search that has never pruned, so a fixture whose answer is
+    direct would pass against either version; every test below therefore
+    asks about a place only a change reaches.
+    """
+
+    def _shortest_with_no_prune(self, timetable, origin, destination, day):
+        """The minimum-duration journey, asked of every departure unpruned."""
+        best = timetable._direct_journey(origin, destination)
+        for departure, schedule_index, stop_index in timetable._departures.get(origin, ()):
+            journey = timetable._one_change_from(
+                origin,
+                destination,
+                departure,
+                timetable.schedules[schedule_index],
+                schedule_index,
+                stop_index,
+                None,
+                None,
+                None,
+            )
+            if journey is not None and (best is None or journey.duration < best.duration):
+                best = journey
+        return None if best is None else (best.duration, best.changes, best.departure)
+
+    def _add_station(self, feed, tiploc, crs, name):
+        """Name a station the fixture does not already have, as the feed would."""
+        msn = next(feed.glob("*.msn"))
+        existing = msn.read_bytes()
+        prefix = b"" if existing.endswith(EOL.encode()) else EOL.encode()
+        # Appended rather than rewritten: a record joined onto the last
+        # line of the file is not a record at all, and the station it names
+        # then has no code, so nothing can be routed through it.
+        record = _line(
+            {
+                "record_type": "A",
+                "name": name,
+                # The same category the fixture's own station records
+                # carry. A name the reader does not recognise is not
+                # ignored: it is a record the parser skips, and the test
+                # then fails with no journey and no explanation.
+                "category": "0",
+                "tiploc": tiploc,
+                "crs": crs,
+            },
+            MSN_STATION,
+        )
+        with msn.open("ab") as handle:
+            handle.write(prefix + (record + EOL).encode("utf-8"))
+
+    def _calling_train(self, feed, uid, origin, middle, terminus, days="1111111"):
+        (feed / f"{uid}.mca").write_text(
+            EOL.join(
+                [
+                    _line(
+                        {
+                            "record_type": "BS",
+                            "transaction_type": "N",
+                            "train_uid": uid,
+                            "date_runs_from": "260921",
+                            "date_runs_to": "261211",
+                            "days": days,
+                            "stp_indicator": "P",
+                        },
+                        CIF_SCHEDULE,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LO",
+                            "location": origin[0],
+                            "scheduled_departure": origin[1],
+                            "public_departure": origin[1],
+                        },
+                        CIF_ORIGIN,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LI",
+                            "location": middle[0],
+                            "scheduled_arrival": middle[1],
+                            "scheduled_departure": middle[2],
+                            "public_arrival": middle[1],
+                            "public_departure": middle[2],
+                        },
+                        CIF_INTERMEDIATE,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LT",
+                            "location": terminus[0],
+                            "scheduled_arrival": terminus[1],
+                            "public_arrival": terminus[1],
+                        },
+                        CIF_TERMINUS,
+                    ),
+                ]
+            )
+            + EOL,
+            encoding="utf-8",
+            newline="",
+        )
+
+    def _two_stop_train(self, feed, uid, origin, terminus, days="1111111"):
+        (feed / f"{uid}.mca").write_text(
+            EOL.join(
+                [
+                    _line(
+                        {
+                            "record_type": "BS",
+                            "transaction_type": "N",
+                            "train_uid": uid,
+                            "date_runs_from": "260921",
+                            "date_runs_to": "261211",
+                            "days": days,
+                            "stp_indicator": "P",
+                        },
+                        CIF_SCHEDULE,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LO",
+                            "location": origin[0],
+                            "scheduled_departure": origin[1],
+                            "public_departure": origin[1],
+                        },
+                        CIF_ORIGIN,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LT",
+                            "location": terminus[0],
+                            "scheduled_arrival": terminus[1],
+                            "public_arrival": terminus[1],
+                        },
+                        CIF_TERMINUS,
+                    ),
+                ]
+            )
+            + EOL,
+            encoding="utf-8",
+            newline="",
+        )
+
+    def _norwich_by_two_routes(self, feed):
+        """A place only a change reaches, with a slow early route and a quick late one.
+
+        Nothing runs straight to Norwich, so the answer can only come from the
+        one-change search, which is the search the prune was pruning wrongly.
+        The early route takes 2h20 and the later one 35 minutes, so the shortest
+        journey is the one that leaves latest and arrives long after the other.
+        """
+        self._add_station(feed, "YORKT", "YRK", "YORK")
+        self._add_station(feed, "NRCT", "NRC", "NORWICH")
+        # Each leg is its own train, so the only way to Norwich is to change.
+        self._two_stop_train(feed, "T50001", ("GRNT", "0800"), ("YORKT", "0930"))
+        self._two_stop_train(feed, "T50010", ("YORKT", "0945"), ("NRCT", "1020"))
+        self._two_stop_train(feed, "T50002", ("GRNT", "1600"), ("YORKT", "1625"))
+        self._two_stop_train(feed, "T50020", ("YORKT", "1630"), ("NRCT", "1635"))
+
+    def _fixture(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        feed = build_synthetic_timetable(Path(tmp.name) / "timetable")
+        self._norwich_by_two_routes(feed)
+        return feed
+
+    def test_the_fixture_has_no_direct_route_and_two_routes_that_change(self) -> None:
+        timetable = TimetableDb().load_feed(self._fixture())
+        # _direct_journey reads the day-filtered index rather than taking a
+        # day, so the index has to be built for the day being asked about.
+        timetable._ensure_indexes(MONDAY)
+        self.assertIsNone(
+            timetable._direct_journey("GRN", "NRC"),
+            "the fixture only proves anything if nothing runs straight there",
+        )
+        options = timetable.departures("GRN", "NRC", day=MONDAY, limit=20)
+        # departures() is earliest departure first, so the durations read
+        # 140 then 35: the slow one leaves first.
+        self.assertEqual([journey.duration for journey in options], [140, 35])
+
+    def test_the_shortest_journey_may_be_the_one_that_leaves_latest(self) -> None:
+        timetable = TimetableDb().load_feed(self._fixture())
+        for day in (MONDAY, TUESDAY):
+            journey = timetable.best_journey("GRN", "NRC", day=day)
+            self.assertIsNotNone(journey, f"no journey on {day}")
+            self.assertEqual(journey.duration, 35, f"on {day}")
+            self.assertEqual(journey.departure, 16 * 60, f"on {day}")
+            self.assertEqual(journey.changes, 1, f"on {day}")
+            self.assertEqual(
+                self._shortest_with_no_prune(timetable, "GRN", "NRC", day),
+                (35, 1, 16 * 60),
+                f"the unpruned enumeration must agree on {day}",
+            )
 
 
 class FocusedLoadHonoursADroppedOverlayTest(unittest.TestCase):
