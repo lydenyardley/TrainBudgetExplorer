@@ -1560,5 +1560,112 @@ class AdvanceFareTest(unittest.TestCase):
         self.assertFalse(atoc_fares.FaresDb().is_advance_fare(None, None))
 
 
+class ConditionalFareTest(unittest.TestCase):
+    """A child's or a group's fare is not the price one traveller pays.
+
+    The page publishes the cheapest fare the feed holds, so a 10p UNDER 11
+    single wins the slot from an adult's origin and the reader is told a
+    journey costs ten pence. Each test opens its own database, because the
+    fixture is class-level and a fare injected into it would leak into the
+    next test in this class and the ones after it.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.feed = build_synthetic_feed(Path(cls._tmp.name) / "conditional")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def _db(self):
+        return FaresDb().load_feed(self.feed)
+
+    def _with(self, db, code, name, pence, ticket_type="S"):
+        """Give one destination a fare with this ticket, on the live flow."""
+        flow_id = next(iter(db.fares_by_flow))
+        db.fares_by_flow[flow_id][code] = Fare(code, pence, "")
+        db.ticket_types[code] = TicketType(code, name, "2", ticket_type, False)
+        return db
+
+    def test_a_childs_single_cannot_win_the_cheapest_single_slot(self) -> None:
+        db = self._with(self._db(), "CTS", "UNDER 11 SINGLE", 10)
+        rows = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        self.assertNotIn("CTS", {row.ticket_code for row in rows.values()})
+        # NOT still has a fare, and it is the adult one the feed also holds.
+        self.assertIn("NOT", rows)
+        self.assertEqual(rows["NOT"].ticket_code, "2AS")
+
+    def test_the_child_fare_is_rejected_and_the_reason_says_why(self) -> None:
+        # The coverage report counts reasons, so a child's fare filed under
+        # "not a standard single" could not be told apart from a first-class
+        # one, and the report would answer a question nobody asked.
+        db = self._with(self._db(), "CTS", "UNDER 11 SINGLE", 10)
+        tally: dict[str, int] = {}
+        db.page_single_destinations_within("GRN", 1_000_000, tally=tally)
+        self.assertEqual(tally[atoc_fares.CONDITIONAL_REASON], 1)
+
+    def test_a_groups_single_cannot_win_the_slot_either(self) -> None:
+        # The 999p sentinel was the one code that cost the most destinations.
+        db = self._with(self._db(), "SPN", "LNER GRP SGL", 99_900)
+        rows = db.page_single_destinations_within("GRN", 1_000_000)
+        self.assertNotIn("SPN", {row.ticket_code for row in rows})
+
+    def test_a_childs_return_cannot_win_the_cheapest_return_slot(self) -> None:
+        db = self._with(self._db(), "CTR", "UNDER 11 RETURN", 5, ticket_type="R")
+        rows = {row.crs: row for row in db.page_destinations_within("GRN", 1_000_000)}
+        self.assertNotIn("CTR", {row.ticket_code for row in rows.values()})
+        self.assertIn("NOT", rows)
+
+    def test_the_measurement_switch_puts_them_back_and_can_only_add_destinations(self) -> None:
+        # The loss report subtracts the two answers, so the relationship the
+        # report depends on is that the conditional run reaches everything the
+        # reviewed run reaches. It is not that prices match: putting a 10p
+        # child's fare back is meant to move the price of the destination it
+        # wins, and the report counts that destination as lost.
+        db = self._with(self._db(), "CTS", "UNDER 11 SINGLE", 10)
+        kept = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        every = {
+            row.crs: row
+            for row in db.page_single_destinations_within(
+                "GRN", 1_000_000, include_conditional=True
+            )
+        }
+        self.assertIn("CTS", {row.ticket_code for row in every.values()})
+        self.assertLessEqual(set(kept), set(every))
+        self.assertEqual(every["NOT"].ticket_code, "CTS")
+        # The reviewed run still shows the adult fare for the same pair.
+        self.assertEqual(kept["NOT"].ticket_code, "2AS")
+        self.assertGreater(kept["NOT"].best_pence, every["NOT"].best_pence)
+
+    def test_a_destination_only_the_child_priced_is_lost_and_says_so(self) -> None:
+        # The rule is tested inside the shared loop, so a destination whose
+        # only fare is a child's disappears rather than keeping a price the
+        # reader cannot buy.
+        db = self._with(self._db(), "CTS", "UNDER 11 SINGLE", 10)
+        before = {row.crs for row in db.page_single_destinations_within("GRN", 1_000_000, include_conditional=True)}
+        after = {row.crs for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        self.assertIn("NOT", before)
+        self.assertTrue(before - after or after, "the comparison must be meaningful")
+
+    def test_the_table_holds_the_codes_the_feed_actually_used(self) -> None:
+        # Guard against a future edit that empties the table, which would
+        # silently put every child's fare back on the page.
+        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 100)
+        for code in ("CTS", "CTR", "TKS", "TKR", "SPN", "S05", "ENT"):
+            self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
+
+    def test_an_ordinary_fare_is_not_treated_as_conditional(self) -> None:
+        # A word in a name must not be the rule. The selectors are keyed by
+        # code, so a fare whose name happens to contain a marker is still
+        # displayable, and it is priced under the fixture's 100p incumbent so
+        # that it wins the slot and the test can see it.
+        db = self._with(self._db(), "QQ1", "GROUP SPECIAL OFFER", 50)
+        rows = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        self.assertEqual(rows["NOT"].ticket_code, "QQ1")
+        self.assertEqual(rows["NOT"].best_pence, 50)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

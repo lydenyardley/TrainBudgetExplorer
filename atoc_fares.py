@@ -735,6 +735,112 @@ PLACEHOLDER_TICKET_CODES = frozenset({
 })
 
 
+# A standard-class fare a reader cannot buy alone at the price it quotes.
+# A child, an accompanied child, a party of a stated size, an event or a
+# school group are all priced for the whole party, so the number that
+# reaches the page is not the number one traveller pays. A 10p UNDER 11
+# single reached a page as the cheapest way to its destination and is not
+# a journey any adult can buy at that price, so these fares must not win
+# the cheapest slot (ADR-0059).
+#
+# The codes are reviewed and read off the feed rather than matched on a word
+# in a name, for the reason PLACEHOLDER_TICKET_CODES above gives. The name
+# of each family is recorded beside its block so a person can check a code
+# against what it prices without opening the feed.
+#
+# The feed cannot be asked instead. The ticket type record carries a
+# passenger block, and SCR GROUP 05, which won 1,486 of the single slots in
+# a 60-origin sample, reads one passenger and one adult there, so the block
+# does not mark a group. The restriction those fares carry is blank, so
+# there is no text on the fare to read either. What the page can say about
+# a conditional fare is its price, and its price is the thing in question.
+CONDITIONAL_TICKET_CODES = frozenset({
+    "GF3",  # ADVANCE GROUP 3
+    "GF4",  # ADVANCE GROUP 4
+    "GF5",  # ADVANCE GROUP 5
+    "FG3",  # ANYTIME GROUP 3
+    "FG4",  # ANYTIME GROUP 4
+    "FG5",  # ANYTIME GROUP 5
+    "VCA",  # AWC 2 GROUP A
+    "VCB",  # AWC 2 GROUP B
+    "VCC",  # AWC 2 GROUP C
+    "VCD",  # AWC 2 GROUP D
+    "VCE",  # AWC 2 GROUP E
+    "VCF",  # AWC 2 GROUP F
+    "VCG",  # AWC 2 GROUP G
+    "VCH",  # AWC 2 GROUP H
+    "VCI",  # AWC 2 GROUP I
+    "VCJ",  # AWC 2 GROUP J
+    "VCK",  # AWC 2 GROUP K
+    "VCL",  # AWC 2 GROUP L
+    "VSI",  # AWC SCHOOLGRP S
+    "TKT",  # CHILD FLAT TRAV
+    "TKR",  # CHILD FLTFARE R
+    "TKS",  # CHILD FLTFARE S
+    "AX0", "AX1", "AX2", "AX3", "AX4", "AX7", "AX8", "AX9",  # CLSC SOLO+CHILD
+    "GO3",  # EMR GROUP OPK3
+    "GO5",  # EMR GROUP OPK5
+    "C2R",  # EVENING GROUP
+    "EGP",  # EVENING GROUP R
+    "CMR",  # EVENT SOP
+    "CE2", "EVE",  # EVENTS STD
+    "GF1",  # FLYAWAY 1-CHILD
+    "1SH", "1SL", "1SM",  # GROUP CLSIC SOL
+    # GROUP PREM STD
+    "5GA", "5GB", "5GC", "5GD", "5GE", "5GF", "5GG", "5GH", "5GI", "5GJ", "5GK", "5GL",
+    "SE3",  # GROUP SINGLE 3
+    "SE4",  # GROUP SINGLE 4
+    "GR3",  # GROUPSAVE DAY 3
+    "GR4",  # GROUPSAVE DAY 4
+    "GR5",  # GROUPSAVE DAY 5
+    "2SH", "2SL", "2SM",  # GRP CLSIC TWIN
+    "WG2",  # GWR GRP 3 STD
+    "WI2",  # GWR GRP 5 STD
+    "SPN",  # LNER GRP SGL
+    "OPG",  # OFFPEAK GROUP10
+    "S01",  # SCR GROUP 01
+    "S02",  # SCR GROUP 02
+    "S03",  # SCR GROUP 03
+    "S04",  # SCR GROUP 04
+    "S05",  # SCR GROUP 05
+    "S06",  # SCR GROUP 06
+    "S07",  # SCR GROUP 07
+    "S08",  # SCR GROUP 08
+    "S09",  # SCR GROUP 09
+    "S10",  # SCR GROUP 10
+    "S11",  # SCR GROUP 11
+    "S12",  # SCR GROUP 12
+    "S13",  # SCR GROUP 13
+    "S14",  # SCR GROUP 14
+    "S15",  # SCR GROUP 15
+    "S16",  # SCR GROUP 16
+    "S17",  # SCR GROUP 17
+    "S18",  # SCR GROUP 18
+    "S19",  # SCR GROUP 19
+    "S20",  # SCR GROUP 20
+    "S3G",  # SMALL GROUP 3
+    "S4G",  # SMALL GROUP 4
+    "S5G",  # SMALL GROUP 5
+    "S6G",  # SMALL GROUP 6
+    "S7G",  # SMALL GROUP 7
+    "S8G",  # SMALL GROUP 8
+    "S9G",  # SMALL GROUP 9
+    "SGD",  # SMALL GROUP DAY
+    "V5S",  # SPEC GROUP PREM
+    "ENT",  # TFW EVENT CON
+    "HX2",  # UNACCOMP CHILD
+    "CTR",  # UNDER 11 RETURN
+    "CTS",  # UNDER 11 SINGLE
+    "TCR",  # UNDER 16 RETURN
+    "TCS",  # UNDER 16 SINGLE
+})
+
+# The tally key for a fare that lost the slot because of who it is priced for.
+# Named once here because three places read it: both selectors, the page's
+# empty-page note, and the coverage report that counts the loss.
+CONDITIONAL_REASON = "ticket_is_a_child_group_or_event_fare"
+
+
 def _offsets(spec: tuple[tuple[str, int], ...]) -> dict[str, tuple[int, int]]:
     offsets: dict[str, tuple[int, int]] = {}
     position = 0
@@ -2684,6 +2790,58 @@ class FaresDb:
             day=day,
         )
 
+    @staticmethod
+    def _displayable_single_rejection(
+        include_conditional: bool = False,
+    ) -> Callable[[Fare, TicketType], str | None]:
+        """The reviewed rule for a single a page may quote, or why not.
+
+        One method so the page row and the priced chooser cannot drift apart.
+        The reasons are distinct because the coverage report counts them, and a
+        count that files a child's fare under "not a standard single" cannot
+        answer what happened to a destination.
+        """
+        not_for_sale = ("NOT FOR TRAVEL", "TEST", "DUMMY", "FOR TEST", "COMP")
+
+        def reject(fare: Fare, ticket: TicketType) -> str | None:
+            if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+                return CONDITIONAL_REASON
+            if not ticket.is_standard_single:
+                return "ticket_is_not_a_standard_single"
+            name = ticket.name.upper()
+            if fare.ticket_code in PLACEHOLDER_TICKET_CODES or "ITX" in name:
+                return "ticket_is_a_catalogue_placeholder"
+            if any(marker in name for marker in not_for_sale):
+                return "ticket_is_not_for_public_sale"
+            return None
+
+        return reject
+
+    @staticmethod
+    def _displayable_return_rejection(
+        include_conditional: bool = False,
+    ) -> Callable[[Fare, TicketType], str | None]:
+        """The same rule for a return, which the feed prices the same way.
+
+        A group return is quoted for the party, so it cannot be a reader's
+        cheapest return either. The catalogue placeholder test stays, and its
+        own reason, because a placeholder is a different mistake from a fare
+        that is real and simply not the reader's.
+        """
+
+        def reject(fare: Fare, ticket: TicketType) -> str | None:
+            if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+                return CONDITIONAL_REASON
+            if not ticket.is_standard_return:
+                return "ticket_is_not_a_standard_return"
+            if fare.ticket_code in PLACEHOLDER_TICKET_CODES:
+                return "ticket_is_a_catalogue_placeholder"
+            if "ITX" in ticket.name.upper():
+                return "ticket_is_a_catalogue_placeholder"
+            return None
+
+        return reject
+
     def page_destinations_within(
         self,
         origin_crs: str,
@@ -2694,6 +2852,7 @@ class FaresDb:
         party_budget: bool = False,
         tally: dict[str, int] | None = None,
         day: date | None = None,
+        include_conditional: bool = False,
     ) -> list[Reachable]:
         """Rows suitable for the reader-facing page, including restrictions.
 
@@ -2702,21 +2861,26 @@ class FaresDb:
         they must not win the broad query's cheapest-fare comparison. Other
         restricted standard returns remain visible and carry their restriction
         code to the page.
+
+        ``include_conditional`` puts the child, group and event fares back.
+        Nothing on a page sets it. It exists so the coverage report can ask
+        what the rule costs, by asking this selector the same question both
+        ways and counting the destinations that differ.
         """
-        rows = self.destinations_within(
+        # The test runs inside the shared loop rather than on the rows the broad
+        # query returns. Filtering afterwards would let a conditional fare win
+        # the slot and then take the destination with it, leaving the page
+        # without the adult fare the feed also holds for that pair.
+        return self._destinations_within(
             origin_crs,
             budget_pence,
             adults=adults,
             railcard=railcard,
             party_budget=party_budget,
             tally=tally,
+            selector=self._displayable_return_rejection(include_conditional),
             day=day,
         )
-        return [
-            row for row in rows
-            if row.ticket_code not in PLACEHOLDER_TICKET_CODES
-            and "ITX" not in row.ticket_name.upper()
-        ]
 
     def page_single_destinations_within(
         self,
@@ -2728,6 +2892,7 @@ class FaresDb:
         party_budget: bool = False,
         tally: dict[str, int] | None = None,
         day: date | None = None,
+        include_conditional: bool = False,
     ) -> list[Reachable]:
         """Displayable standard-class singles, excluding catalogue placeholders.
 
@@ -2735,6 +2900,9 @@ class FaresDb:
         train rather than being an unrestricted walk-up price. They remain in
         the result; callers must label them as train-specific instead of
         silently treating them like an anytime fare.
+
+        ``include_conditional`` puts the child, group and event fares back, for
+        the coverage report's measurement and nothing else.
         """
         rows = self._destinations_within(
             origin_crs,
@@ -2743,17 +2911,7 @@ class FaresDb:
             railcard=railcard,
             party_budget=party_budget,
             tally=tally,
-            selector=lambda fare, ticket: (
-                None
-                if ticket.is_standard_single
-                and fare.ticket_code not in PLACEHOLDER_TICKET_CODES
-                and "ITX" not in ticket.name.upper()
-                and not any(
-                    marker in ticket.name.upper()
-                    for marker in ("NOT FOR TRAVEL", "TEST", "DUMMY", "FOR TEST", "COMP")
-                )
-                else "ticket_is_not_a_displayable_standard_single"
-            ),
+            selector=self._displayable_single_rejection(include_conditional),
             day=day,
         )
         return rows
