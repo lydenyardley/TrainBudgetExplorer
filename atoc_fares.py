@@ -741,7 +741,7 @@ PLACEHOLDER_TICKET_CODES = frozenset({
 # reaches the page is not the number one traveller pays. A 10p UNDER 11
 # single reached a page as the cheapest way to its destination and is not
 # a journey any adult can buy at that price, so these fares must not win
-# the cheapest slot (ADR-0059).
+# the cheapest slot.
 #
 # The codes are reviewed and read off the feed rather than matched on a word
 # in a name, for the reason PLACEHOLDER_TICKET_CODES above gives. The name
