@@ -42,6 +42,13 @@ _browser_feed/
 _demo_site/
 _site_base/
 
+# The two page shapes the browser suite must meet every run: a
+# prices-only page (no timetable) and a single-row page. Built by the
+# deploy workflow's shape step and by anyone running the same commands
+# locally, and output of the build like any other site folder.
+_shape_feed/
+_shape_site/
+
 # A named subset build's output (build_stations.py). Its own folder rather than
 # _site/, which the runner owns and tidies, so neither build deletes the other's
 # station pages.
