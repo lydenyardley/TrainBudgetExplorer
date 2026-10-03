@@ -373,8 +373,21 @@ class DemoPageTest(unittest.TestCase):
         composition = script.split("function cheapestDestinations()")[1].split("\nfunction ")[0]
         self.assertIn("new Map()", composition)
         self.assertIn("for (const key of Object.values(MODE_LISTS))", composition)
-        self.assertIn("priceOf(destination) < priceOf(held)", composition)
         self.assertIn("cheapest.set(destination.crs, destination)", composition)
+        # What decides a row is the price for this reader, card included, and
+        # an equal price is broken on the fare's own standard. Both halves are
+        # asserted rather than one literal comparison, because the comparison
+        # moved into a helper and the rule is what has to hold.
+        self.assertIn("isCheaperThan(destination, held)", composition)
+        ranker = script.split("function isCheaperThan(")[1].split("\nfunction ")[0]
+        self.assertIn("priceOf(candidate)", ranker)
+        self.assertIn("priceOf(held)", ranker)
+        self.assertIn("return price < other;", ranker)
+        self.assertIn("standardPrice(candidate) < standardPrice(held)", ranker)
+        # Without the tie-break, a card that made two fares equal swapped the
+        # row and the cell named a standard fare the reader had not been shown.
+        standard = script.split("function standardPrice(")[1].split("\nfunction ")[0]
+        self.assertIn('unit() === "party" ? destination.partyPence : destination.adultPence', standard)
         active = script.split("function activeDestinations()")[1].split("\nfunction ")[0]
         self.assertIn("if (mode === CHEAPEST_MODE) return cheapestDestinations();", active)
         counted = script.split("function modeCount(")[1].split("\nfunction ")[0]
