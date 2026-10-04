@@ -3644,6 +3644,15 @@ STATION_FIELD_JS = """function attachStationField(options) {
   let proposal = null;
 
   const selected = () => field.selectionEnd > field.selectionStart;
+  // The station the field still holds. A completion is offered as a selection
+  // over the rest of the name, and reading only the selection lost it the
+  // moment an arrow key walked the caret over that tail: the field said the
+  // same word, the caret was at its end, and Tab and Enter did nothing at all
+  // rather than going to the station the field was showing. The value is
+  // compared rather than the proposal trusted, so a keystroke after the arrow
+  // key -- which does change the value -- drops the offer instead of choosing
+  // a station the field no longer spells.
+  const offered = () => (proposal && field.value === proposal.name ? proposal : null);
   function commit() {
     proposal = null;
     if (selected()) field.setSelectionRange(field.value.length, field.value.length);
@@ -3742,16 +3751,20 @@ STATION_FIELD_JS = """function attachStationField(options) {
   });
   field.addEventListener("keydown", (event) => {
     if (event.key === "Tab" || event.key === "Enter") {
+      // A completion is a place, not a spelling, so accepting one is choosing
+      // it. It is accepted whether or not its tail is still selected, because
+      // the reader has said where they are going either way. The route owns
+      // the URL because the route owns what travels with it.
+      const station = offered();
+      if (station && onChoose) {
+        event.preventDefault();
+        onChoose(station);
+        return;
+      }
       // A key with nothing half-typed belongs to the page: Tab moves on, Enter
       // is the browser's own.
       if (!selected()) return;
       event.preventDefault();
-      // A completion is a place, not a spelling, so accepting one is choosing
-      // it. The route owns the URL because the route owns what travels with it.
-      if (proposal && onChoose) {
-        onChoose(proposal);
-        return;
-      }
       commit();
       onChange(field.value);
       return;

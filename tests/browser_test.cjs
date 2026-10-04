@@ -733,6 +733,47 @@ async function checkChooser(page, url, check) {
         wanted !== null && landed && new URL(landed, before).pathname === new URL(wanted, before).pathname,
         `${completable} -> ${landed || "(no navigation)"} (wanted ${wanted})`
       );
+      // An arrow key walks the caret over the suggested tail and changes no
+      // character, and it used to take the station away with it: the Tab and
+      // Enter branch asked only whether anything was selected, and a caret at
+      // the end of the name selects nothing, so the two keys that accept a
+      // completion silently stopped accepting it. Reported on a station page
+      // that lists another station long enough to complete: type "Not", press
+      // the right arrow, press Enter, and nothing happens where Enter alone
+      // goes to that station's page.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      await page.keyboard.press("ArrowRight");
+      const afterArrow = await page.inputValue("#originSearch");
+      const walked = await page.evaluate(() => {
+        const field = document.getElementById("originSearch");
+        return field.selectionStart === field.selectionEnd;
+      });
+      const arrowProbe = await page.context().newPage();
+      let arrowLanded = "";
+      try {
+        await arrowProbe.goto(before);
+        if (await arrowProbe.locator("#changeOrigin").count()) await arrowProbe.click("#changeOrigin");
+        await arrowProbe.waitForSelector("#originSearch");
+        await arrowProbe.focus("#originSearch");
+        await arrowProbe.type("#originSearch", prefix, { delay: 10 });
+        const arrowMoved = arrowProbe
+          .waitForURL((url) => new URL(url).pathname !== beforePath, { timeout: 5000 })
+          .catch(() => null);
+        await arrowProbe.keyboard.press("ArrowRight");
+        await arrowProbe.keyboard.press("Tab");
+        await arrowMoved;
+        arrowLanded = arrowProbe.url();
+      } finally {
+        await arrowProbe.close();
+      }
+      check(
+        "an arrow key over the completion leaves Tab able to go to it",
+        wanted !== null && walked && afterArrow.toLowerCase().startsWith(prefix.toLowerCase()) &&
+          arrowLanded && new URL(arrowLanded, before).pathname === new URL(wanted, before).pathname,
+        `${prefix} -> "${afterArrow}" -> ArrowRight -> Tab -> ${arrowLanded || "(no navigation)"} (wanted ${wanted})`
+      );
       await page.fill("#originSearch", "");
     } else {
       for (const name of [
@@ -740,6 +781,7 @@ async function checkChooser(page, url, check) {
         "and Backspace again deletes a character of what was typed",
         "the heading does not change height as the field is typed into",
         "Tab on a completion goes to that station's page",
+        "an arrow key over the completion leaves Tab able to go to it",
       ]) {
         check(name, notExercised("no station on this page has a name long enough to complete"));
       }
@@ -4974,6 +5016,47 @@ function saysMoreThan(condition, code) {
         wanted !== null && landed && new URL(landed, before).pathname === new URL(wanted, before).pathname,
         `${completable} -> ${landed || "(no navigation)"} (wanted ${wanted})`
       );
+      // An arrow key walks the caret over the suggested tail and changes no
+      // character, and it used to take the station away with it: the Tab and
+      // Enter branch asked only whether anything was selected, and a caret at
+      // the end of the name selects nothing, so the two keys that accept a
+      // completion silently stopped accepting it. Reported on a station page
+      // that lists another station long enough to complete: type "Not", press
+      // the right arrow, press Enter, and nothing happens where Enter alone
+      // goes to that station's page.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      await page.keyboard.press("ArrowRight");
+      const afterArrow = await page.inputValue("#originSearch");
+      const walked = await page.evaluate(() => {
+        const field = document.getElementById("originSearch");
+        return field.selectionStart === field.selectionEnd;
+      });
+      const arrowProbe = await page.context().newPage();
+      let arrowLanded = "";
+      try {
+        await arrowProbe.goto(before);
+        if (await arrowProbe.locator("#changeOrigin").count()) await arrowProbe.click("#changeOrigin");
+        await arrowProbe.waitForSelector("#originSearch");
+        await arrowProbe.focus("#originSearch");
+        await arrowProbe.type("#originSearch", prefix, { delay: 10 });
+        const arrowMoved = arrowProbe
+          .waitForURL((url) => new URL(url).pathname !== beforePath, { timeout: 5000 })
+          .catch(() => null);
+        await arrowProbe.keyboard.press("ArrowRight");
+        await arrowProbe.keyboard.press("Tab");
+        await arrowMoved;
+        arrowLanded = arrowProbe.url();
+      } finally {
+        await arrowProbe.close();
+      }
+      check(
+        "an arrow key over the completion leaves Tab able to go to it",
+        wanted !== null && walked && afterArrow.toLowerCase().startsWith(prefix.toLowerCase()) &&
+          arrowLanded && new URL(arrowLanded, before).pathname === new URL(wanted, before).pathname,
+        `${prefix} -> "${afterArrow}" -> ArrowRight -> Tab -> ${arrowLanded || "(no navigation)"} (wanted ${wanted})`
+      );
       await page.fill("#originSearch", "");
     } else {
       for (const name of [
@@ -4981,6 +5064,7 @@ function saysMoreThan(condition, code) {
         "and Backspace again deletes a character of what was typed",
         "the heading does not change height as the field is typed into",
         "Tab on a completion goes to that station's page",
+        "an arrow key over the completion leaves Tab able to go to it",
       ]) {
         check(name, notExercised("no station on this page has a name long enough to complete"));
       }
