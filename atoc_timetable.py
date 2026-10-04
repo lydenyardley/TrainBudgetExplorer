@@ -1129,3 +1129,103 @@ class TimetableDb:
                 max_onward,
             )
         return best
+
+    def journeys_from(
+        self,
+        origin_crs: str,
+        *,
+        max_changes: int = 1,
+        connection_minutes: int | None = None,
+        day: date | None = None,
+        max_onward: int | None = MAX_ONWARD_DEPARTURES,
+    ) -> dict[str, Journey]:
+        """The best journey from the origin to every station it reaches.
+
+        best_journey() asks this question once per destination, and on the
+        one-change path it walks the origin's departures and their interchanges
+        and their onward windows afresh each time. All of that work is the same
+        for every destination: what differs is only the last step, which asks
+        where the onward service calls the destination. So the walk is done once
+        and the destinations are answered out of it, which is what a page that
+        times every destination on several days needs -- measured on the
+        Nottingham page, asking 163 destinations one at a time took 45.9s for a
+        seven-day window against this walk once per day.
+
+        The prune is the same one, kept per destination rather than per origin,
+        so a destination with a good journey held is pruned exactly as it was
+        when it was the only destination under consideration. Every answer is
+        asserted equal to best_journey() over the whole page in
+        tests/test_journey_fanout.py, because a faster search that answers a
+        different question is not a faster search.
+        """
+        self._ensure_indexes(day)
+        best: dict[str, Journey] = {}
+        for destination_crs in self._reachable(origin_crs):
+            found = self._direct_journey(origin_crs, destination_crs)
+            if found is not None:
+                best[destination_crs] = found
+        if max_changes < 1:
+            return best
+        for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
+            schedule = self.schedules[schedule_index]
+            crs_chain = self._schedule_crs[schedule_index]
+            for interchange_index in range(stop_index + 1, len(schedule.stops)):
+                interchange_crs = crs_chain[interchange_index]
+                if interchange_crs is None or interchange_crs == origin_crs:
+                    continue
+                arrival_at_interchange = schedule.stops[interchange_index].alight
+                if arrival_at_interchange is None:
+                    continue
+                if arrival_at_interchange < departure:
+                    arrival_at_interchange += MINUTES_PER_DAY
+                wait = (
+                    connection_minutes
+                    if connection_minutes is not None
+                    else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
+                )
+                earliest_onward = arrival_at_interchange + max(wait, 1)
+                entries = self._departures.get(interchange_crs)
+                if not entries:
+                    continue
+                times = self._departure_times[interchange_crs]
+                start = bisect.bisect_left(times, earliest_onward)
+                window = entries[start:] if max_onward is None else entries[start : start + max_onward]
+                for onward_departure, onward_index, onward_stop_index in window:
+                    if onward_index == schedule_index:
+                        continue
+                    onward_schedule = self.schedules[onward_index]
+                    for destination_crs, positions in self._schedule_dest_stops[onward_index].items():
+                        if destination_crs == origin_crs or destination_crs == interchange_crs:
+                            continue
+                        held = best.get(destination_crs)
+                        if held is not None and earliest_onward - departure >= held.duration:
+                            continue
+                        for later in positions[bisect.bisect_right(positions, onward_stop_index) :]:
+                            arrival = onward_schedule.stops[later].alight
+                            if arrival is None:
+                                continue
+                            if arrival < onward_departure:
+                                arrival += MINUTES_PER_DAY
+                            legs = (
+                                Leg(schedule.train_uid, origin_crs, interchange_crs, departure, arrival_at_interchange),
+                                Leg(onward_schedule.train_uid, interchange_crs, destination_crs, onward_departure, arrival),
+                            )
+                            journey = Journey(origin_crs, destination_crs, departure, arrival, legs)
+                            if held is None or _rank(journey) < _rank(held):
+                                best[destination_crs] = journey
+        return best
+
+    def _reachable(self, origin_crs: str) -> set[str]:
+        """Every station a service leaving the origin calls after it boards.
+
+        The set the direct pass walks, and the set the one-change pass can only
+        add to, so neither pass decides the question for itself.
+        """
+        found: set[str] = set()
+        for _departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
+            crs_chain = self._schedule_crs[schedule_index]
+            for later in range(stop_index + 1, len(self.schedules[schedule_index].stops)):
+                station = crs_chain[later]
+                if station is not None and station != origin_crs:
+                    found.add(station)
+        return found
