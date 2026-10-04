@@ -4334,6 +4334,33 @@ function saysMoreThan(condition, code) {
         notExercised("see above")
       );
     }
+    // The composition note reads as part of the table rather than as another
+    // paragraph above it. It is reference material about how the list was built,
+    // the same class of sentence the provenance block holds, and the gap it
+    // leaves above the first row is the reason it moved.
+    const notePlacement = await page.evaluate(() => {
+      const note = document.getElementById("modeNote");
+      const first = document.querySelector("#rows tr[data-crs]");
+      const table = document.querySelector("table");
+      if (!note || !first || !table) return null;
+      const afterFirstRow = note.getBoundingClientRect().top > first.getBoundingClientRect().top;
+      // compareDocumentPosition answers where the note is relative to the
+      // table, so a note after the table comes back as FOLLOWING.
+      const afterTable = Boolean(table.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return {
+        text: (note.textContent || "").trim(),
+        afterFirstRow,
+        afterTable,
+        top: Math.round(note.getBoundingClientRect().top),
+        firstRowTop: Math.round(first.getBoundingClientRect().top),
+      };
+    });
+    check(
+      "how the list was composed is said below the rows, not above them",
+      notePlacement && notePlacement.text.length > 0 &&
+        notePlacement.afterFirstRow && notePlacement.afterTable,
+      JSON.stringify(notePlacement)
+    );
     // The first column is a membership mark, and a membership mark reads as
     // centred rather than as a box in a left-hand gutter.
     const firstColumn = await page.evaluate(() => {

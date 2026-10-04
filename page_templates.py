@@ -902,7 +902,6 @@ __THEME_TOGGLE__
   </div>
 </section>
 
-<p class="tag" id="modeNote"></p>
 <!-- The one provenance line that stays above the table: how old the numbers
      are. Everything else about where they came from is reference material and
      sits under the table with the rest of it, where a reader goes when they
@@ -935,6 +934,11 @@ __THEME_TOGGLE__
 </table>
 <div id="empty" hidden></div>
 <p id="more" hidden></p>
+<!-- How the list was put together. It says what the rows in the table are, so
+     it reads as part of the table rather than as a note above it, and it was
+     19px between the count and the first row on a laptop and 58px on a phone
+     for a sentence a reader only wants once they have decided to read. -->
+<p class="tag" id="modeNote"></p>
 <nav id="pagination" hidden aria-label="Results pages">
   <button id="previousPage" type="button" class="toggle">Previous</button>
   <span id="pageStatus" role="status"></span>
