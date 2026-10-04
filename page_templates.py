@@ -193,21 +193,32 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
      reader who moved between them was getting the browser's own input on one
      and this one on the other.
 
-     The width is fixed, and it is fixed for one reason. `field-sizing: content`
-     made the box a function of what was typed, the field is a word in the
-     heading, and `text-wrap: balance` rebalances the heading around a word that
-     changes width: measured on a built Nottingham page at 1280px, the heading
-     stood 220px tall with an empty field and 196px from the first keystroke on,
-     so typing moved the page under the reader.
+     The width is the width of the word in the field, which is what a word in a
+     sentence is: opening the picker used to put a fixed eighteen-character box
+     where four letters had been, which is most of the line, and the sentence
+     under the heading dropped a line to make room. `field-sizing: content` is
+     what lets the browser do that sizing, because the field is a word in the
+     heading rather than a control with a size of its own.
 
-     Eighteen ch is what a completion can need -- the field only offers a name
-     that fits in it, or the typed part scrolls out of its own window -- and it
-     costs the heading nothing at any viewport down to about 420px. Below the
-     page's own 44rem breakpoint it does cost one line (108px rather than 74px
-     at 390px), so the field is fifteen ch there, which is still every name a
-     phone reader is likely to be typing. ch scales with the heading's own size
-     and the viewport share is what fits on the narrowest one. */
-  #originSearch { width: min(18ch, 90vw); max-width: min(18ch, 90vw);
+     The height is pinned, because content sizing takes the height with it: a
+     content-sized field measured 121px against the 97px the same field is with
+     a fixed width, and a taller inline box is a taller line box in the heading.
+     Measured on a built Grantham page at 1280px, the heading stood 220px with
+     the picker open and 195px with it shut. One line box plus the field's own
+     padding is exactly the 97px it was, so the heading holds one height at
+     1280, 1024 and 760px.
+
+     Eighteen ch is the cap, and it is what a completion can need -- the field
+     only offers a name that fits in it, or the typed part scrolls out of its own
+     window -- and it costs the heading nothing at any viewport down to about
+     420px. Below the page's own 44rem breakpoint it does cost one line (108px
+     rather than 74px at 390px), so the cap is fifteen ch there, which is still
+     every name a phone reader is likely to be typing. ch scales with the
+     heading's own size and the viewport share is what fits on the narrowest one.
+     A name longer than the cap takes the field to the cap and the field's own
+     line, which is the one case where the sentence is allowed to move. */
+  #originSearch { field-sizing: content; width: auto; height: calc(1lh + .1rem);
+                  max-width: min(18ch, 90vw);
                   padding: .05rem .15rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit;
                   font-weight: inherit; letter-spacing: inherit;
@@ -323,7 +334,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      inside it -- and the box did not say anything the two controls do not
      say themselves. What is left is the budget under the heading's own
      budget, then the one control that folds the rest away. */
-  .filter-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+  .filter-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 1rem auto; }
   .filter-bar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   .budget-track { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; }
   /* Capped rather than stretched: a range input at the full width of a 78rem
@@ -332,28 +343,33 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      beside it stays beside it. */
   .budget-track #budget { flex: 1 1 12rem; max-width: 34rem; min-width: 0; }
   .more-filters { display: block; }
-  .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem;
-                          width: 100%; min-height: 44px; padding: .5rem .6rem;
+  .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem;
+                          width: 100%; min-height: 44px; padding: .5rem 1rem;
                           border: 1px solid var(--line); border-radius: .45rem;
                           background: var(--field); color: var(--fg); font: inherit; text-align: left;
                           cursor: pointer; }
   .more-filters-toggle:hover { border-color: var(--accent); }
   .more-filters-label { font-weight: 700; }
   .more-filters-toggle .chevron { margin-left: auto; color: var(--accent); }
-  .more-filters[data-open="true"] .more-filters-toggle { border-color: var(--accent); }
+  .more-filters[data-open="true"] .more-filters-toggle { border-color: var(--accent);
+                                                          border-radius: .45rem .45rem 0 0; }
   .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
   .more-filters-panel { display: none; }
-  /* The panel is the one card on the page. A grid of controls floating on the
-     background reads as loose rows of words rather than as one thing that was
-     opened, and the field behind it is what every one of those controls sits
-     in, so it is the field colour they are drawn on. The gap under it belongs
-     to the panel rather than to the toggle, so closing it removes the space as
-     well as the controls. */
+  /* The panel is not a card of its own. It and the toggle above it are one
+     shape: the open toggle keeps the accent border and squares off its bottom
+     corners, and the panel carries the accent border on its other three sides
+     with no fill and no gap under it, so the two read as one thing that was
+     opened rather than as a button with a second panel below it. A grid of
+     controls floating on the background read as loose rows of words, and
+     wrapping the panel in its own tint said "card" twice for one disclosure. */
   .more-filters[data-open="true"] .more-filters-panel { display: grid;
                                                           grid-template-columns: repeat(2, minmax(0, 1fr));
                                                           gap: 1rem 2rem; align-items: start;
-                                                          background: var(--field);
-                                                          padding: 1rem; margin-bottom: 1rem; }
+                                                          /* background: var(--field); */
+                                                          padding: 1rem;
+                                                          /* margin-bottom: 1rem; */
+                                                          border: 1px solid var(--accent); border-top: 0;
+                                                          border-radius: 0 0 .45rem .45rem; }
   /* Which ticket, and whose budget, are one decision, so the two controls
      that make it share a row and the reader can see that they belong
      together. The destination chips take the full width under them,
@@ -696,7 +712,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
        that keeps the results table above this breakpoint. Below it they
        stack, as everything else on the page does. */
     .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: 1fr; }
-    #originSearch { width: min(15ch, 90vw); max-width: min(15ch, 90vw); }
+    #originSearch { max-width: min(15ch, 90vw); }
     table, tbody { display: block; }
     #shortlistDock table { display: table; }
     #shortlistDock tbody { display: table-row-group; }
@@ -2902,6 +2918,22 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
 
   changeOrigin.addEventListener("click", () => {
     setPicker(changeOrigin.getAttribute("aria-expanded") !== "true");
+  });
+  // The budget slot beside this one is a real field, so a keyboard reader tabs
+  // to it and types. This control is a button, and a button takes no keystroke:
+  // a reader tabbed to the station's name and stopped there, and the field was
+  // only reachable by pressing Enter or Space on the name first, which is two
+  // gestures for one edit. Any printable key opens the picker and carries that
+  // one character into it, which is what the budget slot does without saying so.
+  changeOrigin.addEventListener("keydown", (event) => {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    // Space is the button's own key, and it is what opens the picker on its own.
+    if (event.key.length !== 1 || event.key === " ") return;
+    event.preventDefault();
+    setPicker(true);
+    originSearch.value = event.key;
+    originSearch.setSelectionRange(1, 1);
+    originSearch.dispatchEvent(new Event("input", { bubbles: true }));
   });
   originPicker.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setPicker(false);

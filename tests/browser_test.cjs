@@ -787,6 +787,47 @@ async function checkChooser(page, url, check) {
       }
     }
   await page.fill("#originSearch", "");
+  // The field replaces a word in the heading, and it was a fixed eighteen
+  // characters wide: opening the picker put a field most of the line wide
+  // where four letters had been, and the sentence under it moved down a line
+  // to make room. It is now as wide as the word inside it, which for an empty
+  // field is the placeholder.
+  const shrinkToFit = await page.evaluate(() => {
+    const field = document.getElementById("originSearch");
+    const heading = document.getElementById("pageHeading");
+    return {
+      field: Math.round(field.getBoundingClientRect().width),
+      line: Math.round(heading.getBoundingClientRect().width),
+    };
+  });
+  check(
+    "the empty station field is as wide as the word in it rather than the line",
+    shrinkToFit.field > 0 && shrinkToFit.field < shrinkToFit.line * 0.6,
+    `${shrinkToFit.field}px field in a ${shrinkToFit.line}px line`
+  );
+  // The budget slot beside it is a real field, so a keyboard reader tabs to it
+  // and types. Where the station's name is a button instead, a button takes no
+  // keystroke: the reader tabbed to the name and stopped, and the field was
+  // only reachable by pressing Enter or Space on it first, which is two
+  // gestures for one edit.
+  const stationControl = (await page.locator("#changeOrigin").count()) ? "#changeOrigin" : "#originSearch";
+  const hadFocus = await page.evaluate((selector) => {
+    const control = document.querySelector(selector);
+    control.focus();
+    return document.activeElement === control;
+  }, stationControl);
+  await page.keyboard.type("N");
+  await page.waitForTimeout(120);
+  const typedAtName = await page.evaluate(() => {
+    const field = document.getElementById("originSearch");
+    return field && document.activeElement === field ? field.value : null;
+  });
+  check(
+    "typing at the station name starts the edit, as it does at the budget",
+    hadFocus && typedAtName !== null && typedAtName.length > 0,
+    `focus ${stationControl}, typed N -> ${JSON.stringify(typedAtName)}`
+  );
+  await page.fill("#originSearch", "");
 
   await page.setViewportSize({ width: 390, height: 720 });
   const overflow = await page.evaluate(() => {
@@ -4621,6 +4662,49 @@ function saysMoreThan(condition, code) {
       Math.abs(filterRow.ticket - filterRow.party) < 2 && filterRow.beside && filterRow.types > filterRow.party,
       JSON.stringify(filterRow)
     );
+    // The toggle and the panel it opens are one card, not a button with a
+    // second card under it: the open toggle keeps the accent border and squares
+    // off its bottom corners, and the panel takes the accent border on its
+    // other three sides with the field colour and its own bottom margin taken
+    // away, so the two join into one outlined shape.
+    const joined = await page.evaluate(() => {
+      const toggle = document.getElementById("moreFiltersToggle");
+      const panel = document.getElementById("moreFiltersPanel");
+      const t = getComputedStyle(toggle);
+      const p = getComputedStyle(panel);
+      const bar = getComputedStyle(document.querySelector(".filter-bar"));
+      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+      return {
+        toggleRadius: t.borderRadius,
+        toggleBorder: t.borderTopColor,
+        panelBorder: p.borderLeftColor,
+        panelSides: p.borderLeftWidth + " " + p.borderTopWidth + " " + p.borderRightWidth + " " + p.borderBottomWidth,
+        panelRadius: p.borderRadius,
+        panelBackground: p.backgroundColor,
+        panelMarginBottom: p.marginBottom,
+        accent,
+        quarterRem: parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.45,
+        barGap: bar.rowGap,
+        barMargin: bar.marginTop,
+        touching: Math.round(toggle.getBoundingClientRect().bottom - panel.getBoundingClientRect().top),
+      };
+    });
+    check(
+      "the open toggle and its panel join into one outlined shape",
+      joined.toggleRadius === `${joined.quarterRem}px ${joined.quarterRem}px 0px 0px` &&
+        joined.toggleBorder === joined.panelBorder &&
+        joined.panelSides === "1px 0px 1px 1px" &&
+        joined.panelRadius === `0px 0px ${joined.quarterRem}px ${joined.quarterRem}px` &&
+        joined.panelBackground === "rgba(0, 0, 0, 0)" &&
+        joined.panelMarginBottom === "0px" &&
+        Math.abs(joined.touching) <= 1,
+      JSON.stringify(joined)
+    );
+    check(
+      "the filter bar carries a rem of space above it and a rem between its rows",
+      joined.barGap === "16px" && joined.barMargin === "16px",
+      `gap ${joined.barGap}, margin-top ${joined.barMargin}`
+    );
     if (openedThePanel) await page.click("#moreFiltersToggle");
     // The three layout rules a reader scrolling ninety rows is relying on: the
     // headings stay, the action column does not widen, and the page controls
@@ -4807,16 +4891,18 @@ function saysMoreThan(condition, code) {
       return { closed, state: state.trim(), label: label.trim() };
     });
     if (filterBar) {
+      // The panel is two columns with the page's own gaps, and it carries no
+      // fill and no gap under it: the shape is drawn by the border it shares
+      // with the toggle, so a tint here would say "card" a second time.
       check(
-        "the filter panel opens as a two-column grid on the field background",
+        "the filter panel opens as a two-column grid with no fill of its own",
         filterBar.closed.display === "grid" &&
           filterBar.closed.columns.split(" ").length === 2 &&
           filterBar.closed.columns.split(" ").every((part) => parseFloat(part) > 0) &&
-          filterBar.closed.columns.split(" ").length === 2 &&
           filterBar.closed.gap === "16px 32px" &&
-          filterBar.closed.background !== "rgba(0, 0, 0, 0)" &&
+          filterBar.closed.background === "rgba(0, 0, 0, 0)" &&
           filterBar.closed.padding === "16px" &&
-          filterBar.closed.marginBottom === "16px" &&
+          filterBar.closed.marginBottom === "0px" &&
           filterBar.closed.toggleMarginBottom === "0px",
         JSON.stringify(filterBar.closed)
       );
@@ -5070,6 +5156,63 @@ function saysMoreThan(condition, code) {
       }
     }
       await page.fill("#originSearch", "");
+      // The field replaces the station's own name in the heading, and it was a
+      // fixed eighteen characters wide: clicking the name put a field most of
+      // the line wide where the name had been, and pushed the sentence under
+      // it down a line to make room. It is now as wide as the word inside it,
+      // which for an empty field is the placeholder.
+      const shrinkToFit = await page.evaluate(() => {
+        const field = document.getElementById("originSearch");
+        const heading = document.getElementById("pageHeading");
+        return {
+          field: Math.round(field.getBoundingClientRect().width),
+          line: Math.round(heading.getBoundingClientRect().width),
+        };
+      });
+      check(
+        "the empty station field is as wide as the word in it rather than the line",
+        shrinkToFit.field > 0 && shrinkToFit.field < shrinkToFit.line * 0.6,
+        `${shrinkToFit.field}px field in a ${shrinkToFit.line}px line`
+      );
+      // The budget slot beside it is a real field, so a keyboard reader tabs to
+      // it and types. The station's name is a button, and a button takes no
+      // keystroke: a keyboard reader tabbed to the name and stopped, and the
+      // field was only reachable by pressing Enter or Space on it first, which
+      // is two gestures for one edit.
+      if (await page.locator("#changeOrigin").count()) {
+        // From a fresh page, because the picker is open by now and a button the
+        // picker has hidden cannot be focused, which would make the check pass
+        // or fail on the state rather than on the key.
+        const typeProbe = await page.context().newPage();
+        let hadFocus = false;
+        let typedAtName = null;
+        try {
+          await typeProbe.goto(page.url());
+          hadFocus = await typeProbe.evaluate(() => {
+            const control = document.getElementById("changeOrigin");
+            control.focus();
+            return document.activeElement === control;
+          });
+          await typeProbe.keyboard.type("N");
+          await typeProbe.waitForTimeout(150);
+          typedAtName = await typeProbe.evaluate(() => {
+            const field = document.getElementById("originSearch");
+            return field && document.activeElement === field ? field.value : null;
+          });
+        } finally {
+          await typeProbe.close();
+        }
+        check(
+          "typing at the station name starts the edit, as it does at the budget",
+          hadFocus && typedAtName !== null && typedAtName.length > 0,
+          `focus #changeOrigin, typed N -> ${JSON.stringify(typedAtName)}`
+        );
+      } else {
+        check(
+          "typing at the station name starts the edit, as it does at the budget",
+          notExercised("this page has no other station to change to")
+        );
+      }
       // S12: the one distinction a first-time reader cannot guess, said once,
       // in the page's own terms, and only on the page where it is true.
       const firstUse = (await page.textContent("#firstUse")) || "";
