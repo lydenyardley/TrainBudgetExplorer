@@ -2681,7 +2681,7 @@ async function runPage(browser, index, given, file, body, base) {
       });
     });
     const contradicted = timed.filter(
-      (r) => r.minutes !== null && (r.time === "No service" || r.changes === "Unknown")
+      (r) => r.minutes !== null && (r.time.startsWith("No service") || r.time.startsWith("No timetable") || r.changes === "Unknown")
     );
     check(
       "no row claims no service for a destination the page's own payload times",
@@ -3664,7 +3664,7 @@ function saysMoreThan(condition, code) {
     check(
       "a row with no journey says so, and says it is unknown rather than zero",
       typed
-        ? typed.cells.some((text) => text === "No service" || text === "No service " + serviceWeekday) &&
+        ? typed.cells.some((text) => /^No (service|timetable)/.test(text)) &&
           typed.cells.includes("Unknown") &&
           typed.record.some((value) => /no service|timetable/i.test(value))
         : notExercised("every destination on this page has a journey"),
@@ -4359,7 +4359,7 @@ function saysMoreThan(condition, code) {
           minutes: null,
           changes: null,
           departures: [],
-          journeyState: "no service on " + DATA.serviceDate + (nextService ? ", and it runs on " + nextService : ", nor on the 7 days after it"),
+          journeyState: "no_service",
           nextService: nextService,
         });
       const kept = DATA.destinations;
@@ -4390,20 +4390,22 @@ function saysMoreThan(condition, code) {
       setBudget(budgetCeiling());
       currentPage = 1;
       render();
-      return out.later ? { rows: out, weekday: days[weekday] } : null;
+      const nextWeekday = days[new Date(later + "T00:00:00Z").getUTCDay()];
+      return out.later ? { rows: out, weekday: days[weekday], nextWeekday: nextWeekday } : null;
     });
     if (noService) {
       check(
         "a row with no service on the page's day but service in the week names that day",
-        noService.rows.later.time === "No service " + noService.weekday &&
+        noService.rows.later.time === "No service " + noService.weekday + ", runs " + noService.nextWeekday &&
           noService.rows.later.changes === "Unknown" &&
           /it runs on/.test(noService.rows.later.record),
         JSON.stringify({ ...noService.rows.later, weekday: noService.weekday })
       );
       check(
-        "and a row the week never reaches says only that there is no service",
-        noService.rows.never.time === "No service" &&
+        "and a row the week never reaches says which days it was checked for",
+        noService.rows.never.time === "No service " + noService.weekday + " any day this week" &&
           noService.rows.never.changes === "Unknown" &&
+          /nor on the \d+ days after it/.test(noService.rows.never.record) &&
           !/it runs on/.test(noService.rows.never.record),
         JSON.stringify(noService.rows.never)
       );
@@ -4413,7 +4415,7 @@ function saysMoreThan(condition, code) {
         notExercised("this page lists no destination to clone, or carries no service date")
       );
       check(
-        "and a row the week never reaches says only that there is no service",
+        "and a row the week never reaches says which days it was checked for",
         notExercised("see above")
       );
     }

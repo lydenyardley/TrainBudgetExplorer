@@ -606,22 +606,23 @@ class DemoPageTest(unittest.TestCase):
         # S23: three different absences, three different sentences.
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["journeyState"], "found")
-        self.assertEqual(rows["SLP"]["journeyState"], "no service in this timetable")
+        self.assertEqual(rows["SLP"]["journeyState"], "no_service")
         self.assertIn(
             "cell.textContent = missing ? noServiceText(destination) : duration(destination.minutes);",
             self.html,
         )
-        # The absence is one sentence and it names the day the page is about
-        # when the coming week reaches the station. A bare "No service" beside a
-        # station the network serves reads as a fact about the station.
-        self.assertIn(
-            'if (!destination.nextService) return "No service";',
-            self.html,
-        )
-        self.assertIn(
-            'return "No service " + (shortDay(DATA.serviceDate) || "");',
-            self.html,
-        )
+        # Every absence is worded in one table on the page, from the key, the
+        # day the build asked about and the day the row next runs. There is no
+        # other place an absence can be worded, so there is no sentence that
+        # can name no day: a bare "No service" beside a station the network
+        # serves reads as a fact about the station.
+        self.assertIn("const JOURNEY_ABSENCE = {", self.html)
+        for key in ("no_timetable", "no_service"):
+            self.assertIn(f"  {key}: (day, later) => ({{", self.html)
+        self.assertIn("function absenceText(destination, brief) {", self.html)
+        self.assertIn("  return absenceText(destination, true);", self.html)
+        # And the wording has no branch that leaves the day out.
+        self.assertNotIn('return "No service";', self.html)
         # The change count is a word rather than a digit, and the station it
         # changes at sits under it in the column whose header says Changes.
         self.assertIn("function changeCount(changes)", self.html)
@@ -633,16 +634,17 @@ class DemoPageTest(unittest.TestCase):
         prices_only = build_payload(self.fares, None, "GRN")
         self.assertEqual(
             next(row for row in prices_only["destinations"] if row["crs"] == "LCN")["journeyState"],
-            "no timetable in this build",
+            "no_timetable",
         )
         dated = build_payload(self.fares, self.timetable, "GRN", day=date(2026, 9, 28))
         # Tower Hill has a fare and no train, so the row names the week the build
         # asked as well as the day: a reader who cannot reach either date is
         # owed that, and the old sentence stopped at the day.
-        self.assertEqual(
-            next(row for row in dated["destinations"] if row["crs"] == "SLP")["journeyState"],
-            "no service on 2026-09-28, nor on the 7 days after it",
-        )
+        unserved = next(row for row in dated["destinations"] if row["crs"] == "SLP")
+        self.assertEqual(unserved["journeyState"], "no_service")
+        self.assertEqual(dated["serviceDate"], "2026-09-28")
+        self.assertEqual(dated["serviceHorizon"], 7)
+        self.assertNotIn("nextService", unserved)
 
     def test_the_page_counts_what_it_could_not_classify(self) -> None:
         # S29: an unreviewed destination is still listed, so the count of the
@@ -2824,7 +2826,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertTrue(single, "this build prices no outbound single to check")
         for row in single.values():
             self.assertNotEqual(
-                row["journeyState"], "no timetable in this build",
+                row["journeyState"], "no_timetable",
                 "a build that loaded a timetable must not say it has none",
             )
         self.assertTrue(
@@ -2847,7 +2849,7 @@ class DemoPageTest(unittest.TestCase):
         for rows in (prices_only["destinations"], prices_only["anytimeDestinations"]):
             self.assertTrue(rows)
             for row in rows:
-                self.assertEqual(row["journeyState"], "no timetable in this build")
+                self.assertEqual(row["journeyState"], "no_timetable")
 
     def test_the_standard_fare_under_a_discounted_price_is_a_step_down_the_ladder(self) -> None:
         # The price it sits under is the cell's own size, 1rem. One clear step
