@@ -61,20 +61,23 @@ class ServiceWeekTest(unittest.TestCase):
                 if row["journeyState"] == "found":
                     self.assertNotIn("nextService", row, row["crs"])
                     continue
-                self.assertIn(f"no service on {SUNDAY.isoformat()}", row["journeyState"], row["crs"])
+                # The build sends a key rather than a sentence, and the day
+                # the sentence is worded from travels beside it. So the state
+                # a row is in is checkable here, and the wording it becomes
+                # is checkable where it is written.
+                self.assertEqual(row["journeyState"], "no_service", row["crs"])
+                self.assertEqual(self.sunday["serviceDate"], SUNDAY.isoformat())
+                self.assertEqual(self.sunday["serviceHorizon"], SERVICE_WEEK_HORIZON)
                 if "nextService" in row:
                     later = date.fromisoformat(row["nextService"])
                     self.assertGreater(later, SUNDAY, row["crs"])
                     self.assertLessEqual(
                         (later - SUNDAY).days, SERVICE_WEEK_HORIZON, row["crs"]
                     )
-                    self.assertIn("it runs on", row["journeyState"], row["crs"])
                 else:
-                    self.assertIn(
-                        f"nor on the {SERVICE_WEEK_HORIZON} days after it",
-                        row["journeyState"],
-                        row["crs"],
-                    )
+                    # No day to name, and none invented: the row says so by
+                    # carrying no key at all.
+                    self.assertNotIn("nextService", row)
 
     def test_a_station_the_week_never_reaches_is_not_given_a_day(self) -> None:
         # Tower Hill has a fare and no train on any day of the synthetic week.

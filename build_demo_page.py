@@ -1344,6 +1344,23 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 # station rather than about a Sunday.
 SERVICE_WEEK_HORIZON = 7
 
+# Why a row carries no journey, as three keys rather than a sentence written at
+# three places in destination_row and again in the sweep below it. The build
+# used to word each absence where it found it, so the payload held prose that
+# the page then reworded for the cell it printed in, and two of the six
+# sentences the build could write named no day at all -- "no timetable in this
+# build" and "no service in this timetable" -- beside a station the network
+# runs, which reads as a claim about the station rather than about the date the
+# build happened to pick.
+#
+# The keys travel and the wording is composed in one place on the page, from
+# the key, the day the build asked about and the next day the row does run. A
+# row that is absent therefore cannot be worded without its day, because there
+# is nowhere else for the wording to be written.
+JOURNEY_FOUND = "found"
+JOURNEY_NO_TIMETABLE = "no_timetable"
+JOURNEY_NO_SERVICE = "no_service"
+
 # Why a fare the feed holds did not become a price, in the words an empty page
 # needs. Cheaper fares already held and fares to the origin itself are normal
 # traffic, not reasons a destination is missing, so they are never listed.
@@ -1694,19 +1711,19 @@ def build_payload(
             # One entry per leg boundary, so a one-change journey carries the
             # one interchange and a longer one carries every change station.
             "changeStations": change_stations,
-            # S23: why there is no time, in the page's own words, so a reader
-            # can tell "the feed has no service" from "this build priced fares
-            # only" instead of reading a bare dash for both.
+            # S23: why there is no time, so a reader can tell "the feed has no
+            # service" from "this build priced fares only" instead of reading a
+            # bare dash for both. A key rather than a sentence: the page words
+            # it, in one place, from this and the day.
             "journeyState": (
-                "found"
+                JOURNEY_FOUND
                 if journey
                 # The build has no timetable to read, rather than this row's
                 # list not having one: the search above is what decides it, and
                 # it is the same search that decided `journey`.
-                else "no timetable in this build"
+                else JOURNEY_NO_TIMETABLE
                 if all(db is None for db in searched)
-                else f"no service on {day.isoformat()}" if day
-                else "no service in this timetable"
+                else JOURNEY_NO_SERVICE
             ),
             "legs": [leg.train_uid for leg in journey.legs] if journey else [],
             "link": {"url": link.url, "label": link.label, "rel": link.rel},
@@ -1775,18 +1792,12 @@ def build_payload(
                 if row["journeyState"] == "found":
                     continue
                 later = served_later.get(row["crs"])
-                # Only the rows that have one carry the key, so a page whose
-                # every destination runs that day pays nothing for this.
+                # Only the rows that have one carry the day, so a page whose
+                # every destination runs that day pays nothing for this. The
+                # state does not change here: it is the same absence, and only
+                # what is known about the week around it has moved.
                 if later is not None:
                     row["nextService"] = later.isoformat()
-                    row["journeyState"] = (
-                        f"no service on {day.isoformat()}, and it runs on {later.isoformat()}"
-                    )
-                else:
-                    row["journeyState"] = (
-                        f"no service on {day.isoformat()}, nor on the "
-                        f"{SERVICE_WEEK_HORIZON} days after it"
-                    )
 
     # C08: the feed's own outward and return validity for each restriction
     # code these rows carry. Keyed by code and held once, because the rows
@@ -1957,6 +1968,10 @@ def build_payload(
         "restrictionReference": restriction_reference_note,
         "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
+        # The span the sweep asked, so the page can say which days a row with
+        # no next service was actually checked for rather than saying "no
+        # service" and leaving the window unstated.
+        "serviceHorizon": SERVICE_WEEK_HORIZON,
         "note": note,
         "attribution": attribution,
         # Where the numbers on this page came from. It sits with the prices,

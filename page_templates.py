@@ -2337,7 +2337,7 @@ function feedRecord(destination) {
   add("Restriction", destination.restrictionCode || "none");
   add("Route", destination.routeCode);
   add("Priced as", destination.quality);
-  add("Times", destination.journeyState);
+  if (destination.journeyState !== "found") add("Times", absenceText(destination, false));
   // C08: what the condition permits, in the feed's own words. It was a third
   // paragraph under the row's own, in capitals, between a sentence and a code,
   // and it was the only part of the three that could not be paraphrased without
@@ -2744,9 +2744,41 @@ function shortDay(iso) {
   if (parts.length !== 3) return "";
   return SHORT_DAYS[new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))).getUTCDay()] || "";
 }
+// Every absence a row can carry, in one table, because three surfaces print
+// one -- the Time cell, the dock's row and the copied text -- and because an
+// absence with no day on it reads as a claim about the station rather than
+// about the date. The build sends a key, the day it asked about and the day
+// the row next runs; nothing here can be worded without them.
+//
+// A cell is narrow and a copied line is not, so each entry says both: the
+// short form goes in the column and the long form in the record. They are two
+// lengths of one sentence rather than two sentences, and both name the day.
+const JOURNEY_ABSENCE = {
+  no_timetable: (day, later) => ({
+    brief: day.short ? "No timetable " + day.short : "No timetable",
+    full: day.long ? "no timetable in this build for " + day.long : "no timetable in this build",
+  }),
+  no_service: (day, later) => ({
+    brief: later
+      ? "No service " + day.short + ", runs " + shortDay(later)
+      : "No service " + (day.short ? day.short + " " : "") + "any day this week",
+    full: later
+      ? "no service on " + day.long + ", and it runs on " + humanDate(later)
+      : "no service on " + (day.long || "the day this build asked about") +
+        ", nor on the " + (DATA.serviceHorizon || 7) + " days after it",
+  }),
+};
+// The absence a row is carrying, worded from the three facts it holds. A state
+// this build does not recognise is worded as an absence, because an
+// unrecognised state is not a journey.
+function absenceText(destination, brief) {
+  const iso = DATA.serviceDate;
+  const day = { short: shortDay(iso), long: iso ? humanDate(iso) : "" };
+  const build = JOURNEY_ABSENCE[destination.journeyState] || JOURNEY_ABSENCE.no_service;
+  return build(day, destination.nextService)[brief ? "brief" : "full"];
+}
 function noServiceText(destination) {
-  if (!destination.nextService) return "No service";
-  return "No service " + (shortDay(DATA.serviceDate) || "");
+  return absenceText(destination, true);
 }
 function humanDate(iso) {
   const parts = String(iso).split("-").map(Number);
@@ -3170,12 +3202,9 @@ function shortlistText() {
     const changes = destination.changes === null || destination.changes === undefined
       ? "changes unknown"
       : destination.changes === 0 ? "no change" : destination.changes + " change(s)";
-    const time = DATA.hasJourneys
-      ? (destination.minutes === null || destination.minutes === undefined
-          ? "no service found" +
-            (destination.nextService ? ", it runs on " + humanDate(destination.nextService) : "")
-          : duration(destination.minutes))
-      : "no timetable in this build";
+    const time = destination.journeyState === "found"
+      ? duration(destination.minutes)
+      : absenceText(destination, false);
     lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
       " " + what + ", " + fareName(destination) + ", " + time + ", " + changes);
   }
