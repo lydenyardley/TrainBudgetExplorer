@@ -29,7 +29,7 @@ import shutil
 import sys
 import time
 import zipfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from collections.abc import Iterable
 from typing import NamedTuple
@@ -1338,6 +1338,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+# How far past the build's own day a row with no service is asked before it
+# is called a station the week does not reach. A week, because that is the span
+# a reader plans over and the span that makes the answer a fact about the
+# station rather than about a Sunday.
+SERVICE_WEEK_HORIZON = 7
+
 # Why a fare the feed holds did not become a price, in the words an empty page
 # needs. Cheaper fares already held and fares to the origin itself are normal
 # traffic, not reasons a destination is missing, so they are never listed.
@@ -1728,6 +1734,59 @@ def build_payload(
         destination_row(crs, one, quality="unrestricted Anytime Day Return")
         for crs, one in sorted(anytime_tickets.items(), key=lambda item: item[1].best_pence)
     ]
+
+    # S23, one step further. "No service" is a statement about the day this
+    # build asked about, not about the station: measured from Nottingham on
+    # 2026-10-04, a Sunday, Langwith, Shirebrook, Creswell and Whitwell all read
+    # "No service", and all four are direct journeys of 46 to 58 minutes on
+    # every other day of that week. The feed calls at every one of them, so
+    # nothing about them is missing from the network -- only from that Sunday.
+    # A reader cannot reach the day the build happened to pick, so a row with no
+    # service on it is asked the week as well and carries the day it does run.
+    #
+    # The week is walked once, outermost, because best_journey() rebuilds its
+    # index whenever the day changes: one index build per day whatever the number
+    # of rows, rather than one per row. The sweep runs only when the page has a
+    # row that needs it, so a build on a day the network runs normally pays
+    # nothing for it. Wirksworth is the other kind of row: no service on any day
+    # of the week, so it keeps saying so and gains no key.
+    collections = (destinations, single_destinations, anytime_destinations)
+    unserved = sorted(
+        {
+            row["crs"]
+            for collection in collections
+            for row in collection
+            if row["journeyState"] != "found"
+        }
+    )
+    if unserved and timetable is not None and day is not None:
+        served_later: dict[str, date] = {}
+        for offset in range(1, SERVICE_WEEK_HORIZON + 1):
+            if len(served_later) == len(unserved):
+                break
+            later = day + timedelta(days=offset)
+            for crs in unserved:
+                if crs in served_later:
+                    continue
+                if timetable.best_journey(origin.crs, crs, max_changes=max_changes, day=later):
+                    served_later[crs] = later
+        for collection in collections:
+            for row in collection:
+                if row["journeyState"] == "found":
+                    continue
+                later = served_later.get(row["crs"])
+                # Only the rows that have one carry the key, so a page whose
+                # every destination runs that day pays nothing for this.
+                if later is not None:
+                    row["nextService"] = later.isoformat()
+                    row["journeyState"] = (
+                        f"no service on {day.isoformat()}, and it runs on {later.isoformat()}"
+                    )
+                else:
+                    row["journeyState"] = (
+                        f"no service on {day.isoformat()}, nor on the "
+                        f"{SERVICE_WEEK_HORIZON} days after it"
+                    )
 
     # C08: the feed's own outward and return validity for each restriction
     # code these rows carry. Keyed by code and held once, because the rows

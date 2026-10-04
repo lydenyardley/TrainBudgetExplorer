@@ -3565,13 +3565,27 @@ function saysMoreThan(condition, code) {
         label: toggle ? toggle.textContent : "",
       };
     });
+    // A no-service row carries the day the page is about when the week reaches
+    // the station on another day, so the cell is either the bare words or those
+    // words and a weekday. Both are checked against the page's own date rather
+    // than against a fixed phrase.
+    // The cell is the bare words, or those words and the weekday the page is
+    // about, so the allowance is the page's own date rather than a fixed
+    // phrase. A row that names a day it runs on is checked against that date
+    // below rather than accepted here on the strength of a prefix.
+    const serviceWeekday = await page.evaluate(() => {
+      if (!DATA.serviceDate) return "";
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      return days[new Date(DATA.serviceDate + "T00:00:00Z").getUTCDay()] || "";
+    });
     check(
       "a row with no journey says so, and says it is unknown rather than zero",
       typed
-        ? typed.cells.includes("No service") && typed.cells.includes("Unknown") &&
+        ? typed.cells.some((text) => text === "No service" || text === "No service " + serviceWeekday) &&
+          typed.cells.includes("Unknown") &&
           typed.record.some((value) => /no service|timetable/i.test(value))
         : notExercised("every destination on this page has a journey"),
-      JSON.stringify(typed)
+      JSON.stringify({ ...typed, serviceWeekday })
     );
 
     // S20: counts on the chips, the union stated, and a way back to All.
@@ -4240,6 +4254,86 @@ function saysMoreThan(condition, code) {
       dockControls.bar === 0 && !dockControls.barAfterCount,
       JSON.stringify(dockControls)
     );
+    // A row with no service is a fact about the day the page is about. The
+    // suite's fixture is built without a date, so it has no row of the shape
+    // the sweep writes. Both shapes are put into the page's own data under
+    // codes it has never seen -- the cheapest list is rebuilt from the three
+    // ticket lists on every render, and a code it already holds would be
+    // replaced rather than shown.
+    const noService = await page.evaluate(() => {
+      const source = (DATA.destinations || [])[0];
+      if (!source || !DATA.serviceDate) return null;
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const built = new Date(DATA.serviceDate + "T00:00:00Z");
+      const weekday = built.getUTCDay();
+      const later = new Date(built.getTime() + ((8 - weekday) % 7 || 7) * 86400000)
+        .toISOString()
+        .slice(0, 10);
+      const shape = (crs, name, nextService) =>
+        Object.assign({}, source, {
+          crs: crs,
+          name: name,
+          minutes: null,
+          changes: null,
+          departures: [],
+          journeyState: "no service on " + DATA.serviceDate + (nextService ? ", and it runs on " + nextService : ", nor on the 7 days after it"),
+          nextService: nextService,
+        });
+      const kept = DATA.destinations;
+      DATA.destinations = [
+        shape("ZSVC", "SERVICE LATER", later),
+        shape("ZNRV", "SERVICE NEVER", undefined),
+      ];
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      const read = (crs) => {
+        const row = document.querySelector('#rows tr[data-crs="' + crs + '"]');
+        if (!row) return null;
+        const cells = Array.from(row.children).map((td) => td.textContent.trim());
+        const toggle = row.querySelector(".toggle[aria-expanded=false]");
+        if (toggle) toggle.click();
+        const detail =
+          row.nextElementSibling && row.nextElementSibling.classList.contains("detail")
+            ? row.nextElementSibling
+            : null;
+        const record = detail
+          ? Array.from(detail.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent.trim())
+          : [];
+        return { time: cells[3], changes: cells[4], record: record.join(" | ") };
+      };
+      const out = { later: read("ZSVC"), never: read("ZNRV") };
+      DATA.destinations = kept;
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      return out.later ? { rows: out, weekday: days[weekday] } : null;
+    });
+    if (noService) {
+      check(
+        "a row with no service on the page's day but service in the week names that day",
+        noService.rows.later.time === "No service " + noService.weekday &&
+          noService.rows.later.changes === "Unknown" &&
+          /it runs on/.test(noService.rows.later.record),
+        JSON.stringify({ ...noService.rows.later, weekday: noService.weekday })
+      );
+      check(
+        "and a row the week never reaches says only that there is no service",
+        noService.rows.never.time === "No service" &&
+          noService.rows.never.changes === "Unknown" &&
+          !/it runs on/.test(noService.rows.never.record),
+        JSON.stringify(noService.rows.never)
+      );
+    } else {
+      check(
+        "a row with no service on the page's day but service in the week names that day",
+        notExercised("this page lists no destination to clone, or carries no service date")
+      );
+      check(
+        "and a row the week never reaches says only that there is no service",
+        notExercised("see above")
+      );
+    }
     // The first column is a membership mark, and a membership mark reads as
     // centred rather than as a box in a left-hand gutter.
     const firstColumn = await page.evaluate(() => {
