@@ -2117,7 +2117,7 @@ function journeyCell(destination, column) {
   cell.className = missing ? "num missing" : "num";
   cell.dataset.label = column;
   if (column === "Time") {
-    cell.textContent = missing ? "No service" : duration(destination.minutes);
+    cell.textContent = missing ? noServiceText(destination) : duration(destination.minutes);
     return cell;
   }
   const count = document.createElement("span");
@@ -2713,6 +2713,21 @@ const MONTHS = ["January", "February", "March", "April", "May", "June",
 // Formatted from the ISO string by hand rather than through Date: new
 // Date("2026-10-05") is parsed as UTC midnight, which prints as the 4th for any
 // reader behind UTC. A copied date that is off by a day is worse than none.
+// A row with no service says which day the page is about. The reader
+// cannot reach the day the build happened to pick, so a bare "No service"
+// beside a station the network serves reads as a fact about the station rather
+// than about the date. A station with no service in the coming week has no other
+// day to be named, and keeps the bare words.
+const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function shortDay(iso) {
+  const parts = String(iso || "").split("-");
+  if (parts.length !== 3) return "";
+  return SHORT_DAYS[new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))).getUTCDay()] || "";
+}
+function noServiceText(destination) {
+  if (!destination.nextService) return "No service";
+  return "No service " + (shortDay(DATA.serviceDate) || "");
+}
 function humanDate(iso) {
   const parts = String(iso).split("-").map(Number);
   return parts[2] + " " + MONTHS[parts[1] - 1] + " " + parts[0];
@@ -3029,7 +3044,7 @@ function dockRow(destination) {
   price.textContent = money(priceOf(destination));
   const time = document.createElement("td");
   time.className = missing ? "num missing" : "num";
-  time.textContent = missing ? "No service" : duration(destination.minutes);
+  time.textContent = missing ? noServiceText(destination) : duration(destination.minutes);
   const changes = document.createElement("td");
   changes.className = missing ? "num missing" : "num";
   changes.textContent = missing ? "Unknown" : changeCount(destination.changes);
@@ -3120,7 +3135,10 @@ function shortlistText() {
       ? "changes unknown"
       : destination.changes === 0 ? "no change" : destination.changes + " change(s)";
     const time = DATA.hasJourneys
-      ? (destination.minutes === null || destination.minutes === undefined ? "no service found" : duration(destination.minutes))
+      ? (destination.minutes === null || destination.minutes === undefined
+          ? "no service found" +
+            (destination.nextService ? ", it runs on " + humanDate(destination.nextService) : "")
+          : duration(destination.minutes))
       : "no timetable in this build";
     lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
       " " + what + ", " + fareName(destination) + ", " + time + ", " + changes);

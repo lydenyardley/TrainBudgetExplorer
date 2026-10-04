@@ -607,7 +607,21 @@ class DemoPageTest(unittest.TestCase):
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["journeyState"], "found")
         self.assertEqual(rows["SLP"]["journeyState"], "no service in this timetable")
-        self.assertIn('cell.textContent = missing ? "No service" : duration(destination.minutes);', self.html)
+        self.assertIn(
+            "cell.textContent = missing ? noServiceText(destination) : duration(destination.minutes);",
+            self.html,
+        )
+        # The absence is one sentence and it names the day the page is about
+        # when the coming week reaches the station. A bare "No service" beside a
+        # station the network serves reads as a fact about the station.
+        self.assertIn(
+            'if (!destination.nextService) return "No service";',
+            self.html,
+        )
+        self.assertIn(
+            'return "No service " + (shortDay(DATA.serviceDate) || "");',
+            self.html,
+        )
         # The change count is a word rather than a digit, and the station it
         # changes at sits under it in the column whose header says Changes.
         self.assertIn("function changeCount(changes)", self.html)
@@ -622,9 +636,12 @@ class DemoPageTest(unittest.TestCase):
             "no timetable in this build",
         )
         dated = build_payload(self.fares, self.timetable, "GRN", day=date(2026, 9, 28))
+        # Tower Hill has a fare and no train, so the row names the week the build
+        # asked as well as the day: a reader who cannot reach either date is
+        # owed that, and the old sentence stopped at the day.
         self.assertEqual(
             next(row for row in dated["destinations"] if row["crs"] == "SLP")["journeyState"],
-            "no service on 2026-09-28",
+            "no service on 2026-09-28, nor on the 7 days after it",
         )
 
     def test_the_page_counts_what_it_could_not_classify(self) -> None:
