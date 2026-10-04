@@ -898,9 +898,16 @@ class TimetableDb:
         best: Journey | None = None
         for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
             schedule = self.schedules[schedule_index]
+            # The same stop crs the one-change search reads from the index,
+            # rather than resolving the tiploc again: this resolved 6,330 times
+            # per destination over ten destinations in a profile of the
+            # Nottingham sweep, which is 16% of the whole search spent
+            # re-answering a question _ensure_indexes had already answered
+            # once per schedule.
+            crs_chain = self._schedule_crs[schedule_index]
             for later in range(stop_index + 1, len(schedule.stops)):
                 stop = schedule.stops[later]
-                if self.crs_for_tiploc(stop.tiploc) != destination_crs:
+                if crs_chain[later] != destination_crs:
                     continue
                 arrival = stop.alight
                 if arrival is None:
