@@ -637,6 +637,113 @@ async function checkChooser(page, url, check) {
     wide.overflow <= 0,
     `${wide.field}px field, ${wide.overflow}px of sideways scroll`
   );
+
+    // The completion is a word inside the field, and the field is a word inside
+    // the heading, so three keys matter: Backspace to take the suggestion back,
+    // and Tab or Enter to go to the place it names. The prefix comes from the
+    // page's own station list rather than from a name the fixture happened to
+    // carry, so a build of one station and a build of three thousand are asked
+    // the same question.
+    const completable = await page.evaluate(() => {
+      const list = (typeof STATIONS !== "undefined" ? STATIONS : DATA.stations) || [];
+      return list
+        .map((station) => station.name)
+        .filter((name) => name.length >= 8)
+        .sort((a, b) => a.length - b.length)[0] || "";
+    });
+    const canComplete = completable.length >= 4;
+    const prefix = completable.slice(0, 3);
+    const headingHeight = () =>
+      page.evaluate(() => {
+        const heading = document.getElementById("pageHeading");
+        return heading ? Math.round(heading.getBoundingClientRect().height) : -1;
+      });
+    await page.fill("#originSearch", "");
+    const heights = [await headingHeight()];
+    if (canComplete) {
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      const completed = await page.inputValue("#originSearch");
+      heights.push(await headingHeight());
+      // The completion is a suggestion, so it is written with its tail
+      // selected. Backspace has to remove what was suggested, not consume one
+      // character of the name the reader typed: it re-applied the suggestion to
+      // its own undo, so the field came back byte-identical and the key looked
+      // dead.
+      await page.keyboard.press("Backspace");
+      const taken = await page.inputValue("#originSearch");
+      check(
+        "Backspace takes the completion back",
+        completed.toLowerCase().startsWith(prefix.toLowerCase()) && taken === prefix,
+        `${prefix} -> "${completed}" -> Backspace -> "${taken}"`
+      );
+      await page.keyboard.press("Backspace");
+      const shorter = await page.inputValue("#originSearch");
+      check(
+        "and Backspace again deletes a character of what was typed",
+        shorter === prefix.slice(0, -1),
+        `"${taken}" -> Backspace -> "${shorter}"`
+      );
+      // The field is a word in a balanced heading. A field sized to its content
+      // changes that word's width on every keystroke, and the heading
+      // rebalances around it: measured at 1280px, 220px tall when empty and
+      // 196px from the first keystroke on.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      for (const value of ["", "N", "No", "Not", prefix, completable]) {
+        await page.fill("#originSearch", value);
+        heights.push(await headingHeight());
+      }
+      check(
+        "the heading does not change height as the field is typed into",
+        heights.every((height) => height === heights[0]) && heights[0] > 0,
+        heights.join("px, ") + "px"
+      );
+      // Accepting a completion is choosing a place, so it goes there.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      const wanted = await page.evaluate(() => {
+        const list = (typeof STATIONS !== "undefined" ? STATIONS : DATA.stations) || [];
+        const typed = document.getElementById("originSearch").value.trim().toLowerCase();
+        const station = list.find((s) => s.name.toLowerCase() === typed);
+        return station ? station.href : null;
+      });
+      const before = page.url();
+      const beforePath = new URL(before).pathname;
+      const probe = await page.context().newPage();
+      let landed = "";
+      try {
+        await probe.goto(before);
+        if (await probe.locator("#changeOrigin").count()) await probe.click("#changeOrigin");
+        await probe.waitForSelector("#originSearch");
+        await probe.focus("#originSearch");
+        await probe.type("#originSearch", prefix, { delay: 10 });
+        const moved = probe
+          .waitForURL((url) => new URL(url).pathname !== beforePath, { timeout: 5000 })
+          .catch(() => null);
+        await probe.keyboard.press("Tab");
+        await moved;
+        landed = probe.url();
+      } finally {
+        await probe.close();
+      }
+      check(
+        "Tab on a completion goes to that station's page",
+        wanted !== null && landed && new URL(landed, before).pathname === new URL(wanted, before).pathname,
+        `${completable} -> ${landed || "(no navigation)"} (wanted ${wanted})`
+      );
+      await page.fill("#originSearch", "");
+    } else {
+      for (const name of [
+        "Backspace takes the completion back",
+        "and Backspace again deletes a character of what was typed",
+        "the heading does not change height as the field is typed into",
+        "Tab on a completion goes to that station's page",
+      ]) {
+        check(name, notExercised("no station on this page has a name long enough to complete"));
+      }
+    }
   await page.fill("#originSearch", "");
 
   await page.setViewportSize({ width: 390, height: 720 });
@@ -1344,7 +1451,7 @@ async function runPage(browser, index, given, file, body, base) {
         ? notExercised("this page shows no count and no first row")
         : measure.countToFirstRow <= 100 &&
           measure.afterProvenance.every((id) =>
-            ["dateNote", "linkTerms", "shortlistBar", "summary"].includes(id)
+            ["dateNote", "linkTerms", "summary"].includes(id)
           ),
       `count to first row ${measure.countToFirstRow}px; after the provenance: ${measure.afterProvenance.join(", ") || "nothing"}`
     );
@@ -1717,9 +1824,15 @@ async function runPage(browser, index, given, file, body, base) {
       const checked = document.querySelector('input[name="ticketMode"]:checked');
       return (checked ? checked.closest("label").textContent : "").trim();
     });
+    // Labelled, so a reader on a phone who cannot open the panel can still
+    // tell which of the three decisions has been made.
     check(
       "and the folded plate says what is narrowed",
-      folded.state.startsWith(plateMode) && plateMode.length > 2 && /adult/.test(folded.state),
+      /^Ticket: /.test(folded.state) &&
+        folded.state.includes(plateMode) &&
+        plateMode.length > 2 &&
+        /Travellers: .*adult/.test(folded.state) &&
+        /Destination: /.test(folded.state),
       `${JSON.stringify(folded.state)} in ${plateMode}`
     );
     check("the budget stays out of the fold", folded.budgetVisible, JSON.stringify(folded));
@@ -3858,20 +3971,21 @@ function saysMoreThan(condition, code) {
       };
       const first = rows[0];
       const second = rows[1];
-      const facts = () => Array.from(document.querySelectorAll("#shortlistList li")).map((li) => li.textContent);
+      const facts = () =>
+        Array.from(document.querySelectorAll("#shortlistDockList tr")).map((tr) => tr.textContent);
       const saved = [];
       add(first);
       saved.push(facts());
       add(second);
       const both = facts();
-      // What the strip offers once both places are on it, and the order the
-      // chips are in. Read here, before the mode dance below changes what the
-      // page is showing: a check written at the end of the block would be
-      // reading a page the reader never saw at that point.
+      // What the dock offers once both places are on it, and the order they
+      // are in. Read here, before the mode dance below changes what the page
+      // is showing: a check written at the end of the block would be reading a
+      // page the reader never saw at that point.
       const chips = () =>
-        Array.from(document.querySelectorAll("#shortlistList li")).map((li) => ({
-          text: li.textContent,
-          title: (li.querySelector(".shortlist-name") || {}).title || "",
+        Array.from(document.querySelectorAll("#shortlistDockList tr")).map((tr) => ({
+          text: tr.textContent,
+          title: (tr.querySelector(".shortlist-dock-name") || {}).title || "",
         }));
       // Every rendered row's box against the list itself, in both directions:
       // a box ticked for a place that is not held is a row claiming something
@@ -3886,17 +4000,17 @@ function saysMoreThan(condition, code) {
           : "",
       }));
       const held = shortlistCodes.slice();
-      // The chip is a place and its price. The place and the price are read
-      // off the table row the chip came from, and the order from the strip
-      // itself, so this says the chip agrees with the row rather than that
-      // the page can compute its own number.
-      const chipsAgainstRows = Array.from(document.querySelectorAll("#shortlistList li")).map((li) => {
-        const name = (li.querySelector(".shortlist-name") || {}).textContent || "";
+      // The dock's row is a place and its price. The place and the price are
+      // read off the table row it came from, and the order from the dock
+      // itself, so this says the row agrees with the table rather than that the
+      // page can compute its own number.
+      const chipsAgainstRows = Array.from(document.querySelectorAll("#shortlistDockList tr")).map((tr) => {
+        const name = (tr.querySelector(".shortlist-dock-name") || {}).textContent || "";
         const row = Array.from(document.querySelectorAll("#rows tr[data-crs]"))
           .find((r) => (r.querySelector(".station-name") || {}).textContent === name);
         return {
-          text: li.textContent,
-          title: (li.querySelector(".shortlist-name") || {}).title || "",
+          text: tr.textContent,
+          title: (tr.querySelector(".shortlist-dock-name") || {}).title || "",
           row: row
             ? {
               name,
@@ -3984,10 +4098,20 @@ function saysMoreThan(condition, code) {
         followed && followed.texts.every((text) => /£\d/.test(text)),
         JSON.stringify(shortlist.byMode)
       );
+      // Said by the page's own copy of the list, which is the text the reader
+      // hands to somebody, rather than by a sentence that used to sit above the
+      // table and has gone with the rest of that section.
+      const shared = await page.evaluate(() => ({
+        text: typeof shortlistText === "function" ? shortlistText() : "",
+        share: (document.getElementById("shortlistShare") || {}).textContent || "",
+        origin: DATA.origin.name,
+      }));
       check(
         "and the list is a list of places, not a booking",
-        /not a booking/i.test(await page.textContent("#shortlistBar")),
-        (await page.textContent("#shortlistEmpty")) || ""
+        /not a booking/i.test(shared.text) &&
+          shared.share.includes("Shortlist of 2 places") &&
+          shared.share.includes(shared.origin),
+        JSON.stringify(shared).slice(0, 300)
       );
       check(
         "every row carries a box, and a held place's box is ticked",
@@ -4004,7 +4128,7 @@ function saysMoreThan(condition, code) {
       check(
         "and a box is named for the place it holds",
         shortlist.boxes.every(
-          (row) => /^Hold .+ in the shortlist$/.test(row.label) && row.label.includes(row.name)
+          (row) => /^List .+ in the shortlist$/.test(row.label) && row.label.includes(row.name)
         ),
         JSON.stringify(shortlist.boxes.slice(0, 4))
       );
@@ -4026,7 +4150,7 @@ function saysMoreThan(condition, code) {
       );
       // A shared link is the whole point, so it is opened, not assumed.
       await page.goto(shortlist.address);
-      const restored = await page.evaluate(() => Array.from(document.querySelectorAll("#shortlistList li")).length);
+      const restored = await page.evaluate(() => Array.from(document.querySelectorAll("#shortlistDockList tr")).length);
       check("a refresh brings the shortlist back", restored === 2, `${restored} of 2`);
       const copied = await page.evaluate(() => {
         document.getElementById("shortlistCopy").click();
@@ -4054,12 +4178,12 @@ function saysMoreThan(condition, code) {
         text
       );
       await open(facts.affordable);
-      await page.evaluate(() => { document.getElementById("shortlistClear").click(); });
+      await page.evaluate(() => { document.getElementById("shortlistDockClear").click(); });
       check(
         "one control clears it",
-        (await page.evaluate(() => document.querySelectorAll("#shortlistList li").length)) === 0 &&
+        (await page.evaluate(() => document.querySelectorAll("#shortlistDockList tr").length)) === 0 &&
           !(await page.evaluate(() => window.location.search.includes("short="))),
-        (await page.evaluate(() => document.getElementById("shortlistEmpty").textContent)) || ""
+        (await page.evaluate(() => document.getElementById("shortlistDockCount").textContent)) || ""
       );
     }
 
@@ -4081,6 +4205,56 @@ function saysMoreThan(condition, code) {
       "the shortlist dock is on the page and shows nothing while nothing is shortlisted",
       dockAtRest.exists === true && dockAtRest.codes === 0 && dockAtRest.hidden === true,
       JSON.stringify(dockAtRest)
+    );
+    // Every shortlist control in one place. Copy and Share were in a section
+    // between the count and the table while the rows were in the dock at the
+    // foot of the screen, so a reader comparing two places had to look in two
+    // places to hand the list to somebody.
+    const dockControls = await page.evaluate(() => {
+      const dock = document.getElementById("shortlistDock");
+      const inside = (id) => Boolean(dock && dock.contains(document.getElementById(id)));
+      const copy = document.getElementById("shortlistCopy");
+      const share = document.getElementById("shortlistShareBox");
+      const bar = document.getElementById("shortlistBar");
+      return {
+        copy: inside("shortlistCopy"),
+        share: inside("shortlistShareBox"),
+        clear: inside("shortlistDockClear"),
+        copyWord: copy ? copy.textContent.trim() : "",
+        shareWord: share ? (share.querySelector("summary") || {}).textContent || "" : "",
+        bar: bar ? 1 : 0,
+        barAfterCount: bar
+          ? Boolean(bar.compareDocumentPosition(document.getElementById("summary")) & Node.DOCUMENT_POSITION_FOLLOWING)
+          : false,
+        boxInShare: Boolean(share && share.contains(document.getElementById("shortlistBox"))),
+      };
+    });
+    check(
+      "Copy, Share and Clear are all in the pinned dock",
+      dockControls.copy && dockControls.share && dockControls.clear && dockControls.boxInShare &&
+        /^copy$/i.test(dockControls.copyWord) && /^share$/i.test(dockControls.shareWord),
+      JSON.stringify(dockControls)
+    );
+    check(
+      "and there is no shortlist section left between the count and the table",
+      dockControls.bar === 0 && !dockControls.barAfterCount,
+      JSON.stringify(dockControls)
+    );
+    // The first column is a membership mark, and a membership mark reads as
+    // centred rather than as a box in a left-hand gutter.
+    const firstColumn = await page.evaluate(() => {
+      const th = document.querySelector("thead th.hold");
+      const td = document.querySelector("#rows td.hold");
+      return {
+        head: th ? th.textContent.trim() : null,
+        headAlign: th ? getComputedStyle(th).textAlign : null,
+        cellAlign: td ? getComputedStyle(td).textAlign : null,
+      };
+    });
+    check(
+      "the first column is named List, and centred",
+      firstColumn.head === "List" && firstColumn.headAlign === "center" && firstColumn.cellAlign === "center",
+      JSON.stringify(firstColumn)
     );
     const dock = await page.evaluate(() => {
       setBudget(budgetCeiling());
@@ -4209,7 +4383,7 @@ function saysMoreThan(condition, code) {
         // page showed two places held above a list of none.
         ticked: Array.from(document.querySelectorAll("#rows input.hold-box"))
           .filter((box) => box.checked).length,
-        listed: document.querySelectorAll("#shortlistList li").length,
+        listed: document.querySelectorAll("#shortlistDockList tr").length,
       }));
       check(
         "the dock's own Clear empties it and takes the strip off the screen",
@@ -4443,6 +4617,66 @@ function saysMoreThan(condition, code) {
     });
     check("the budget is inline in the large heading", layout.budgetLeads);
     check("party and destination filters share the horizontal bar", layout.secondaryHoldsPartyAndFilter);
+    // The disclosure's own name and what it says is on. A folded panel whose
+    // summary line reads as a sentence rather than as three labelled facts
+    // leaves a reader on a phone unable to tell which of the three is narrowed.
+    const filterBar = await page.evaluate(() => {
+      const more = document.getElementById("moreFilters");
+      const toggle = document.getElementById("moreFiltersToggle");
+      const panel = document.getElementById("moreFiltersPanel");
+      if (!more || !toggle || !panel) return null;
+      const wasOpen = more.dataset.open === "true";
+      if (!wasOpen) document.getElementById("moreFiltersToggle").click();
+      const openStyle = getComputedStyle(panel);
+      const toggleStyle = getComputedStyle(toggle);
+      const closed = {
+        display: openStyle.display,
+        columns: openStyle.gridTemplateColumns,
+        gap: openStyle.gap,
+        background: openStyle.backgroundColor,
+        padding: openStyle.paddingTop,
+        marginBottom: openStyle.marginBottom,
+        toggleMarginBottom: toggleStyle.marginBottom,
+      };
+      const state = document.getElementById("filterState").textContent;
+      const label = (toggle.querySelector(".more-filters-label") || {}).textContent || "";
+      if (!wasOpen) document.getElementById("moreFiltersToggle").click();
+      return { closed, state: state.trim(), label: label.trim() };
+    });
+    if (filterBar) {
+      check(
+        "the filter panel opens as a two-column grid on the field background",
+        filterBar.closed.display === "grid" &&
+          filterBar.closed.columns.split(" ").length === 2 &&
+          filterBar.closed.columns.split(" ").every((part) => parseFloat(part) > 0) &&
+          filterBar.closed.columns.split(" ").length === 2 &&
+          filterBar.closed.gap === "16px 32px" &&
+          filterBar.closed.background !== "rgba(0, 0, 0, 0)" &&
+          filterBar.closed.padding === "16px" &&
+          filterBar.closed.marginBottom === "16px" &&
+          filterBar.closed.toggleMarginBottom === "0px",
+        JSON.stringify(filterBar.closed)
+      );
+      check(
+        "the disclosure is named Filter this list",
+        /^filter this list$/i.test(filterBar.label),
+        JSON.stringify(filterBar.label)
+      );
+      check(
+        "the summary names what is narrowed, counts the railcard and says All",
+        /^Ticket: Cheapest of any type \u00b7 Travellers: One adult, 0 railcard \u00b7 Destination: All$/.test(
+          filterBar.state
+        ),
+        JSON.stringify(filterBar.state)
+      );
+    } else {
+      check(
+        "the filter panel opens as a two-column grid on the field background",
+        notExercised("this page carries no filter bar")
+      );
+      check("the disclosure is named Filter this list", notExercised("see above"));
+      check("the summary names what is narrowed, counts the railcard and says All", notExercised("see above"));
+    }
     check("the copy action carries a 44px target", layout.copyHit >= 44, layout.copyHit + "px");
     check("the buy link carries a 44px target", layout.buyHit >= 44, layout.buyHit + "px");
 
@@ -4523,6 +4757,113 @@ function saysMoreThan(condition, code) {
           byFragment.every((row) => row.code.toLowerCase().startsWith(fragment) || row.name.toLowerCase().includes(fragment)),
         `${fragment} -> ${byFragment.map((row) => row.code).join(" ") || "nothing"}`
       );
+
+    // The completion is a word inside the field, and the field is a word inside
+    // the heading, so three keys matter: Backspace to take the suggestion back,
+    // and Tab or Enter to go to the place it names. The prefix comes from the
+    // page's own station list rather than from a name the fixture happened to
+    // carry, so a build of one station and a build of three thousand are asked
+    // the same question.
+    const completable = await page.evaluate(() => {
+      const list = (typeof STATIONS !== "undefined" ? STATIONS : DATA.stations) || [];
+      return list
+        .map((station) => station.name)
+        .filter((name) => name.length >= 8)
+        .sort((a, b) => a.length - b.length)[0] || "";
+    });
+    const canComplete = completable.length >= 4;
+    const prefix = completable.slice(0, 3);
+    const headingHeight = () =>
+      page.evaluate(() => {
+        const heading = document.getElementById("pageHeading");
+        return heading ? Math.round(heading.getBoundingClientRect().height) : -1;
+      });
+    await page.fill("#originSearch", "");
+    const heights = [await headingHeight()];
+    if (canComplete) {
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      const completed = await page.inputValue("#originSearch");
+      heights.push(await headingHeight());
+      // The completion is a suggestion, so it is written with its tail
+      // selected. Backspace has to remove what was suggested, not consume one
+      // character of the name the reader typed: it re-applied the suggestion to
+      // its own undo, so the field came back byte-identical and the key looked
+      // dead.
+      await page.keyboard.press("Backspace");
+      const taken = await page.inputValue("#originSearch");
+      check(
+        "Backspace takes the completion back",
+        completed.toLowerCase().startsWith(prefix.toLowerCase()) && taken === prefix,
+        `${prefix} -> "${completed}" -> Backspace -> "${taken}"`
+      );
+      await page.keyboard.press("Backspace");
+      const shorter = await page.inputValue("#originSearch");
+      check(
+        "and Backspace again deletes a character of what was typed",
+        shorter === prefix.slice(0, -1),
+        `"${taken}" -> Backspace -> "${shorter}"`
+      );
+      // The field is a word in a balanced heading. A field sized to its content
+      // changes that word's width on every keystroke, and the heading
+      // rebalances around it: measured at 1280px, 220px tall when empty and
+      // 196px from the first keystroke on.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      for (const value of ["", "N", "No", "Not", prefix, completable]) {
+        await page.fill("#originSearch", value);
+        heights.push(await headingHeight());
+      }
+      check(
+        "the heading does not change height as the field is typed into",
+        heights.every((height) => height === heights[0]) && heights[0] > 0,
+        heights.join("px, ") + "px"
+      );
+      // Accepting a completion is choosing a place, so it goes there.
+      await page.fill("#originSearch", "");
+      await page.focus("#originSearch");
+      await page.type("#originSearch", prefix, { delay: 10 });
+      const wanted = await page.evaluate(() => {
+        const list = (typeof STATIONS !== "undefined" ? STATIONS : DATA.stations) || [];
+        const typed = document.getElementById("originSearch").value.trim().toLowerCase();
+        const station = list.find((s) => s.name.toLowerCase() === typed);
+        return station ? station.href : null;
+      });
+      const before = page.url();
+      const beforePath = new URL(before).pathname;
+      const probe = await page.context().newPage();
+      let landed = "";
+      try {
+        await probe.goto(before);
+        if (await probe.locator("#changeOrigin").count()) await probe.click("#changeOrigin");
+        await probe.waitForSelector("#originSearch");
+        await probe.focus("#originSearch");
+        await probe.type("#originSearch", prefix, { delay: 10 });
+        const moved = probe
+          .waitForURL((url) => new URL(url).pathname !== beforePath, { timeout: 5000 })
+          .catch(() => null);
+        await probe.keyboard.press("Tab");
+        await moved;
+        landed = probe.url();
+      } finally {
+        await probe.close();
+      }
+      check(
+        "Tab on a completion goes to that station's page",
+        wanted !== null && landed && new URL(landed, before).pathname === new URL(wanted, before).pathname,
+        `${completable} -> ${landed || "(no navigation)"} (wanted ${wanted})`
+      );
+      await page.fill("#originSearch", "");
+    } else {
+      for (const name of [
+        "Backspace takes the completion back",
+        "and Backspace again deletes a character of what was typed",
+        "the heading does not change height as the field is typed into",
+        "Tab on a completion goes to that station's page",
+      ]) {
+        check(name, notExercised("no station on this page has a name long enough to complete"));
+      }
+    }
       await page.fill("#originSearch", "");
       // S12: the one distinction a first-time reader cannot guess, said once,
       // in the page's own terms, and only on the page where it is true.
@@ -4585,16 +4926,6 @@ function saysMoreThan(condition, code) {
             typed.end === firstStation.name.length,
           JSON.stringify({ letters, station: firstStation.name, typed })
         );
-        await page.keyboard.press("Tab");
-        const accepted = await page.evaluate(() => {
-          const field = document.getElementById("originSearch");
-          return { value: field.value, start: field.selectionStart, end: field.selectionEnd };
-        });
-        check(
-          "and Tab accepts the rest of the name as text",
-          accepted.value === firstStation.name && accepted.start === accepted.end,
-          JSON.stringify(accepted)
-        );
         // Where the list is drawn, measured against the field it belongs to.
         const placed = await page.evaluate(() => {
           const field = document.getElementById("originSearch").getBoundingClientRect();
@@ -4623,6 +4954,11 @@ function saysMoreThan(condition, code) {
             ? document.getElementById("changeOrigin").getAttribute("aria-expanded")
             : null,
         }));
+        // Walking away is the gesture that does not commit anything. It puts
+        // the page's own station name back, closes the picker and leaves the
+        // reader where they were, which is what the check below says; with Tab
+        // and Enter now going to the station a completion names, this is the
+        // only way out of a half-typed name that keeps the page.
         check(
           "a click on the page puts the station's name back where the field was",
           walked.field === false && walked.name.length > 0 && walked.expanded === "false",
@@ -4632,7 +4968,6 @@ function saysMoreThan(condition, code) {
       } else {
         for (const name of [
           "typing a station's first letters completes the name in the field",
-          "and Tab accepts the rest of the name as text",
           "the list of stations is drawn under the field",
           "a click on the page puts the station's name back where the field was",
         ]) {

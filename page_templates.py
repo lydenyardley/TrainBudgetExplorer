@@ -188,36 +188,30 @@ SHARED_CSS = """  /* S39: the tokens and components every route shares, written 
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
                   letter-spacing: inherit; appearance: textfield; }
   #budgetNumber::-webkit-inner-spin-button { appearance: none; }
-  /* The station slot on the route that has no station yet. It grows with what
-     is typed where the browser can resize a field to its content, and holds a
-     sensible width where it cannot; the caret is themed from the palette, like
-     every other browser surface this page ships. */
-  /* The field is as wide as the word in it. It shipped at a fixed 9ch, which is
-     wider than "station" at every heading size, so the dashed underline ran on
-     past the word it belongs to and said the field was bigger than the question
-     (finding, 29 September 2026). `field-sizing: content` sizes it to the
-     placeholder while it is empty and to what is being typed as it is typed; the
-     width that used to be fixed is the fallback for a browser that cannot size a
-     field to its content yet, and the cap keeps a long station name from pushing
-     the heading's line past the viewport. Neither half of the cap is a
-     percentage: the slot is shrink-to-fit, so a percentage max-width on its only
-     child is treated as none while the slot decides its own width, and the
-     heading's line then measured the field's content -- 3,047px with sixty
-     characters typed, which scrolled the page 1,739px sideways. ch scales with
-     the heading's own size, so 18 of them fit the column on a wide screen, and
-     the viewport share is what fits on a narrow one. */
-  /* Not scoped to one route. The chooser's field and a station page's field are
-     the same control in the same sentence, and a reader who moved between
-     them was getting the browser's own input on one and this one on the
-     other. */
-  #originSearch { width: auto; min-width: 4ch; max-width: min(18ch, 90vw); field-sizing: content;
+  /* The station slot's field, on both routes. The chooser's field and a
+     station page's field are the same control in the same sentence, and a
+     reader who moved between them was getting the browser's own input on one
+     and this one on the other.
+
+     The width is fixed, and it is fixed for one reason. `field-sizing: content`
+     made the box a function of what was typed, the field is a word in the
+     heading, and `text-wrap: balance` rebalances the heading around a word that
+     changes width: measured on a built Nottingham page at 1280px, the heading
+     stood 220px tall with an empty field and 196px from the first keystroke on,
+     so typing moved the page under the reader.
+
+     Eighteen ch is what a completion can need -- the field only offers a name
+     that fits in it, or the typed part scrolls out of its own window -- and it
+     costs the heading nothing at any viewport down to about 420px. Below the
+     page's own 44rem breakpoint it does cost one line (108px rather than 74px
+     at 390px), so the field is fifteen ch there, which is still every name a
+     phone reader is likely to be typing. ch scales with the heading's own size
+     and the viewport share is what fits on the narrowest one. */
+  #originSearch { width: min(18ch, 90vw); max-width: min(18ch, 90vw);
                   padding: .05rem .15rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit;
                   font-weight: inherit; letter-spacing: inherit;
                   caret-color: var(--accent); }
-  @supports not (field-sizing: content) {
-    #originSearch { width: 9ch; }
-  }
   #originSearch::placeholder { color: var(--muted); opacity: 1; }
   /* The rest of the name the reader is halfway through is shown by selecting
      it inside the field, so the only thing to say is that the selection is
@@ -346,12 +340,20 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
   .more-filters-toggle:hover { border-color: var(--accent); }
   .more-filters-label { font-weight: 700; }
   .more-filters-toggle .chevron { margin-left: auto; color: var(--accent); }
-  .more-filters[data-open="true"] .more-filters-toggle { margin-bottom: .9rem; border-color: var(--accent); }
+  .more-filters[data-open="true"] .more-filters-toggle { border-color: var(--accent); }
   .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
   .more-filters-panel { display: none; }
+  /* The panel is the one card on the page. A grid of controls floating on the
+     background reads as loose rows of words rather than as one thing that was
+     opened, and the field behind it is what every one of those controls sits
+     in, so it is the field colour they are drawn on. The gap under it belongs
+     to the panel rather than to the toggle, so closing it removes the space as
+     well as the controls. */
   .more-filters[data-open="true"] .more-filters-panel { display: grid;
                                                           grid-template-columns: repeat(2, minmax(0, 1fr));
-                                                          gap: 1.1rem 2rem; align-items: start; }
+                                                          gap: 1rem 2rem; align-items: start;
+                                                          background: var(--field);
+                                                          padding: 1rem; margin-bottom: 1rem; }
   /* Which ticket, and whose budget, are one decision, so the two controls
      that make it share a row and the reader can see that they belong
      together. The destination chips take the full width under them,
@@ -546,8 +548,6 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      compare rather than a result set to scan, and it sits directly above the
      table so that the place a reader just added appears in the same view as
      the control they added it with. */
-  .shortlist-bar { margin: .35rem 0 .5rem; }
-  .shortlist-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
   .shortlist-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
                      color: var(--muted); font-weight: 700; }
   /* The hold column is one narrow cell at the left of the row, and it is
@@ -557,28 +557,18 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      settings do not know how to sit around. The label around it is what makes
      the target 44px -- the mark stays the size a checkbox is meant to be and
      the thing a finger aims at is a cell-sized square. */
-  th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; }
+  /* Centred, because the column holds one mark and a centred mark is a mark
+     rather than a left-hand gutter with a box in it. */
+  th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; text-align: center; }
   .hold-target { display: inline-flex; align-items: center; justify-content: center;
                  min-width: 2.75rem; min-height: 2.75rem; cursor: pointer; }
   .hold-box { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
-  .shortlist-controls .toggle { margin-left: 0; min-height: 2.75rem; }
-  .shortlist-chips { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem;
-                     margin: .55rem 0 0; padding: 0; }
-  /* A chip is a place and its price with one way out of it. The cross is
-     drawn rather than typed: the page has no icon set, and a letter x at this
-     size reads as a multiplication sign. */
-  .shortlist-chip { display: inline-flex; align-items: center; gap: .45rem;
-                    padding: .3rem .3rem .3rem .6rem; border: 1px solid var(--line);
-                    border-radius: 2rem; background: var(--field); }
-  .shortlist-name { padding: 0; border: 0; background: transparent; color: var(--accent);
-                    font: inherit; font-weight: 600; cursor: pointer; }
-  .shortlist-name:hover { text-decoration: underline; }
-  .shortlist-price { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .85em; }
+  /* The cross is drawn rather than typed: the page has no icon set, and a
+     letter x at this size reads as a multiplication sign. */
   .shortlist-drop { display: inline-flex; align-items: center; justify-content: center;
                     width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%;
                     background: transparent; color: var(--muted); cursor: pointer; }
   .shortlist-drop:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
-  .shortlist-share { margin-top: .5rem; }
   .shortlist-share summary { min-height: 44px; display: inline-flex; align-items: center;
                              color: var(--accent); cursor: pointer; }
   /* The dock: the shortlist held at the foot of the screen, so a reader who has
@@ -602,7 +592,25 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
                     padding: .45rem 1rem .55rem; }
   .shortlist-dock-head { display: flex; flex-wrap: wrap; align-items: center;
                           gap: .6rem; margin-bottom: .25rem; }
-  .shortlist-dock-head .toggle { margin-left: auto; min-height: 2.75rem; }
+  .shortlist-dock-head .toggle { min-height: 2.75rem; }
+  /* The count is the reader's own words about their own list, so it is what
+     the controls are pushed away from rather than the first control itself:
+     three buttons in a row read as one group however wide the gap is. */
+  #shortlistDock #shortlistLimit { margin: 0; }
+  .shortlist-dock-head #shortlistCopy { margin-left: auto; }
+  .shortlist-dock-head #shortlistDockClear { margin-left: 0; }
+  /* The share text and the copy-by-hand box stand above the dock rather than
+     inside it. The dock is fixed to the foot of the screen and its height sets
+     the page's bottom padding, so a panel that opened in the flow would move
+     the dock under the last result row while the padding still described the
+     shorter one. */
+  #shortlistDock .shortlist-share { position: relative; }
+  #shortlistDock .shortlist-share > p,
+  #shortlistDock .shortlist-share > textarea { position: absolute; bottom: 100%; right: 0;
+          z-index: 1; width: min(28rem, 90vw); margin: 0 0 .4rem; padding: .5rem .6rem;
+          border: 1px solid var(--line); border-radius: .4rem; background: var(--bg);
+          box-shadow: 0 -.4rem 1rem rgba(0, 0, 0, .16); }
+  #shortlistDock .shortlist-share > textarea { right: auto; left: 0; }
   /* Scoped by id: the results-table rules above would give the dock's four
      numbers the station column's width and leave the columns ragged. */
   #shortlistDock table { width: 100%; max-width: 46rem; margin: 0 auto; }
@@ -688,6 +696,7 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
        that keeps the results table above this breakpoint. Below it they
        stack, as everything else on the page does. */
     .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: 1fr; }
+    #originSearch { width: min(15ch, 90vw); max-width: min(15ch, 90vw); }
     table, tbody { display: block; }
     #shortlistDock table { display: table; }
     #shortlistDock tbody { display: table-row-group; }
@@ -851,7 +860,7 @@ __THEME_TOGGLE__
   <div class="more-filters" id="moreFilters" data-open="false">
     <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
             aria-expanded="false" aria-controls="moreFiltersPanel">
-      <span class="more-filters-label">Narrow this list</span>
+      <span class="more-filters-label">Filter this list</span>
       <span class="tag" id="filterState"></span>
       __CHEVRON__
     </button>
@@ -910,40 +919,18 @@ __THEME_TOGGLE__
     <p class="tag" id="linkNote" hidden></p>
     <p class="tag" id="disclosure" hidden></p>
   </details>
-<!-- S26: the shortlist is one control and one strip, above the table. It was a
-     named button on every row, so twenty rows carried twenty copies of the
-     same word; pressing one changed the button's own text and reflowed the
-     table, and the confirmation was a list below the fold the reader had to
-     scroll to find. A reader who has just chosen a place is looking at the
-     place, not at the foot of the page, so the list is drawn where the action
-     is.
-
-     It sits above the count line rather than between the count and the table,
-     because the count describes the rows under it and the two were 89px apart
-     with a row of controls in the gap. The reader chooses a place, then reads
-     what the list beneath them contains. -->
-<section class="shortlist-bar" id="shortlistBar" aria-label="Shortlist" hidden>
-  <div class="shortlist-controls">
-    <span class="shortlist-label">Shortlist</span>
-    <button id="shortlistCopy" class="toggle" type="button" hidden>Copy</button>
-    <button id="shortlistClear" class="toggle" type="button" hidden>Clear</button>
-  </div>
-  <ul id="shortlistList" class="shortlist-chips"></ul>
-  <p id="shortlistEmpty" class="tag">Nothing held yet. It is a list to compare and share, not a booking.</p>
-  <p id="shortlistLimit" class="tag" role="status"></p>
-  <details class="shortlist-share" id="shortlistShareBox" hidden>
-    <summary>Share this shortlist</summary>
-    <p id="shortlistShare" class="tag"></p>
-    <textarea id="shortlistBox" class="copybox" rows="6" readonly hidden aria-label="Shortlist to copy"></textarea>
-  </details>
-  <span id="shortlistStatus" role="status" class="sr-only"></span>
-</section>
+<!-- The shortlist is only the dock. It was a section here as well as the
+     strip at the foot of the screen, so a reader who had chosen two places
+     read their list twice and had two Clear buttons to work out which was
+     which; the chips here repeated the dock's own rows. Everything it held --
+     the copy, the share, the limit message and the live region -- is in the
+     dock now, and this gap between the count and the table is a gap again. -->
 <!-- The count line belongs to the table below it, not to the panel above: on
      the real Grantham page it sat 205px above the first row, with six
      provenance paragraphs between them (finding, 29 September 2026). -->
 <p id="summary" role="status" aria-live="polite"></p>
 <table>
-  <thead><tr><th scope="col" class="hold">Hold</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col" class="hold">List</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="empty" hidden></div>
@@ -965,7 +952,15 @@ __THEME_TOGGLE__
   <div class="shortlist-dock-head">
     <span class="shortlist-label">Shortlist</span>
     <span class="tag" id="shortlistDockCount"></span>
+    <p class="tag" id="shortlistLimit"></p>
+    <button id="shortlistCopy" class="toggle" type="button" hidden>Copy</button>
+    <details class="shortlist-share" id="shortlistShareBox" hidden>
+      <summary>Share</summary>
+      <p id="shortlistShare"></p>
+      <textarea id="shortlistBox" class="copybox" rows="6" readonly hidden aria-label="Shortlist to copy"></textarea>
+    </details>
     <button id="shortlistDockClear" class="toggle" type="button">Clear</button>
+    <span id="shortlistStatus" role="status" class="sr-only"></span>
   </div>
   <table>
     <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th>
@@ -1139,14 +1134,21 @@ function filterStateText() {
   // wording a reader has seen for it.
   const types = Array.from(selectedDestinationTypes());
   const party = unit() === "party" ? "Two adults" : "One adult";
-  const card = noCard() || !railcards[railcardSelect.value] ? "" : " + " + railcards[railcardSelect.value].label;
+  // How many cards rather than whether there is one. A reader who has chosen a
+  // card is reading the price beside it, and the fold hides the panel that
+  // offered it, so "no card selected" and "no railcard" were both a fact this
+  // line could not state without reading the panel again.
+  const card = noCard() || !railcards[railcardSelect.value]
+    ? "0 railcard"
+    : "1 railcard (" + railcards[railcardSelect.value].label + ")";
   const labelOf = (value) => {
     const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
     const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
     return span ? span.textContent : value;
   };
-  const typeText = types.length ? types.map(labelOf).join(", ") : "all types";
-  return modeLabels()[ticketMode()] + " \u00b7 " + party + card + " \u00b7 " + typeText;
+  const typeText = types.length ? types.map(labelOf).join(", ") : "All";
+  return "Ticket: " + modeLabels()[ticketMode()] + " \u00b7 Travellers: " + party + ", " + card +
+    " \u00b7 Destination: " + typeText;
 }
 function renderFilterState() {
   if (filterState) filterState.textContent = filterStateText();
@@ -2060,7 +2062,7 @@ function holdCell(destination) {
   // Named per row. A column of unticked boxes is a column of controls with no
   // name of their own, and what a screen reader announces has to say which
   // place this one holds.
-  box.setAttribute("aria-label", "Hold " + destination.name + " in the shortlist");
+  box.setAttribute("aria-label", "List " + destination.name + " in the shortlist");
   box.addEventListener("change", () => {
     // The list is capped, and a refused addition says so on the strip rather
     // than adding. The browser has already ticked the box by then, and
@@ -2896,6 +2898,9 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     dropdown: originPicker,
     inside: [originPicker],
     onChange: () => renderPicks(),
+    onChoose: (station) => {
+      window.location.href = station.href + "?" + stateQuery();
+    },
     onCancel: () => {
       if (changeOrigin.getAttribute("aria-expanded") === "true") setPicker(false);
     },
@@ -2932,25 +2937,21 @@ const SHORTLIST_LIMIT = 8;
 // of the search state: a shortlist that only lives in one tab is not a
 // shortlist anybody can hand to somebody else.
 let shortlistCodes = [];
-const shortlistBar = document.getElementById("shortlistBar");
+const shortlistDock = document.getElementById("shortlistDock");
 // The one element whose presence means this page has a shortlist at all. It
-// was the section below the table; it is the strip above it, and every
-// function that guarded on the old id was quietly doing nothing on a page
-// without one.
-const shortlist = shortlistBar;
+// was the section between the count and the table; it is the strip at the foot
+// of the screen, and every function that guarded on the old id was quietly
+// doing nothing on a page without one.
+const shortlist = shortlistDock;
 const shortlistShareBox = document.getElementById("shortlistShareBox");
 const shortlistLimit = document.getElementById("shortlistLimit");
-const shortlistList = document.getElementById("shortlistList");
 const shortlistStatus = document.getElementById("shortlistStatus");
-const shortlistEmpty = document.getElementById("shortlistEmpty");
 const shortlistShare = document.getElementById("shortlistShare");
-const shortlistClear = document.getElementById("shortlistClear");
-const shortlistDock = document.getElementById("shortlistDock");
+const shortlistCopy = document.getElementById("shortlistCopy");
+const shortlistBox = document.getElementById("shortlistBox");
 const shortlistDockList = document.getElementById("shortlistDockList");
 const shortlistDockCount = document.getElementById("shortlistDockCount");
 const shortlistDockClear = document.getElementById("shortlistDockClear");
-const shortlistCopy = document.getElementById("shortlistCopy");
-const shortlistBox = document.getElementById("shortlistBox");
 
 function shortlisted() {
   const wanted = new Set(shortlistCodes);
@@ -3004,26 +3005,6 @@ function dropButton(destination) {
   drop.setAttribute("aria-label", "Remove " + destination.name + " from the shortlist");
   drop.addEventListener("click", () => toggleShortlist(destination.crs));
   return drop;
-}
-
-function shortlistRow(destination) {
-  const item = document.createElement("li");
-  item.className = "shortlist-chip";
-  // A chip is a way back to the row it came from, and a row is not a
-  // destination, so it is a button: a link here would be either a fragment
-  // that goes nowhere or a javascript: URL, and both are worse than saying
-  // what the control does.
-  const name = document.createElement("button");
-  name.type = "button";
-  name.className = "shortlist-name";
-  name.textContent = destination.name;
-  name.title = "Show " + destination.name + " in the list above";
-  name.addEventListener("click", () => focusDestinationRow(destination.crs));
-  const price = document.createElement("span");
-  price.className = "shortlist-price";
-  price.textContent = money(priceOf(destination));
-  item.append(name, price, dropButton(destination));
-  return item;
 }
 
 // One shortlisted place as a row of the dock's table: the four facts the reader
@@ -3087,7 +3068,6 @@ function renderShortlist() {
   // A row whose fare the reader can no longer see priced -- a different ticket
   // mode -- leaves the list rather than sitting in it as a name with no price.
   shortlistCodes = kept.map((destination) => destination.crs);
-  shortlistList.replaceChildren(...kept.map(shortlistRow));
   // Every row's tick is this list, drawn on the row. Anything that empties the
   // shortlist takes the ticks with it: the Clear above the table, the Clear in
   // the dock, and a place leaving the ticket mode the reader is looking at.
@@ -3109,9 +3089,7 @@ function renderShortlist() {
     padForDock();
   }
   const empty = kept.length === 0;
-  if (shortlistEmpty) shortlistEmpty.hidden = !empty;
-  if (shortlistBar) shortlistBar.hidden = false;
-  for (const control of [shortlistClear, shortlistCopy, shortlistShareBox]) {
+  for (const control of [shortlistCopy, shortlistShareBox]) {
     if (control) control.hidden = empty;
   }
   if (shortlistShare) {
@@ -3120,7 +3098,10 @@ function renderShortlist() {
       : "Shortlist of " + kept.length + (kept.length === 1 ? " place" : " places") + " from " +
         DATA.origin.name + ". " + window.location.href;
   }
-  if (shortlistBox) shortlistBox.hidden = true;
+  if (shortlistBox) {
+    shortlistBox.hidden = true;
+    if (shortlistShareBox) shortlistShareBox.open = false;
+  }
   if (shortlistStatus && !shortlistStatus.textContent) {
     shortlistStatus.textContent = kept.length ? kept.length + " shortlisted." : "";
   }
@@ -3152,10 +3133,12 @@ if (shortlistCopy) {
     const text = shortlistText();
     const show = () => {
       // Never claim a copy that did not happen, the same rule the row copy
-      // follows: a denied clipboard shows the text instead.
+      // follows: a denied clipboard shows the text, in the dock's own share
+      // panel, which is where the reader can reach it.
       shortlistBox.value = text;
       shortlistBox.hidden = false;
-      shortlistStatus.textContent = "Could not copy automatically. The list is shown below to copy by hand.";
+      if (shortlistShareBox) shortlistShareBox.open = true;
+      shortlistStatus.textContent = "Could not copy automatically. The list is shown to copy by hand.";
     };
     if (!navigator.clipboard || !navigator.clipboard.writeText) return show();
     try {
@@ -3166,15 +3149,13 @@ if (shortlistCopy) {
     }
   });
 }
-if (shortlistClear || shortlistDockClear) {
-  const clearShortlist = () => {
+if (shortlistDockClear) {
+  shortlistDockClear.addEventListener("click", () => {
     shortlistCodes = [];
     setShortlistStatus("");
     renderShortlist();
     writeUrl();
-  };
-  if (shortlistClear) shortlistClear.addEventListener("click", clearShortlist);
-  if (shortlistDockClear) shortlistDockClear.addEventListener("click", clearShortlist);
+  });
 }
 window.addEventListener("resize", padForDock);
 
@@ -3539,6 +3520,11 @@ attachStationField({
   dropdown: picks,
   inside: [picks],
   onChange: () => render(),
+  onChoose: (station) => {
+    const url = new URL(station.href, window.location.href);
+    if (budgetNumber) url.searchParams.set("budget", resolvedBudget());
+    window.location.href = url.pathname + url.search + url.hash;
+  },
 });
 // The budget slot has been clickable across its whole width since it was
 // written, and the station slot is the other half of the same sentence: both
@@ -3628,20 +3614,35 @@ STATION_FIELD_JS = """function attachStationField(options) {
   const onUse = options.onUse || function () {};
   const onCancel = options.onCancel || function () {};
   const dropdown = options.dropdown || null;
+  const onChoose = options.onChoose || null;
   const CAP = options.cap || 544;
-  // Past this the field scrolls its own value and the part the reader typed
-  // leaves the window, so a longer completion is worse than none.
-  const COMPLETE_LIMIT = 18;
+  // The station a completion is offering, held so Tab and Enter can go to it
+  // rather than merely accept the text. A field that can complete a name can
+  // then act on one.
+  let proposal = null;
 
   const selected = () => field.selectionEnd > field.selectionStart;
   function commit() {
+    proposal = null;
     if (selected()) field.setSelectionRange(field.value.length, field.value.length);
   }
   // The rest of the name, inside the field, selected so it reads as a suggestion
   // rather than as what was typed. Only a prefix is completed this way, and only
   // with the caret at the end of the text, so a reader editing the middle of a
   // word is never rewritten underneath themselves.
-  function complete() {
+  //
+  // A deletion completes nothing. Backspace, Delete and cut all arrive as an
+  // input event like any other, so completing on them re-applied the suggestion
+  // to its own undo: Backspace deleted the suggested tail and complete() put it
+  // straight back, leaving the field byte-identical and the key apparently dead.
+  // A completion that does not fit is reverted for the same reason a long one
+  // is never offered: the field would scroll its own value and the part the
+  // reader typed would leave the window.
+  function complete(event) {
+    if (event && event.inputType && event.inputType.indexOf("delete") === 0) {
+      proposal = null;
+      return;
+    }
     const typed = field.value;
     if (!typed) return;
     if (field.selectionStart !== typed.length || field.selectionEnd !== typed.length) return;
@@ -3649,9 +3650,15 @@ STATION_FIELD_JS = """function attachStationField(options) {
     if (!wanted) return;
     for (const station of stations) {
       if (station.name.toLowerCase().indexOf(wanted) !== 0) continue;
-      if (station.name.length <= typed.length || station.name.length > COMPLETE_LIMIT) return;
+      if (station.name.length <= typed.length) return;
       field.value = station.name;
       field.setSelectionRange(typed.length, field.value.length);
+      if (field.scrollWidth > field.clientWidth) {
+        field.value = typed;
+        field.setSelectionRange(typed.length, typed.length);
+        return;
+      }
+      proposal = station;
       return;
     }
   }
@@ -3703,8 +3710,8 @@ STATION_FIELD_JS = """function attachStationField(options) {
     if (field.contains(target)) return true;
     return inside.some((element) => element && element.contains(target));
   };
-  field.addEventListener("input", () => {
-    complete();
+  field.addEventListener("input", (event) => {
+    complete(event);
     onChange(field.value);
     // The completion widens the field, and a heading with balanced lines
     // rebalances around a wider word, which moves the field the list was
@@ -3717,6 +3724,12 @@ STATION_FIELD_JS = """function attachStationField(options) {
       // is the browser's own.
       if (!selected()) return;
       event.preventDefault();
+      // A completion is a place, not a spelling, so accepting one is choosing
+      // it. The route owns the URL because the route owns what travels with it.
+      if (proposal && onChoose) {
+        onChoose(proposal);
+        return;
+      }
       commit();
       onChange(field.value);
       return;

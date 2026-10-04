@@ -431,7 +431,7 @@ class DemoPageTest(unittest.TestCase):
         # The chip carries the name and the price -- the reason the place is
         # there -- and the fare name travels in the copied text and on the
         # row itself rather than making every chip three lines tall.
-        row = script.split("function shortlistRow(")[1].split("\nfunction ")[0]
+        row = script.split("function dockRow(")[1].split("\nfunction ")[0]
         self.assertIn('price.textContent = money(priceOf(destination));', row)
         self.assertNotIn("fareName(destination)", row)
         copied = script.split("function shortlistText()")[1].split("\nfunction ")[0]
@@ -1051,7 +1051,7 @@ class DemoPageTest(unittest.TestCase):
         # S26: the decision the page exists for is which place, so a reader can
         # keep a few, compare them on the price currently shown, and hand the
         # list to somebody else as a link. Nothing about it implies a booking.
-        self.assertIn('id="shortlistBar" aria-label="Shortlist"', self.html)
+        self.assertNotIn('id="shortlistBar"', self.html)
         self.assertIn("not a booking", self.html)
         # One control per row, and it is a checkbox rather than a button:
         # ADR-0054 put a single select above the table in place of twenty
@@ -1064,19 +1064,28 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn("shortlist-toggle", self.html)
         self.assertIn("function holdCell(destination)", self.html)
         self.assertIn('box.type = "checkbox"', self.html)
-        self.assertIn('box.setAttribute("aria-label", "Hold "', self.html)
+        self.assertIn('box.setAttribute("aria-label", "List "', self.html)
         # The column the boxes live in is a column of the header too, or the
         # table has a cell with no heading above it.
-        self.assertIn('<th scope="col" class="hold">Hold</th>', self.html)
+        self.assertIn('<th scope="col" class="hold">List</th>', self.html)
+        from page_templates import STATION_STYLESHEET
+
+        self.assertIn(
+            "th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; text-align: center; }",
+            STATION_STYLESHEET,
+        )
         self.assertIn(
             "const cells = [holdCell(destination), stationCell(destination), priceCell(destination)];",
             self.html,
         )
-        # ... and the places it holds are drawn where the control is.
-        self.assertLess(
-            self.html.index('id="shortlistBar"'),
-            self.html.index("<table>"),
-        )
+        # ... and the places it holds, and every control for the list, are in
+        # the one place the list is drawn: the dock at the foot of the screen.
+        self.assertIn('id="shortlistCopy"', self.html)
+        self.assertIn('id="shortlistShareBox"', self.html)
+        self.assertIn('id="shortlistDockClear"', self.html)
+        dock = self.html.split('<aside class="shortlist-dock"', 1)[1].split("</aside>", 1)[0]
+        for control in ("shortlistCopy", "shortlistShareBox", "shortlistDockClear", "shortlistBox"):
+            self.assertIn(f'id="{control}"', dock)
         # It is part of the address, one readable key per place.
         self.assertIn('for (const code of shortlistCodes) params.append("short", code);', self.html)
         self.assertIn('short: params.getAll("short")', self.html)
@@ -2034,7 +2043,18 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('id="moreFiltersToggle"', self.html)
         self.assertIn('aria-controls="moreFiltersPanel"', self.html)
         self.assertIn('id="moreFiltersPanel"', self.html)
-        self.assertIn("Narrow this list", self.html)
+        self.assertIn("Filter this list", self.html)
+        # The panel is a card on the field colour, and the gap under it belongs
+        # to the panel rather than to the toggle that opens it. Both live in the
+        # stylesheet the build writes, not in the page that links it.
+        from page_templates import STATION_STYLESHEET
+
+        self.assertIn("background: var(--field);", STATION_STYLESHEET)
+        self.assertIn("padding: 1rem; margin-bottom: 1rem;", STATION_STYLESHEET)
+        self.assertNotIn(
+            '.more-filters[data-open="true"] .more-filters-toggle { margin-bottom:',
+            STATION_STYLESHEET,
+        )
         # The three refinements are inside the panel; the budget is not.
         bar = self.html.split('<section class="filter-bar"', 1)[1].split("</section>", 1)[0]
         budget, folded = bar.split('<div class="more-filters"', 1)
