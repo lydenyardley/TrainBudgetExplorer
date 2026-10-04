@@ -2061,13 +2061,30 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('aria-controls="moreFiltersPanel"', self.html)
         self.assertIn('id="moreFiltersPanel"', self.html)
         self.assertIn("Filter this list", self.html)
-        # The panel is a card on the field colour, and the gap under it belongs
-        # to the panel rather than to the toggle that opens it. Both live in the
-        # stylesheet the build writes, not in the page that links it.
+        # The panel is not a card of its own: it and the toggle are one shape,
+        # drawn by the accent border they share. The panel therefore carries the
+        # border on three sides, no fill and no gap under it, and the open toggle
+        # squares off its bottom corners to meet it. These live in the stylesheet
+        # the build writes, not in the page that links it.
         from page_templates import STATION_STYLESHEET
 
-        self.assertIn("background: var(--field);", STATION_STYLESHEET)
-        self.assertIn("padding: 1rem; margin-bottom: 1rem;", STATION_STYLESHEET)
+        panel_rule = STATION_STYLESHEET.split(
+            '.more-filters[data-open="true"] .more-filters-panel {', 1
+        )[1].split("}", 1)[0]
+        toggle_rule = STATION_STYLESHEET.split(
+            '.more-filters[data-open="true"] .more-filters-toggle {', 1
+        )[1].split("}", 1)[0]
+        self.assertIn("border: 1px solid var(--accent); border-top: 0;", panel_rule)
+        self.assertIn("border-radius: 0 0 .45rem .45rem;", panel_rule)
+        self.assertIn("padding: 1rem;", panel_rule)
+        # The fill and the margin under it are commented out rather than gone, so
+        # the line that says what they were is still in the file.
+        self.assertIn("/* background: var(--field); */", panel_rule)
+        self.assertIn("/* margin-bottom: 1rem; */", panel_rule)
+        live = re.sub(r"/\*.*?\*/", "", panel_rule, flags=re.S)
+        self.assertNotIn("background:", live)
+        self.assertNotIn("margin-bottom:", live)
+        self.assertIn("border-radius: .45rem .45rem 0 0;", toggle_rule)
         self.assertNotIn(
             '.more-filters[data-open="true"] .more-filters-toggle { margin-bottom:',
             STATION_STYLESHEET,
