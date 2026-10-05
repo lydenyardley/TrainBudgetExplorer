@@ -623,7 +623,10 @@ class DemoPageTest(unittest.TestCase):
         for key in ("no_timetable", "no_service"):
             self.assertIn(f"  {key}: (day, later) => ({{", self.html)
         self.assertIn("function absenceText(destination, brief) {", self.html)
-        self.assertIn("  return absenceText(destination, true);", self.html)
+        # A row this build holds no week for keeps the build's own wording, so
+        # the brief form is still reachable from the day-aware reader rather
+        # than only from the long one.
+        self.assertIn("if (answer === undefined) return absenceText(destination, brief);", self.html)
         # And the wording has no branch that leaves the day out.
         self.assertNotIn('return "No service";', self.html)
         # The change count is a word rather than a digit, and the station it

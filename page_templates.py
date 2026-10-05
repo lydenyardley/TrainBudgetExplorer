@@ -2310,7 +2310,16 @@ function fareSummary(destination) {
 // the through fare, and the station it would change at is the part a reader can
 // act on. The page states the possibility and no price: the feed prices flows,
 // not itineraries, so which two tickets are cheaper is not in this data.
+//
+// Only on the build's own day, for the same reason the interchange line in the
+// Changes column is: the change stations are that day's, and the note points at
+// the station printed above it. On any other day the Changes cell prints the
+// chosen day's count and no station, so a note still saying "the station above"
+// would point a reader at a row that no longer names one, and a journey that
+// reads Direct beside a claim that it changes somewhere is a row contradicting
+// itself. The same suppression, and for the same reason.
 function splitNote(destination) {
+  if (serviceDayIndex !== 0) return null;
   const stations = destination.changeStations || [];
   if (!stations.length) return null;
   // The station itself is named in the Changes column now, so this says only
@@ -2849,9 +2858,6 @@ function absenceText(destination, brief) {
   const build = JOURNEY_ABSENCE[destination.journeyState] || JOURNEY_ABSENCE.no_service;
   return build(day, destination.nextService)[brief ? "brief" : "full"];
 }
-function noServiceText(destination) {
-  return absenceText(destination, true);
-}
 
 // What this row's station is on the day now chosen, as [minutes, changes], or
 // null when it runs on no day the reader can pick. Null is the honest answer
@@ -2881,14 +2887,6 @@ function serviceAnswer(destination) {
   return Object.prototype.hasOwnProperty.call(day, destination.crs)
     ? day[destination.crs]
     : null;
-}
-// Whether this row can be shown on the chosen day at all. A row with no answer
-// on the build's own day can still have one on a later day, which is the whole
-// point of the control: a Sunday build of a line that runs every weekday shows
-// "No service Sun" until the reader picks a weekday.
-function onServiceDay(destination) {
-  const answer = serviceAnswer(destination);
-  return answer === undefined ? destination.journeyState === "found" : answer !== null;
 }
 // The minutes and changes to print, which are the chosen day's rather than the
 // build's whenever the build carried a week. Day zero is the build's own answer
