@@ -125,6 +125,29 @@ day rather than an empty table.
 lists are only held for the build's own day, so the detail row on any other day
 omits them rather than naming the wrong ones. The control's help line says so.
 
+Everything downstream of that station is suppressed with it, and this was
+missed on the first pass. The split-ticket note in the row's panel is worded
+"one ticket to the station above and another from it", so it points at the very
+line this section suppresses: on any other day the Changes cell prints the
+chosen day's count and no station, and the note went on claiming a change at a
+station the page had stopped naming. On WRK from Nottingham, built for a Sunday,
+the row changes at Sheffield on day zero and is direct on the other seven, so
+seven of the eight days in the build's own week showed "Direct" beside a claim
+that it changes somewhere. Suppressing a fact means suppressing what refers to
+it, and the browser check reads every day rather than the one on screen,
+because the days that disagree are not the ones a reader happens to be looking
+at.
+
+**The day travels both ways through the address.** The chosen day is read from
+`day=N` and clamped to the days the build walked, but the first implementation
+read it only into a variable the control consulted once, when it wrote its
+options. Back and Forward called `applyState`, which parked the day and moved
+everything else, so the address said one day and the table showed another. One
+function now takes the day for both routes in and points the control at it, and
+the browser suite drives Back and Forward through real history entries: a
+listener that reads the address and never re-renders looks correct until a
+reader presses Back.
+
 ## What would change this
 
 The week is sent as a table per timetable, not per origin, so a page with a
