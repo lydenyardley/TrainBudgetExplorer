@@ -4616,6 +4616,44 @@ function saysMoreThan(condition, code) {
       check("the day the reader picked is in the address, and the build's own day is not", notExercised(idle));
       check("and a link carrying that day opens the page on it, showing the same times", notExercised(idle));
     }
+    // The split note points at "the station above", which is printed only on
+    // the build's own day. On any other day the Changes cell prints a count and
+    // no station, so a note still naming one is a row claiming to change where
+    // the row beside it reads Direct. Read on every day, because the days that
+    // disagree are not the ones that happen to be showing.
+    const splitByDay = await page.evaluate(() => {
+      const select = document.getElementById("serviceDay");
+      const days = DATA.serviceDays || [];
+      if (!select || days.length < 2) return null;
+      const row = (DATA.destinations || []).find((r) => (r.changeStations || []).length);
+      if (!row) return null;
+      const clashes = [];
+      for (let i = 0; i < days.length; i += 1) {
+        select.value = String(i);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        const tr = document.querySelector(`#rows tr[data-crs="${row.crs}"]`);
+        const cell = tr ? tr.children[4].textContent.trim() : "";
+        // The note is in the row's own detail panel, which is only built when
+        // the reader opens it, so it is asked for as the page would build it.
+        const note = splitNote(row);
+        if (note && !/via /.test(cell)) clashes.push({ day: days[i], cell: cell });
+      }
+      select.value = "0";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return { crs: row.crs, days: days.length, clashes: clashes };
+    });
+    if (splitByDay) {
+      check(
+        "no day claims a split ticket at a station the row does not name",
+        splitByDay.clashes.length === 0,
+        JSON.stringify(splitByDay)
+      );
+    } else {
+      check(
+        "no day claims a split ticket at a station the row does not name",
+        notExercised("no destination on this page changes")
+      );
+    }
     // The composition note reads as part of the table rather than as another
     // paragraph above it. It is reference material about how the list was built,
     // the same class of sentence the provenance block holds, and the gap it

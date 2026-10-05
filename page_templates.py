@@ -1153,8 +1153,37 @@ const serviceDayHelp = document.getElementById("serviceDayHelp");
 // these surfaces said before the reader could choose, so the page opens on the
 // day it has always opened on.
 let serviceDayIndex = 0;
-// The day a shared link asked for, kept until the control has its options.
-let wantedServiceDay = 0;
+// Put a day on the control and in the state the table reads. One function for
+// every caller, because the reader can ask for a day two ways -- the control,
+// or Back -- and a page where only one of them moves the table is a page whose
+// address and its table disagree. It only records the day: rendering and the
+// address are the caller's, so this is safe to call from applyState, which
+// reads the address before the control has written its options, and safe to
+// call again afterwards without rendering twice.
+function setServiceDay(index) {
+  const days = DATA.serviceDays || [];
+  const wanted = Math.min(Math.max(Number(index) || 0, 0), Math.max(days.length - 1, 0));
+  serviceDayIndex = wanted;
+  // The control has no options until the block below writes them, which is
+  // after the address is read, so a link's day is recorded first and the
+  // control is pointed at it once it exists.
+  if (serviceDaySelect && serviceDaySelect.options.length) {
+    serviceDaySelect.value = String(wanted);
+  }
+  return wanted;
+}
+// A day the reader chose on this page, which moves the table, the dock and the
+// address together. A result set that changed under the reader starts again at
+// its first page, and the dock is redrawn because a shortlisted row showing the
+// build's day beside a table showing the chosen one is the page contradicting
+// itself.
+function chooseServiceDay(index) {
+  setServiceDay(index);
+  currentPage = 1;
+  render();
+  renderShortlist();
+  writeUrl();
+}
 const more = document.getElementById("more");
 const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
 const destinationType = document.getElementById("destinationTypes");
@@ -3482,7 +3511,10 @@ function applyState(state) {
   if (all && !all.checked && !destinationTypeInputs.some((input) => input.value !== "all" && input.checked)) {
     all.checked = true;
   }
-  wantedServiceDay = state.day;
+  // Back and Forward carry the day like every other part of the search, so the
+  // address is read back into the table rather than only into a variable the
+  // control reads once. No write: Back is a decision the reader already made.
+  setServiceDay(state.day);
   currentPage = Math.max(1, state.page);
   shortlistCodes = state.short.filter(pricedHere);
 }
@@ -3560,19 +3592,11 @@ if (serviceDaySelect) {
         + (index === 0 ? " (this build)" : "");
       serviceDaySelect.append(option);
     });
-    // The address is read before this block runs, so the day a link arrived
-    // with is applied here, clamped to the days this build actually walked.
-    const wanted = Math.min(Math.max(wantedServiceDay, 0), days.length - 1);
-    serviceDayIndex = wanted;
-    serviceDaySelect.value = String(wanted);
+    // The address was read before this block ran, so the day a link asked for is
+    // already recorded; the control is pointed at it now that it has options.
+    setServiceDay(serviceDayIndex);
     serviceDaySelect.addEventListener("change", function () {
-      serviceDayIndex = Number(serviceDaySelect.value) || 0;
-      currentPage = 1;
-      render();
-      // The dock is re-rendered too: a shortlisted row showing the build's day
-      // beside a table showing the chosen one is the page contradicting itself.
-      renderShortlist();
-      writeUrl();
+      chooseServiceDay(serviceDaySelect.value);
     });
     serviceDayBar.hidden = false;
     serviceDayHelp.textContent = "Times and changes for every row, on the day you pick."
