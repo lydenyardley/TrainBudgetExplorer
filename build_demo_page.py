@@ -1627,11 +1627,20 @@ def build_payload(
         # the same payload prices a 45-minute direct journey to.
         searched = (journey_db,) if journey_db is timetable else (journey_db, timetable)
         journey = None
+        # Which database this row's week belongs to. The first one consulted is
+        # the default, and a database that answered keeps it: a build with
+        # --with-single-timetable holds a second timetable over the same feed
+        # with a different focus, so the week for a row is the week of the
+        # database that read that row, not of the page's first one.
+        journey_source = None
         for db in searched:
             if db is None:
                 continue
-            journey = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
-            if journey:
+            if journey_source is None:
+                journey_source = db
+            found = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
+            if found:
+                journey, journey_source = found, db
                 break
         # The departures do not fall back. They are the times this fare is good
         # on, and an advance single's are only knowable from the separate
@@ -1726,6 +1735,10 @@ def build_payload(
                 else JOURNEY_NO_SERVICE
             ),
             "legs": [leg.train_uid for leg in journey.legs] if journey else [],
+            # Which database read this row, for the week walk below. Carried on
+            # the row and popped off it again before the payload is encoded, so
+            # the build can carry it and the page never sees it.
+            "_journeySource": journey_source,
             "link": {"url": link.url, "label": link.label, "rel": link.rel},
             "departures": [
                 {"depart": option.departure, "arrive": option.arrival, "changes": option.changes}
@@ -1767,37 +1780,100 @@ def build_payload(
     # row that needs it, so a build on a day the network runs normally pays
     # nothing for it. Wirksworth is the other kind of row: no service on any day
     # of the week, so it keeps saying so and gains no key.
+    # S23, one step further, and then the reader picks the day. "No service" is
+    # a statement about the day this build asked about, not about the station:
+    # measured from Nottingham on 2026-10-04, a Sunday, Langwith, Shirebrook,
+    # Creswell and Whitwell all read "No service", and all four are direct
+    # journeys of 46 to 58 minutes on every other day of that week. The feed
+    # calls at every one of them, so nothing about them is missing from the
+    # network, only from that Sunday.
+    #
+    # So the whole week is walked and every answer kept, and the page hands the
+    # reader the choice of which day the times are for. The sweep this replaces
+    # asked only the rows with no service that day, which is a fifth of them on
+    # a Sunday and none on a Wednesday, and it could answer "does it run at all
+    # that week" and nothing finer: a row taking 46 minutes on the Tuesday and
+    # 70 on the Monday had no way to say so.
+    #
+    # The days are outermost because the search rebuilds its index whenever the
+    # day changes: one index build a day, not one a row. Within a day it is one
+    # walk for every destination, not one walk per destination, which is what
+    # journeys_from() is for and what makes this shape affordable.
+    #
+    # Held once per page and keyed by station, because a destination priced by
+    # three fare lists wants one answer three times. Only the stations a row
+    # names are kept: the walk reaches the whole network, and the rest of it is
+    # an answer nobody asked for.
     collections = (destinations, single_destinations, anytime_destinations)
-    unserved = sorted(
-        {
-            row["crs"]
-            for collection in collections
-            for row in collection
-            if row["journeyState"] != "found"
-        }
-    )
-    if unserved and timetable is not None and day is not None:
-        served_later: dict[str, date] = {}
-        for offset in range(1, SERVICE_WEEK_HORIZON + 1):
-            if len(served_later) == len(unserved):
-                break
-            later = day + timedelta(days=offset)
-            for crs in unserved:
-                if crs in served_later:
-                    continue
-                if timetable.best_journey(origin.crs, crs, max_changes=max_changes, day=later):
-                    served_later[crs] = later
-        for collection in collections:
-            for row in collection:
-                if row["journeyState"] == "found":
-                    continue
-                later = served_later.get(row["crs"])
-                # Only the rows that have one carry the day, so a page whose
-                # every destination runs that day pays nothing for this. The
-                # state does not change here: it is the same absence, and only
-                # what is known about the week around it has moved.
-                if later is not None:
-                    row["nextService"] = later.isoformat()
+    sources: list = []
+    for collection in collections:
+        for row in collection:
+            source = row.get("_journeySource")
+            if source is not None and not any(source is seen for seen in sources):
+                sources.append(source)
+    service_days: list[str] = []
+    service_week: list[list[dict]] = []
+    if sources and day is not None:
+        service_days = [
+            (day + timedelta(days=offset)).isoformat()
+            for offset in range(0, SERVICE_WEEK_HORIZON + 1)
+        ]
+        wanted = {row["crs"] for collection in collections for row in collection}
+        for source in sources:
+            per_day = []
+            for offset in range(0, SERVICE_WEEK_HORIZON + 1):
+                reached = source.journeys_from(
+                    origin.crs, max_changes=max_changes, day=day + timedelta(days=offset)
+                )
+                per_day.append(
+                    {
+                        crs: [journey.duration, journey.changes]
+                        for crs, journey in reached.items()
+                        if crs in wanted
+                    }
+                )
+            service_week.append(per_day)
+
+    def day_answer(row: dict, offset: int) -> list[int] | None:
+        # What this row's station is on the day at this offset, or nothing.
+        # The row names its own database by index, so a row read by the second
+        # timetable is looked up in the second timetable's week.
+        index = row.get("serviceWeekIndex")
+        if index is None or index < 0 or not service_week:
+            return None
+        return service_week[index][offset].get(row["crs"])
+
+    # Read out of the table by the day, not copied into the row. The index
+    # is what the page needs: which of the page's tables this row belongs to,
+    # because a row read by the second timetable is not in the first one's.
+    for collection in collections:
+        for row in collection:
+            source = row.get("_journeySource")
+            index = -1
+            for position, seen in enumerate(sources):
+                if seen is source:
+                    index = position
+                    break
+            # Null rather than -1 for "no week". A pool reference is a
+            # negative number, so -1 would be read by the page as pool entry
+            # zero, which is a railcard record: the cell would decode into
+            # somebody's railcards rather than into a row with no week.
+            row["serviceWeekIndex"] = index if service_week else None
+            row.pop("_journeySource", None)
+
+    for collection in collections:
+        for row in collection:
+            if row["journeyState"] == "found":
+                continue
+            # The day this row next runs, which is the day the absence wording
+            # in JOURNEY_ABSENCE names. Only a row carrying an absence gains it,
+            # so a page whose every destination runs that day pays nothing here,
+            # and the state itself does not change: it is the same absence, and
+            # only what is known about the week around it has moved.
+            for offset in range(1, SERVICE_WEEK_HORIZON + 1):
+                if day_answer(row, offset) is not None:
+                    row["nextService"] = service_days[offset]
+                    break
 
     # C08: the feed's own outward and return validity for each restriction
     # code these rows carry. Keyed by code and held once, because the rows
@@ -1972,6 +2048,16 @@ def build_payload(
         # no next service was actually checked for rather than saying "no
         # service" and leaving the window unstated.
         "serviceHorizon": SERVICE_WEEK_HORIZON,
+        # The days themselves, and every destination's answer on each of
+        # them. Held at page level rather than per row because a destination
+        # priced by three fare lists wants one answer three times, and three
+        # copies of the same eight answers is the same sentence eight times
+        # over in three places. The rows carry serviceWeekIndex instead, so
+        # the page reads the table through the row rather than the row
+        # carrying a copy of the table. Empty when the build had no day to
+        # walk the week from, which is when the page shows no day control.
+        "serviceDays": service_days,
+        "serviceWeek": service_week,
         "note": note,
         "attribution": attribution,
         # Where the numbers on this page came from. It sits with the prices,

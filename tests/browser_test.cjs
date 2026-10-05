@@ -4419,6 +4419,203 @@ function saysMoreThan(condition, code) {
         notExercised("see above")
       );
     }
+    // The reader picks the day the times are for. The control is driven the way
+    // a reader drives it, by changing the select, rather than by writing the
+    // page's own day index, because the listener is part of what is checked.
+    // Four things have to be true of it. The build's own day is what the page
+    // already showed, so the control cannot have moved a single cell when the
+    // reader arrives. Some other day is a different set of answers, which is
+    // the whole reason the control exists. Every absence names the day it is
+    // about, on every day, because "No service" beside a station the network
+    // serves on the other six reads as a claim about the station. And the row
+    // set is restored when the reader comes back to the build's day.
+    const dayControl = await page.evaluate(() => {
+      const days = DATA.serviceDays || [];
+      const bar = document.getElementById("serviceDayBar");
+      const select = document.getElementById("serviceDay");
+      const help = document.getElementById("serviceDayHelp");
+      if (!bar || !select || days.length < 2) return null;
+      const label = document.querySelector('label[for="serviceDay"]');
+      const cells = () =>
+        Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((tr) => {
+          const td = tr.children;
+          return {
+            crs: tr.getAttribute("data-crs"),
+            time: td[3].textContent.trim(),
+            changes: td[4].textContent.trim(),
+          };
+        });
+      const pick = (index) => {
+        select.value = String(index);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+      // Day zero read from the payload, not from the cells, so a row the
+      // current budget or page number has hidden is compared all the same.
+      // journeyFor on day zero is the row's own recorded answer by
+      // construction, so this asks whether the build's own week table agrees
+      // with the build's own per-row answer it was derived from.
+      const drift = (DATA.destinations || []).filter((row) => {
+        const answer = serviceAnswer(row);
+        if (answer === undefined) return false;
+        const found = answer !== null;
+        return (
+          found !== (row.journeyState === "found") ||
+          (found && (answer[0] !== row.minutes || answer[1] !== row.changes))
+        );
+      });
+      const before = cells();
+      const baseline = new Map(before.map((cell) => [cell.crs, cell]));
+      const movedPerDay = [];
+      const unnamed = [];
+      for (let index = 1; index < days.length; index += 1) {
+        pick(index);
+        let moved = 0;
+        for (const cell of cells()) {
+          const was = baseline.get(cell.crs);
+          if (was && (was.time !== cell.time || was.changes !== cell.changes)) moved += 1;
+          if (
+            /^No service/.test(cell.time) &&
+            !/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/.test(cell.time)
+          ) {
+            unnamed.push({ day: days[index], crs: cell.crs, time: cell.time });
+          }
+        }
+        movedPerDay.push(moved);
+      }
+      pick(0);
+      const restored = cells();
+      return {
+        days: days,
+        built: DATA.serviceDate || "",
+        optionCount: select.options.length,
+        firstOption: select.options[0] ? select.options[0].textContent : "",
+        selected: select.value,
+        label: label ? label.textContent.trim() : "",
+        help: help ? help.textContent.trim() : "",
+        helpIsDescribedBy: Boolean(help && select.getAttribute("aria-describedby") === help.id),
+        visible: !bar.hidden,
+        rows: before.length,
+        drift: drift.length,
+        driftSample: drift.slice(0, 3).map((row) => row.crs),
+        movedPerDay: movedPerDay,
+        movedTotal: movedPerDay.reduce((total, count) => total + count, 0),
+        unnamed: unnamed.slice(0, 4),
+        unnamedTotal: unnamed.length,
+        restored:
+          restored.length === before.length &&
+          restored.every((cell, at) => cell.time === before[at].time && cell.changes === before[at].changes),
+      };
+    });
+    if (dayControl) {
+      check(
+        "the day control offers every day the build walked, its own day first and named",
+        dayControl.optionCount === dayControl.days.length &&
+          dayControl.days[0] === dayControl.built &&
+          /\(this build\)/.test(dayControl.firstOption) &&
+          dayControl.selected === "0",
+        JSON.stringify({ days: dayControl.days.length, built: dayControl.built, first: dayControl.firstOption })
+      );
+      check(
+        "and it is labelled, described by its help text, and on show",
+        /^Times for$/.test(dayControl.label) && dayControl.help.length > 0 && dayControl.helpIsDescribedBy && dayControl.visible,
+        JSON.stringify({ label: dayControl.label, help: dayControl.help, described: dayControl.helpIsDescribedBy, shown: dayControl.visible })
+      );
+      check(
+        "the build's own day is the day the page already showed",
+        dayControl.drift === 0 && dayControl.restored,
+        JSON.stringify({ rows: dayControl.rows, disagreeing: dayControl.drift, sample: dayControl.driftSample, restored: dayControl.restored })
+      );
+      if (dayControl.movedTotal > 0) {
+        check(
+          "another day in the build's week is a different set of times",
+          true,
+          JSON.stringify({ movedPerDay: dayControl.movedPerDay, rows: dayControl.rows })
+        );
+      } else {
+        check(
+          "another day in the build's week is a different set of times",
+          notExercised(`all ${dayControl.movedPerDay.length} later day(s) answered every row on screen the same way`),
+          JSON.stringify({ movedPerDay: dayControl.movedPerDay })
+        );
+      }
+      check(
+        "and every absence on every day names the day it is about",
+        dayControl.unnamedTotal === 0,
+        JSON.stringify({ unnamed: dayControl.unnamedTotal, sample: dayControl.unnamed })
+      );
+    } else {
+      const idle = "this page carries no week of days, so the control is not on it";
+      check("the day control offers every day the build walked, its own day first and named", notExercised(idle));
+      check("and it is labelled, described by its help text, and on show", notExercised(idle));
+      check("the build's own day is the day the page already showed", notExercised(idle));
+      check("another day in the build's week is a different set of times", notExercised(idle));
+      check("and every absence on every day names the day it is about", notExercised(idle));
+    }
+// The chosen day is part of the search, so it travels in the address like
+    // the budget and the ticket type do. A shared link that opens on the day
+    // the sender was reading is the whole reason a control like this is worth
+    // having, and an address that forgets it on a refresh is a control the
+    // reader has to set again every time they come back.
+    const dayUrl = await page.evaluate(() => {
+      const select = document.getElementById("serviceDay");
+      const days = DATA.serviceDays || [];
+      if (!select || days.length < 2) return null;
+      const plain = window.location.href;
+      const chosen = select.options[1] ? select.options[1].value : "1";
+      select.value = chosen;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      // The whole address, not the query alone: this is handed to
+      // page.goto below, and a bare query string is not a URL.
+      const carried = window.location.href;
+      const settled = Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((tr) => ({
+        crs: tr.getAttribute("data-crs"),
+        time: tr.children[3].textContent.trim(),
+        changes: tr.children[4].textContent.trim(),
+      }));
+      select.value = "0";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        plain: plain,
+        carried: carried,
+        restored: window.location.href,
+        settled: settled,
+        chosen: chosen,
+      };
+    });
+    if (dayUrl) {
+      const opened = new URL(dayUrl.carried, "http://x").searchParams.get("day");
+      const backHome = new URL(dayUrl.restored, "http://x").searchParams.get("day");
+      await page.goto(dayUrl.plain);
+      await page.goto(dayUrl.carried);
+      const arrived = await page.evaluate(() => ({
+        shown: document.getElementById("serviceDay") ? document.getElementById("serviceDay").value : "",
+        cells: Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((tr) => ({
+          crs: tr.getAttribute("data-crs"),
+          time: tr.children[3].textContent.trim(),
+          changes: tr.children[4].textContent.trim(),
+        })),
+      }));
+      check(
+        "the day the reader picked is in the address, and the build's own day is not",
+        opened === dayUrl.chosen && backHome === null,
+        JSON.stringify({ carried: dayUrl.carried, restored: dayUrl.restored })
+      );
+      check(
+        "and a link carrying that day opens the page on it, showing the same times",
+        arrived.shown === dayUrl.chosen &&
+          arrived.cells.length === dayUrl.settled.length &&
+          arrived.cells.every((cell, at) =>
+            cell.crs === dayUrl.settled[at].crs &&
+            cell.time === dayUrl.settled[at].time &&
+            cell.changes === dayUrl.settled[at].changes),
+        JSON.stringify({ chosen: dayUrl.chosen, shown: arrived.shown, rows: arrived.cells.length })
+      );
+      await page.goto(dayUrl.plain);
+    } else {
+      const idle = "this page carries no week of days, so there is no day to put in the address";
+      check("the day the reader picked is in the address, and the build's own day is not", notExercised(idle));
+      check("and a link carrying that day opens the page on it, showing the same times", notExercised(idle));
+    }
     // The composition note reads as part of the table rather than as another
     // paragraph above it. It is reference material about how the list was built,
     // the same class of sentence the provenance block holds, and the gap it

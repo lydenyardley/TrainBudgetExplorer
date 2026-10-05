@@ -406,6 +406,18 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      and cannot be left on by a reader who meant standard fares. */
   #railcardSelect { width: auto; max-width: 100%; min-height: 2.75rem; }
   #railcardSelect[disabled] { opacity: .6; }
+  /* One row that wraps: the label, the control, and the help line, which is
+     why the gap is a column gap that becomes a row gap at the phone width
+     rather than three separate margins. The margin is the filter bar's own
+     grid gap, because the control is one of its children now and a margin of
+     its own would be a second answer to the same question. */
+  .service-day {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: .35rem .75rem;
+  }
+  .service-day label { font-weight: 600; }
+  #serviceDay { width: auto; max-width: 100%; min-height: 2.75rem; }
+  .service-day .tag { flex: 1 1 14rem; min-width: 0; }
   /* Tight onto its table, which is the only thing it belongs to: the count
      now sits directly above the first row with the provenance above it
      (finding, 29 September 2026). The 1.75rem this used to carry separated it
@@ -796,7 +808,7 @@ __THEME_TOGGLE__
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
 <h2>What stays in the address bar</h2>
-<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
+<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the day the times are for, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
 <ul>
 <li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
 <li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
@@ -916,6 +928,20 @@ __THEME_TOGGLE__
   </fieldset>
     </div>
   </div>
+<!-- The day the times are for. It is not a filter and is not inside the filter
+     panel: it does not hide rows, it changes what the Time and Changes columns
+     report. It is on the always-visible strip beside the budget rather than
+     between the count and the table, because the count belongs to the table it
+     counts and ADR-0040 measures the gap between them (57px on the real page,
+     against a 100px budget, once a 44px control was added to it). Above the
+     count it costs nothing. Hidden when the build carried no week to pick from,
+     so a page with one day shows no control that could only offer the day
+     already on screen. -->
+<div class="service-day" id="serviceDayBar" hidden>
+  <label for="serviceDay">Times for</label>
+  <select id="serviceDay" aria-describedby="serviceDayHelp"></select>
+  <span class="tag" id="serviceDayHelp"></span>
+</div>
 </section>
 
 <!-- The one provenance line that stays above the table: how old the numbers
@@ -1118,6 +1144,17 @@ function cardCoversParty(card) {
 }
 const summary = document.getElementById("summary");
 const empty = document.getElementById("empty");
+const serviceDayBar = document.getElementById("serviceDayBar");
+const serviceDaySelect = document.getElementById("serviceDay");
+const serviceDayHelp = document.getElementById("serviceDayHelp");
+
+// The day the Time and Changes columns are reporting, as an index into
+// DATA.serviceDays. Zero is the build's own day, which is what every one of
+// these surfaces said before the reader could choose, so the page opens on the
+// day it has always opened on.
+let serviceDayIndex = 0;
+// The day a shared link asked for, kept until the control has its options.
+let wantedServiceDay = 0;
 const more = document.getElementById("more");
 const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
 const destinationType = document.getElementById("destinationTypes");
@@ -2132,23 +2169,29 @@ function stationCell(destination) {
 // point stands -- a dash said nothing about which of three different absences
 // it was, so the cell names the absence.
 function journeyCell(destination, column) {
-  const missing = destination.journeyState !== "found";
+  const journey = journeyFor(destination);
+  const missing = !journey.found;
   const cell = document.createElement("td");
   cell.className = missing ? "num missing" : "num";
   cell.dataset.label = column;
+  // The interchange is dropped on any day but the build's own, because the
+  // build holds one change-station list per row and it is that day's. Printing
+  // Sunday's interchange beside Monday's change count would be a row claiming
+  // two facts about two different days; the count alone is what the chosen
+  // day supports. The help line under the control says so once for the table.
   if (column === "Time") {
-    cell.textContent = missing ? noServiceText(destination) : duration(destination.minutes);
+    cell.textContent = missing ? dayAbsenceText(destination, true) : duration(journey.minutes);
     return cell;
   }
   const count = document.createElement("span");
   count.className = "changes-count";
-  count.textContent = missing ? "Unknown" : changeCount(destination.changes);
+  count.textContent = missing ? "Unknown" : changeCount(journey.changes);
   cell.append(count);
   // Q2 (ADR-0045): the station a journey changes at is the part a reader can
   // act on, and it was only ever inside a disclosure they had to open on every
   // row to find. It sits under the count now, in the column whose header is
   // the word "Changes".
-  const via = interchangeLine(destination);
+  const via = serviceDayIndex === 0 ? interchangeLine(destination) : null;
   // The station sits on its own line under the count, so this cell is two
   // lines tall by design. It says so in the markup, because the check that
   // measures wrapped numbers cannot otherwise tell that from a number that
@@ -2337,7 +2380,7 @@ function feedRecord(destination) {
   add("Restriction", destination.restrictionCode || "none");
   add("Route", destination.routeCode);
   add("Priced as", destination.quality);
-  if (destination.journeyState !== "found") add("Times", absenceText(destination, false));
+  if (!journeyFor(destination).found) add("Times", dayAbsenceText(destination, false));
   // C08: what the condition permits, in the feed's own words. It was a third
   // paragraph under the row's own, in capitals, between a sentence and a code,
   // and it was the only part of the three that could not be paraphrased without
@@ -2780,6 +2823,91 @@ function absenceText(destination, brief) {
 function noServiceText(destination) {
   return absenceText(destination, true);
 }
+
+// What this row's station is on the day now chosen, as [minutes, changes], or
+// null when it runs on no day the reader can pick. Null is the honest answer
+// for a day the network does not serve, and for a row this build holds no week
+// for, and the two are worded differently by the caller rather than collapsed
+// into one "unknown".
+function serviceAnswer(destination) {
+  const days = DATA.serviceWeek;
+  if (!days || !days.length) return undefined;
+  const index = destination.serviceWeekIndex;
+  // Null as well as undefined, because the build sends null for a row it
+  // holds no week for rather than -1: a pool reference is a negative number,
+  // so -1 would have decoded into pool entry zero and named a railcard.
+  if (index === undefined || index === null || index < 0) return undefined;
+  const perDay = days[index];
+  if (!perDay) return undefined;
+  // The day's table is keyed by station, so the row's own station is looked
+  // up in it. Handing back the day's whole table instead is a row that
+  // prints a dash for every station on the page, because the object has no
+  // index 0 in it to read a duration from.
+  const day = perDay[serviceDayIndex];
+  if (!day) return undefined;
+  // The build keeps only the stations a walk reached, so a station this
+  // day's table does not name is one it did not run to on that day. The row
+  // is known to this table -- the build asked about every station a row
+  // names -- so its absence is an answer, not a gap in what was asked.
+  return Object.prototype.hasOwnProperty.call(day, destination.crs)
+    ? day[destination.crs]
+    : null;
+}
+// Whether this row can be shown on the chosen day at all. A row with no answer
+// on the build's own day can still have one on a later day, which is the whole
+// point of the control: a Sunday build of a line that runs every weekday shows
+// "No service Sun" until the reader picks a weekday.
+function onServiceDay(destination) {
+  const answer = serviceAnswer(destination);
+  return answer === undefined ? destination.journeyState === "found" : answer !== null;
+}
+// The minutes and changes to print, which are the chosen day's rather than the
+// build's whenever the build carried a week. Day zero is the build's own answer
+// and is asserted equal to it, so choosing the first day changes nothing.
+function journeyFor(destination) {
+  const answer = serviceAnswer(destination);
+  if (answer === undefined) {
+    return destination.journeyState === "found"
+      ? { minutes: destination.minutes, changes: destination.changes, found: true }
+      : { minutes: null, changes: null, found: false };
+  }
+  return answer === null
+    ? { minutes: null, changes: null, found: false }
+    : { minutes: answer[0], changes: answer[1], found: true };
+}
+// The absence, worded for the day being shown rather than the day the build
+// asked about. S23's point, kept when the reader chooses the day: "No service"
+// beside a station the network serves on the other six days reads as a claim
+// about the station unless the sentence names the day it is about. When the
+// chosen day has no service and another day in the week does, the sentence
+// names both, which is what tells a reader the row is worth reading.
+function dayAbsenceText(destination, brief) {
+  const days = DATA.serviceDays || [];
+  const iso = days[serviceDayIndex];
+  const day = { short: shortDay(iso), long: iso ? humanDate(iso) : "" };
+  let later = null;
+  const answer = serviceAnswer(destination);
+  const perDay = DATA.serviceWeek && DATA.serviceWeek[destination.serviceWeekIndex];
+  if (perDay) {
+    // The next day this station does run on, looked up in that day's table
+    // the same way the chosen day is. A day whose table does not name the
+    // station is not a day it runs on, so it is passed over.
+    for (let index = serviceDayIndex + 1; index < perDay.length; index++) {
+      const table = perDay[index];
+      if (table && Object.prototype.hasOwnProperty.call(table, destination.crs)) {
+        later = days[index];
+        break;
+      }
+    }
+  }
+  // A row with no week of its own keeps the build's own wording, because there
+  // is no chosen day for it to be worded about.
+  if (answer === undefined) return absenceText(destination, brief);
+  const state = answer === null ? JOURNEY_ABSENCE.no_service : null;
+  if (!state) return "";
+  const built = state(day, later);
+  return built[brief ? "brief" : "full"];
+}
 function humanDate(iso) {
   const parts = String(iso).split("-").map(Number);
   return parts[2] + " " + MONTHS[parts[1] - 1] + " " + parts[0];
@@ -3096,7 +3224,8 @@ function dropButton(destination) {
 // journey this build could not find says so here rather than showing a zero
 // (journeyCell, same rule).
 function dockRow(destination) {
-  const missing = destination.journeyState !== "found";
+  const journey = journeyFor(destination);
+  const missing = !journey.found;
   const row = document.createElement("tr");
   row.dataset.crs = destination.crs;
   const name = document.createElement("td");
@@ -3112,10 +3241,10 @@ function dockRow(destination) {
   price.textContent = money(priceOf(destination));
   const time = document.createElement("td");
   time.className = missing ? "num missing" : "num";
-  time.textContent = missing ? noServiceText(destination) : duration(destination.minutes);
+  time.textContent = missing ? dayAbsenceText(destination, true) : duration(journey.minutes);
   const changes = document.createElement("td");
   changes.className = missing ? "num missing" : "num";
-  changes.textContent = missing ? "Unknown" : changeCount(destination.changes);
+  changes.textContent = missing ? "Unknown" : changeCount(journey.changes);
   const drop = document.createElement("td");
   drop.className = "dock-drop-cell";
   drop.append(dropButton(destination));
@@ -3197,14 +3326,18 @@ function shortlistText() {
     "Shortlist from " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     "Budget: \u00a3" + budgetNumber.value + " " + what,
   ];
-  if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
+  // The day the reader chose, not the day the build happened to pick: a
+  // pasted line that says otherwise sends someone to the wrong day.
+  const chosen = (DATA.serviceDays || [])[serviceDayIndex] || DATA.serviceDate;
+  if (chosen) lines.push("Times for: " + humanDate(chosen));
   for (const destination of kept) {
-    const changes = destination.changes === null || destination.changes === undefined
+    const journey = journeyFor(destination);
+    const changes = journey.changes === null || journey.changes === undefined
       ? "changes unknown"
-      : destination.changes === 0 ? "no change" : destination.changes + " change(s)";
-    const time = destination.journeyState === "found"
-      ? duration(destination.minutes)
-      : absenceText(destination, false);
+      : journey.changes === 0 ? "no change" : journey.changes + " change(s)";
+    const time = journey.found
+      ? duration(journey.minutes)
+      : dayAbsenceText(destination, false);
     lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
       " " + what + ", " + fareName(destination) + ", " + time + ", " + changes);
   }
@@ -3263,6 +3396,10 @@ function stateQuery() {
   const types = Array.from(selectedDestinationTypes()).sort();
   for (const type of types) params.append("types", type);
   if (currentPage > 1) params.set("page", String(currentPage));
+  // Only a day other than the build's own. A link that arrived without one
+  // reads as this build's day, which is what the address then says too, so the
+  // parameter has one meaning rather than two.
+  if (serviceDayIndex > 0) params.set("day", String(serviceDayIndex));
   // One repeated short key per place rather than a joined list: URLSearchParams
   // would percent-encode the commas, and a shared link is meant to be readable.
   for (const code of shortlistCodes) params.append("short", code);
@@ -3286,7 +3423,7 @@ function writeUrl({ budget = false } = {}) {
     writeUrlNow(true);
   }, 700);
 }
-const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short"];
+const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short", "day"];
 function writeUrlNow(push) {
   const url = new URL(window.location.href);
   // Only this page's own keys are rewritten. A shared link can carry someone
@@ -3312,6 +3449,11 @@ function readState() {
     railcard: params.get("card"),
     types: params.getAll("types"),
     page: Number(params.get("page")) || 1,
+    // Held here and applied once the control has written its options, which is
+    // after this function has run. A value naming a day this build did not walk
+    // is clamped to the last day it did, because a shared link from a build with
+    // a longer week should show a day rather than an empty table.
+    day: Number(params.get("day")) || 0,
     // Only codes this page can price are kept: a shared link must not put a
     // place in the list that the reader cannot see a fare for.
     short: params.getAll("short").map((code) => code.trim().toUpperCase()).filter(Boolean),
@@ -3340,6 +3482,7 @@ function applyState(state) {
   if (all && !all.checked && !destinationTypeInputs.some((input) => input.value !== "all" && input.checked)) {
     all.checked = true;
   }
+  wantedServiceDay = state.day;
   currentPage = Math.max(1, state.page);
   shortlistCodes = state.short.filter(pricedHere);
 }
@@ -3400,6 +3543,44 @@ for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio
 previousPage.addEventListener("click", () => { currentPage -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 nextPage.addEventListener("click", () => { currentPage += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 applyState(readState());
+// The day control is written from the payload rather than from markup, so a
+// page whose build carried no week shows no control at all rather than an empty
+// one. Its options are the build's own day first, then the days after it, each
+// named the way a reader would name it: "Today" is wrong, because the page may
+// have been built days ago, so the build's day carries its date and the rest
+// carry the weekday they fall on.
+if (serviceDaySelect) {
+  const days = DATA.serviceDays || [];
+  if (days.length > 1) {
+    serviceDaySelect.replaceChildren();
+    days.forEach(function (iso, index) {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = shortDay(iso) + " " + humanDate(iso)
+        + (index === 0 ? " (this build)" : "");
+      serviceDaySelect.append(option);
+    });
+    // The address is read before this block runs, so the day a link arrived
+    // with is applied here, clamped to the days this build actually walked.
+    const wanted = Math.min(Math.max(wantedServiceDay, 0), days.length - 1);
+    serviceDayIndex = wanted;
+    serviceDaySelect.value = String(wanted);
+    serviceDaySelect.addEventListener("change", function () {
+      serviceDayIndex = Number(serviceDaySelect.value) || 0;
+      currentPage = 1;
+      render();
+      // The dock is re-rendered too: a shortlisted row showing the build's day
+      // beside a table showing the chosen one is the page contradicting itself.
+      renderShortlist();
+      writeUrl();
+    });
+    serviceDayBar.hidden = false;
+    serviceDayHelp.textContent = "Times and changes for every row, on the day you pick."
+      + " Interchange stations are shown for the build’s own day only.";
+  } else {
+    serviceDayBar.remove();
+  }
+}
 if (clearTypes) clearTypes.addEventListener("click", clearDestinationTypes);
 provenance();
 sizeBudgetField();

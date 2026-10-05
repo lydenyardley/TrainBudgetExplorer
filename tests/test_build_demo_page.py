@@ -607,8 +607,11 @@ class DemoPageTest(unittest.TestCase):
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["journeyState"], "found")
         self.assertEqual(rows["SLP"]["journeyState"], "no_service")
+        # The cell reads the chosen day, not the build's own answer: the Time
+        # and Changes columns report whichever day the reader picked, so the
+        # absence beside them has to be worded for that day too.
         self.assertIn(
-            "cell.textContent = missing ? noServiceText(destination) : duration(destination.minutes);",
+            "cell.textContent = missing ? dayAbsenceText(destination, true) : duration(journey.minutes);",
             self.html,
         )
         # Every absence is worded in one table on the page, from the key, the
@@ -630,7 +633,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(
             'return changes === 1 ? "1 change" : changes + " changes";', self.html
         )
-        self.assertIn('count.textContent = missing ? "Unknown" : changeCount(destination.changes);', self.html)
+        self.assertIn('count.textContent = missing ? "Unknown" : changeCount(journey.changes);', self.html)
         prices_only = build_payload(self.fares, None, "GRN")
         self.assertEqual(
             next(row for row in prices_only["destinations"] if row["crs"] == "LCN")["journeyState"],
@@ -1456,7 +1459,8 @@ class DemoPageTest(unittest.TestCase):
     def test_a_page_with_times_keeps_all_six_columns(self) -> None:
         script = page_script(self.html)
         self.assertIn("const columnCount", script)
-        self.assertIn("duration(destination.minutes)", script)
+        # Through journeyFor(), so the number printed is the chosen day's.
+        self.assertIn("duration(journey.minutes)", script)
 
     # -- feed metadata: provenance recorded once, read by every build ---------
 
