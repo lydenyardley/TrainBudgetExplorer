@@ -294,6 +294,23 @@ class FaresParserTest(unittest.TestCase):
         db.location_facets_by_crs = {"LCN": {"seaside"}}
         self.assertEqual(db.coastal_sites("LCN"), [])
 
+    def test_tenby_carries_a_named_coastal_day_out(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {"TEN": Location("1", "TEN", "TENBY", "")}
+        db.location_facets_by_crs = {"TEN": {"seaside"}}
+        self.assertEqual(
+            db.coastal_sites("TEN"),
+            [{
+                "name": "Tenby North Beach",
+                "url": (
+                    "https://www.visitpembrokeshire.com/explore-pembrokeshire/"
+                    "beaches/tenby-north-beach"
+                ),
+            }],
+        )
+        db.location_facets_by_crs = {"TEN": set()}
+        self.assertEqual(db.coastal_sites("TEN"), [])
+
     def test_an_airport_station_is_in_the_airport_category(self) -> None:
         db = FaresDb()
         db.locations_by_crs = {"XQB": Location("1", "XQB", "EAST M AIR LGE", "")}
