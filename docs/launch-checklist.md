@@ -60,14 +60,17 @@ Things the post must do:
       booking engine. Where that fare is an Advance single it is valid on a
       qualifying train only and the page says so; the reviewed Anytime Day Return
       set is one of three filters rather than the list that opens. Railcard
-      discounts are priced per fare when the reader ticks the box, and the party
-      quote keeps the undiscounted fare as its default
+      discounts are priced per fare, and per row, when the reader names a card
+      from the collection the page offers; a row the feed prices in two tickets
+      prices both of them; and the party quote keeps the undiscounted fare as its
+      default
 - [ ] Disclose any affiliate link in the post itself. A community that discovers it
       undeclared is a community lost, and that is the whole audience
 - [ ] Meet the predictable "split ticketing is cheaper" reply by agreeing with it,
       because it is true: every row whose journey changes names the station it
-      changes at and says a two-ticket split may cost less, while the page prices
-      the through fare only
+      changes at and says a two-ticket split may cost less, and where the feed
+      itself prices that journey in two published fares the row is already the
+      sum of both, naming the station the split sits at (ADR-0061)
 
 ## 4. The review, 21 October 2026
 

@@ -31,6 +31,8 @@ env:
 
 The downloader does not put either value in the download manifest. Do not print the environment in a workflow step or upload the feed credentials as an artifact.
 
+The reference feeds are downloaded in a second step that is allowed to fail, because the Knowledgebase subscription is a different question from the DTD fares and timetable entitlement. A refusal there is a warning and the build continues; the page then says no independent reference feed was checked.
+
 ### If secrets are missing
 
 The scheduled workflow fails at the download step and does not publish. That is intentional: publishing synthetic or unaudited data would make the provenance line false.
@@ -45,16 +47,23 @@ You can still run the application locally with the synthetic feed, but a public 
 4. Watch the order of the steps:
 
    ```text
-   download → audit → build → tests → browser test → publish
+   check the commit messages → download → detect whether the feed changed
+   → audit → gate the unsourced count → gate the price per minute
+   → build the site → hold the bytes → check the manifest and journeys
+   → tests → browser test → clearance → publish
    ```
 
-5. The site is published only when the audit, Python tests, and browser test all pass.
+5. The site is published only when every gate before the publish step passes. Two of them are not optional and not softer than they look. `licences/release-clearance.md` must clear the shape the build publishes, which is `fares,timetable` because the build loads the national timetable, and the `github-pages` environment can require a person to approve the run. Until that clearance is written, the build, the tests and the browser run stay green and only publication waits.
 
-The workflow also runs daily at 03:17 UTC. GitHub may delay scheduled jobs, so the date shown on the deployed site may be slightly behind the scheduled time.
+The workflow also runs on every push to `main` and daily at 03:17 UTC. GitHub may delay scheduled jobs, so the date shown on the deployed site may be slightly behind the scheduled time.
 
-The feed is checked before building. If the downloaded manifest is unchanged from the last successful build, the workflow skips the build and leaves the currently published site untouched. A changed feed is downloaded, audited, built as a fast single-origin prices page, tested in a browser, and published only if every later step succeeds. The timetable is audited but not loaded for this daily publication because the national calling-point feed makes that a long batch job; local users can opt into it with `run.py --with-timetable`. A failed download, audit, build, or test does not replace the previous GitHub Pages deployment.
+**What the build step publishes.** The build runs `build_demo_page.py` with `--feed feeds/fares`, `--timetable feeds/timetable`, `--knowledgebase feeds/knowledgebase`, `--all-origins`, the licence notices the terms require, and `--require-live-reviewed-codes`. So the release is the whole network with journey times: a chooser at the root and one page per priced station under `/from/<slug>/`, each carrying its times and changes. The step's `timeout-minutes` is 300, which is sized for the slowest runner the workflow can land on at the worker count that runner's free memory allows.
 
-The generated page shows both the feed provenance/date and the UTC build timestamp near the prices, so a reader can tell when the snapshot was produced. The daily deployment is a single Grantham-origin page; use the local `--with-timetable` option when journey times are required.
+**What runs before it, and why.** The downloaded feeds are audited, the unsourced-destination count is held under a ceiling that falls as reviewed settlement classes land, and `tools/check_fare_rate.py` prices what the page's own selectors publish, so an implausible price per minute fails the run before a page is written rather than after. After the build, `tools/page_bytes.py` holds the release against its byte budget, and the manifest check reads the release's own manifest against the folder and refuses if the route count and the page count disagree or if any station page is missing its journeys. Then the Python suite runs under a coverage floor, and the browser suite drives the demo site, the site that ships, and two shape pages.
+
+**Unchanged feeds skip the work.** The workflow compares a fingerprint of what the feeds *are*, plus a digest of the builder's own source files, against the last successful build. When neither moved, it says so, keeps the existing site, skips the audit, the build and everything that reads the built site, and still runs the commit message check, the Python suite and the browser suite. A failed download, audit, build, gate or test never replaces the previous deployment.
+
+The generated pages show the feed provenance and date and the UTC build timestamp, so a reader can tell when the snapshot was produced, and a build with a date outside the feed's own window fails the journey check instead of publishing prices without times.
 
 ## Project sites and base paths
 
@@ -69,21 +78,40 @@ A project site such as `https://username.github.io/TrainBudgetExplorer/` needs t
 
 The workflow passes this value to the page builder so internal links work under that prefix.
 
+### The privacy contact
+
+The build carries a project default privacy address so a real-feed build works locally without an operator supplying one. That default has not been confirmed as monitored, so set a repository variable named `PRIVACY_CONTACT` to the address the publish checklist has confirmed, and the workflow passes it to the build.
+
 ## What gets published
 
 The workflow uploads `_site/`, which contains:
 
-- the generated Grantham-origin page;
-- the privacy page;
-- static HTML, CSS, and JavaScript embedded in the pages.
+- the chooser page at the root;
+- one page per priced station under `from/<slug>/`, each with its own fares, times and provenance;
+- the privacy page every footer links to;
+- the release manifest the build writes beside the pages, and the two shared files a page fetches (the station list its picker reads, and this route's stylesheet).
 
-The licensed feed ZIPs are not included in the Pages artifact. They are used to generate the pages and are not served as public files.
+Static HTML, CSS, and JavaScript are embedded in the pages. The licensed feed ZIPs are not included in the Pages artifact. They are used to generate the pages and are not served as public files.
 
 ## Troubleshooting
 
 ### Pages shows a 404
 
 Check that **Settings → Pages → Source** is **GitHub Actions**, then inspect the Actions log for the deployment URL.
+
+### The publish job never starts
+
+That is the clearance gate, not a broken workflow. Run
+
+```
+python tools/check_release_clearance.py --release fares,timetable
+```
+
+and read `docs/publish-checklist.md` §1. The build and its tests are expected to be green while this refuses.
+
+### The build step times out
+
+The step is bounded at 300 minutes. A timeout means the build got slower than the measurement the bound came from, so re-measure rather than raising the number: the comment above the bound in `.github/workflows/deploy.yml` records the workers, the page count and the rate it was set from.
 
 ### Internal links do not work on a project site
 
@@ -93,9 +121,13 @@ Set `SITE_BASE_PATH` to the repository name and run the workflow manually again.
 
 Check that both `NRDP_USERNAME` and `NRDP_PASSWORD` exist as **Actions repository secrets**. Do not paste their values into an issue or chat.
 
-### The audit fails
+### The audit or a gate fails
 
-Do not bypass the audit. Inspect the failing feed or parser finding, fix the cause, and rerun. The workflow will not publish a failed audit.
+Do not bypass it. Inspect the failing feed or parser finding, fix the cause, and rerun. The workflow will not publish a failed audit, an unsourced count over its ceiling, a price per minute outside the band, a release over its byte budget, or a page that lost its journeys.
+
+### The commit message check fails
+
+Every commit the push adds must follow `CONTRIBUTING.md`. The step names the commit that failed; amend the message rather than skipping the step. A scheduled or manual run adds no commits, so it checks nothing and says so.
 
 ### The workflow is using synthetic data locally
 

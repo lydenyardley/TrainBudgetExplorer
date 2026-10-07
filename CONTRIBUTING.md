@@ -74,7 +74,7 @@ command whose output a reviewer can reproduce.
 
 ```
 git log -1 --format=%B | python tools/check_commit_message.py
-python -m unittest test_commit_message
+python -m unittest discover -s tools -p "test_commit_message*.py"
 ```
 
 The checker accepts the Conventional Commits grammar plus `Merge `, `Revert `,

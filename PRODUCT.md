@@ -16,15 +16,19 @@ than a search engine (ADR-0003: r/uktrains, local Facebook groups, Hacker News
 only if worthy), so they are reading a stranger's recommendation in a thread and
 deciding in seconds whether this is worth a click.
 
-**Travelling as a pair is a first-class case, not a variant.** Two adults on a Two
-Together Railcard is the only railcard in v1 (ADR-0002), so a large share of
-readers are two people asking what the trip costs *them*. The card's discount is
-priced per fare (ADR-0025): ticking it lowers the fare wherever the feed's current
-`RR` rules permit and widens the list the budget reaches, and each row's own
-details name the minimum fare in force and the rule behind the answer. The
-undiscounted figure stays the default party total and the budget ceiling, because
-the page cannot know who is reading and a ceiling must not move when a box is
-ticked.
+**Travelling as a pair is a first-class case, not a variant.** A large share of
+readers are two people asking what the trip costs *them*. A railcard is one card
+chosen from a collection rather than a single card (ADR-0052): the page offers
+every card this feed prices, nothing is selected by default, and the choice is
+remembered in the browser instead of being typed again on every page. A chosen
+card's discount is priced per fare (ADR-0025): it lowers the fare wherever the
+feed's current `RR` rules permit and widens the list the budget reaches, and each
+row's own details name the minimum fare in force and the rule behind the answer. A
+row the feed prices in two tickets carries a card price of its own as well, the
+two card fares added together and the minimum applied to each ticket (ADR-0061).
+The undiscounted figure stays the default party total and the budget ceiling,
+because the page cannot know who is reading and a ceiling must not move when a
+card is named.
 
 **The operator is the owner**, acting part-time. The staged plan bounds the whole
 experiment at roughly four weeks part-time, with a hard build stop and a written
@@ -36,8 +40,11 @@ Turn a price into a shortlist of places. Given an origin station and a budget, t
 page lists **every** destination reachable by train inside that budget, with the
 fastest journey time, the number of changes, the cheapest fare of any ticket type
 the feed prices to that place for one adult, and the total for two adults on that
-same fare (ADR-0025, ADR-0044). The ticket a row is priced as is named on the row,
-and the count line names the mix of ticket types the list is showing.
+same fare (ADR-0025, ADR-0044). A place the feed prices in two published fares is
+one row priced at the sum of the two fares the journey itself uses, naming both
+tickets and the station the split sits at (ADR-0061). The ticket a row is priced
+as is named on the row, and the count line names the mix of ticket types the list
+is showing.
 
 It exists as a demand experiment whose commercial shape, if it survives, is
 affiliate lead generation (ADR-0003). Success for v1 is therefore a **signal, not
@@ -88,14 +95,23 @@ conversion would not make those moves.
 - **Venues and cadence:** community posts at launch (w/c 5 October), referrer
   measurement, an affiliate application only once the licence is read and there is
   traffic, and the 21 October review tripwire.
-- **Hosting is undecided.** The page has never been served publicly (ADR-0010);
-  ADR-0004's Stage 2 mentions free hosting without choosing one.
+- **Hosting is chosen but not switched on.** The deploy workflow targets GitHub
+  Pages, builds the whole network from the licensed feeds, and refuses to publish
+  until `licences/release-clearance.md` clears the release, which today it does
+  not, so nothing has been served publicly
+  (`docs/github-pages-deployment.md`, ADR-0010).
 
 ## Capabilities and Constraints
 
 **Confirmed functionality.** Station picker (search by name or three-letter code,
 resolving to the station's page); budget slider; destination filter by name or code;
-party switch (one adult, or two adults on the fare the row names); a ticket type
+destination-type chips, which are the settlement bands plus one chip per sourced
+facet in `DESTINATION_FACET_SOURCES` (coastal and seaside, universities, World
+Heritage, islands, airports, nature sites, transport interchanges, RSPB reserves,
+National Trust properties, and National Park and National Landscape gateways);
+party switch (one adult, or two adults on the fare the row names); a railcard
+control offering every card this feed prices, with nothing selected by default; a
+ticket type
 control that opens on the cheapest fare of any type and filters the list to one
 of the three named sets; per
 destination a price, the fastest journey time, the number of changes, the station
@@ -108,6 +124,14 @@ schedule was read when it is not. A build with no timetable says so in its openi
 sentence and stands the times columns down rather than describing them. Above the
 results — not in a closed disclosure — the page states what the ticket link costs
 the reader, and, where links are tracked, what it earns the site.
+
+**A destination-type chip carries named proof behind it.** A chip is only honest
+if the row can name the place that earned it, so a tagged row shows a proof
+subline under its name: the World Heritage property, the reserve, the beach, the
+castle or the reserve the station actually reaches. A source is added as one
+registry entry and one reviewed list, never as a second place to remember, so the
+chips, the payload and the checked-in reference data all follow from the same
+list (ADR-0026, ADR-0064, ADR-0065).
 
 **Hard constraints.**
 
@@ -138,13 +162,17 @@ the reader, and, where links are tracked, what it earns the site.
   and every one of them is cheapest on a single, which is the accepted cost of
   the decision: the headline is a one-way price list, and the party figure is
   two of the fare the row names.
-- **Two Together is the only railcard in v1.** Its discount is priced on the page
-  when the reader ticks it: the one-third discount rounded down to 5p, held up by
-  the `.RCM` minimum fare in force on the day -- each record's own `start_date`
-  and `end_date` are honoured -- and gated by the current `.RST` `RR` ticket,
-  route, location and total-ban rules. The undiscounted figure stays the default
-  party total and the budget ceiling (ADR-0025). The railcard is never sent to a
-  seller; the page tells the reader to tick the box instead (ADR-0014).
+- **The railcard is one card chosen from a collection.** The page offers every
+  card this feed prices and prices the reader's choice on the page: the one-third
+  discount rounded down to 5p, held up by the `.RCM` minimum fare in force on the
+  day -- each record's own `start_date` and `end_date` are honoured -- and gated by
+  the current `.RST` `RR` ticket, route, location and total-ban rules. A card that
+  does not cover the party is marked and cannot be chosen, the choice is remembered
+  per station rather than sent anywhere, and a row the card cannot lower says so
+  instead of quoting a number nobody could buy (ADR-0025, ADR-0052). The
+  undiscounted figure stays the default party total and the budget ceiling. The
+  railcard is never sent to a seller; the page tells the reader to name it here
+  instead (ADR-0014).
 - **No train is ever chosen for the reader.** A departure or a journey identifier
   in a link would turn a price list into a booking suggestion the data cannot
   support.
@@ -175,19 +203,23 @@ gets built is.
 station index that drives the picker ships inside every page, a station page's
 address is a readable slug (`/from/grantham`) with the chooser at the root, the
 picker is a search field over real links rather than a custom listbox, and nothing
-is stored — the URL is the only memory. The picker cannot offer a "nearest
-station" because the fare feed's location records carry no county, region, or
-coordinates, and destination rows do not become entrances to other origins in v1.
+is stored — the URL is the only memory. Thepicker cannot offer a "nearest station": the fares feed's location records carry no
+county, region, or coordinates, so the page's own data holds no geography. The
+Knowledgebase stations file it reads for the attraction prune does carry
+coordinates (2,613 CRS on the 24 September 2026 download), and ranking a reader's
+nearby stations with them is open work rather than a capability
+(`docs/open-work.md`, C27). Destination rows do not become entrances to other
+origins in v1.
 
 **Explicitly undecided, not to be invented:**
 
 - the public product name (see Brand Commitments);
 - the fares licence terms for commercial use, and therefore whether monetisation
   happens at all;
-- the hosting or deploy target for the set of station pages (ADR-0019) — the path
-  scheme is settled, the host is not;
-- how much of the network a build can afford to price, which depends on the
-timetable enrichment cost and cannot be measured until the feed lands.
+- how long the published whole-network build may take. It is bounded rather than
+  decided (`timeout-minutes: 300` in the deploy workflow, sized from the slowest
+  runner the workflow can land on), and `docs/build-performance-findings.md`
+  measures the cost the bound stands on.
 
 ## Brand Commitments
 
@@ -201,12 +233,15 @@ either creates it deliberately or is inventing evidence.
 
 ## Evidence on Hand
 
-**There is no real data in this repository, and nothing may be presented as if
-there were.** `feeds/fares` and `feeds/timetable` do not exist. Every test, demo,
-and screenshot runs on synthetic feeds whose stations, fares, and times are
-invented (`make_synthetic_feed.py`, `_demo_feed`). The generated `demo*.html` files
-are derived from that synthetic data and are gitignored; they are a pipeline
-exercise, not a fare quote.
+**The tests run on invented data; the licensed feeds are also on disk, and the two
+are never blended.** Every test, demo page and browser check runs on synthetic
+feeds whose stations, fares and times are invented (`make_synthetic_feed.py`,
+`_demo_feed`), and the generated `demo*.html` files derived from that are
+gitignored: they are a pipeline exercise, not a fare quote. Separately, the real
+licensed downloads are present (`feeds/fares/dtd-fares.zip`, 47 MB, and
+`feeds/timetable/dtd-timetable.zip`, 73 MB, both of 24 September 2026), which is
+what a real-feed build, `dtd_audit.py` and the deploy workflow read. A figure
+quoted from the real feed is a figure from the feed named beside it.
 
 **There are no users yet.** No testimonials, no customers, no benchmark, no press,
 no traffic figures, and no user research of any kind. The 21 October review is the
@@ -214,12 +249,15 @@ point at which the first real evidence will exist.
 
 **What genuinely exists as evidence:**
 
-- 179 tests, including literal-value assertions on parsing, damage, and fuzzing;
+- the test suite, including literal-value assertions on parsing, damage and
+  fuzzing: **740 tests, OK**, measured on 7 October 2026 with
+  `python -m unittest discover -s tests -p "test_*.py"`, plus a browser suite that
+  drives the generated page at three widths in light and dark;
 - a measured onward-departure cap (200) with the measurement recorded (ADR-0009);
-- a first-run runbook for when the real feeds land (`README.md`, "When the account
-  clears");
+- a first-run runbook for the real feeds, which have now landed and been
+  downloaded (`README.md`, "When the account clears");
 - an ADR set that records what is unverified rather than only what is decided, plus
-  two publish checklists;
+  two publish checklists and one living file of open work (`docs/open-work.md`);
 - one fact verified from outside the repository: Grantham's CRS code is `GRA`, and
   the National Rail journey-planner deep link returns "No matching journeys found"
   for every route tried, including King's Cross to Edinburgh.
