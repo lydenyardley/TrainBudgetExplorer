@@ -1419,7 +1419,15 @@ async function runPage(browser, index, given, file, body, base) {
       intro: (document.getElementById("pageIntro") || {}).textContent || "",
       hasJourneys: DATA.hasJourneys,
       timeColumns: document.querySelectorAll("thead th[data-label='Time']").length,
-      headers: Array.from(document.querySelectorAll("thead th")).map((th) => th.textContent),
+      // The results table only. The shortlist dock is a second table with its
+      // own headings, and it keeps a Time column on a prices-only build on
+      // purpose: a shortlisted row names the journey time it was shortlisted
+      // for, and that column standing down is the dock's own business. Asking
+      // every th on the page made this read the dock's Time as the results
+      // table promising a time the page had just said it had no source for.
+      headers: Array.from(
+        document.querySelectorAll("table:has(#rows) thead th")
+      ).map((th) => th.textContent),
     }));
     check(
       "the opening sentence matches whether a timetable was loaded",
@@ -2617,38 +2625,83 @@ async function runPage(browser, index, given, file, body, base) {
     const note = await page.evaluate(() => {
       // The card is applied here rather than read from whatever the suite left
       // on screen, so the check exercises the path a reader takes and never
-      // skips for want of state earlier in the run.
+      // skips for want of state earlier in the run. The party control moves
+      // with the card, because a card that covers two adults is not priced
+      // onto a journey for one.
       const before = document.getElementById("railcardSelect").value;
-      const rows = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations].flat();
-      const pick = (DATA.railcards || []).find((card) =>
-        rows.some((d) => {
-          const detail = (d.railcards || {})[card.key];
-          return detail && detail.pricePence !== null && detail.pricePence < d.adultPence;
-        })
-      );
-      if (!pick) return null;
-      document.getElementById("railcardSelect").value = pick.key;
-      render();
-      const was = document.querySelector("td.num .was");
-      const price = document.querySelector("td.num .price");
-      const reading = was && price
-        ? {
-            note: parseFloat(getComputedStyle(was).fontSize),
-            price: parseFloat(getComputedStyle(price).fontSize),
-            text: was.textContent.trim(),
+      const unitBefore = document.querySelector('input[name="unit"]:checked').value;
+      // Whether the page under test actually shows a discounted fare is read
+      // off the page, card by card, rather than predicted from the payload.
+      // Predicting it was wrong in two ways at once. A card's price can equal
+      // the standard fare on the row the reader is looking at, because of that
+      // card's own minimum fare: a 16-25 railcard floors at £12.00, so on a
+      // £9.50 row it buys nothing and the page correctly shows no note. And a
+      // card can lower some row in some fare list while the row the table
+      // opens on, cheapest first, is one it does not touch. Either way the
+      // missing note was the page being right, and the check asking for
+      // something the reader cannot have.
+      //
+      // So the search is over what is on screen: one traveller first, then
+      // two, and within each every card this page priced.
+      const readLadder = () => {
+        const was = document.querySelector("td.num .was");
+        const price = document.querySelector("td.num .price");
+        return was && price ? { was, price } : null;
+      };
+      let chosen = null;
+      let seen = [];
+      for (const who of ["adult", "party"]) {
+        for (const card of DATA.railcards || []) {
+          const travellers = who === "party" ? 2 : 1;
+          if (card.minAdults > travellers || travellers > card.maxAdults) continue;
+          const radio = document.querySelector('input[name="unit"][value="' + who + '"]');
+          if (!radio) continue;
+          radio.checked = true;
+          document.getElementById("railcardSelect").value = card.key;
+          render();
+          const hit = readLadder();
+          seen.push(card.key + "/" + (who === "party" ? 2 : 1));
+          if (hit) {
+            chosen = card;
+            break;
           }
-        : { noNote: true };
+        }
+        if (chosen) break;
+      }
+      if (!chosen) {
+        // Left off by the search rather than returned from: it checked every
+        // radio on the way through, so the page has to be handed back the way
+        // the suite found it or every later check reads someone else's search.
+        document.getElementById("railcardSelect").value = before;
+        document.querySelector(`input[name="unit"][value="${unitBefore}"]`).checked = true;
+        render();
+        return { noCardLowers: true, tried: seen };
+      }
+      const ladder = readLadder();
+      const was = ladder.was;
+      const price = ladder.price;
+      const reading = {
+        note: parseFloat(getComputedStyle(was).fontSize),
+        price: parseFloat(getComputedStyle(price).fontSize),
+        text: was.textContent.trim(),
+        card: chosen.key,
+        unit: unit(),
+      };
       document.getElementById("railcardSelect").value = before;
+      document.querySelector(`input[name="unit"][value="${unitBefore}"]`).checked = true;
       render();
       return reading;
     });
     check(
       "the standard fare under a discounted price is a clear step down the ladder",
-      note
-        ? note.noNote
-          ? false
-          : note.note <= note.price - 2
-        : notExercised("this feed prices no railcard that lowers a displayed fare"),
+      note && note.noCardLowers
+        ? notExercised(
+            "no railcard on this page lowers any fare the party it covers is " +
+              "charged, tried " + JSON.stringify(note.tried)
+          )
+        : note
+          ? note.note <= note.price - 2
+          : false,
       JSON.stringify(note)
     );
 
@@ -3355,7 +3408,9 @@ async function runPage(browser, index, given, file, body, base) {
         // reader can set the changed row beside.
         const onScreen = () =>
           Array.from(document.querySelectorAll("#rows tr[data-crs]")).map((r) => r.dataset.crs);
-        const changedRows = list.filter(changesAt);
+        // A two-ticket row (ADR-0061) is not a through fare, so it carries no
+        // note about splitting one; the through-fare rows are the ones asked.
+        const changedRows = list.filter((d) => changesAt(d) && !d.tickets);
         let changed = changedRows.find((d) => onScreen().includes(d.crs));
         if (!changed) {
           const elsewhere = changedRows.find((d) => {
@@ -3632,8 +3687,10 @@ function saysMoreThan(condition, code) {
       });
       if (!row) return null;
       // The feed's record is in the row's disclosure, and this is the row whose
-      // toggle has no times to count: it reads "Fare details", and it exists on
-      // every row precisely so that this one has somewhere to put its record.
+      // expander has no times to count. The control's face is the shared
+      // chevron, so its words live in the accessible name rather than in its
+      // text; it exists on every row precisely so that this one has somewhere
+      // to put its record.
       const toggle = row.querySelector(".toggle[aria-expanded=false]");
       if (toggle) toggle.click();
       const detail =
@@ -3645,7 +3702,8 @@ function saysMoreThan(condition, code) {
         record: detail
           ? Array.from(detail.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent)
           : [],
-        label: toggle ? toggle.textContent : "",
+        label: toggle ? toggle.getAttribute("aria-label") || "" : "",
+        marked: Boolean(toggle && toggle.querySelector(".chevron")),
       };
     });
     // A no-service row carries the day the page is about when the week reaches
@@ -3669,6 +3727,58 @@ function saysMoreThan(condition, code) {
           typed.record.some((value) => /no service|timetable/i.test(value))
         : notExercised("every destination on this page has a journey"),
       JSON.stringify({ ...typed, serviceWeekday })
+    );
+
+    // The row expander's face is the page's shared chevron rather than the word
+    // "Fare details", so three things are measured on a rendered row instead of
+    // asserted in the source: the mark is really drawn and really is the one
+    // the filter bar uses, the words a screen reader needs are still its
+    // accessible name, and the control is still a 44px target. A chevron with
+    // no name and no size is a control nobody can find or aim at.
+    const expander = await page.evaluate(() => {
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
+      const row = document.querySelector("#rows tr:not(.detail)");
+      const button = row && row.querySelector(".row-expand");
+      if (!button) return null;
+      const mark = button.querySelector("svg.chevron");
+      const filterMark = document.querySelector("#moreFiltersToggle svg.chevron");
+      const box = button.getBoundingClientRect();
+      const open = button.getAttribute("aria-expanded");
+      button.click();
+      const opened = button.getAttribute("aria-expanded");
+      const rotated = getComputedStyle(button.querySelector("svg.chevron")).transform;
+      const panelShown = Boolean(row.nextElementSibling && row.nextElementSibling.classList.contains("detail"));
+      button.click();
+      return {
+        marked: Boolean(mark),
+        // The same path in both places, which is the point of one CHEVRON.
+        samePath: Boolean(mark && filterMark && mark.innerHTML === filterMark.innerHTML),
+        name: button.getAttribute("aria-label") || "",
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        rotated: rotated !== "none",
+        open,
+        opened,
+        panelShown,
+        closedAgain: button.getAttribute("aria-expanded") === "false",
+      };
+    });
+    check(
+      "a row expands by a chevron that keeps its words and its target",
+      expander
+        ? expander.marked &&
+          expander.samePath &&
+          /details for .+/.test(expander.name) &&
+          Math.min(expander.w, expander.h) >= 44 &&
+          expander.open === "false" &&
+          expander.opened === "true" &&
+          expander.rotated &&
+          expander.panelShown &&
+          expander.closedAgain
+        : notExercised("this page lists no rows to expand"),
+      JSON.stringify(expander)
     );
 
     // S20: counts on the chips, the union stated, and a way back to All.
@@ -4128,18 +4238,27 @@ function saysMoreThan(condition, code) {
       // A shortlist kept across a mode change must not keep a place whose fare
       // the reader can no longer see. Both named modes are tried, because a row
       // priced as a return leaves the list when the reader asks for singles.
+      //
+      // The change is fired as an event rather than assigned to .checked, so
+      // the control's own handler runs. Assigning the property re-renders
+      // without writing the address, which left the page holding one place
+      // under a link that still promised two -- and the check below then read
+      // the link's two and called a correct page wrong.
       const openedIn = ticketMode();
       const byMode = [];
-      for (const mode of ["single", "return"]) {
+      const chooseMode = (mode) => {
         const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
-        if (!input || !modeCount(mode)) continue;
+        if (!input || !modeCount(mode)) return false;
         input.checked = true;
-        render();
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      };
+      for (const mode of ["single", "return"]) {
+        if (!chooseMode(mode)) continue;
         byMode.push({ mode, texts: facts() });
         if (byMode[byMode.length - 1].texts.length) break;
       }
-      document.querySelector(`input[name="ticketMode"][value="${openedIn}"]`).checked = true;
-      render();
+      chooseMode(openedIn);
       const share = document.getElementById("shortlistShare").textContent;
       return {
         both, asPair, asSolo, chipsAgainstRows, byMode, share, address,
@@ -4202,13 +4321,31 @@ function saysMoreThan(condition, code) {
         text: typeof shortlistText === "function" ? shortlistText() : "",
         share: (document.getElementById("shortlistShare") || {}).textContent || "",
         origin: DATA.origin.name,
+        held: shortlisted().length,
+        url: location.href,
       }));
       check(
         "and the list is a list of places, not a booking",
+        // The count is read from the list rather than fixed at two. A place
+        // whose fare the mode cannot price leaves the shortlist by design, so
+        // after the mode change the list may hold one place, and the share
+        // line has to count what is actually held -- not what was held before
+        // the reader changed their mind about the ticket type.
         /not a booking/i.test(shared.text) &&
-          shared.share.includes("Shortlist of 2 places") &&
+          new RegExp(
+            "^Shortlist of " + shared.held + " place" + (shared.held === 1 ? "" : "s")
+          ).test(shared.share) &&
           shared.share.includes(shared.origin),
         JSON.stringify(shared).slice(0, 300)
+      );
+      // The share line and the address are two renderings of one list, so a
+      // place that left the shortlist has to leave the link too. They drifted
+      // once: the list held one place and the link still named two, which sent
+      // whoever followed it a shortlist the page did not have.
+      check(
+        "and the shared link names exactly the places the list holds",
+        shared.held === new URL(shared.url).searchParams.getAll("short").length,
+        JSON.stringify({ held: shared.held, url: shared.url })
       );
       check(
         "every row carries a box, and a held place's box is ticked",
@@ -4511,7 +4648,15 @@ function saysMoreThan(condition, code) {
         "the day control offers every day the build walked, its own day first and named",
         dayControl.optionCount === dayControl.days.length &&
           dayControl.days[0] === dayControl.built &&
-          /\(this build\)/.test(dayControl.firstOption) &&
+          // The weekday leads and the date follows. Two Sundays are not the
+          // same day: from Grantham, 4 Oct 2026 reaches 238 stations and
+          // 11 Oct reaches 416 (ADR-0060), so an option that named only the
+          // weekday would be a claim the feed does not carry, and one that
+          // named only "this build" told a reader nothing about which date.
+          /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]+ \d{4}$/.test(
+            dayControl.firstOption
+          ) &&
+          !/\(this build\)/.test(dayControl.firstOption) &&
           dayControl.selected === "0",
         JSON.stringify({ days: dayControl.days.length, built: dayControl.built, first: dayControl.firstOption })
       );
@@ -4551,6 +4696,104 @@ function saysMoreThan(condition, code) {
       check("another day in the build's week is a different set of times", notExercised(idle));
       check("and every absence on every day names the day it is about", notExercised(idle));
     }
+    // ADR-0061: a place the feed prices only in two parts is one row, priced
+    // at the two fares added together, naming both tickets, both conditions and
+    // the pricing split (change wording only when the journey leaves a train).
+    // Read off the row the reader opens, not
+    // the payload (ADR-0058), and read again on every other day: the day
+    // changes the times and neither price (ADR-0060). The address is kept and
+    // returned to afterwards, so the checks below read the state they did.
+    const stateBefore = page.url();
+    await open();
+    const twoTicketRow = await page.evaluate(() => {
+      const row = activeDestinations().find((d) => Array.isArray(d.tickets) && d.tickets.length === 2);
+      return row ? { crs: row.crs, adult: row.adultPence, tickets: row.tickets, changes: row.changes } : null;
+    });
+    if (twoTicketRow) {
+      // The row is visited through the address, budget, page and day, so it
+      // is on screen whatever the number of cheaper rows on a real page: a
+      // changed day starts the table again at its first page.
+      const budgetPounds = Math.ceil(twoTicketRow.adult / 100);
+      await open(budgetPounds);
+      const position = await page.evaluate((crs) => {
+        const cap = Number(document.getElementById("budgetNumber").value) * 100;
+        const wanted = activeDestinations().filter((d) => priceOf(d) <= cap).sort((a, b) => priceOf(a) - priceOf(b));
+        return wanted.findIndex((d) => d.crs === crs);
+      }, twoTicketRow.crs);
+      const visit = async (day) => {
+        const address = new URL(url);
+        address.searchParams.set("budget", String(budgetPounds));
+        if (position >= pageSize) address.searchParams.set("page", String(Math.floor(position / pageSize) + 1));
+        if (day) address.searchParams.set("day", String(day));
+        await page.goto(address.href);
+      };
+      const selector = '#rows tr[data-crs="' + twoTicketRow.crs + '"]';
+      const readRow = async (day) => {
+        await visit(day);
+        if (!(await page.locator(selector).count())) return null;
+        const expanded = await page.getAttribute(selector + " button.row-expand", "aria-expanded");
+        if (expanded !== "true") await page.click(selector + " button.row-expand");
+        return page.evaluate((wanted) => {
+          const tr = document.querySelector(wanted);
+          const detail = tr.nextElementSibling;
+          return {
+            price: tr.querySelector(".price").textContent.trim(),
+            fareType: tr.querySelector(".fare-type").textContent.trim(),
+            tickets: detail ? Array.from(detail.querySelectorAll(".two-tickets li")).map((li) => li.textContent.trim()) : [],
+            panel: detail ? detail.textContent : "",
+            split: Boolean(detail && detail.querySelector(".split")),
+          };
+        }, selector);
+      };
+      const shown = await readRow(0);
+      const sum = twoTicketRow.tickets[0].adultPence + twoTicketRow.tickets[1].adultPence;
+      const expectedPrice = "\u00a3" + (sum / 100).toFixed(2);
+      const viaName = twoTicketRow.tickets[0].toName;
+      const throughPriced = (twoTicketRow.changes || 0) === 0;
+      const splitWording = throughPriced
+        ? shown.panel.includes("priced via " + viaName) &&
+          shown.panel.includes("stay on the train") &&
+          !shown.panel.includes("changing at ")
+        : shown.panel.includes("changing at " + viaName);
+      check(
+        "a place the feed prices in two parts is one row at both fares added together, naming each ticket, its condition and the change",
+        shown !== null &&
+          twoTicketRow.adult === sum &&
+          shown.price === expectedPrice &&
+          shown.fareType === "Two tickets" &&
+          shown.tickets.length === 2 &&
+          twoTicketRow.tickets.every((ticket, at) =>
+            shown.tickets[at].includes(ticket.ticket) &&
+            shown.tickets[at].includes(ticket.restrictionCode ? "restriction " + ticket.restrictionCode : "no restriction")) &&
+          splitWording &&
+          shown.panel.includes("two separate purchases") &&
+          !shown.split,
+        JSON.stringify({ crs: twoTicketRow.crs, expected: expectedPrice, throughPriced: throughPriced, shown: shown })
+      );
+      const days = await page.evaluate(() => (DATA.serviceDays || []).length);
+      if (days > 1) {
+        const differing = [];
+        for (let index = 1; index < days; index += 1) {
+          const later = await readRow(index);
+          if (!later || later.price !== shown.price || later.tickets.join("|") !== shown.tickets.join("|")) {
+            differing.push({ day: index, row: later });
+          }
+        }
+        check(
+          "the day control changes neither price on a two-ticket row",
+          differing.length === 0,
+          JSON.stringify({ days: days, differing: differing.slice(0, 2) })
+        );
+      } else {
+        check("the day control changes neither price on a two-ticket row", notExercised("this page carries no week of days"));
+      }
+    } else {
+      const idle = "no place on this page is priced in two parts";
+      check("a place the feed prices in two parts is one row at both fares added together, naming each ticket, its condition and the change", notExercised(idle));
+      check("the day control changes neither price on a two-ticket row", notExercised(idle));
+    }
+    await page.goto(stateBefore);
+    await installReader();
 // The chosen day is part of the search, so it travels in the address like
     // the budget and the ticket type do. A shared link that opens on the day
     // the sender was reading is the whole reason a control like this is worth
@@ -4625,7 +4868,7 @@ function saysMoreThan(condition, code) {
       const select = document.getElementById("serviceDay");
       const days = DATA.serviceDays || [];
       if (!select || days.length < 2) return null;
-      const row = (DATA.destinations || []).find((r) => (r.changeStations || []).length);
+      const row = (DATA.destinations || []).find((r) => (r.changeStations || []).length && !r.tickets);
       if (!row) return null;
       const clashes = [];
       for (let i = 0; i < days.length; i += 1) {
@@ -4705,12 +4948,50 @@ function saysMoreThan(condition, code) {
       if (boxes.length < 2) return { rows: boxes.length };
       boxes[0].click();
       boxes[1].click();
-      const read = (tr) => Array.from(tr.children).map((td) => td.textContent.trim());
+      const read = (tr) => {
+        const cells = Array.from(tr.children).map((td) => td.textContent.trim());
+        const labelled = {};
+        for (const td of tr.children) {
+          const label = td.dataset.label;
+          if (label && !(label in labelled)) labelled[label] = td.textContent.trim();
+        }
+        // The two tables do not label their cells the same way: the results
+        // row carries data-label on every cell, and the dock row carries none,
+        // because the dock's own headings are fixed and it is narrower than the
+        // results table. So the dock row is read by position against the
+        // headings above it. The last heading is the remove button and carries
+        // no text, so it is named here rather than skipped by an emptiness
+        // test -- which is what dropped the Changes column and made the check
+        // ask a price-only page for a journey time it had no source for.
+        const headings = Array.from(
+          document.querySelectorAll("#shortlistDock table thead th")
+        ).map((th, index) =>
+          th.textContent.trim() || (index === 4 ? "Remove" : "")
+        );
+        if (!Object.keys(labelled).length && headings.length) {
+          headings.forEach((name, index) => {
+            if (name && !(name in labelled)) {
+              labelled[name] = cells[index] === undefined ? "" : cells[index];
+            }
+          });
+        }
+        return { cells, labelled };
+      };
+      // Whether this build has a timetable, read inside the page. It was read
+      // from DATA on the Node side of this evaluate, where DATA does not exist,
+      // and the throw ended the run silently -- 193 checks passed and the rest
+      // of the page was never driven.
+      const hasJourneys = Boolean(DATA.hasJourneys);
+      const dockHeadings = document.querySelectorAll("#shortlistDock table thead th").length;
+      const firstDockRow = document.querySelector("#shortlistDockList tr");
+      const widths = { headings: dockHeadings, rowCells: firstDockRow ? firstDockRow.children.length : 0 };
       const element = document.getElementById("shortlistDock");
       const box = element.getBoundingClientRect();
       return {
         rows: element.querySelectorAll("#shortlistDockList tr").length,
         hidden: element.hidden,
+        hasJourneys,
+        widths,
         position: getComputedStyle(element).position,
         atFootOfScreen: Math.round(box.bottom) === window.innerHeight,
         cells: Array.from(element.querySelectorAll("#shortlistDockList tr")).map((tr) => {
@@ -4739,26 +5020,52 @@ function saysMoreThan(condition, code) {
       // different journey than the table would be a comparison of nothing.
       // The results row carries a code and a second price the dock has no room
       // for, so each fact is checked against its own cell's leading token.
+      //
+      // The results cells are found by their column label rather than by
+      // position. A prices-only build stands the Time and Changes columns down,
+      // which shifts every cell after them, so a fixed index read 'Fare type'
+      // as the journey time and failed a page that was correct. The dock keeps
+      // its own time and change columns whatever the build has, so the two are
+      // compared on the facts both of them carry.
       check(
         "a dock row names its station, price, time and changes, and agrees with the row above",
         dock.cells.every((entry) => {
-          const [name, price, time, changes] = entry.here;
+          const here = entry.here.labelled;
           const there = entry.there;
-          if (!there || there.length < 5) return false;
+          if (!there || !there.labelled || !here.Station) return false;
           return (
-            there[1].startsWith(name) &&
-            /^£\d/.test(price) &&
-            there[2].trim().startsWith(price) &&
-            there[3] === time &&
-            there[4].split(/\s+/)[0] === changes
+            there.labelled.Station.startsWith(here.Station) &&
+            /^£\d/.test(here.Price) &&
+            there.labelled.Price.trim().startsWith(here.Price) &&
+            // A build with no timetable stands the dock's Time and Changes
+            // columns down along with the table's, so there is nothing on
+            // either side to compare and the row has to agree on the facts it
+            // does carry. Where the columns are present they must say the same
+            // thing in both places.
+            (!here.Time
+              ? true
+              : dock.hasJourneys
+                ? there.labelled.Time === here.Time &&
+                  there.labelled.Changes.split(/\s+/)[0] === here.Changes
+                : /no timetable|unknown/i.test(there.labelled.Time) ===
+                  /no timetable/i.test(here.Time))
           );
         }),
         JSON.stringify(dock.cells)
       );
       check(
         "and every dock row can be taken off the shortlist from the dock itself",
-        dock.cells.every((entry) => entry.drop && new RegExp("^Remove " + entry.here[0] + " from").test(entry.labelled)),
+        dock.cells.every((entry) => entry.drop && new RegExp("^Remove " + entry.here.labelled.Station + " from").test(entry.labelled)),
         JSON.stringify(dock.cells.map((entry) => entry.labelled))
+      );
+      // Every cell in the dock row sits under a heading, and every heading has
+      // a cell. A prices-only build stood the dock's Time and Changes headings
+      // down by position rather than by name, which left a five-cell row under
+      // three headings and a remove button under nothing at all.
+      check(
+        "every dock cell sits under a heading of its own",
+        dock.widths && dock.widths.rowCells === dock.widths.headings,
+        JSON.stringify(dock.widths)
       );
       const tail = await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight);
@@ -4841,6 +5148,7 @@ function saysMoreThan(condition, code) {
         "shortlisting a place puts a row in a dock held at the foot of the screen",
         "a dock row names its station, price, time and changes, and agrees with the row above",
         "and every dock row can be taken off the shortlist from the dock itself",
+        "every dock cell sits under a heading of its own",
         "the dock covers no results: the last row ends above it at the foot of the page",
         "the dock keeps its four columns on a phone rather than stacking every cell",
         "the dock's own Clear empties it and takes the strip off the screen",
@@ -4966,27 +5274,38 @@ function saysMoreThan(condition, code) {
     });
     const stuckHeadings = await page.evaluate(() => {
       const table = document.getElementById("rows").closest("table");
+      const th = table.querySelector("thead th");
+      // The declared rule, read whether or not the page is long enough to
+      // scroll. A page whose table starts below the fold cannot scroll to it,
+      // and the behaviour that scrolling proves is declared in exactly the same
+      // place on every page.
+      const style = getComputedStyle(th);
+      const declared = {
+        position: style.position,
+        background: style.backgroundColor,
+      };
       const tableTop = table.getBoundingClientRect().top + window.scrollY;
       const furthest = document.documentElement.scrollHeight - window.innerHeight;
-      if (tableTop > furthest) return { reachable: false, tableTop: Math.round(tableTop), furthest };
+      if (tableTop > furthest) {
+        return { reachable: false, tableTop: Math.round(tableTop), furthest, ...declared };
+      }
       window.scrollTo(0, tableTop);
-      const th = table.querySelector("thead th");
-      const style = getComputedStyle(th);
       return {
         reachable: true,
         scrolled: window.scrollY,
         top: Math.round(th.getBoundingClientRect().top),
-        position: style.position,
-        background: style.backgroundColor,
+        ...declared,
       };
     });
+    // Sticky and opaque on every page, because that is what the rule says.
+    // Landed at the top of the viewport only where the page is long enough to
+    // scroll the headings there, which a one-row page is not.
     check(
       "the column headings stay at the top of the screen once the table is scrolled",
-      stuckHeadings.reachable === true &&
-        stuckHeadings.scrolled > 0 &&
-        stuckHeadings.position === "sticky" &&
-        stuckHeadings.top === 0 &&
-        !/rgba\(0, 0, 0, 0\)|transparent/.test(stuckHeadings.background),
+      stuckHeadings.position === "sticky" &&
+        !/rgba\(0, 0, 0, 0\)|transparent/.test(stuckHeadings.background) &&
+        (!stuckHeadings.reachable ||
+          (stuckHeadings.scrolled > 0 && stuckHeadings.top === 0)),
       JSON.stringify(stuckHeadings)
     );
     const lastColumn = await page.evaluate(() => {
@@ -5025,8 +5344,14 @@ function saysMoreThan(condition, code) {
     const spacing = await page.evaluate(() => {
       const nav = document.getElementById("pagination");
       const table = document.getElementById("rows").closest("table");
+      // Whether there is more than one page at all, read off the page's own
+      // count rather than off the nav's visibility. A list that fits on one
+      // page stands the nav down on purpose (ADR-0043), and a check that
+      // demanded a visible nav was demanding a control with nothing to do.
+      const pages = (document.getElementById("pageStatus").textContent || "").match(/of (\d+)/);
       return {
         hidden: nav.hidden,
+        pageCount: pages ? Number(pages[1]) : 1,
         pages: document.getElementById("pageStatus").textContent,
         margin: getComputedStyle(nav).marginTop,
         gap: Math.round(nav.getBoundingClientRect().top - table.getBoundingClientRect().bottom),
@@ -5034,9 +5359,13 @@ function saysMoreThan(condition, code) {
     });
     check(
       "nav#pagination has room between it and the table",
-      spacing.hidden === false &&
-        parseFloat(spacing.margin) > 0 &&
-        spacing.gap >= parseFloat(spacing.margin) - 1,
+      // One page means no nav to space; more than one means the nav shows and
+      // the margin it declares is the gap it actually has.
+      spacing.pageCount > 1
+        ? spacing.hidden === false &&
+          parseFloat(spacing.margin) > 0 &&
+          spacing.gap >= parseFloat(spacing.margin) - 1
+        : spacing.hidden === true,
       JSON.stringify(spacing)
     );
     const thirdRow = page.locator("#rows tr[data-crs]").nth(2);

@@ -10,7 +10,7 @@ says otherwise, so a party price is adults x per-adult.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
@@ -877,6 +877,12 @@ CONDITIONAL_TICKET_CODES = frozenset({
 # table started with, because a staff pass and a staff concession are the same
 # fact about a fare and a reader does not care which category it came from.
 CONDITIONAL_REASON = "ticket_is_not_one_a_reader_can_buy"
+# A fare sold on one named date and train is not a fare to a reader who has not
+# chosen a train. It is counted apart from the conditional reason because it is
+# a different loss: the fare is real and sold, it just is not the price of the
+# journey, and a coverage report that files it under "cannot buy" cannot say
+# what a train-restricted fare is costing the list.
+ADVANCE_REASON = "fare_is_valid_on_one_train_only"
 
 
 def _offsets(spec: tuple[tuple[str, int], ...]) -> dict[str, tuple[int, int]]:
@@ -1092,6 +1098,27 @@ def is_advance_ticket(name: object) -> bool:
     return bool(re.search(r"\bADV(?:ANCE)?\b", str(name or "").upper()))
 
 
+# The DTD writes its flags as ``Y`` or ``N``. This project's own synthetic feed
+# writes ``1`` and ``0`` for the same fields, because it was written before any
+# licensed file was available to copy the spelling from. Reading the flag as
+# ``== "1"`` therefore matched the synthetic feed and nothing else: on the real
+# feed every train-restricted ticket read as unrestricted, and the flag that
+# exists to stop an advance fare being quoted as a walk-up price silently never
+# fired. The value is read here, at the boundary, rather than at each use, so
+# one spelling mistake cannot come back.
+DTD_TRUE_FLAGS = frozenset({"Y", "1"})
+
+
+def dtd_flag(value: object) -> bool:
+    """Whether a DTD flag field means yes.
+
+    ``Y`` is what the licensed feeds write. ``1`` is what this project's
+    synthetic feed writes. Both mean yes; ``N`` and ``0`` mean no, and so does
+    a blank field, which is how the feed spells a flag it does not state.
+    """
+    return str(value or "").strip().upper() in DTD_TRUE_FLAGS
+
+
 @dataclass(frozen=True)
 class Location:
     nlc: str
@@ -1226,6 +1253,40 @@ class Reachable:
     route_code: str
     origin_nlc: str
     destination_nlc: str
+
+
+@dataclass(frozen=True)
+class TwoPartFare:
+    """A place the feed prices only as two published fares, split once.
+
+    ADR-0061. The feed publishes flows along pricing-route boundaries, not along
+    the journeys passengers buy, so Grantham to Leeds has no flow of its own and
+    a Grantham to Doncaster fare and a Doncaster to Leeds fare that both exist.
+    The row is the two of them added together. ``change_crs`` is the pricing
+    split: a calling point on the journey's own train(s), or the station the
+    reader leaves if that is the only priced locus. ``first`` is exactly the
+    row the origin's own page prices for that split, and ``second`` is exactly
+    the row the split station's page prices for the destination, read through
+    the same selector. When several calling points on the journey both sell,
+    the page keeps the cheapest valid sum among those candidates — still the
+    journey's own stops, not the cheapest fare on each leg found independently
+    of the journey.
+    """
+
+    crs: str
+    station: str
+    change_crs: str
+    change_station: str
+    first: Reachable
+    second: Reachable
+
+    @property
+    def best_pence(self) -> int:
+        return self.first.best_pence + self.second.best_pence
+
+    @property
+    def legs(self) -> tuple[Reachable, Reachable]:
+        return (self.first, self.second)
 
 
 def format_pence(pence: int) -> str:
@@ -1407,8 +1468,18 @@ class FaresDb:
 
         directory = Path(index_dir)
         directory.mkdir(parents=True, exist_ok=True)
-        for origin in origins:
-            origin = origin.strip().upper()
+        # Each origin's change stations get an index too, because the second
+        # ticket of a two-part price is read from the change station's own
+        # index (ADR-0061, merge_interchange_indexes). A whole-network build
+        # already names nearly all of them; a one-origin build names none.
+        wanted = [origin.strip().upper() for origin in origins]
+        named = set(wanted)
+        for origin in list(wanted):
+            for crs in sorted(self.interchange_crs(origin)):
+                if crs not in named:
+                    named.add(crs)
+                    wanted.append(crs)
+        for origin in wanted:
             location = self.locations_by_crs.get(origin)
             if location is None:
                 continue
@@ -1554,6 +1625,8 @@ class FaresDb:
             self._focus_origin_nlcs = set()
             self._preload_focus_locations(path, origin)
         read_feed_files(path, self.report, self._load_lines)
+        if focus_origin is not None:
+            self._load_interchange_fares(path, origin)
         self._load_location_lookup(path)
         if cache_path is not None and focus_origin is not None:
             self._cache_origin = origin
@@ -1566,6 +1639,117 @@ class FaresDb:
                 pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
             temporary.replace(cache)
         return self
+
+    def interchange_crs(self, origin_crs: str) -> set[str]:
+        """Every named station a flow out of the origin reaches.
+
+        These are the stations a two-part price can change at (ADR-0061): the
+        first ticket is a fare from the origin, so the change station is one
+        the origin's own flows name. Read from the flow records, which a
+        focused load keeps whole, so the answer is the same before and after
+        the fares themselves have been narrowed to one origin.
+        """
+        origin = self.locations_by_crs.get(origin_crs.strip().upper())
+        if origin is None:
+            return set()
+        found: set[str] = set()
+        for origin_nlc in self.nlcs_by_crs.get(origin.crs, {origin.nlc}):
+            for flow in self.flows_touching_nlc.get(origin_nlc, ()):
+                other = (
+                    flow.origin_nlc
+                    if flow.direction == "R" and flow.destination_nlc == origin_nlc
+                    else flow.destination_nlc
+                )
+                location = self.locations_by_nlc.get(other)
+                if (
+                    location is None
+                    or not location.crs
+                    or location.crs == origin.crs
+                    or is_pseudo_station(location.crs)
+                ):
+                    continue
+                found.add(location.crs)
+        return found
+
+    def _load_interchange_fares(self, path: str | Path, origin_crs: str) -> None:
+        """Read the fares out of the origin's change stations, after the fact.
+
+        ADR-0061: a focused load keeps only fares touching the origin, so the
+        second ticket of a two-part price -- King's Cross to Aberdeen, for a
+        Grantham page -- was dropped as it streamed past, and the leg analysis
+        read "flow with no fare" for all 46 places the feed prices that way.
+        The change stations are only known once the origin's flows have been
+        read, so the flow file is read a second time for those stations' fares
+        alone. A focused load is cached, so this costs once per feed.
+        """
+        origin_nlcs = set(self._focus_origin_nlcs or ())
+        wanted: set[str] = set()
+        for crs in self.interchange_crs(origin_crs):
+            wanted |= self.nlcs_by_crs.get(crs, set())
+        wanted -= origin_nlcs
+        if not wanted:
+            return
+        t_type = FLOW_T_SLICES["record_type"]
+
+        def consume(name: str, lines) -> None:
+            if Path(name).suffix.lower() != ".ffl":
+                return
+            for line in lines:
+                if line[t_type].strip().upper() != "T":
+                    continue
+                try:
+                    self._load_flows(line)
+                except ValueError:
+                    # Already counted, with its example, by the first pass.
+                    continue
+
+        self._focus_origin_nlcs = wanted
+        try:
+            read_feed_files(path, ParseReport(), consume)
+        finally:
+            self._focus_origin_nlcs = origin_nlcs
+
+    def merge_interchange_indexes(self, index_dir: str | Path) -> list[str]:
+        """Add each change station's own index to this origin's restored one.
+
+        The per-origin index holds the flows out of one station, and a two-part
+        price needs the flows out of the station it changes at as well. Those
+        are that station's own index, so they are read from there rather than
+        copied into every origin's: King's Cross would otherwise ride along in
+        the index of every station whose flows reach it. Returns the change
+        stations with no usable index, so a caller can parse rather than serve
+        a page missing its second tickets.
+        """
+        origin = self._cache_origin
+        if origin is None:
+            return []
+        missing: list[str] = []
+        for crs in sorted(self.interchange_crs(origin)):
+            path = Path(index_dir) / f"{crs}.pickle"
+            try:
+                with path.open("rb") as handle:
+                    index = pickle.load(handle)
+            except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError, ValueError):
+                missing.append(crs)
+                continue
+            if (
+                not isinstance(index, dict)
+                or index.get("schema") != 1
+                or str(index.get("origin", "")).strip().upper() != crs
+            ):
+                missing.append(crs)
+                continue
+            for flow_id, flow in index["flows"].items():
+                self.flows.setdefault(flow_id, flow)
+            for flow_id, bucket in index["fares"].items():
+                self.fares_by_flow.setdefault(flow_id, bucket)
+            for nlc, flows in index["flows_touching_nlc"].items():
+                held = self.flows_touching_nlc.setdefault(nlc, [])
+                seen = {flow.flow_id for flow in held}
+                held.extend(flow for flow in flows if flow.flow_id not in seen)
+            if self._focus_origin_nlcs is not None:
+                self._focus_origin_nlcs |= set(index["origin_nlcs"])
+        return missing
 
     def _load_location_lookup(self, path: str | Path) -> None:
         """Load the checked-in reference data, or derive it from its sources.
@@ -2402,7 +2586,9 @@ class FaresDb:
             name=_text(line, TICKET_TYPE_OFFSETS, "description"),
             tkt_class=_text(line, TICKET_TYPE_OFFSETS, "tkt_class"),
             tkt_type=_text(line, TICKET_TYPE_OFFSETS, "tkt_type").upper(),
-            restricted_by_train=_text(line, TICKET_TYPE_OFFSETS, "restricted_by_train") == "1",
+            restricted_by_train=dtd_flag(
+                _text(line, TICKET_TYPE_OFFSETS, "restricted_by_train")
+            ),
         )
 
     def _load_railcards(self, line: str) -> None:
@@ -2832,6 +3018,7 @@ class FaresDb:
     def _displayable_single_rejection(
         restrictions,
         include_conditional: bool = False,
+        include_advance: bool = False,
     ) -> Callable[[Fare, TicketType], str | None]:
         """The reviewed rule for a single a page may quote, or why not.
 
@@ -2839,12 +3026,28 @@ class FaresDb:
         The reasons are distinct because the coverage report counts them, and a
         count that files a child's fare under "not a standard single" cannot
         answer what happened to a destination.
+
+        A fare bound to one date and train is rejected under its own reason,
+        because it is a different failure from a fare that is merely
+        conditional: the fare exists and is sold, but not at that price to
+        anyone who has not chosen a train. It is a staticmethod that needs the
+        restriction index for two different questions, and the advance test
+        needs the fare's own ticket name and restriction code, so the callable
+        is closed over them here rather than re-derived per fare.
         """
+        advance_codes = ADVANCE_RESTRICTION_CODES
+
         def reject(fare: Fare, ticket: TicketType) -> str | None:
             if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
                 return CONDITIONAL_REASON
             if restrictions.requires_another_ticket(fare.restriction_code):
                 return CONDITIONAL_REASON
+            if not include_advance and (
+                ticket.is_advance
+                or fare.restriction_code.strip().upper() in advance_codes
+                or restrictions.binds_to_date_and_train(fare.restriction_code)
+            ):
+                return ADVANCE_REASON
             if not ticket.is_standard_single:
                 return "ticket_is_not_a_standard_single"
             name = ticket.name.upper()
@@ -2942,13 +3145,21 @@ class FaresDb:
         tally: dict[str, int] | None = None,
         day: date | None = None,
         include_conditional: bool = False,
+        include_advance: bool = False,
     ) -> list[Reachable]:
         """Displayable standard-class singles, excluding catalogue placeholders.
 
-        Advance singles are valid fares, but they are attached to a particular
-        train rather than being an unrestricted walk-up price. They remain in
-        the result; callers must label them as train-specific instead of
-        silently treating them like an anytime fare.
+        A train-restricted fare is out of the result by default. An advance
+        single is attached to one named train, so its price is not the price of
+        the journey: quoting it as the cheapest way to reach a place told a
+        reader Grantham to Skegness cost £6.60 when no train on the day sold
+        that fare, and the page had no way to name the train that did. The
+        figure was arithmetically correct and practically untrue, which is worse
+        than being loose, and a page whose whole claim is a price cannot carry
+        a number it would not honour at a seller.
+
+        ``include_advance`` puts them back, for the coverage report's
+        measurement of what the rule costs and nothing else.
 
         ``include_conditional`` puts the child, group and event fares back, for
         the coverage report's measurement and nothing else.
@@ -2961,7 +3172,7 @@ class FaresDb:
             party_budget=party_budget,
             tally=tally,
             selector=self._displayable_single_rejection(
-                self.restrictions, include_conditional
+                self.restrictions, include_conditional, include_advance
             ),
             day=day,
         )
@@ -3055,6 +3266,76 @@ class FaresDb:
             ):
                 rows.setdefault(row.crs, row)
         return list(rows.values())
+
+    def two_part_fares(
+        self,
+        origin_crs: str,
+        splits: dict[str, str | Sequence[str]],
+        rows_from: Callable[[str], list[Reachable]],
+    ) -> list[TwoPartFare]:
+        """Places with no fare of their own, priced as two fares (ADR-0061).
+
+        ``splits`` maps each destination to one pricing-split CRS or a sequence
+        of candidates on that destination's journey (calling points and, when
+        the journey changes trains, the change station). ``rows_from`` is the
+        page's own selector for one ticket mode, asked of any station. For each
+        candidate the first ticket is what ``rows_from(origin)`` prices for the
+        split and the second is what ``rows_from(split)`` prices for the
+        destination, so each is the fare a page for that pair would quote. When
+        several candidates both sell, the cheapest valid sum wins, then the
+        split CRS. A destination the origin already prices on one ticket keeps
+        that row, and a pair with either ticket missing is no row at all: the
+        price is the journey's own or nothing.
+        """
+        origin = origin_crs.strip().upper()
+        asked: dict[str, dict[str, Reachable]] = {}
+
+        def priced_from(crs: str) -> dict[str, Reachable]:
+            if crs not in asked:
+                asked[crs] = (
+                    {row.crs: row for row in rows_from(crs)}
+                    if crs in self.locations_by_crs
+                    else {}
+                )
+            return asked[crs]
+
+        def candidates_of(value: str | Sequence[str]) -> tuple[str, ...]:
+            if isinstance(value, str):
+                return (value.strip().upper(),)
+            return tuple(crs.strip().upper() for crs in value)
+
+        direct = priced_from(origin)
+        found: list[TwoPartFare] = []
+        for destination, raw in sorted(splits.items()):
+            destination = destination.strip().upper()
+            if destination in direct or destination == origin:
+                continue
+            best: TwoPartFare | None = None
+            for change in candidates_of(raw):
+                if change in {origin, destination}:
+                    continue
+                first = direct.get(change)
+                if first is None:
+                    continue
+                second = priced_from(change).get(destination)
+                if second is None:
+                    continue
+                candidate = TwoPartFare(
+                    crs=destination,
+                    station=second.station,
+                    change_crs=change,
+                    change_station=first.station,
+                    first=first,
+                    second=second,
+                )
+                if best is None or (candidate.best_pence, candidate.change_crs) < (
+                    best.best_pence,
+                    best.change_crs,
+                ):
+                    best = candidate
+            if best is not None:
+                found.append(best)
+        return sorted(found, key=lambda fare: (fare.best_pence, fare.crs))
 
     def _publishable_rejection(
         self, *, strict: bool

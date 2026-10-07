@@ -1215,6 +1215,63 @@ class TimetableDb:
                                 best[destination_crs] = journey
         return best
 
+    def intermediate_crs(
+        self,
+        train_uid: str,
+        origin_crs: str,
+        destination_crs: str,
+        *,
+        day: date | None = None,
+    ) -> tuple[str, ...]:
+        """CRS codes this train calls at between origin and destination, exclusive.
+
+        ADR-0061 wider rule: a two-ticket price may split at any calling point on
+        the journey's own train(s), not only at the station the reader leaves.
+        The journey names a train_uid and its ends; this reads the schedule's
+        stop chain for the stations between those ends. Origin and destination
+        are excluded. A train the day does not run, or a pair the train never
+        joins in that order, returns an empty tuple.
+        """
+        self._ensure_indexes(day)
+        origin = origin_crs.strip().upper()
+        destination = destination_crs.strip().upper()
+        uid = train_uid.strip()
+        schedule_indexes = (
+            range(len(self.schedules)) if day is None else self.active_schedules(day)
+        )
+        for schedule_index in schedule_indexes:
+            schedule = self.schedules[schedule_index]
+            if schedule.train_uid != uid:
+                continue
+            crs_chain = self._schedule_crs.get(schedule_index)
+            if crs_chain is None:
+                crs_chain = tuple(self.crs_for_tiploc(stop.tiploc) for stop in schedule.stops)
+            start = None
+            end = None
+            for position, stop_crs in enumerate(crs_chain):
+                if stop_crs == origin and start is None:
+                    start = position
+                elif (
+                    stop_crs == destination
+                    and start is not None
+                    and position > start
+                ):
+                    end = position
+                    break
+            if start is None or end is None:
+                continue
+            found: list[str] = []
+            for stop_crs in crs_chain[start + 1 : end]:
+                if (
+                    stop_crs
+                    and stop_crs not in (origin, destination)
+                    and stop_crs not in found
+                ):
+                    found.append(stop_crs)
+            return tuple(found)
+        return ()
+
+
     def _reachable(self, origin_crs: str) -> set[str]:
         """Every station a service leaving the origin calls after it boards.
 

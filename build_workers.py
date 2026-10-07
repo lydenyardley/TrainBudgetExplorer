@@ -222,6 +222,10 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         fares = FaresDb.apply_fare_index(
             _WORKER["fares_common"], Path(_WORKER["fare_index_dir"]) / f"{origin_crs}.pickle"
         )
+        # The change stations' own indexes, for the second ticket of a
+        # two-part row (ADR-0061). The parent wrote one for every change
+        # station before the pool started.
+        fares.merge_interchange_indexes(_WORKER["fare_index_dir"])
     payload = build_payload(
         fares,
         _WORKER.get("timetable"),

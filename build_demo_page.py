@@ -38,6 +38,7 @@ from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
     FaresDb,
     PLACEHOLDER_TICKET_CODES,
+    TwoPartFare,
     format_pence,
     is_pseudo_station,
     location_lookup_candidates,
@@ -600,8 +601,11 @@ def load_page_fares(feed: str | Path, origin: str) -> PageFares:
         else:
             # The index names the origin whose fares it holds. A file under
             # another station's name is not this station's fares, whatever the
-            # path it was asked for, so it is not served.
-            if fares._cache_origin == code:
+            # path it was asked for, so it is not served. Nor is one whose
+            # change stations have no index beside it: their fares are the
+            # second tickets of the page's two-part rows (ADR-0061), and a page
+            # served without them would quietly lose those rows.
+            if fares._cache_origin == code and not fares.merge_interchange_indexes(index_dir):
                 return PageFares(fares, common_cache, index, True)
     fares = FaresDb().load_feed(feed, focus_origin=code)
     fares.write_fare_indexes(common_cache, index_dir, [code])
@@ -850,9 +854,13 @@ def restriction_codes_shown(rows: Iterable[dict]) -> set[str]:
 
     codes: set[str] = set()
     for row in rows:
-        code = (row.get("restrictionCode") or "").strip().upper()
-        if code:
-            codes.add(code)
+        # A two-ticket row prints both tickets' conditions (ADR-0061).
+        for code in [row.get("restrictionCode")] + [
+            ticket.get("restrictionCode") for ticket in row.get("tickets") or ()
+        ]:
+            code = (code or "").strip().upper()
+            if code:
+                codes.add(code)
     return codes
 
 
@@ -1493,6 +1501,47 @@ def build_payload(
         origin.crs, EVERYTHING_PENCE, adults=1, day=day
     )
     anytime_tickets = {row.crs: row for row in anytime_ticket_rows}
+    # ADR-0061: a place the feed prices in two parts is one row. The feed
+    # publishes flows along pricing-route boundaries rather than journeys, so
+    # a place with no origin-destination flow is priced as two tickets that
+    # meet at a calling point on the journey the page already shows for it.
+    # Candidates are every intermediate stop on each of the journey's trains,
+    # plus the station the reader leaves when the journey changes trains.
+    # When several of those both sell, the cheapest valid sum wins. Each
+    # ticket still comes through the same selector as the list it joins, so
+    # the reader is quoted the journey they are shown and not the cheapest
+    # fare on each leg found separately. Priced on the build's day, like
+    # every other row: the day control changes the times and neither price
+    # (ADR-0060).
+    split_at: dict[str, list[str]] = {}
+    if timetable is not None:
+        reached = timetable.journeys_from(origin.crs, max_changes=max_changes, day=day)
+        for crs, journey in reached.items():
+            if journey.changes > max_changes or is_pseudo_station(crs):
+                continue
+            candidates: list[str] = []
+            for leg in journey.legs:
+                for mid in timetable.intermediate_crs(
+                    leg.train_uid, leg.origin_crs, leg.destination_crs, day=day
+                ):
+                    if mid not in candidates and mid not in {origin.crs, crs}:
+                        candidates.append(mid)
+                if leg.destination_crs != crs and leg.destination_crs not in candidates:
+                    candidates.append(leg.destination_crs)
+            if candidates:
+                split_at[crs] = candidates
+    if split_at:
+        for priced, query in (
+            (single, fares.page_destinations_within),
+            (single_tickets, fares.page_single_destinations_within),
+            (anytime_tickets, fares.publishable_destinations_within),
+        ):
+            for two_part in fares.two_part_fares(
+                origin.crs,
+                split_at,
+                lambda crs, query=query: query(crs, EVERYTHING_PENCE, adults=1, day=day),
+            ):
+                priced[two_part.crs] = two_part
     # Two Together is evaluated against the current DTD RR records below. A
     # destination carries a railcard price unless its ticket, route, and
     # locations have a matching total ban.
@@ -1608,6 +1657,18 @@ def build_payload(
             ),
         }
 
+    def describe_restriction(code: str) -> str:
+        if code in fares.restrictions.headers:
+            return fares.restrictions.headers[code].description
+        if code:
+            return (
+                "This fare carries restriction "
+                + code
+                + ", which this feed does not describe, so the condition has to be read "
+                "from the seller's own terms"
+            )
+        return ""
+
     def destination_row(
         crs: str,
         one,
@@ -1681,40 +1742,41 @@ def build_payload(
         nonlocal tracked, disclosure
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
-        return {
+        # ADR-0061: a two-part row is two tickets, and every fact the row
+        # states about its fare is a fact about both of them.
+        two_part = one if isinstance(one, TwoPartFare) else None
+        parts = two_part.legs if two_part else (one,)
+        restriction_code = next(
+            (part.restriction_code for part in parts if part.restriction_code), ""
+        )
+        row = {
             "crs": crs,
             "name": one.station,
             "adultPence": one.best_pence,
             "partyPence": one.best_pence * 2,
             # One entry per reviewed railcard the feed carries. The reader holds
             # one at a time, so the page picks the key rather than offering six
-            # prices per row in the table.
-            "railcards": railcard_details(one),
+            # prices per row in the table. A two-ticket row carries none: a card
+            # is decided per ticket, and this page does not yet decide it for a
+            # pair, so the row is priced at the two standard fares and says so.
+            "railcards": {} if two_part else railcard_details(one),
             "destinationType": fares.destination_type(crs),
             "destinationTypes": fares.destination_types(crs),
             "heritageSites": fares.heritage_sites(crs),
-            "ticket": one.ticket_code,
-            "isAdvance": fares.is_advance_fare(one.ticket_name, one.restriction_code),
+            "ticket": " + ".join(part.ticket_code for part in parts),
+            "isAdvance": any(
+                fares.is_advance_fare(part.ticket_name, part.restriction_code)
+                for part in parts
+            ),
             "quality": quality,
-            "offPeak": one.off_peak,
-            "restrictionCode": one.restriction_code,
-            "routeCode": one.route_code,
+            "offPeak": any(part.off_peak for part in parts),
+            "restrictionCode": restriction_code,
+            "routeCode": " + ".join(part.route_code for part in parts),
             # C08: a code says which condition, not what it permits. The
             # description is the feed's own wording for the code, and the
             # fallback says plainly that the feed has none, so a reader is
             # never told to "check the seller" as if that were a decoded rule.
-            "restrictionDescription": (
-                fares.restrictions.headers[one.restriction_code].description
-                if one.restriction_code in fares.restrictions.headers
-                else (
-                    "This fare carries restriction "
-                    + one.restriction_code
-                    + ", which this feed does not describe, so the condition has to be read "
-                    "from the seller's own terms"
-                    if one.restriction_code
-                    else ""
-                )
-            ),
+            "restrictionDescription": describe_restriction(restriction_code),
             "minutes": journey.duration if journey else None,
             "changes": journey.changes if journey else None,
             # One entry per leg boundary, so a one-change journey carries the
@@ -1745,6 +1807,29 @@ def build_payload(
                 for option in options
             ],
         }
+        if two_part:
+            # Both tickets, each with its own price and its own restriction,
+            # because two tickets are two purchases with two sets of conditions
+            # and a row naming one of them would be silent about the other.
+            ends = (
+                (origin.crs, origin.name, two_part.change_crs, two_part.change_station),
+                (two_part.change_crs, two_part.change_station, crs, one.station),
+            )
+            row["tickets"] = [
+                {
+                    "ticket": part.ticket_code,
+                    "fromCrs": start_crs,
+                    "fromName": start_name,
+                    "toCrs": end_crs,
+                    "toName": end_name,
+                    "adultPence": part.best_pence,
+                    "restrictionCode": part.restriction_code,
+                    "restrictionDescription": describe_restriction(part.restriction_code),
+                    "routeCode": part.route_code,
+                }
+                for part, (start_crs, start_name, end_crs, end_name) in zip(parts, ends)
+            ]
+        return row
 
     destinations = [
         destination_row(crs, one, quality="standard return")
@@ -1888,16 +1973,20 @@ def build_payload(
     )
     for collection in (destinations, single_destinations, anytime_destinations):
         for row in collection:
-            code = row["restrictionCode"]
-            header = fares.restrictions.headers.get(code) if code else None
-            if header is None or code in restriction_validity:
-                continue
-            if not (header.outward_text or header.return_text):
-                continue
-            restriction_validity[code] = {
-                "outwardText": header.outward_text,
-                "returnText": header.return_text,
-            }
+            # A two-ticket row's own code is its first restricted ticket's, so
+            # each ticket is asked as well (ADR-0061).
+            for code in [row["restrictionCode"]] + [
+                ticket["restrictionCode"] for ticket in row.get("tickets") or ()
+            ]:
+                header = fares.restrictions.headers.get(code) if code else None
+                if header is None or code in restriction_validity:
+                    continue
+                if not (header.outward_text or header.return_text):
+                    continue
+                restriction_validity[code] = {
+                    "outwardText": header.outward_text,
+                    "returnText": header.return_text,
+                }
 
     excluded_codes = sorted({row.ticket_code for row in excluded_itx})
     # The freshness claim for the conditions above. Carried as plain data
@@ -1950,7 +2039,8 @@ def build_payload(
         eligible = {
             row["crs"]
             for row in every_row
-            if row["railcards"][family.key]["pricePence"] is not None
+            if family.key in row["railcards"]
+            and row["railcards"][family.key]["pricePence"] is not None
             and row["railcards"][family.key]["pricePence"] < row["adultPence"]
         }
         railcards.append(

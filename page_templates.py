@@ -465,6 +465,19 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      touch target reaches 44px past it. */
   .toggle::after { content: ""; position: absolute; inset: -6px; }
   .toggle[aria-expanded=true] { border-color: var(--accent); }
+  /* The row's own expander is the shared chevron and nothing else. It read
+     "5 times" or "Fare details", which made the last column of a price-first
+     table a column of prose: the same four words repeated down every row, in
+     the column a reader's eye goes to last. A chevron is the affordance, it
+     says "more behind this" the way the filter bar's own does, and the count
+     it used to carry is still in the row's panel and in the accessible name.
+     The mark rotates on open because a closed chevron and an open one are the
+     same shape otherwise, and the panel is above the fold either way. */
+  .row-expand { display: inline-flex; align-items: center; justify-content: center;
+                width: 2.75rem; height: 2.75rem; padding: 0; margin-left: .5rem;
+                border-radius: .35rem; }
+  .row-expand .chevron { width: 1.1rem; height: 1.1rem; }
+  .row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
          white-space: nowrap; position: relative; }
   .buy::after { content: ""; position: absolute; inset: -11px -4px; }
@@ -477,6 +490,8 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      voice it had in the cell: same sentence, same measured contrast. */
   tr.detail .fare-line { margin: .55rem 0 0; font-weight: 600; }
   tr.detail .condition { margin: .15rem 0 0; }
+  tr.detail .two-tickets { margin: .15rem 0 0; padding-left: 1.1rem; }
+  tr.detail .two-ticket-note { margin: .15rem 0 0; }
   /* £10.10 painted as "£10.1" over "0" on 13 of the first 20 rows: a wrapped
      price is not a cramped column, it is a different number, and the reader
      comparing it with the row above has been told something false. */
@@ -1094,6 +1109,12 @@ const railcardChoice = document.getElementById("railcardChoice");
 // as a reader from another, and a stored card must not travel to a page whose
 // feed priced nothing for it.
 const RAILCARD_MEMORY = "tbe.railcard.";
+// The one drawn disclosure mark, in the script as well as in the markup. The
+// filter bar's chevron is written into the HTML at build time; a row's chevron
+// is built when the reader opens the list, so the script needs the same path.
+// Both come from the one CHEVRON constant below, because two drawings of a
+// chevron is one too many marks to keep in step.
+const CHEVRON = __CHEVRON_JS__;
 let rememberedCard = null;
 try {
   rememberedCard = window.localStorage.getItem(RAILCARD_MEMORY + DATA.origin.crs);
@@ -1307,6 +1328,7 @@ function modeCount(mode) {
 // phrases use. The cheapest list holds one fare per place, so this is what
 // names the ticket on a row the reader chose by price rather than by type.
 function ticketName(destination) {
+  if (destination.tickets) return "Two tickets";
   if (destination.isAdvance) return "Advance single";
   if (destination.quality === "unrestricted Anytime Day Return") return "Unrestricted Anytime Day Return";
   if (destination.quality === "outbound single") return "Standard outbound single";
@@ -1359,10 +1381,29 @@ function budgetCeiling() {
 
 // A prices-only build has no times to show, and two columns of dashes are
 // noise where a shorter table is honest: the columns stand down entirely.
+//
+// Each table's own columns are removed, not every fourth and fifth heading on
+// the page. The selector used to be a bare nth-child across all of them, which
+// took the dock's Changes and Remove columns instead of the results table's
+// Time and Changes: the dock row is still built with five cells, so it was left
+// with a three-heading table over it and a remove button nothing named.
 if (!DATA.hasJourneys) {
-  for (const th of document.querySelectorAll("thead th:nth-child(4), thead th:nth-child(5)")) th.remove();
+  const standingDown = (table) => {
+    for (const th of table.querySelectorAll("thead th")) {
+      const name = th.textContent.trim();
+      if (name === "Time" || name === "Changes") th.remove();
+    }
+  };
+  standingDown(document.getElementById("rows").closest("table"));
+  const dock = document.getElementById("shortlistDock");
+  if (dock) standingDown(dock.querySelector("table"));
 }
-const columnCount = () => document.querySelectorAll("thead th").length;
+// Scoped to the results table rather than counted across the page. Two tables
+// carry headings, and a detail row spanning the sum of both asks for more
+// columns than its own table has, which the browser silently clamps to full
+// width. It read correctly by accident, and the count stopped meaning anything
+// the moment either table's headings changed.
+const columnCount = () => rows.closest("table").querySelectorAll("thead th").length;
 
 // Prices are always two decimal places. The pound sign lines up down the
 // column, which is the whole point of a price-first list, and £8.70 is easier
@@ -2267,6 +2308,7 @@ function fareTypeCell(destination) {
 }
 
 function fareTypeWord(destination) {
+  if (destination.tickets) return "Two tickets";
   if (destination.isAdvance) return "Advance";
   if (destination.restrictionCode) return "Restricted";
   return "Regular";
@@ -2287,6 +2329,18 @@ function fareFlag(destination) {
 // half of it ("price and availability can change") was the one a reader needed
 // before deciding whether to trust the price at all.
 function fareSentence(destination) {
+  if (destination.tickets) {
+    const via = destination.tickets[0].toName;
+    // A through train priced in two parts (ADR-0061 wider) never leaves the
+    // train at the pricing split, so "changing at" would be a lie. A journey
+    // that does change keeps the change wording.
+    if ((destination.changes || 0) === 0) {
+      return "Two tickets, priced via " + via +
+        " (stay on the train): the price is the two fares added together.";
+    }
+    return "Two tickets, changing at " + via +
+      ": the price is the two fares added together.";
+  }
   if (destination.isAdvance) {
     return "Advance single: you choose the train, and the price and availability can change.";
   }
@@ -2301,6 +2355,13 @@ function fareSentence(destination) {
 // What the row's title attribute says, in the same voice as the sentence: the
 // flag explained without repeating the panel behind it.
 function fareSummary(destination) {
+  if (destination.tickets) {
+    const via = destination.tickets[0].toName;
+    if ((destination.changes || 0) === 0) {
+      return "Two tickets, bought separately, priced via " + via + " (stay on the train).";
+    }
+    return "Two tickets, bought separately, changing at " + via + ".";
+  }
   if (destination.isAdvance) return "Advance single: valid only on a qualifying train, and the price and availability can change.";
   if (destination.restrictionCode) return destination.restrictionDescription || "This fare has a restriction code; the condition is in this row's details.";
   return "No fare restriction code is attached to this fare.";
@@ -2320,6 +2381,9 @@ function fareSummary(destination) {
 // itself. The same suppression, and for the same reason.
 function splitNote(destination) {
   if (serviceDayIndex !== 0) return null;
+  // A two-ticket row (ADR-0061) is the split this note describes, priced, and
+  // it has no through fare for the note to compare against.
+  if (destination.tickets) return null;
   const stations = destination.changeStations || [];
   if (!stations.length) return null;
   // The station itself is named in the Changes column now, so this says only
@@ -2331,6 +2395,33 @@ function splitNote(destination) {
   note.textContent = "A split ticket \u2014 one ticket to the station above and " +
     "another from it \u2014 can sometimes cost less than this through fare. " +
     "This page prices the through fare only.";
+  return note;
+}
+
+// ADR-0061: a place the feed prices only in two parts is one row, and the row
+// is two purchases. Each ticket is named with its own price and its own
+// condition, a ticket with none says so, and the panel says what a static page
+// cannot know: whether both are on sale together. None of it depends on the
+// day picked above, because neither price does (ADR-0060).
+function twoTicketList(destination) {
+  const list = document.createElement("ul");
+  list.className = "two-tickets";
+  for (const ticket of destination.tickets) {
+    const item = document.createElement("li");
+    item.dataset.ticket = ticket.ticket;
+    item.textContent = ticket.fromName + " to " + ticket.toName + ": " + money(ticket.adultPence) +
+      ", ticket " + ticket.ticket + ", " + (ticket.restrictionCode
+        ? "restriction " + ticket.restrictionCode + (ticket.restrictionDescription ? " (" + ticket.restrictionDescription + ")" : "")
+        : "no restriction") + ".";
+    list.append(item);
+  }
+  return list;
+}
+function twoTicketCaveat() {
+  const note = document.createElement("p");
+  note.className = "two-ticket-note";
+  note.textContent = "These are two separate purchases. This page cannot promise both are on sale " +
+    "together, so check each before you buy.";
   return note;
 }
 
@@ -2349,8 +2440,11 @@ function fareDetails(destination) {
   // S19: what the reader has to know to rule the fare in or out, in sentences.
   // Said only when there is a condition to rule out: an unrestricted fare used
   // to open with a second paragraph saying there was nothing to read, which is
-  // the same information as silence, said in a line.
-  if (restricted) {
+  // the same information as silence, said in a line. A two-ticket row says
+  // each ticket's condition in its own line of the list instead.
+  if (destination.tickets) {
+    panel.append(twoTicketList(destination), twoTicketCaveat());
+  } else if (restricted) {
     const readable = document.createElement("p");
     readable.className = "condition";
     readable.textContent = destination.restrictionDescription ||
@@ -2415,7 +2509,11 @@ function feedRecord(destination) {
     list.append(dt, dd);
   };
   add("Ticket", destination.ticket);
-  add("Restriction", destination.restrictionCode || "none");
+  if (destination.tickets) {
+    add("Restrictions", destination.tickets.map((ticket) => ticket.restrictionCode || "none").join(" + "));
+  } else {
+    add("Restriction", destination.restrictionCode || "none");
+  }
   add("Route", destination.routeCode);
   add("Priced as", destination.quality);
   if (!journeyFor(destination).found) add("Times", dayAbsenceText(destination, false));
@@ -2476,18 +2574,26 @@ function cellWithLinks(row, destination, wanted) {
   cell.append(link);
   // One disclosure per row, on every row. It used to exist only where the
   // build had times, which left a fare's condition unreachable on a
-  // prices-only page; the label still counts the times where there are times
-  // to count.
+  // prices-only page. The control is now the page's own chevron rather than a
+  // word, so the visible label is a mark and the accessible name is what
+  // carries the words: the count where there is one, the destination either
+  // way, and the fact that a fare is behind it at all. Dropping the word from
+  // the face of the button is only safe because the name below keeps all of it.
   const times = destination.departures.length;
   const toggle = document.createElement("button");
-  toggle.className = "toggle";
+  toggle.className = "toggle row-expand";
   toggle.type = "button";
-  toggle.textContent = times ? times + " times" : "Fare details";
+  toggle.insertAdjacentHTML("beforeend", CHEVRON);
   toggle.setAttribute("aria-expanded", "false");
-  // WCAG 2.5.3: the accessible name contains the visible label, so "5 times"
-  // is still what a reader using voice control has to say to reach it.
+  // The name is the label the word used to be. WCAG 2.5.3 is about a visible
+  // label being inside the accessible name, and a drawn mark is not one, so
+  // what matters here is that a screen reader still says what the control is
+  // and which row it belongs to.
   toggle.setAttribute("aria-label",
     (times ? times + " times and fare details for " : "Fare details for ") + destination.name);
+  toggle.title = times
+    ? times + " departures and the fare for " + destination.name
+    : "Fare details for " + destination.name;
   toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
   cell.append(toggle);
   row.append(cell);
@@ -2512,6 +2618,12 @@ function cardNote(destination) {
   note.className = "card-note";
 
   const card = railcards[railcardSelect.value];
+  if (destination.tickets) {
+    note.dataset.state = "two-tickets";
+    note.textContent = "This row is two tickets, and this page does not apply " + card.label +
+      " to a pair, so it shows the two standard fares.";
+    return note;
+  }
   const details = (destination.railcards || {})[card.key];
   if (!details) {
     note.dataset.state = "unavailable";
@@ -3275,7 +3387,12 @@ function dockRow(destination) {
   const drop = document.createElement("td");
   drop.className = "dock-drop-cell";
   drop.append(dropButton(destination));
-  row.append(name, price, time, changes, drop);
+  // A prices-only build stands its Time and Changes headings down, so the row
+  // leaves those cells out too. Rendering five cells under three headings is a
+  // table whose columns are not the columns it says they are, and the remove
+  // button ends up under no heading at all.
+  if (DATA.hasJourneys) row.append(name, price, time, changes, drop);
+  else row.append(name, price, drop);
   return row;
 }
 
@@ -3577,8 +3694,15 @@ applyState(readState());
 // page whose build carried no week shows no control at all rather than an empty
 // one. Its options are the build's own day first, then the days after it, each
 // named the way a reader would name it: "Today" is wrong, because the page may
-// have been built days ago, so the build's day carries its date and the rest
-// carry the weekday they fall on.
+// have been built days ago, so every option carries its date.
+//
+// The weekday leads and the date follows, because that is the order a reader
+// asks the question in: they want to know whether Sunday works for them. The
+// date stays because the weekday cannot stand in for it. Measured from
+// Grantham on the reference timetable, Sunday 4 October 2026 reaches 238
+// stations and Sunday 11 October reaches 416, and 50 of the 220 both reach have
+// a different time, so "Sunday" on its own is a claim the feed does not carry.
+// See adr/ADR-0060-the-day-names-its-date.md.
 if (serviceDaySelect) {
   const days = DATA.serviceDays || [];
   if (days.length > 1) {
@@ -3586,8 +3710,7 @@ if (serviceDaySelect) {
     days.forEach(function (iso, index) {
       const option = document.createElement("option");
       option.value = String(index);
-      option.textContent = shortDay(iso) + " " + humanDate(iso)
-        + (index === 0 ? " (this build)" : "");
+      option.textContent = shortDay(iso) + ", " + humanDate(iso);
       serviceDaySelect.append(option);
     });
     // The address was read before this block ran, so the day a link asked for is
@@ -3597,7 +3720,8 @@ if (serviceDaySelect) {
       chooseServiceDay(serviceDaySelect.value);
     });
     serviceDayBar.hidden = false;
-    serviceDayHelp.textContent = "Times and changes for every row, on the day you pick."
+    serviceDayHelp.textContent = "Times and changes for every row, on the date you pick."
+      + " Days of the week are not the same as each other, so the date is named."
       + " Interchange stations are shown for the build’s own day only.";
   } else {
     serviceDayBar.remove();
@@ -4156,6 +4280,12 @@ def with_shared(template: str) -> str:
     that still holds a placeholder is a bug, so this says so rather than
     shipping a page with unstyled text or an unwired control.
     """
+    # json is imported here rather than at the top because it is used once,
+    # to quote the chevron for the script. The module's own docstring calls it
+    # pure strings, and this is the one place a value is escaped rather than
+    # pasted.
+    import json
+
     filled = template.replace("__SHARED_CSS__", SHARED_CSS)
     if "__SHARED_CSS__" in filled:
         raise ValueError("the shared stylesheet was not inlined into this template")
@@ -4163,6 +4293,7 @@ def with_shared(template: str) -> str:
         ("__SHARED_THEME__", SHARED_THEME, "theme block"),
         ("__THEME_TOGGLE__", THEME_TOGGLE, "theme control"),
         ("__CHEVRON__", CHEVRON, "disclosure mark"),
+        ("__CHEVRON_JS__", json.dumps(CHEVRON), "disclosure mark for the script"),
         ("__LIST_KEYS__", LIST_KEYS_JS, "list keyboard block"),
         ("__STATION_FIELD__", STATION_FIELD_JS, "station field block"),
     ):

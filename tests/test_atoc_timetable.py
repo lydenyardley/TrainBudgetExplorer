@@ -783,5 +783,26 @@ class TimetableFocusTest(unittest.TestCase):
             )
 
 
+
+class IntermediateCrsTest(unittest.TestCase):
+    """Calling points between a leg's ends, for ADR-0061 wider splits."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        feed = build_synthetic_timetable(
+            Path(self.tmp.name) / "feed", include_return_network=True
+        )
+        self.db = TimetableDb().load_feed(feed)
+
+    def test_intermediate_crs_names_stops_between_the_ends(self) -> None:
+        self.assertEqual(
+            self.db.intermediate_crs("T20006", "GRN", "BUL"),
+            ("NOT",),
+        )
+        self.assertEqual(self.db.intermediate_crs("T20006", "GRN", "NOT"), ())
+        self.assertEqual(self.db.intermediate_crs("T10001", "GRN", "NOT"), ())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
