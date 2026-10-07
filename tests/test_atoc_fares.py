@@ -23,6 +23,8 @@ from atoc_fares import (
     DESTINATION_FACETS_BY_KEY,
     DESTINATION_FACET_READERS,
     DESTINATION_TYPE_FILTERS,
+    HERITAGE_PROPERTIES,
+    HERITAGE_SITE_POINTS,
     LOCATION_BAND_TYPES,
     LOCATION_CACHE_SCHEMA,
     LOCATION_FALLBACK_SOURCE,
@@ -33,6 +35,9 @@ from atoc_fares import (
     FARE_CONSTRUCTION_CRS,
     LONDON_STATION_CRS,
     looks_like_fare_construction,
+    haversine_km,
+    load_station_coordinates,
+    select_nearest_stations,
     SUPPORTED_DESTINATION_FACETS,
     FLOW_F,
     FLOW_T,
@@ -803,6 +808,88 @@ class FaresParserTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 db._read_unesco_heritage_facet()
         self.assertTrue(any("not a current UK World Heritage" in note for note in db.report.skipped_files))
+
+    def test_hybrid_prune_drops_buxton_for_bath_and_keeps_bath_spa(self) -> None:
+        # Litmus: Buxton is a curated City of Bath namesake ~212 km away.
+        coords = {
+            "BTH": (51.37768276, -2.357034178),
+            "BUX": (53.26074338, -1.912870681),
+        }
+        located = [(crs, *coords[crs]) for crs in ("BTH", "BUX")]
+        kept = select_nearest_stations(located, HERITAGE_SITE_POINTS[1613])
+        self.assertEqual(kept, ["BTH"])
+        self.assertGreater(haversine_km(*coords["BUX"], *HERITAGE_SITE_POINTS[1613][0]), 15.0)
+
+    def test_hybrid_prune_drops_cheshire_chester_for_hadrians_wall(self) -> None:
+        # Litmus: Cheshire Chester matched the old curated "Chester" token.
+        coords = {
+            "CAR": (54.89064626, -2.933810228),
+            "CLS": (54.85459856, -1.578018751),
+            "CRB": (54.96630507, -2.018556061),
+            "CTR": (53.19683958, -2.880125588),
+            "NCL": (54.96822056, -1.617285496),
+        }
+        located = [(crs, *coords[crs]) for crs in coords]
+        kept = select_nearest_stations(located, HERITAGE_SITE_POINTS[430])
+        self.assertNotIn("CTR", kept)
+        self.assertIn("CAR", kept)
+        self.assertIn("CRB", kept)
+        self.assertIn("NCL", kept)
+
+    def test_hybrid_prune_keeps_derwent_valley_as_a_component_set(self) -> None:
+        coords = {
+            "BLP": (53.02459133, -1.482616227),
+            "CMF": (53.11294781, -1.548786122),
+            "MAT": (53.13815608, -1.558986118),
+            "MTB": (53.12197042, -1.557657491),
+        }
+        located = [(crs, *coords[crs]) for crs in coords]
+        kept = set(select_nearest_stations(located, HERITAGE_SITE_POINTS[1030]))
+        self.assertEqual(kept, set(coords))
+
+    def test_heritage_sites_apply_prune_so_buxton_loses_bath(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "BTH": Location("1", "BTH", "BATH SPA", ""),
+            "BUX": Location("2", "BUX", "BUXTON", ""),
+        }
+        db.location_facets_by_crs = {
+            "BTH": {"heritage"},
+            "BUX": {"heritage"},
+        }
+        db._station_coordinates = {
+            "BTH": (51.37768276, -2.357034178),
+            "BUX": (53.26074338, -1.912870681),
+        }
+        bath_ids = {site["id"] for site in db.heritage_sites("BTH")}
+        buxton_ids = {site["id"] for site in db.heritage_sites("BUX")}
+        self.assertIn(1613, bath_ids)
+        self.assertNotIn(1613, buxton_ids)
+
+    def test_tower_of_london_still_labels_without_knowledgebase_coords(self) -> None:
+        # Tower Hill Und is absent from National Rail stations.xml; fail-open
+        # must keep the curated underground gateway.
+        db = FaresDb()
+        db.locations_by_crs = {
+            "SLP": Location("1", "SLP", "TOWER HILL UND", ""),
+        }
+        db.location_facets_by_crs = {"SLP": {"heritage"}}
+        db._station_coordinates = {}
+        self.assertEqual(
+            db.heritage_sites("SLP"),
+            [{
+                "id": 488,
+                "name": "Tower of London",
+                "url": "https://whc.unesco.org/en/list/488/",
+            }],
+        )
+
+    def test_hadrian_curated_list_names_chester_le_street_not_cheshire(self) -> None:
+        hadrian_stations = next(
+            stations for site_id, _name, stations in HERITAGE_PROPERTIES if site_id == 430
+        )
+        self.assertIn("Chester-le-Street", hadrian_stations)
+        self.assertNotIn("Chester", hadrian_stations)
 
     def test_a_coach_or_parkway_station_is_a_transport_interchange(self) -> None:
         db = FaresDb()
