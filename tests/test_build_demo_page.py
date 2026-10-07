@@ -283,12 +283,27 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(rows["NOT"]["minutes"], 45)
         self.assertEqual(rows["NOT"]["changes"], 0)
 
-    def test_single_mode_keeps_and_labels_the_cheaper_advance_ticket(self) -> None:
+    def test_single_mode_prices_the_walk_up_single_not_the_advance_ticket(self) -> None:
+        # The single list used to lead with a 100p advance fare because it was
+        # the cheapest number in the feed, which told a reader Grantham to
+        # Nottingham cost £1.00 when that price belonged to one named train.
+        # The list now prices the walk-up single, and says so.
         row = next(row for row in self.payload["singleDestinations"] if row["crs"] == "NOT")
-        self.assertEqual(row["adultPence"], 100)
-        self.assertEqual(row["ticket"], "2AS")
-        self.assertTrue(row["isAdvance"])
-        self.assertIn("Advance single", self.html)
+        self.assertEqual(row["adultPence"], 700)
+        self.assertEqual(row["ticket"], "SDS")
+        self.assertFalse(row["isAdvance"])
+        self.assertEqual(row["quality"], "outbound single")
+
+    def test_no_published_row_is_priced_as_a_train_specific_advance_fare(self) -> None:
+        # The rule is about every row on every page, not one fixture's one
+        # destination: a train-restricted fare reaching any published list is
+        # the failure, whatever it is called and whatever it costs.
+        for key in ("destinations", "singleDestinations", "anytimeDestinations"):
+            for row in self.payload[key]:
+                self.assertFalse(
+                    row["isAdvance"],
+                    f'{key} publishes {row["crs"]} as an advance fare at {row["adultPence"]}p',
+                )
 
     def test_a_heritage_destination_carries_its_named_unesco_property(self) -> None:
         row = next(row for row in self.payload["destinations"] if row["crs"] == "SLP")
@@ -1449,11 +1464,13 @@ class DemoPageTest(unittest.TestCase):
         html = render_page(payload, budget_pounds=20)
         script = page_script(html)
         self.assertIn("if (!DATA.hasJourneys)", script)
-        # Positions, not names: the columns are removed by index, so this is
-        # where Time and Changes live -- fourth and fifth, after the hold
-        # column the table gained. If a column is added in front of them again
-        # this is the assertion that says so.
-        self.assertIn("nth-child(4), thead th:nth-child(5)", script)
+        # By heading name, per table. A bare nth-child across the whole page
+        # took the dock's own columns instead of the results table's, because
+        # the two tables number their cells differently. Naming the columns
+        # means a table that gains a column first does not move the removal
+        # onto a neighbour, and the dock's remove button keeps its heading.
+        self.assertIn('name === "Time" || name === "Changes"', script)
+        self.assertNotIn("thead th:nth-child", script)
         # The detail rows must span whatever the table actually has.
         self.assertIn("cell.colSpan = columnCount()", script)
         # And the footer still says what the page is missing.
@@ -2974,10 +2991,48 @@ class DemoPageTest(unittest.TestCase):
     def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
         # The toggle exists on every row now, because the row's fare and its
         # condition are in the panel it opens and a prices-only build has no
-        # times to hang a toggle on (finding, 29 September 2026). The count is
-        # still the label where there is a count to give.
+        # times to hang a toggle on (finding, 29 September 2026). The control is
+        # the page's own chevron rather than a word, so the count no longer has
+        # anywhere visible to go; it stays in the accessible name, which is
+        # where the word used to be, and the panel still lists the times.
         self.assertIn("const times = destination.departures.length;", self.html)
-        self.assertIn('toggle.textContent = times ? times + " times" : "Fare details";', self.html)
+        self.assertIn("toggle.className = \"toggle row-expand\";", self.html)
+        self.assertIn("toggle.insertAdjacentHTML(\"beforeend\", CHEVRON);", self.html)
+        self.assertIn(
+            '(times ? times + " times and fare details for " : "Fare details for ") + destination.name',
+            self.html,
+        )
+        self.assertNotIn('toggle.textContent = times ? times + " times" : "Fare details";', self.html)
+
+    def test_the_row_expander_is_a_chevron_that_keeps_its_words(self) -> None:
+        # The control used to read "5 times" or "Fare details" in the last
+        # column of every row. The face of it is now the page's shared chevron,
+        # so three things have to hold at once: the mark is the same drawn
+        # chevron the filter bar uses rather than a second drawing of it, the
+        # words a screen reader needs are still the accessible name, and the
+        # button still reaches 44px, because a mark alone is not a target.
+        script = page_script(self.html)
+        row_cell = script.split("function cellWithLinks")[1].split("function cardNote")[0]
+        self.assertIn("toggle.className = \"toggle row-expand\";", row_cell)
+        self.assertIn("toggle.setAttribute(\"aria-label\",", row_cell)
+        self.assertIn("destination.name", row_cell)
+        # The script holds the mark as a string, quoted by json rather than
+        # pasted, so the same CHEVRON constant serves the markup and the rows.
+        self.assertIn("const CHEVRON = \"<svg class=", script)
+        self.assertIn('aria-hidden="true"', script)
+        # 2.75rem is the 44px the row's other control is held to, and the
+        # rotated state is what distinguishes open from closed.
+        from page_templates import STATION_STYLESHEET
+
+        stylesheet = STATION_STYLESHEET
+        self.assertIn(".row-expand {", stylesheet)
+        expand_rule = stylesheet.split(".row-expand {", 1)[1].split("}", 1)[0]
+        self.assertIn("width: 2.75rem;", expand_rule)
+        self.assertIn("height: 2.75rem;", expand_rule)
+        self.assertIn(
+            '.row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }',
+            stylesheet,
+        )
 
     def test_a_row_has_one_panel_and_one_control_that_owns_it(self) -> None:
         # C28: the times list and the manual-copy box both insert the row that
@@ -3021,7 +3076,7 @@ class DemoPageTest(unittest.TestCase):
         script = page_script(self.html)
         row_cell = script.split("function cellWithLinks")[1].split("function cardNote")[0]
         self.assertIn('link.textContent = "Tickets"', row_cell)
-        self.assertIn("toggle.textContent = times", row_cell)
+        self.assertIn("toggle.insertAdjacentHTML(\"beforeend\", CHEVRON)", row_cell)
         for moved in ("Card details", "Copy the journey details", "copyJourney(", "toggleShortlist("):
             self.assertNotIn(moved, row_cell)
         # ... and the panel builds them, in one box, with the copy text landing
@@ -5726,6 +5781,186 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
             any(state != "found" for state in states),
             f"every destination has a journey: {states}",
         )
+
+
+class TwoPartRowTest(unittest.TestCase):
+    """ADR-0061: a journey the feed prices in two parts is one row.
+
+    Grantham has no flow to Leicester or to Skegness in the return network,
+    and the timetable reaches both with one change. The feed prices each leg.
+    """
+
+    MONDAY = date(2026, 10, 5)
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.feed = Path(self.tmp) / "feed"
+        build_synthetic_feed(self.feed, include_restrictions=True, include_return_network=True)
+        build_synthetic_timetable(self.feed, include_return_network=True)
+        self.fares = FaresDb().load_feed(self.feed)
+        self.timetable = TimetableDb().load_feed(self.feed)
+
+    def rows(self, payload: dict, key: str = "destinations") -> dict:
+        return {row["crs"]: row for row in payload[key]}
+
+    def test_the_row_is_priced_at_both_fares_and_names_both_tickets_and_the_change(self) -> None:
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        leicester = self.rows(payload)["LEC"]
+        # Wider rule: the journey changes at Nottingham but calls at Lincoln on
+        # the first train. Lincoln is the cheaper valid split (870+2680), so
+        # the pricing locus and the physical change need not be the same station.
+        self.assertEqual(leicester["adultPence"], 870 + 2680)
+        self.assertEqual(leicester["partyPence"], (870 + 2680) * 2)
+        self.assertEqual(
+            [(t["ticket"], t["fromCrs"], t["toCrs"], t["adultPence"]) for t in leicester["tickets"]],
+            [("SDR", "GRN", "LCN", 870), ("SDR", "LCN", "LEC", 2680)],
+        )
+        self.assertEqual(leicester["changes"], 1)
+        self.assertEqual(leicester["changeStations"], [{"crs": "NOT", "name": "NOTTINGHAM"}])
+        self.assertEqual(leicester["ticket"], "SDR + SDR")
+        # Both tickets carry their own restriction facts; the second is 1A.
+        self.assertEqual([t["restrictionCode"] for t in leicester["tickets"]], ["", "1A"])
+        self.assertTrue(leicester["tickets"][1]["restrictionDescription"])
+        self.assertIn("1A", payload["restrictionValidity"])
+        self.assertEqual(leicester["railcards"], {})
+
+    def test_the_pair_is_the_journeys_own_and_not_the_cheapest(self) -> None:
+        # Skegness's journey changes at Lincoln, so it is quoted the Lincoln
+        # pair, in every list whose selector prices both tickets.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        for key in ("destinations", "anytimeDestinations"):
+            skegness = self.rows(payload, key)["SLD"]
+            self.assertEqual(skegness["adultPence"], 870 + 3240, key)
+            self.assertEqual([t["toCrs"] for t in skegness["tickets"]], ["LCN", "SLD"], key)
+            self.assertEqual(skegness["changeStations"][0]["crs"], "LCN", key)
+
+
+
+
+    def test_two_ticket_wording_names_a_change_only_when_the_journey_changes(self) -> None:
+        # The panel must not say "changing at" for a through train priced in
+        # two parts. Prove the JS helpers the page embeds.
+        import subprocess
+
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        html = render_page(payload, budget_pounds=40)
+        self.assertIn("priced via ", html)
+        self.assertIn("stay on the train", html)
+        self.assertIn("(destination.changes || 0) === 0", html)
+
+        def js_function(source: str, name: str) -> str:
+            marker = "function " + name + "(destination) {"
+            at = source.index(marker)
+            depth = 0
+            index = at + len(marker) - 1
+            while index < len(source):
+                char = source[index]
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return source[at : index + 1]
+                index += 1
+            raise AssertionError(name + " did not close")
+
+        source = (Path(__file__).resolve().parents[1] / "page_templates.py").read_text(encoding="utf-8")
+        script = (
+            js_function(source, "fareSentence")
+            + "\n"
+            + js_function(source, "fareSummary")
+            + "\n"
+            + "const through = {tickets:[{toName:'NOTTINGHAM'}], changes:0};\n"
+            + "const changed = {tickets:[{toName:'LINCOLN'}], changes:1};\n"
+            + "process.stdout.write(JSON.stringify({\n"
+            + "  throughSentence: fareSentence(through),\n"
+            + "  throughSummary: fareSummary(through),\n"
+            + "  changedSentence: fareSentence(changed),\n"
+            + "  changedSummary: fareSummary(changed),\n"
+            + "}));\n"
+        )
+        result = subprocess.run(
+            ["node", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        shown = json.loads(result.stdout)
+        self.assertEqual(
+            shown["throughSentence"],
+            "Two tickets, priced via NOTTINGHAM (stay on the train): "
+            "the price is the two fares added together.",
+        )
+        self.assertEqual(
+            shown["throughSummary"],
+            "Two tickets, bought separately, priced via NOTTINGHAM (stay on the train).",
+        )
+        self.assertNotIn("changing at", shown["throughSentence"])
+        self.assertNotIn("changing at", shown["throughSummary"])
+        self.assertEqual(
+            shown["changedSentence"],
+            "Two tickets, changing at LINCOLN: the price is the two fares added together.",
+        )
+        self.assertEqual(
+            shown["changedSummary"],
+            "Two tickets, bought separately, changing at LINCOLN.",
+        )
+
+    def test_a_direct_journey_prices_via_a_calling_point(self) -> None:
+        # Bulwell is reached on one train that calls at Nottingham. Strict
+        # change-station-only would skip it (changes == 0). Wider keeps the
+        # Nottingham calling point and prices both published fares.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        bulwell = self.rows(payload)["BUL"]
+        self.assertEqual(bulwell["changes"], 0)
+        self.assertEqual(bulwell["changeStations"], [])
+        self.assertEqual(bulwell["adultPence"], 1160 + 410)
+        self.assertEqual(
+            [(t["ticket"], t["fromCrs"], t["toCrs"], t["adultPence"]) for t in bulwell["tickets"]],
+            [("CDR", "GRN", "NOT", 1160), ("SDR", "NOT", "BUL", 410)],
+        )
+
+    def test_a_place_with_its_own_fare_keeps_its_one_ticket_row(self) -> None:
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        for row in payload["destinations"]:
+            if row["crs"] in {"LCN", "NOT", "PBO", "KGX"}:
+                self.assertNotIn("tickets", row, row["crs"])
+
+    def test_without_a_journey_there_is_no_change_to_price_at(self) -> None:
+        # A prices-only build has no journey to read the change from, and a
+        # pair guessed without one would be the cheapest pair, not the
+        # journey's. Sunday's network does not reach Leicester with one change.
+        prices_only = build_demo_page.build_payload(self.fares, None, "GRN", day=self.MONDAY)
+        self.assertFalse(any("tickets" in row for row in prices_only["destinations"]))
+        sunday = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=date(2026, 10, 11))
+        self.assertNotIn("LEC", self.rows(sunday))
+
+    def test_a_one_origin_build_carries_the_row_from_a_parse_and_from_its_cache(self) -> None:
+        # The page a reader gets, through the focused load and its fares cache:
+        # the second ticket comes from the change station's fares, which a
+        # one-origin load used to drop and an index used to leave behind.
+        out = Path(self.tmp) / "site" / "index.html"
+        cache = Path(self.tmp) / "cache"
+        argv = [
+            "--feed", str(self.feed), "--timetable", str(self.feed), "--origin", "GRN",
+            "--date", self.MONDAY.isoformat(), "--out", str(out),
+        ]
+        pages = []
+        with mock.patch.object(build_demo_page, "CACHE_DIR", cache):
+            for _ in range(2):
+                said = io.StringIO()
+                with contextlib.redirect_stdout(said):
+                    self.assertEqual(build_demo_page.main(argv), 0)
+                pages.append((said.getvalue(), embedded_payload(station_page(out).read_text(encoding="utf-8"))))
+        (parsed_log, parsed), (restored_log, restored) = pages
+        self.assertIn("wrote GRN.pickle", parsed_log)
+        self.assertIn("restored from GRN.pickle", restored_log)
+        for payload in (parsed, restored):
+            leicester = self.rows(payload)["LEC"]
+            self.assertEqual(leicester["adultPence"], 870 + 2680)
+            self.assertEqual([t["ticket"] for t in leicester["tickets"]], ["SDR", "SDR"])
+        self.assertEqual(self.rows(parsed)["LEC"], self.rows(restored)["LEC"])
 
 
 class EncodedPayloadTest(unittest.TestCase):

@@ -107,12 +107,17 @@ RETURN_NETWORK_STATIONS = (
     ("8100", "RET", "RETFORD"),
     ("8200", "SLD", "SKEGNESS"),
     ("8300", "LEC", "LEICESTER"),
+    # Bulwell has no Grantham flow. A through train calls at Nottingham, so the
+    # wider ADR-0061 rule prices Grantham to Nottingham plus Nottingham to
+    # Bulwell with no physical change. Strict change-station-only misses it.
+    ("8400", "BUL", "BULWELL"),
 )
 RETURN_NETWORK_TYPES = {
     "MAT": "town",
     "RET": "small_town",
     "SLD": "small_town",
     "LEC": "city",
+    "BUL": "small_town",
 }
 RETURN_NETWORK_FACETS = {
     "MAT": ["heritage"],
@@ -133,6 +138,7 @@ RETURN_NETWORK_FARES = (
     ("2000", "8100", 1120),  # Nottingham -> Retford
     ("2000", "8200", 3560),  # Nottingham -> Skegness
     ("2000", "8300", 2400),  # Nottingham -> Leicester
+    ("2000", "8400", 410),   # Nottingham -> Bulwell
 )
 # One restricted fare on each secondary page. The reviewed Anytime set drops
 # restricted fares by design, so without one of these the two secondary pages
@@ -147,6 +153,7 @@ RETURN_NETWORK_TIMETABLE_STATIONS = (
     ("MATL", "MAT", "MATLOCK", "05"),
     ("SLDK", "SLD", "SKEGNESS", "05"),
     ("LEIC", "LEC", "LEICESTER", "10"),
+    ("BULW", "BUL", "BULWELL", "05"),
 )
 RETURN_NETWORK_TIMETABLE_TRAINS = (
     ("T20001", ("LINC", "0740"), (), ("MATL", "0825"), "1111110", "P"),
@@ -154,6 +161,8 @@ RETURN_NETWORK_TIMETABLE_TRAINS = (
     ("T20003", ("LINC", "1100"), (), ("SLDK", "1205"), "1111110", "P"),
     ("T20004", ("NOTT", "1120"), (), ("SLDK", "1230"), "1111110", "P"),
     ("T20005", ("NOTT", "0905"), (), ("LEIC", "0940"), "1111110", "P"),
+    # Direct Grantham to Bulwell calling at Nottingham: wider split, no change.
+    ("T20006", ("GRNT", "0830"), (("NOTT", "0915", "0918"),), ("BULW", "0945"), "1111110", "P"),
 )
 
 # The shapes a real feed has and a tidy invented one does not. Off by default,

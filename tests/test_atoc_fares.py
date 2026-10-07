@@ -41,6 +41,8 @@ from atoc_fares import (
     Railcard,
     Location,
     TicketType,
+    dtd_flag,
+    is_advance_ticket,
     is_pseudo_station,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
@@ -128,6 +130,43 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.locations_by_nlc["2000"].crs, "NOT")
         self.assertEqual(self.db.ticket_types["CDR"].name, "OFF-PEAK DAY R")
         self.assertTrue(self.db.ticket_types["CDR"].restricted_by_train)
+
+    def test_the_dtd_flag_spelling_is_read_by_a_test_the_synthetic_feed_cannot_pass(self) -> None:
+        # The licensed feed writes ``Y`` for a true flag. This project's
+        # synthetic feed was written before any licensed file was available and
+        # writes ``1``. Reading the flag as ``== "1"`` therefore matched the
+        # synthetic feed and nothing else: on the real feed every
+        # train-restricted ticket read as unrestricted, so the check that exists
+        # to stop an advance fare being published as a walk-up price never
+        # fired, and the page published fares no train on the day was selling.
+        #
+        # So the spellings are pinned here against the reader rather than
+        # against a fixture, which is the one thing the fixture cannot catch.
+        for yes in ("Y", "y", "1", " Y "):
+            self.assertTrue(dtd_flag(yes), f"{yes!r} must read as yes")
+        for no in ("N", "n", "0", "", "  ", None):
+            self.assertFalse(dtd_flag(no), f"{no!r} must read as no")
+
+    @unittest.skipUnless(
+        Path("feeds/fares/dtd-fares.zip").is_file(),
+        "licensed DTD feed is not available",
+    )
+    def test_the_real_feed_marks_its_advance_tickets_train_restricted(self) -> None:
+        # The synthetic feed cannot catch the spelling, so the licensed file is
+        # the only place this can be asserted. Before the fix every advance
+        # ticket in the real feed read as unrestricted: 378 of them did not.
+        db = FaresDb().load_feed("feeds/fares/dtd-fares.zip", focus_origin="GRA")
+        advance = [
+            ticket
+            for ticket in db.ticket_types.values()
+            if is_advance_ticket(ticket.name)
+        ]
+        self.assertGreater(len(advance), 100)
+        flagged = [ticket.code for ticket in advance if ticket.restricted_by_train]
+        self.assertGreater(len(flagged), 100)
+        # And the fare this started on: the £6.60 single Grantham--Skegness was
+        # priced as, which no train on 6 October 2026 was selling.
+        self.assertIn("2AS", flagged)
 
     def test_reads_destination_types_from_the_separate_reference_lookup(self) -> None:
         self.assertEqual(self.db.destination_type("NOT"), "city")
@@ -844,11 +883,34 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual([reachable.best_pence for reachable in results], [870, 1160])
 
     def test_focused_load_keeps_the_same_origin_answer_without_unrelated_fares(self) -> None:
-        focused = FaresDb().load_feed(self.feed, focus_origin="GRN")
-        full = {row.crs: row for row in self.db.destinations_within("GRN", 1_000_000)}
+        # A focused load keeps the origin's fares and its change stations'
+        # fares (ADR-0061), and nothing else. Every flow in the base fixture
+        # touches Grantham or a station Grantham's flows reach, so an unrelated
+        # one is added: Matlock to Retford, neither of which Grantham names.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "feed", include_return_network=True)
+            with (feed / "rjfaf.ffl").open("a", encoding="utf-8") as handle:
+                handle.write(
+                    _line(
+                        {"update_marker": "A", "record_type": "F", "origin_nlc": "8000",
+                         "destination_nlc": "8100", "route_code": "00000", "flow_id": "0000090"},
+                        FLOW_F,
+                    )
+                    + "\n"
+                    + _line(
+                        {"update_marker": "A", "record_type": "T", "flow_id": "0000090",
+                         "ticket_code": "SDR", "fare_pence": "450", "restriction_code": ""},
+                        FLOW_T,
+                    )
+                    + "\n"
+                )
+            whole = FaresDb().load_feed(feed)
+            focused = FaresDb().load_feed(feed, focus_origin="GRN")
+        full = {row.crs: row for row in whole.destinations_within("GRN", 1_000_000)}
         narrowed = {row.crs: row for row in focused.destinations_within("GRN", 1_000_000)}
         self.assertEqual(narrowed, full)
-        self.assertLess(focused.stats()["fares"], self.db.stats()["fares"])
+        self.assertLess(focused.stats()["fares"], whole.stats()["fares"])
+        self.assertNotIn("0000090", focused.fares_by_flow, "a fare no Grantham page can use is dropped")
         self.assertEqual(focused._focus_origin_nlcs, {"1000"})
 
     def test_persisted_origin_indexes_are_isolated_and_reusable(self) -> None:
@@ -911,12 +973,14 @@ class FaresParserTest(unittest.TestCase):
             for row in self.db.page_single_destinations_within("GRN", 1_000_000)
         }
         self.assertTrue(rows)
-        self.assertTrue(all(row.ticket_code in {"SDS", "2AS"} for row in rows.values()))
-        # Advance is a valid fare. The page keeps the cheaper one and labels it
-        # train-specific rather than silently replacing it with a walk-up fare.
-        self.assertEqual(rows["NOT"].standard_pence, 100)
-        self.assertEqual(rows["NOT"].ticket_code, "2AS")
-        self.assertEqual(rows["NOT"].ticket_name, "ADVANCE")
+        # A train-restricted fare is out of the published set. It is a real fare
+        # the feed sells, but its price belongs to one named train, and a page
+        # that cannot name the train must not publish its price as the price of
+        # the journey. What is left is the walk-up single the feed holds too.
+        self.assertTrue(all(row.ticket_code == "SDS" for row in rows.values()))
+        self.assertEqual(rows["NOT"].standard_pence, 700)
+        self.assertEqual(rows["NOT"].ticket_code, "SDS")
+        self.assertEqual(rows["NOT"].ticket_name, "ANYTIME DAY S")
 
     def test_picks_the_cheapest_return_ticket_per_destination(self) -> None:
         results = {reachable.crs: reachable for reachable in self.db.destinations_within("GRN", 3000)}
@@ -967,8 +1031,11 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.flows[flow_id].direction, "R")
         forward = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
         reverse = {row.crs: row for row in db.page_single_destinations_within("NOT", 1_000_000)}
-        self.assertEqual(forward["NOT"].standard_pence, 100)
-        self.assertEqual(forward["NOT"].ticket_code, "2AS")
+        # Forward, the walk-up single the feed holds for GRN--NOT wins because
+        # the advance fare is no longer published. Reverse, the SDS added below
+        # is the only fare for the pair, and it is found in both directions.
+        self.assertEqual(forward["NOT"].standard_pence, 500)
+        self.assertEqual(forward["NOT"].ticket_code, "SDS")
         self.assertEqual(reverse["GRN"].standard_pence, 500)
         self.assertEqual(reverse["GRN"].ticket_code, "SDS")
 
@@ -1593,9 +1660,11 @@ class ConditionalFareTest(unittest.TestCase):
         db = self._with(self._db(), "CTS", "UNDER 11 SINGLE", 10)
         rows = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
         self.assertNotIn("CTS", {row.ticket_code for row in rows.values()})
-        # NOT still has a fare, and it is the adult one the feed also holds.
+        # NOT still has a fare, and it is the walk-up adult single the feed also
+        # holds rather than the advance one, which the published set no longer
+        # carries for the reason its own test gives.
         self.assertIn("NOT", rows)
-        self.assertEqual(rows["NOT"].ticket_code, "2AS")
+        self.assertEqual(rows["NOT"].ticket_code, "SDS")
 
     def test_the_child_fare_is_rejected_and_the_reason_says_why(self) -> None:
         # The coverage report counts reasons, so a child's fare filed under
@@ -1636,7 +1705,7 @@ class ConditionalFareTest(unittest.TestCase):
         self.assertLessEqual(set(kept), set(every))
         self.assertEqual(every["NOT"].ticket_code, "CTS")
         # The reviewed run still shows the adult fare for the same pair.
-        self.assertEqual(kept["NOT"].ticket_code, "2AS")
+        self.assertEqual(kept["NOT"].ticket_code, "SDS")
         self.assertGreater(kept["NOT"].best_pence, every["NOT"].best_pence)
 
     def test_a_destination_only_the_child_priced_is_lost_and_says_so(self) -> None:
@@ -1752,6 +1821,121 @@ class ConditionalFareTest(unittest.TestCase):
         rows = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
         self.assertEqual(rows["NOT"].ticket_code, "QQ1")
         self.assertEqual(rows["NOT"].best_pence, 50)
+
+
+class TwoPartFareTest(unittest.TestCase):
+    """ADR-0061: a place the feed prices in two parts is one row.
+
+    The return network gives Grantham two such places. Skegness has no
+    Grantham flow, and the feed prices Grantham to Lincoln and Lincoln to
+    Skegness; Leicester has none either, and the feed prices Grantham to
+    Nottingham and Nottingham to Leicester.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.feed = build_synthetic_feed(
+            Path(self.tmp.name) / "feed", include_return_network=True, include_restrictions=True
+        )
+        self.db = FaresDb().load_feed(self.feed)
+
+    def returns(self, db: FaresDb):
+        return lambda crs: db.page_destinations_within(crs, 1_000_000, adults=1)
+
+    def test_the_price_is_both_published_fares_added_together(self) -> None:
+        rows = {
+            row.crs: row
+            for row in self.db.two_part_fares("GRN", {"SLD": "LCN", "LEC": "NOT"}, self.returns(self.db))
+        }
+        self.assertEqual(set(rows), {"SLD", "LEC"})
+        skegness = rows["SLD"]
+        self.assertEqual(skegness.best_pence, 870 + 3240)
+        self.assertEqual((skegness.change_crs, skegness.change_station), ("LCN", "LINCOLN"))
+        self.assertEqual(
+            [(leg.ticket_code, leg.best_pence) for leg in skegness.legs], [("SDR", 870), ("SDR", 3240)]
+        )
+        # Both conditions are carried, one per ticket.
+        leicester = rows["LEC"]
+        self.assertEqual(leicester.best_pence, 1160 + 2400)
+        self.assertEqual([leg.restriction_code for leg in leicester.legs], ["1A", "1A"])
+
+    def test_the_tickets_are_the_journeys_own_not_the_cheapest_pair(self) -> None:
+        # Skegness is cheaper through Lincoln (870 + 3240) than through
+        # Nottingham (1160 + 3560). A journey that changes at Nottingham is
+        # quoted the Nottingham pair, because that is the pair it travels on.
+        rows = self.db.two_part_fares("GRN", {"SLD": "NOT"}, self.returns(self.db))
+        self.assertEqual([(row.crs, row.change_crs, row.best_pence) for row in rows], [("SLD", "NOT", 1160 + 3560)])
+
+    def test_each_ticket_is_the_one_its_own_page_would_quote(self) -> None:
+        # The same selector, asked of each end: the first ticket is the
+        # origin page's row for the change station, the second is the change
+        # station page's row for the destination.
+        row = self.db.two_part_fares("GRN", {"LEC": "NOT"}, self.returns(self.db))[0]
+        own = {r.crs: r for r in self.db.page_destinations_within("GRN", 1_000_000, adults=1)}
+        onward = {r.crs: r for r in self.db.page_destinations_within("NOT", 1_000_000, adults=1)}
+        self.assertEqual(row.first, own["NOT"])
+        self.assertEqual(row.second, onward["LEC"])
+
+    def test_a_place_with_its_own_fare_or_a_missing_ticket_is_no_two_part_row(self) -> None:
+        # Nottingham has its own Grantham fare, so it keeps it. Peterborough
+        # prices nothing on to Matlock, so a journey through it has no price.
+        self.assertEqual(
+            self.db.two_part_fares("GRN", {"NOT": "LCN", "MAT": "PBO"}, self.returns(self.db)), []
+        )
+
+
+    def test_a_calling_point_on_a_direct_journey_is_a_split(self) -> None:
+        # Wider ADR-0061: Bulwell has no Grantham flow and no change of train.
+        # Nottingham is a calling point on the through train, and both legs
+        # sell, so the pair is a row. Strict change-station-only would pass an
+        # empty candidate list and miss it.
+        alone = self.db.two_part_fares("GRN", {"BUL": []}, self.returns(self.db))
+        self.assertEqual(alone, [])
+        rows = self.db.two_part_fares("GRN", {"BUL": ["NOT"]}, self.returns(self.db))
+        self.assertEqual([(row.crs, row.change_crs, row.best_pence) for row in rows], [("BUL", "NOT", 1160 + 410)])
+
+    def test_the_cheapest_valid_calling_point_wins_among_the_journeys_stops(self) -> None:
+        # Skegness is cheaper through Lincoln than through Nottingham. Both are
+        # on a journey's candidate list; the sum through Lincoln wins. That is
+        # still journey-matched: neither candidate invents a stop the journey
+        # does not call at.
+        rows = self.db.two_part_fares(
+            "GRN", {"SLD": ["NOT", "LCN"]}, self.returns(self.db)
+        )
+        self.assertEqual(
+            [(row.crs, row.change_crs, row.best_pence) for row in rows],
+            [("SLD", "LCN", 870 + 3240)],
+        )
+
+    def test_a_focused_load_keeps_the_second_ticket(self) -> None:
+        # ADR-0061's second false zero: a database focused on one origin
+        # dropped every fare from anywhere else, so the second ticket was an
+        # empty flow and nothing was priceable in two parts.
+        focused = FaresDb().load_feed(self.feed, focus_origin="GRN")
+        changes = {"SLD": "LCN", "LEC": "NOT"}
+        self.assertEqual(
+            focused.two_part_fares("GRN", changes, self.returns(focused)),
+            self.db.two_part_fares("GRN", changes, self.returns(self.db)),
+        )
+
+    def test_a_restored_index_reads_the_second_ticket_from_the_change_stations_index(self) -> None:
+        changes = {"SLD": "LCN", "LEC": "NOT"}
+        expected = self.db.two_part_fares("GRN", changes, self.returns(self.db))
+        with tempfile.TemporaryDirectory() as tmp:
+            common, indexes = Path(tmp) / "common.pickle", Path(tmp) / "indexes"
+            FaresDb().load_feed(self.feed, focus_origin="GRN").write_fare_indexes(common, indexes, ["GRN"])
+            self.assertTrue((indexes / "LCN.pickle").is_file(), "a change station's index is written")
+            self.assertTrue((indexes / "NOT.pickle").is_file())
+            alone = FaresDb.load_fare_index(common, indexes / "GRN.pickle")
+            self.assertEqual(alone.two_part_fares("GRN", changes, self.returns(alone)), [])
+            merged = FaresDb.load_fare_index(common, indexes / "GRN.pickle")
+            self.assertEqual(merged.merge_interchange_indexes(indexes), [])
+            self.assertEqual(merged.two_part_fares("GRN", changes, self.returns(merged)), expected)
+            # A missing change-station index is reported, not served around.
+            (indexes / "NOT.pickle").unlink()
+            partial = FaresDb.load_fare_index(common, indexes / "GRN.pickle")
+            self.assertEqual(partial.merge_interchange_indexes(indexes), ["NOT"])
 
 
 if __name__ == "__main__":
