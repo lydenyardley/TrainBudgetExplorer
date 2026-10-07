@@ -5,7 +5,7 @@
   "stations": 3436,
   "facetSources": {
     "seaside": {
-      "name": "Office for National Statistics, Census 2021 coastal communities characteristics of built-up areas",
+      "name": "Office for National Statistics, Census 2021 coastal communities characteristics of built-up areas, plus a reviewed CRS supplement for classic day-out stations the workbook name-match misses",
       "url": "https://www.ons.gov.uk/peoplepopulationandcommunity/housing/datasets/coastalcommunitiescharacteristicsofbuiltupareasenglandandwalescensus2021",
       "coverage": "England and Wales"
     },
@@ -38,182 +38,62 @@
       "name": "reviewed coach, tram, metro, stadium, and parkway or park-and-ride locations, identified from the feed's own station names and each operator's interchange list",
       "url": "",
       "coverage": "United Kingdom, as covered by the DTD feed"
+    },
+    "rspb": {
+      "name": "reviewed list of stations reaching RSPB reserves, linked by the hybrid closest-station prune",
+      "url": "https://www.rspb.org.uk/nature-reserves/",
+      "coverage": "United Kingdom, as covered by the DTD feed"
+    },
+    "national_trust": {
+      "name": "reviewed list of stations reaching National Trust visitor properties, linked by the hybrid closest-station prune",
+      "url": "https://www.nationaltrust.org.uk/visit",
+      "coverage": "England, Wales and Northern Ireland, as covered by the DTD feed"
+    },
+    "national_park": {
+      "name": "reviewed gateway stations for National Parks and National Landscapes (AONBs), linked by the hybrid closest-station prune",
+      "url": "https://www.nationalparks.uk/",
+      "coverage": "England, Wales and Scotland, as covered by the DTD feed"
     }
   },
   "supportedFacets": [
     "airport",
     "heritage",
     "island",
+    "national_park",
+    "national_trust",
     "nature",
+    "rspb",
     "seaside",
     "transport",
     "university"
   ],
   "facets": {
-    "ATB": [
-      "nature"
-    ],
-    "BKA": [
-      "nature"
-    ],
-    "BND": [
-      "nature"
-    ],
-    "BRE": [
-      "nature"
-    ],
-    "CDU": [
-      "nature"
-    ],
-    "HAY": [
-      "nature"
-    ],
-    "HBY": [
-      "nature"
-    ],
-    "HLS": [
-      "nature"
-    ],
-    "SEV": [
-      "nature"
-    ],
-    "ZHD": [
-      "nature"
-    ],
-    "ZHX": [
-      "nature"
-    ],
-    "APN": [
-      "airport"
-    ],
-    "BHI": [
-      "airport"
-    ],
-    "EDA": [
-      "airport"
-    ],
-    "EMA": [
-      "airport"
-    ],
-    "GGT": [
-      "airport"
-    ],
-    "GTW": [
-      "airport"
-    ],
-    "HAF": [
-      "airport"
-    ],
-    "HLL": [
-      "airport"
-    ],
-    "HWA": [
-      "airport"
-    ],
-    "HWE": [
-      "airport"
-    ],
-    "HWV": [
-      "airport"
-    ],
-    "HWX": [
-      "airport"
-    ],
-    "HXX": [
-      "airport"
-    ],
-    "IVA": [
-      "airport"
-    ],
-    "LHR": [
-      "airport"
-    ],
-    "LJL": [
-      "airport"
-    ],
-    "LPD": [
-      "airport"
-    ],
-    "LTN": [
-      "airport"
-    ],
-    "LUA": [
-      "airport"
-    ],
-    "MIA": [
-      "airport"
-    ],
-    "MNA": [
-      "airport"
-    ],
-    "PRA": [
-      "airport"
-    ],
-    "RHA": [
-      "airport"
-    ],
-    "SIA": [
-      "airport"
-    ],
-    "SOA": [
-      "airport"
-    ],
-    "SSD": [
-      "airport"
-    ],
-    "TEA": [
-      "airport"
-    ],
-    "XCF": [
-      "airport"
-    ],
-    "XFI": [
-      "airport"
-    ],
-    "XPB": [
-      "airport"
-    ],
-    "XQB": [
-      "airport"
-    ],
-    "XTH": [
-      "airport"
-    ],
-    "ZHJ": [
-      "airport"
-    ],
-    "BCB": [
-      "nature"
-    ],
-    "BCJ": [
-      "nature"
-    ],
-    "EMD": [
-      "transport"
-    ],
-    "LGM": [
-      "transport"
-    ],
-    "LPY": [
-      "transport"
-    ],
-    "PEA": [
-      "transport"
-    ],
-    "PPR": [
-      "transport"
-    ],
-    "TPC": [
-      "transport"
-    ],
     "ABD": [
       "university"
     ],
     "ADS": [
       "island"
     ],
+    "ALE": [
+      "transport"
+    ],
+    "ALG": [
+      "transport"
+    ],
+    "AMY": [
+      "national_park"
+    ],
+    "APN": [
+      "airport"
+    ],
     "ARN": [
       "seaside"
+    ],
+    "ATB": [
+      "nature"
+    ],
+    "AVM": [
+      "national_park"
     ],
     "AVN": [
       "seaside"
@@ -225,8 +105,14 @@
       "seaside",
       "university"
     ],
-    "BDI": [
-      "heritage"
+    "BCB": [
+      "nature"
+    ],
+    "BCJ": [
+      "nature"
+    ],
+    "BCU": [
+      "national_park"
     ],
     "BDM": [
       "university"
@@ -234,14 +120,33 @@
     "BDN": [
       "island"
     ],
-    "BDQ": [
-      "heritage"
-    ],
     "BDT": [
       "seaside"
     ],
     "BEB": [
       "seaside"
+    ],
+    "BEM": [
+      "rspb"
+    ],
+    "BEO": [
+      "transport"
+    ],
+    "BFB": [
+      "transport"
+    ],
+    "BHA": [
+      "transport"
+    ],
+    "BHI": [
+      "airport"
+    ],
+    "BHK": [
+      "transport"
+    ],
+    "BKA": [
+      "national_trust",
+      "nature"
     ],
     "BLP": [
       "heritage"
@@ -249,9 +154,18 @@
     "BMH": [
       "seaside"
     ],
+    "BND": [
+      "nature"
+    ],
+    "BNE": [
+      "national_trust"
+    ],
     "BNG": [
       "seaside",
       "university"
+    ],
+    "BOD": [
+      "transport"
     ],
     "BOG": [
       "seaside"
@@ -262,6 +176,24 @@
     "BON": [
       "university"
     ],
+    "BPB": [
+      "seaside"
+    ],
+    "BPN": [
+      "seaside"
+    ],
+    "BPO": [
+      "transport"
+    ],
+    "BPS": [
+      "seaside"
+    ],
+    "BPW": [
+      "transport"
+    ],
+    "BRE": [
+      "nature"
+    ],
     "BRH": [
       "seaside"
     ],
@@ -269,17 +201,36 @@
       "heritage",
       "seaside"
     ],
+    "BSC": [
+      "transport"
+    ],
+    "BSN": [
+      "rspb"
+    ],
     "BSR": [
       "seaside"
+    ],
+    "BSV": [
+      "transport"
     ],
     "BTH": [
       "heritage"
     ],
     "BTN": [
+      "seaside",
       "university"
     ],
-    "BUX": [
-      "heritage"
+    "BTW": [
+      "transport"
+    ],
+    "BUA": [
+      "transport"
+    ],
+    "BXT": [
+      "transport"
+    ],
+    "BYC": [
+      "national_park"
     ],
     "CAR": [
       "heritage",
@@ -300,6 +251,12 @@
     "CBW": [
       "heritage"
     ],
+    "CBZ": [
+      "transport"
+    ],
+    "CCB": [
+      "transport"
+    ],
     "CCC": [
       "seaside"
     ],
@@ -309,6 +266,15 @@
     "CDT": [
       "seaside"
     ],
+    "CDU": [
+      "nature"
+    ],
+    "CFC": [
+      "national_trust"
+    ],
+    "CFD": [
+      "rspb"
+    ],
     "CFH": [
       "seaside"
     ],
@@ -316,11 +282,17 @@
       "heritage",
       "seaside"
     ],
+    "CGT": [
+      "transport"
+    ],
     "CLE": [
       "seaside"
     ],
     "CLT": [
       "seaside"
+    ],
+    "CMA": [
+      "transport"
     ],
     "CMF": [
       "heritage"
@@ -336,6 +308,7 @@
     ],
     "CNW": [
       "heritage",
+      "rspb",
       "seaside"
     ],
     "COL": [
@@ -344,11 +317,26 @@
     "COV": [
       "university"
     ],
+    "CPG": [
+      "transport"
+    ],
+    "CPW": [
+      "national_park"
+    ],
     "CRB": [
       "heritage"
     ],
+    "CRC": [
+      "transport"
+    ],
     "CRU": [
       "island"
+    ],
+    "CRV": [
+      "national_park"
+    ],
+    "CRZ": [
+      "transport"
     ],
     "CTB": [
       "island"
@@ -357,13 +345,13 @@
       "seaside"
     ],
     "CTR": [
-      "heritage",
       "university"
     ],
     "CWB": [
       "seaside"
     ],
     "DBY": [
+      "national_trust",
       "university"
     ],
     "DEA": [
@@ -378,6 +366,12 @@
     "DHM": [
       "heritage",
       "university"
+    ],
+    "DID": [
+      "transport"
+    ],
+    "DSM": [
+      "rspb"
     ],
     "DVP": [
       "heritage"
@@ -394,15 +388,31 @@
     "ECW": [
       "island"
     ],
+    "EDA": [
+      "airport",
+      "transport"
+    ],
     "EDB": [
       "heritage",
       "university"
     ],
+    "EDL": [
+      "national_park"
+    ],
     "EGH": [
       "university"
     ],
+    "EMA": [
+      "airport"
+    ],
+    "EMD": [
+      "transport"
+    ],
     "EMS": [
       "seaside"
+    ],
+    "ERB": [
+      "transport"
     ],
     "ETL": [
       "seaside"
@@ -411,8 +421,14 @@
       "heritage",
       "seaside"
     ],
+    "FAX": [
+      "transport"
+    ],
     "FBY": [
       "seaside"
+    ],
+    "FEG": [
+      "transport"
     ],
     "FIL": [
       "seaside"
@@ -426,6 +442,9 @@
     "FLX": [
       "seaside"
     ],
+    "FLZ": [
+      "transport"
+    ],
     "FNH": [
       "university"
     ],
@@ -438,8 +457,20 @@
     "FSB": [
       "island"
     ],
+    "GGT": [
+      "airport"
+    ],
     "GLD": [
       "university"
+    ],
+    "GMN": [
+      "national_park"
+    ],
+    "GMV": [
+      "national_park"
+    ],
+    "GOP": [
+      "transport"
     ],
     "GRV": [
       "seaside"
@@ -447,8 +478,14 @@
     "GRY": [
       "seaside"
     ],
+    "GTW": [
+      "airport"
+    ],
     "GYM": [
       "seaside"
+    ],
+    "HAF": [
+      "airport"
     ],
     "HAT": [
       "university"
@@ -456,8 +493,17 @@
     "HAV": [
       "seaside"
     ],
+    "HAY": [
+      "nature"
+    ],
+    "HBY": [
+      "nature"
+    ],
     "HES": [
       "seaside"
+    ],
+    "HEZ": [
+      "transport"
     ],
     "HGS": [
       "seaside"
@@ -466,8 +512,17 @@
       "island",
       "seaside"
     ],
+    "HLL": [
+      "airport"
+    ],
+    "HLS": [
+      "nature"
+    ],
     "HNB": [
       "seaside"
+    ],
+    "HNY": [
+      "transport"
     ],
     "HOL": [
       "seaside"
@@ -482,14 +537,56 @@
       "heritage",
       "seaside"
     ],
+    "HTR": [
+      "transport"
+    ],
     "HUD": [
       "university"
     ],
     "HUL": [
       "university"
     ],
+    "HUS": [
+      "transport"
+    ],
+    "HUU": [
+      "transport"
+    ],
+    "HWA": [
+      "airport",
+      "transport"
+    ],
+    "HWE": [
+      "airport",
+      "transport"
+    ],
+    "HWF": [
+      "transport"
+    ],
+    "HWH": [
+      "national_park"
+    ],
+    "HWI": [
+      "transport"
+    ],
+    "HWS": [
+      "transport"
+    ],
+    "HWV": [
+      "airport"
+    ],
+    "HWX": [
+      "airport",
+      "transport"
+    ],
     "HWY": [
       "university"
+    ],
+    "HXM": [
+      "national_park"
+    ],
+    "HXX": [
+      "airport"
     ],
     "HYK": [
       "seaside"
@@ -497,8 +594,15 @@
     "HYL": [
       "seaside"
     ],
+    "IBS": [
+      "transport"
+    ],
     "IHS": [
-      "seaside"
+      "seaside",
+      "transport"
+    ],
+    "INB": [
+      "transport"
     ],
     "INV": [
       "university"
@@ -506,11 +610,23 @@
     "IPS": [
       "university"
     ],
+    "IVA": [
+      "airport"
+    ],
+    "KBS": [
+      "transport"
+    ],
     "KBX": [
       "seaside"
     ],
+    "KEZ": [
+      "transport"
+    ],
     "KLN": [
       "seaside"
+    ],
+    "KLS": [
+      "transport"
     ],
     "KML": [
       "island"
@@ -524,8 +640,14 @@
     "KWG": [
       "heritage"
     ],
+    "KWK": [
+      "transport"
+    ],
     "KYL": [
       "island"
+    ],
+    "LAA": [
+      "transport"
     ],
     "LAN": [
       "university"
@@ -539,6 +661,9 @@
     "LCN": [
       "university"
     ],
+    "LCP": [
+      "transport"
+    ],
     "LDS": [
       "university"
     ],
@@ -548,8 +673,21 @@
     "LEL": [
       "seaside"
     ],
+    "LGM": [
+      "transport"
+    ],
+    "LHR": [
+      "airport",
+      "transport"
+    ],
+    "LIE": [
+      "transport"
+    ],
     "LIT": [
       "seaside"
+    ],
+    "LJL": [
+      "airport"
     ],
     "LKE": [
       "island"
@@ -563,6 +701,9 @@
     "LLF": [
       "seaside"
     ],
+    "LLP": [
+      "transport"
+    ],
     "LLW": [
       "seaside"
     ],
@@ -571,6 +712,19 @@
     ],
     "LOO": [
       "seaside"
+    ],
+    "LPD": [
+      "airport"
+    ],
+    "LPY": [
+      "national_trust",
+      "transport"
+    ],
+    "LTN": [
+      "airport"
+    ],
+    "LUA": [
+      "airport"
     ],
     "LUT": [
       "university"
@@ -591,7 +745,11 @@
       "heritage"
     ],
     "MBR": [
+      "rspb",
       "university"
+    ],
+    "MCE": [
+      "transport"
     ],
     "MCM": [
       "seaside"
@@ -602,14 +760,27 @@
     "MFH": [
       "seaside"
     ],
+    "MIA": [
+      "airport"
+    ],
+    "MIM": [
+      "national_park"
+    ],
     "MIS": [
       "seaside"
     ],
     "MLG": [
       "island"
     ],
+    "MNA": [
+      "airport"
+    ],
     "MNG": [
+      "national_park",
       "seaside"
+    ],
+    "MOL": [
+      "transport"
     ],
     "MRB": [
       "seaside"
@@ -629,6 +800,7 @@
     ],
     "NCZ": [
       "heritage",
+      "transport",
       "university"
     ],
     "NFL": [
@@ -639,6 +811,9 @@
     ],
     "NMP": [
       "university"
+    ],
+    "NNN": [
+      "transport"
     ],
     "NOT": [
       "university"
@@ -652,17 +827,39 @@
     "NTL": [
       "seaside"
     ],
+    "NWP": [
+      "rspb"
+    ],
+    "OKE": [
+      "national_park"
+    ],
     "OMS": [
       "university"
     ],
+    "OUD": [
+      "transport"
+    ],
     "OXF": [
       "university"
+    ],
+    "OXP": [
+      "transport"
+    ],
+    "PBU": [
+      "transport"
+    ],
+    "PDT": [
+      "transport"
+    ],
+    "PEA": [
+      "transport"
     ],
     "PEB": [
       "seaside"
     ],
     "PEE": [
-      "island"
+      "island",
+      "transport"
     ],
     "PEN": [
       "seaside"
@@ -670,11 +867,17 @@
     "PES": [
       "seaside"
     ],
+    "PFL": [
+      "rspb"
+    ],
     "PGN": [
       "seaside"
     ],
     "PIA": [
       "seaside"
+    ],
+    "PIZ": [
+      "transport"
     ],
     "PLY": [
       "seaside",
@@ -703,6 +906,12 @@
     "PPD": [
       "university"
     ],
+    "PPR": [
+      "transport"
+    ],
+    "PRA": [
+      "airport"
+    ],
     "PRH": [
       "seaside"
     ],
@@ -719,17 +928,107 @@
     "PWL": [
       "seaside"
     ],
+    "QAA": [
+      "transport"
+    ],
+    "QAB": [
+      "transport"
+    ],
+    "QAC": [
+      "transport"
+    ],
+    "QAD": [
+      "transport"
+    ],
+    "QBA": [
+      "transport"
+    ],
+    "QBM": [
+      "transport"
+    ],
+    "QBN": [
+      "transport"
+    ],
     "QBR": [
       "seaside"
     ],
+    "QBS": [
+      "transport"
+    ],
+    "QDK": [
+      "transport"
+    ],
+    "QEB": [
+      "transport"
+    ],
+    "QGA": [
+      "transport"
+    ],
+    "QKB": [
+      "transport"
+    ],
+    "QLV": [
+      "transport"
+    ],
+    "QMA": [
+      "transport"
+    ],
+    "QMB": [
+      "transport"
+    ],
+    "QMC": [
+      "transport"
+    ],
+    "QMD": [
+      "transport"
+    ],
+    "QME": [
+      "transport"
+    ],
+    "QMF": [
+      "transport"
+    ],
+    "QMG": [
+      "transport"
+    ],
+    "QMH": [
+      "transport"
+    ],
+    "QMI": [
+      "transport"
+    ],
+    "QMJ": [
+      "transport"
+    ],
+    "QMM": [
+      "transport"
+    ],
+    "QMZ": [
+      "transport"
+    ],
     "RAM": [
       "seaside"
+    ],
+    "RBR": [
+      "national_trust"
+    ],
+    "RBU": [
+      "transport"
     ],
     "RDG": [
       "university"
     ],
     "RED": [
       "heritage"
+    ],
+    "RGT": [
+      "national_park"
+    ],
+    "RHA": [
+      "airport"
+    ],
+    "RHB": [
+      "transport"
     ],
     "RHL": [
       "seaside"
@@ -740,8 +1039,8 @@
     "RIA": [
       "seaside"
     ],
-    "RMD": [
-      "heritage"
+    "RMK": [
+      "transport"
     ],
     "RTR": [
       "seaside"
@@ -768,6 +1067,9 @@
       "island",
       "seaside"
     ],
+    "SAO": [
+      "transport"
+    ],
     "SAU": [
       "seaside"
     ],
@@ -789,8 +1091,21 @@
     "SDF": [
       "seaside"
     ],
+    "SDT": [
+      "transport"
+    ],
     "SEA": [
       "seaside"
+    ],
+    "SET": [
+      "national_park"
+    ],
+    "SEV": [
+      "national_trust",
+      "nature"
+    ],
+    "SFF": [
+      "transport"
     ],
     "SFO": [
       "seaside"
@@ -812,13 +1127,31 @@
       "island",
       "seaside"
     ],
+    "SIA": [
+      "airport"
+    ],
+    "SIB": [
+      "transport"
+    ],
     "SID": [
       "university"
     ],
     "SIV": [
       "seaside"
     ],
+    "SKD": [
+      "transport"
+    ],
     "SKG": [
+      "seaside"
+    ],
+    "SOA": [
+      "airport"
+    ],
+    "SOC": [
+      "seaside"
+    ],
+    "SOE": [
       "seaside"
     ],
     "SOP": [
@@ -831,11 +1164,23 @@
     "SOT": [
       "university"
     ],
+    "SOV": [
+      "seaside"
+    ],
     "SOY": [
       "island"
     ],
+    "SPK": [
+      "transport"
+    ],
+    "SPU": [
+      "national_trust"
+    ],
     "SSC": [
       "seaside"
+    ],
+    "SSD": [
+      "airport"
     ],
     "SSE": [
       "seaside"
@@ -845,6 +1190,9 @@
     ],
     "STG": [
       "university"
+    ],
+    "STI": [
+      "transport"
     ],
     "STS": [
       "seaside"
@@ -857,6 +1205,7 @@
       "seaside"
     ],
     "SVR": [
+      "rspb",
       "seaside"
     ],
     "SWA": [
@@ -869,11 +1218,30 @@
     "SWM": [
       "seaside"
     ],
+    "SWW": [
+      "transport"
+    ],
+    "SYA": [
+      "national_trust"
+    ],
+    "TEA": [
+      "airport"
+    ],
     "TEN": [
+      "national_park",
       "seaside"
     ],
     "TGM": [
       "seaside"
+    ],
+    "THP": [
+      "transport"
+    ],
+    "TIN": [
+      "transport"
+    ],
+    "TPC": [
+      "transport"
     ],
     "TQY": [
       "seaside"
@@ -884,11 +1252,17 @@
     "TTN": [
       "seaside"
     ],
+    "TVP": [
+      "transport"
+    ],
     "TWI": [
       "university"
     ],
     "TYW": [
       "seaside"
+    ],
+    "UIG": [
+      "transport"
     ],
     "ULP": [
       "island"
@@ -901,8 +1275,18 @@
       "island",
       "seaside"
     ],
+    "WBE": [
+      "transport"
+    ],
+    "WCT": [
+      "transport"
+    ],
+    "WCX": [
+      "transport"
+    ],
     "WDM": [
-      "heritage"
+      "heritage",
+      "national_park"
     ],
     "WEY": [
       "heritage",
@@ -923,10 +1307,17 @@
     "WRH": [
       "seaside"
     ],
+    "WRP": [
+      "transport"
+    ],
     "WRX": [
       "heritage"
     ],
+    "WSM": [
+      "seaside"
+    ],
     "WTB": [
+      "national_park",
       "seaside"
     ],
     "WTH": [
@@ -935,23 +1326,177 @@
     "WTW": [
       "island"
     ],
+    "WTZ": [
+      "transport"
+    ],
     "WVH": [
       "university"
     ],
     "WXC": [
       "heritage"
     ],
+    "XAE": [
+      "transport"
+    ],
+    "XAF": [
+      "transport"
+    ],
+    "XAH": [
+      "transport"
+    ],
+    "XAI": [
+      "transport"
+    ],
+    "XAO": [
+      "transport"
+    ],
+    "XAP": [
+      "transport"
+    ],
+    "XAQ": [
+      "transport"
+    ],
+    "XAS": [
+      "transport"
+    ],
+    "XAV": [
+      "transport"
+    ],
+    "XAZ": [
+      "transport"
+    ],
+    "XBD": [
+      "transport"
+    ],
+    "XBH": [
+      "transport"
+    ],
+    "XBR": [
+      "transport"
+    ],
+    "XCF": [
+      "airport"
+    ],
+    "XCG": [
+      "transport"
+    ],
+    "XCL": [
+      "transport"
+    ],
+    "XCU": [
+      "transport"
+    ],
+    "XCV": [
+      "transport"
+    ],
+    "XDA": [
+      "transport"
+    ],
+    "XDC": [
+      "transport"
+    ],
+    "XDH": [
+      "transport"
+    ],
+    "XDI": [
+      "transport"
+    ],
+    "XDK": [
+      "transport"
+    ],
+    "XDO": [
+      "transport"
+    ],
+    "XDR": [
+      "transport"
+    ],
+    "XDU": [
+      "transport"
+    ],
+    "XDX": [
+      "transport"
+    ],
+    "XDY": [
+      "transport"
+    ],
+    "XEA": [
+      "transport"
+    ],
+    "XEE": [
+      "transport"
+    ],
+    "XEF": [
+      "transport"
+    ],
+    "XEQ": [
+      "transport"
+    ],
+    "XFI": [
+      "airport"
+    ],
+    "XFJ": [
+      "transport"
+    ],
+    "XKW": [
+      "transport"
+    ],
+    "XLB": [
+      "transport"
+    ],
+    "XLD": [
+      "transport"
+    ],
+    "XLO": [
+      "transport"
+    ],
     "XMT": [
       "seaside"
     ],
+    "XNE": [
+      "transport"
+    ],
+    "XPB": [
+      "airport"
+    ],
+    "XPX": [
+      "transport"
+    ],
+    "XQB": [
+      "airport"
+    ],
     "XRD": [
       "island"
+    ],
+    "XSC": [
+      "transport"
+    ],
+    "XSO": [
+      "transport"
+    ],
+    "XTH": [
+      "airport",
+      "transport"
+    ],
+    "XWC": [
+      "transport"
     ],
     "YMH": [
       "island"
     ],
     "YRK": [
       "university"
+    ],
+    "YST": [
+      "transport"
+    ],
+    "ZHD": [
+      "nature"
+    ],
+    "ZHJ": [
+      "airport"
+    ],
+    "ZHX": [
+      "nature"
     ],
     "ZTH": [
       "heritage"
