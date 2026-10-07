@@ -356,7 +356,7 @@ class DemoPageTest(unittest.TestCase):
                 "url": "https://www.visitlincolnshire.com/destinations/skegness/",
             }],
         )
-        # LCN is seaside-tagged in the fixture but has no curated coastal day-out.
+        # LCN is not a coastal proof CRS; without the seaside facet it stays empty.
         self.assertEqual(self.fares.coastal_sites("LCN"), [])
 
     def test_expired_flows_are_absent_from_all_ticket_modes(self) -> None:

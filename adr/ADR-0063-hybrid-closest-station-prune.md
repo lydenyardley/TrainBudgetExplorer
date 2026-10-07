@@ -24,7 +24,7 @@ sites component points so a valley is not collapsed by one centroid.
    District) list component points. No GIS stack.
 
 2. **Coordinates from Knowledgebase `stations.xml`.** `load_station_coordinates`
-   reads CRS → (lat, lon) already on disk under `feeds/knowledgebase/`. Missing
+   reads CRS -> (lat, lon) already on disk under `feeds/knowledgebase/`. Missing
    file or missing CRS fails open for that candidate (Underground and some
    heritage-railway names stay curated until coordinates exist).
 
@@ -54,6 +54,5 @@ Litmus: Buxton loses City of Bath; Cheshire Chester loses Hadrian's Wall;
 Bath Spa, Carlisle / Corbridge / Newcastle (and Chester-le-Street), and the
 Derwent valley set remain. Distant false friends stop earning the chip.
 
-Product rule noted alongside this work (not implemented here): every facet chip
-on the station row should lead to a named proof subline. Closing chip-only
-seaside rows is a follow-up coverage task, not part of this prune.
+Product rule (chip -> named proof subline) for Coastal & seaside is ADR-0064.
+

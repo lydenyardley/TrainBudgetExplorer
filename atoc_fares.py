@@ -342,7 +342,10 @@ class DestinationFacet:
 
     @property
     def is_reviewed(self) -> bool:
-        return bool(self.reviewed_station_codes or self.reviewed_name_markers)
+        # A reviewed facet has no published dataset reader. Dataset facets may
+        # still carry reviewed_station_codes as a supplement (ONS misses
+        # Blackpool / Brighton / Southend / Weston), without becoming reviewed.
+        return self.reader == "reviewed_station_codes"
 
 
 # Island settlements are the one facet with no published settlement list this
@@ -683,89 +686,40 @@ def load_station_coordinates(path: Path | str | None = None) -> dict[str, tuple[
     return coordinates
 
 
-# Named coastal day-outs for stations that also carry the seaside facet. Floor,
-# not ceiling: only places where the town or beach is the attraction a reader
-# would catch a train for. Do not invent beaches for inland CRS codes.
+# Classic seaside day-outs the ONS coastal BUA workbook does not attach to a
+# station name match (Brighton's university tag wins the settlement string;
+# Blackpool / Southend / Weston truncate or miss in the same pass). Reviewed
+# CRS codes supplement the ONS facet; they do not replace it. See ADR-0064.
+SEASIDE_SUPPLEMENT_CRS = frozenset({
+    "BPN",  # Blackpool North
+    "BPB",  # Blackpool Pleasure Beach
+    "BPS",  # Blackpool South
+    "BTN",  # Brighton
+    "SOC",  # Southend Central
+    "SOE",  # Southend East
+    "SOV",  # Southend Victoria
+    "WSM",  # Weston-super-Mare
+})
+
+# Named coastal day-outs for stations that also carry the seaside facet. Every
+# seaside-tagged CRS must appear here (chip implies named subline). Floor of
+# beaches, harbours, castles, and estuary walks a reader would catch a train
+# for - not a fake beach on an inland quay.
 COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
     (
-        "SKG",
-        "Skegness Beach",
-        "https://www.visitlincolnshire.com/destinations/skegness/",
+        "ARN",
+        "Arnside Knott and Kent estuary",
+        "https://www.arnsideandsilverdaleaonb.org.uk/",
     ),
     (
-        "RHL",
-        "Rhyl Central Beach",
-        "https://www.visitwales.com/attraction/beach/rhyl-central-beachseafront-557761",
+        "AVN",
+        "Avonmouth and Severn estuary",
+        "https://www.visitbristol.co.uk/",
     ),
     (
-        "PRT",
-        "Prestatyn Central Beach",
-        "https://www.visitwales.com/attraction/beach/prestatyn-central-beach-556641",
-    ),
-    (
-        "CWB",
-        "Colwyn Bay Beach",
-        "https://www.visitwales.com/attraction/beach/colwyn-bayrhos-sea-beach-535141",
-    ),
-    (
-        "SCA",
-        "Scarborough North Bay",
-        "https://visitnorthyorkshire.com/index/scarborough-north-bay",
-    ),
-    (
-        "GYM",
-        "Great Yarmouth Central Beach",
-        "https://www.visitgreatyarmouth.co.uk/things-to-do/great-yarmouth-central-beach-p1379051",
-    ),
-    (
-        "BMH",
-        "Bournemouth Beach",
-        "https://www.bcpcouncil.gov.uk/beaches-and-seafront/visit-a-beach/bournemouth-beach",
-    ),
-    (
-        "TQY",
-        "Torre Abbey Sands",
-        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/torre-abbey-sands/",
-    ),
-    (
-        "NQY",
-        "Fistral Beach",
-        "https://www.visitcornwall.com/things-to-do/beaches/fistral-beach",
-    ),
-    (
-        "WHI",
-        "Whitstable Beach",
-        "https://www.visitkent.co.uk/attractions/whitstable-beach-2847/",
-    ),
-    (
-        "MAR",
-        "Margate Main Sands",
-        "https://www.thanet.gov.uk/locations/margate-main-sands/",
-    ),
-    (
-        "CLT",
-        "Clacton-on-Sea",
-        "https://www.visitessex.com/explore/coastal-destinations/clacton-on-sea",
-    ),
-    (
-        "FIL",
-        "Filey Beach",
-        "https://visitnorthyorkshire.com/index/filey-beach",
-    ),
-    (
-        "BDT",
-        "Bridlington",
-        "https://www.visiteastyorkshire.co.uk/explore/bridlington/",
-    ),
-    (
-        "LLD",
-        "Llandudno West Shore Beach",
-        "https://www.visitwales.com/attraction/beach/llandudno-west-shore-beach-547071",
-    ),
-    (
-        "TEN",
-        "Tenby North Beach",
-        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/tenby-north-beach",
+        "AVY",
+        "Aberdyfi Beach",
+        "https://www.visitwales.com/attraction/beach/aberdyfi-beach-526461",
     ),
     (
         "AYW",
@@ -773,39 +727,24 @@ COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
         "https://www.visitwales.com/attraction/beach/aberystwyth-north-beach-526471",
     ),
     (
-        "WTB",
-        "Whitby Beach",
-        "https://visitnorthyorkshire.com/index/whitby-beach",
+        "BDT",
+        "Bridlington",
+        "https://www.visiteastyorkshire.co.uk/explore/bridlington/",
     ),
     (
-        "WEY",
-        "Weymouth Beach",
-        "https://www.weymouthtowncouncil.gov.uk/services/the-beach/",
+        "BEB",
+        "Bebington and Mersey shore",
+        "https://www.visitliverpool.com/",
     ),
     (
-        "EXM",
-        "Exmouth Beach",
-        "https://www.visitsouthdevon.co.uk/beaches/exmouth",
+        "BMH",
+        "Bournemouth Beach",
+        "https://www.bcpcouncil.gov.uk/beaches-and-seafront/visit-a-beach/bournemouth-beach",
     ),
     (
-        "SOP",
-        "Southport Beach",
-        "https://sefton.gov.uk/around-sefton/coast-and-countryside/visiting-our-beaches/southport-beach",
-    ),
-    (
-        "CLE",
-        "Cleethorpes",
-        "https://discovernortheastlincolnshire.co.uk/explore/cleethorpes/",
-    ),
-    (
-        "HGS",
-        "Hastings Beach",
-        "https://www.visit1066country.com/things-to-do/outdoors/beaches/hastings-beach",
-    ),
-    (
-        "EBN",
-        "Eastbourne Beaches",
-        "https://www.visiteastbourne.com/explore/seafront/beaches",
+        "BNG",
+        "Bangor Pier and Menai Strait",
+        "https://www.visitwales.com/attraction/attraction-landing-page/bangor-pier-508641",
     ),
     (
         "BOG",
@@ -813,24 +752,324 @@ COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
         "https://www.bognorregisbeach.co.uk/beaches/east-beach",
     ),
     (
-        "SIV",
-        "Porthmeor Beach",
-        "https://www.visitcornwall.com/things-to-do/beaches/porthmeor-beach",
+        "BOH",
+        "Bosham Harbour",
+        "https://www.visitsouthdowns.com/",
     ),
     (
-        "SDF",
-        "Saundersfoot Beach",
-        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/saundersfoot-beach",
+        "BPB",
+        "Blackpool Pleasure Beach",
+        "https://www.blackpoolpleasurebeach.com/",
     ),
     (
-        "SWA",
-        "Swansea Bay Beach",
-        "https://www.visitswanseabay.com/things-to-do/beaches/swansea-bay/",
+        "BPN",
+        "Blackpool Beach",
+        "https://www.visitblackpool.com/things-to-do/beach/",
     ),
     (
-        "PGN",
-        "Paignton Sands",
-        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/paignton-sands/",
+        "BPS",
+        "Blackpool South Beach",
+        "https://www.visitblackpool.com/things-to-do/beach/",
+    ),
+    (
+        "BRH",
+        "Borth Beach",
+        "https://www.visitwales.com/attraction/beach/borth-beach-535131",
+    ),
+    (
+        "BRM",
+        "Barmouth Beach",
+        "https://www.visitwales.com/attraction/beach/barmouth-beach-532101",
+    ),
+    (
+        "BSR",
+        "Broadstairs Viking Bay",
+        "https://www.visitthanet.co.uk/beaches/viking-bay-broadstairs/",
+    ),
+    (
+        "BTN",
+        "Brighton Beach",
+        "https://www.visitbrighton.com/things-to-do/brighton-beach-p1033963",
+    ),
+    (
+        "CBB",
+        "Carbis Bay Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/carbis-bay",
+    ),
+    (
+        "CCC",
+        "Criccieth Beach and castle",
+        "https://www.visitwales.com/attraction/beach/criccieth-beach-541151",
+    ),
+    (
+        "CDT",
+        "Caldicot and Severn estuary",
+        "https://www.visitmonmouthshire.com/",
+    ),
+    (
+        "CFH",
+        "Chafford Hundred Lakeside",
+        "https://www.thurrock.gov.uk/",
+    ),
+    (
+        "CFS",
+        "Caernarfon Castle and harbour",
+        "https://www.visitwales.com/attraction/castle/caernarfon-castle-660471",
+    ),
+    (
+        "CLE",
+        "Cleethorpes",
+        "https://discovernortheastlincolnshire.co.uk/explore/cleethorpes/",
+    ),
+    (
+        "CLT",
+        "Clacton-on-Sea",
+        "https://www.visitessex.com/explore/coastal-destinations/clacton-on-sea",
+    ),
+    (
+        "CMR",
+        "Cromer Beach",
+        "https://www.visitnorthnorfolk.com/towns-villages/cromer.aspx",
+    ),
+    (
+        "CNF",
+        "Carnforth and Morecambe Bay",
+        "https://www.lancasterandmorecambebay.com/",
+    ),
+    (
+        "CNW",
+        "Conwy Castle and waterfront",
+        "https://www.visitwales.com/attraction/castle/conwy-castle-660481",
+    ),
+    (
+        "CTM",
+        "Chatham Historic Dockyard",
+        "https://thedockyard.co.uk/",
+    ),
+    (
+        "CWB",
+        "Colwyn Bay Beach",
+        "https://www.visitwales.com/attraction/beach/colwyn-bayrhos-sea-beach-535141",
+    ),
+    (
+        "DEA",
+        "Deal Beach and pier",
+        "https://www.whitecliffscountryside.org.uk/deal-beach",
+    ),
+    (
+        "DFD",
+        "Dartford riverside",
+        "https://www.visitkent.co.uk/",
+    ),
+    (
+        "DWL",
+        "Dawlish Beach and sea wall",
+        "https://www.visitdawlish.co.uk/",
+    ),
+    (
+        "DWW",
+        "Dawlish Warren Beach",
+        "https://www.visitdawlish.co.uk/dawlish-warren",
+    ),
+    (
+        "EBN",
+        "Eastbourne Beaches",
+        "https://www.visiteastbourne.com/explore/seafront/beaches",
+    ),
+    (
+        "EMS",
+        "Emsworth Harbour",
+        "https://www.conservancy.co.uk/page/emsworth",
+    ),
+    (
+        "ETL",
+        "East Tilbury and Thames estuary",
+        "https://www.thurrock.gov.uk/",
+    ),
+    (
+        "EXM",
+        "Exmouth Beach",
+        "https://www.visitsouthdevon.co.uk/beaches/exmouth",
+    ),
+    (
+        "FBY",
+        "Formby Beach and dunes",
+        "https://www.nationaltrust.org.uk/visit/liverpool-lancashire/formby",
+    ),
+    (
+        "FIL",
+        "Filey Beach",
+        "https://visitnorthyorkshire.com/index/filey-beach",
+    ),
+    (
+        "FLM",
+        "Flimby and Solway coast",
+        "https://www.visitcumbria.com/",
+    ),
+    (
+        "FLN",
+        "Flint Castle and Dee estuary",
+        "https://www.visitwales.com/attraction/castle/flint-castle-660501",
+    ),
+    (
+        "FLX",
+        "Felixstowe Beach",
+        "https://www.visitsuffolk.com/destinations/felixstowe",
+    ),
+    (
+        "FRB",
+        "Fairbourne Beach",
+        "https://www.visitwales.com/attraction/beach/fairbourne-beach-541161",
+    ),
+    (
+        "FRI",
+        "Frinton-on-Sea Beach",
+        "https://www.tendringcoastalheritage.org.uk/frinton-on-sea",
+    ),
+    (
+        "GRV",
+        "Gravesend Thames riverside",
+        "https://www.visitkent.co.uk/destinations/gravesend/",
+    ),
+    (
+        "GRY",
+        "Grays Thameside",
+        "https://www.thurrock.gov.uk/",
+    ),
+    (
+        "GYM",
+        "Great Yarmouth Central Beach",
+        "https://www.visitgreatyarmouth.co.uk/things-to-do/great-yarmouth-central-beach-p1379051",
+    ),
+    (
+        "HAV",
+        "Havant and Langstone Harbour",
+        "https://www.visithampshire.co.uk/",
+    ),
+    (
+        "HES",
+        "Hessle foreshore and Humber Bridge",
+        "https://www.visithull.org/what-to-do/humber-bridge/",
+    ),
+    (
+        "HGS",
+        "Hastings Beach",
+        "https://www.visit1066country.com/things-to-do/outdoors/beaches/hastings-beach",
+    ),
+    (
+        "HHD",
+        "Holyhead Breakwater Country Park",
+        "https://www.visitanglesey.co.uk/en-gb/explore/holyhead-breakwater-country-park",
+    ),
+    (
+        "HNB",
+        "Herne Bay Beach and pier",
+        "https://www.canterbury.co.uk/herne-bay",
+    ),
+    (
+        "HOL",
+        "Holton Heath and Poole Harbour",
+        "https://www.pooletourism.com/",
+    ),
+    (
+        "HPL",
+        "Hartlepool Headland and marina",
+        "https://www.destinationhartlepool.com/",
+    ),
+    (
+        "HRE",
+        "Horden Beach (Durham Heritage Coast)",
+        "https://www.thisisdurham.com/",
+    ),
+    (
+        "HRL",
+        "Harlech Beach and castle",
+        "https://www.visitwales.com/attraction/beach/harlech-beach-547051",
+    ),
+    (
+        "HYK",
+        "Hoylake Beach",
+        "https://www.visitwirral.com/beaches/hoylake-beach",
+    ),
+    (
+        "HYL",
+        "Hayle Towans Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/hayle-towans",
+    ),
+    (
+        "IHS",
+        "Ilfracombe Harbour and Capstone",
+        "https://www.visitilfracombe.co.uk/",
+    ),
+    (
+        "KBX",
+        "Kirby Cross and Tendring coast",
+        "https://www.visitessex.com/",
+    ),
+    (
+        "KLN",
+        "King's Lynn and the Wash",
+        "https://www.visitwestnorfolk.com/",
+    ),
+    (
+        "KNT",
+        "Kenton and Exe estuary",
+        "https://www.visitdevon.co.uk/",
+    ),
+    (
+        "LBR",
+        "Llanbedr and Ardudwy coast",
+        "https://www.visitwales.com/",
+    ),
+    (
+        "LEL",
+        "Lelant Saltings and Hayle estuary",
+        "https://www.visitcornwall.com/",
+    ),
+    (
+        "LIT",
+        "Littlehampton Beach",
+        "https://www.visitlittlehampton.co.uk/beaches/",
+    ),
+    (
+        "LLD",
+        "Llandudno West Shore Beach",
+        "https://www.visitwales.com/attraction/beach/llandudno-west-shore-beach-547071",
+    ),
+    (
+        "LLE",
+        "Llanelli Millennium Coastal Path",
+        "https://www.visitwales.com/attraction/walking/millennium-coastal-path-554151",
+    ),
+    (
+        "LLF",
+        "Llanfairfechan Beach",
+        "https://www.visitwales.com/attraction/beach/llanfairfechan-beach-547061",
+    ),
+    (
+        "LLW",
+        "Llwyngwril Beach",
+        "https://www.visitwales.com/destinations/north-wales/llwyngwril",
+    ),
+    (
+        "LOO",
+        "Looe Beach and harbour",
+        "https://www.visitcornwall.com/destinations/looe",
+    ),
+    (
+        "LWM",
+        "Llantwit Major Beach",
+        "https://www.visitthevale.com/beaches/llantwit-major-beach",
+    ),
+    (
+        "LWT",
+        "Lowestoft Beach",
+        "https://www.visitlowestoft.co.uk/beaches/",
+    ),
+    (
+        "MAR",
+        "Margate Main Sands",
+        "https://www.thanet.gov.uk/locations/margate-main-sands/",
     ),
     (
         "MCM",
@@ -838,16 +1077,400 @@ COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
         "https://lancasterandmorecambebay.com/things-to-do/days-out/morecambe-beach",
     ),
     (
-        "RHO",
-        "Rhosneigr Beach",
-        "https://www.visitanglesey.co.uk/en-gb/explore/rhosneigr-beach",
+        "MEO",
+        "Meols Beach (Wirral)",
+        "https://www.visitwirral.com/",
+    ),
+    (
+        "MFH",
+        "Milford Haven waterfront",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/towns-and-villages/milford-haven",
+    ),
+    (
+        "MIS",
+        "Mistley Thames-side quay",
+        "https://www.visitessex.com/",
+    ),
+    (
+        "MNG",
+        "Manningtree and Stour estuary",
+        "https://www.visitessex.com/",
     ),
     (
         "MRB",
         "Manorbier Beach",
         "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/manorbier",
     ),
+    (
+        "MRY",
+        "Maryport harbour and promenade",
+        "https://www.visitcumbria.com/wc/maryport/",
+    ),
+    (
+        "NFL",
+        "Northfleet Thames riverside",
+        "https://www.visitkent.co.uk/",
+    ),
+    (
+        "NHL",
+        "New Holland Humber foreshore",
+        "https://www.visithull.org/",
+    ),
+    (
+        "NQY",
+        "Fistral Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/fistral-beach",
+    ),
+    (
+        "NTL",
+        "Netley and Southampton Water",
+        "https://www.visitsouthampton.co.uk/",
+    ),
+    (
+        "PEB",
+        "Pevensey Bay Beach",
+        "https://www.visiteastbourne.com/explore/nearby/pevensey-bay",
+    ),
+    (
+        "PEN",
+        "Penarth Pier and Esplanade",
+        "https://www.visitthevale.com/penarth",
+    ),
+    (
+        "PES",
+        "Pensarn Beach",
+        "https://www.visitwales.com/attraction/beach/pensarn-beach-556621",
+    ),
+    (
+        "PGN",
+        "Paignton Sands",
+        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/paignton-sands/",
+    ),
+    (
+        "PIA",
+        "Pill riverside (River Avon)",
+        "https://www.n-somerset.gov.uk/",
+    ),
+    (
+        "PLY",
+        "Plymouth Hoe and waterfront",
+        "https://www.visitplymouth.co.uk/",
+    ),
+    (
+        "PMD",
+        "Pembroke Dock waterfront",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/towns-and-villages/pembroke-dock",
+    ),
+    (
+        "PMW",
+        "Penmaenmawr Beach",
+        "https://www.visitwales.com/attraction/beach/penmaenmawr-beach-556631",
+    ),
+    (
+        "PNA",
+        "Penally Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/penally",
+    ),
+    (
+        "PNZ",
+        "Penzance and Battery Rocks Beach",
+        "https://www.visitcornwall.com/destinations/penzance",
+    ),
+    (
+        "POH",
+        "Portishead Marina and Lake Grounds",
+        "https://www.portisheadtowncouncil.co.uk/",
+    ),
+    (
+        "POO",
+        "Poole Harbour and Sandbanks",
+        "https://www.pooletourism.com/beaches/sandbanks-beach",
+    ),
+    (
+        "PRH",
+        "Penrhyndeudraeth and Dwyryd estuary",
+        "https://www.visitwales.com/destination/penrhyndeudraeth",
+    ),
+    (
+        "PRN",
+        "Parton Solway shore",
+        "https://www.visitcumbria.com/",
+    ),
+    (
+        "PRT",
+        "Prestatyn Central Beach",
+        "https://www.visitwales.com/attraction/beach/prestatyn-central-beach-556641",
+    ),
+    (
+        "PTM",
+        "Porthmadog harbour",
+        "https://www.visitwales.com/destination/porthmadog",
+    ),
+    (
+        "PWL",
+        "Pwllheli Beach",
+        "https://www.visitwales.com/attraction/beach/pwllheli-beach-556651",
+    ),
+    (
+        "QBR",
+        "Queenborough and Swale estuary",
+        "https://www.visitkent.co.uk/",
+    ),
+    (
+        "RAM",
+        "Ramsgate Main Sands",
+        "https://www.visitthanet.co.uk/beaches/ramsgate-main-sands/",
+    ),
+    (
+        "RHL",
+        "Rhyl Central Beach",
+        "https://www.visitwales.com/attraction/beach/rhyl-central-beachseafront-557761",
+    ),
+    (
+        "RHO",
+        "Rhosneigr Beach",
+        "https://www.visitanglesey.co.uk/en-gb/explore/rhosneigr-beach",
+    ),
+    (
+        "RIA",
+        "Rhoose Point and Wales Coast Path",
+        "https://www.visitthevale.com/",
+    ),
+    (
+        "RTR",
+        "Rochester Castle and riverside",
+        "https://www.visitmedway.org/rochester/",
+    ),
+    (
+        "SAN",
+        "Sandown Beach",
+        "https://www.visitisleofwight.co.uk/beaches/sandown-beach",
+    ),
+    (
+        "SAU",
+        "St Austell Bay",
+        "https://www.visitcornwall.com/destinations/st-austell",
+    ),
+    (
+        "SBS",
+        "St Bees Beach",
+        "https://www.visitcumbria.com/wc/st-bees/",
+    ),
+    (
+        "SCA",
+        "Scarborough North Bay",
+        "https://visitnorthyorkshire.com/index/scarborough-north-bay",
+    ),
+    (
+        "SCS",
+        "Starcross and Exe estuary",
+        "https://www.visitdevon.co.uk/",
+    ),
+    (
+        "SDD",
+        "St Davids and coast path",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/towns-and-villages/st-davids",
+    ),
+    (
+        "SDF",
+        "Saundersfoot Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/saundersfoot-beach",
+    ),
+    (
+        "SEA",
+        "Seaham Beach and marina",
+        "https://www.thisisdurham.com/explore-durham/seaham",
+    ),
+    (
+        "SFO",
+        "Stanford-le-Hope Thames estuary",
+        "https://www.thurrock.gov.uk/",
+    ),
+    (
+        "SGE",
+        "Swanage Beach",
+        "https://www.visitswanage.info/beaches/",
+    ),
+    (
+        "SGM",
+        "St Germans and Lynher estuary",
+        "https://www.visitcornwall.com/",
+    ),
+    (
+        "SHM",
+        "Sheringham Beach",
+        "https://www.visitnorthnorfolk.com/towns-villages/sheringham.aspx",
+    ),
+    (
+        "SHN",
+        "Shanklin Beach",
+        "https://www.visitisleofwight.co.uk/beaches/shanklin-beach",
+    ),
+    (
+        "SIV",
+        "Porthmeor Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/porthmeor-beach",
+    ),
+    (
+        "SKG",
+        "Skegness Beach",
+        "https://www.visitlincolnshire.com/destinations/skegness/",
+    ),
+    (
+        "SOC",
+        "Southend-on-Sea Beach",
+        "https://www.visitsouthendonsea.co.uk/explore/beaches/",
+    ),
+    (
+        "SOE",
+        "Southend-on-Sea Beach",
+        "https://www.visitsouthendonsea.co.uk/explore/beaches/",
+    ),
+    (
+        "SOP",
+        "Southport Beach",
+        "https://sefton.gov.uk/around-sefton/coast-and-countryside/visiting-our-beaches/southport-beach",
+    ),
+    (
+        "SOV",
+        "Southend-on-Sea Beach",
+        "https://www.visitsouthendonsea.co.uk/explore/beaches/",
+    ),
+    (
+        "SSC",
+        "Seascale Beach",
+        "https://www.visitcumbria.com/wc/seascale/",
+    ),
+    (
+        "SSE",
+        "Shoreham Beach",
+        "https://www.visitsussex.org/destination/shoreham-by-sea/",
+    ),
+    (
+        "STS",
+        "Saltash and Tamar Bridge",
+        "https://www.visitcornwall.com/",
+    ),
+    (
+        "SUN",
+        "Sunderland Roker Beach",
+        "https://www.seesunderland.com/see-and-do/roker-beach",
+    ),
+    (
+        "SVB",
+        "Severn Beach",
+        "https://www.visitsouthglos.org.uk/",
+    ),
+    (
+        "SVR",
+        "Silverdale and Morecambe Bay",
+        "https://www.arnsideandsilverdaleaonb.org.uk/",
+    ),
+    (
+        "SWA",
+        "Swansea Bay Beach",
+        "https://www.visitswanseabay.com/things-to-do/beaches/swansea-bay/",
+    ),
+    (
+        "SWM",
+        "Swanscombe Thames marshes",
+        "https://www.visitkent.co.uk/",
+    ),
+    (
+        "TEN",
+        "Tenby North Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/tenby-north-beach",
+    ),
+    (
+        "TGM",
+        "Teignmouth Beach",
+        "https://www.visitdevon.co.uk/destinations/teignmouth",
+    ),
+    (
+        "TQY",
+        "Torre Abbey Sands",
+        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/torre-abbey-sands/",
+    ),
+    (
+        "TTN",
+        "Totton and Southampton Water",
+        "https://www.visitsouthampton.co.uk/",
+    ),
+    (
+        "TYW",
+        "Tywyn Beach",
+        "https://www.visitwales.com/attraction/beach/tywyn-beach-557771",
+    ),
+    (
+        "ULV",
+        "Ulverston and Morecambe Bay",
+        "https://www.visitcumbria.com/sl/ulverston/",
+    ),
+    (
+        "VAL",
+        "Valley and Anglesey coast",
+        "https://www.visitanglesey.co.uk/en-gb",
+    ),
+    (
+        "WEY",
+        "Weymouth Beach",
+        "https://www.weymouthtowncouncil.gov.uk/services/the-beach/",
+    ),
+    (
+        "WHI",
+        "Whitstable Beach",
+        "https://www.visitkent.co.uk/attractions/whitstable-beach-2847/",
+    ),
+    (
+        "WKG",
+        "Workington harbour",
+        "https://www.visitcumbria.com/wc/workington/",
+    ),
+    (
+        "WKI",
+        "West Kirby Marine Lake and beach",
+        "https://www.visitwirral.com/beaches/west-kirby-beach",
+    ),
+    (
+        "WRH",
+        "Worthing Beach",
+        "https://www.visitworthing.co.uk/beaches",
+    ),
+    (
+        "WSM",
+        "Weston-super-Mare Beach",
+        "https://www.visit-westonsupermare.com/beaches/",
+    ),
+    (
+        "WTB",
+        "Whitby Beach",
+        "https://visitnorthyorkshire.com/index/whitby-beach",
+    ),
+    (
+        "WTH",
+        "Whitehaven harbour",
+        "https://www.visitcumbria.com/wc/whitehaven/",
+    ),
+    (
+        "XMT",
+        "Dartmouth Embankment",
+        "https://www.visitdartmouth.com/",
+    ),
 )
+
+
+def seaside_crs_missing_coastal_proofs(
+    facets_by_crs: dict[str, set[str]],
+) -> list[str]:
+    """Return seaside-tagged CRS codes that lack a COASTAL_SITE_PROOFS row."""
+    proved = {crs for crs, _name, _url in COASTAL_SITE_PROOFS}
+    return sorted(
+        crs
+        for crs, facets in facets_by_crs.items()
+        if "seaside" in facets and crs not in proved
+    )
+
+
 UNESCO_WORLD_HERITAGE_FILE_URL = "https://whc.unesco.org/en/list/xml"
 
 DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
@@ -856,11 +1479,13 @@ DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
         label="Coastal & seaside",
         source=(
             "Office for National Statistics, Census 2021 coastal communities "
-            "characteristics of built-up areas"
+            "characteristics of built-up areas, plus a reviewed CRS supplement "
+            "for classic day-out stations the workbook name-match misses"
         ),
         url=ONS_COASTAL_BUILT_UP_AREAS_DATASET_URL,
         coverage="England and Wales",
         reader="ons_coastal_built_up_areas",
+        reviewed_station_codes=SEASIDE_SUPPLEMENT_CRS,
     ),
     DestinationFacet(
         key="university",
@@ -1639,7 +2264,7 @@ class TwoPartFare:
     row the origin's own page prices for that split, and ``second`` is exactly
     the row the split station's page prices for the destination, read through
     the same selector. When several calling points on the journey both sell,
-    the page keeps the cheapest valid sum among those candidates — still the
+    the page keeps the cheapest valid sum among those candidates - still the
     journey's own stops, not the cheapest fare on each leg found independently
     of the journey.
     """
@@ -2218,21 +2843,21 @@ class FaresDb:
         return "other" if text else None
 
     def _apply_reviewed_facets(self) -> None:
-        """Tag the stations named by a reviewed facet that the feed contains.
+        """Tag reviewed and supplement CRS codes the feed actually contains.
 
-        These facets exist because no open settlement list covers them, so the
-        entry says so in its source text and the codes are intersected with the
-        feed's own stations: a stale code is dropped rather than inventing a
-        station. A facet that also declares name markers tags any feed station
-        whose own name carries one, which is how a new coach stop reaches the
-        page without a code being written for it.
+        Reviewed-only facets exist because no open settlement list covers them.
+        Dataset facets may also declare reviewed_station_codes as a supplement
+        (seaside: Blackpool / Brighton / Southend / Weston). Codes are
+        intersected with the feed's own stations: a stale code is dropped.
+        Name markers stay reviewed-only.
         """
         for facet in DESTINATION_FACET_SOURCES:
+            if facet.reviewed_station_codes:
+                for crs in facet.reviewed_station_codes:
+                    if crs in self.locations_by_crs:
+                        self._tag_station(crs, facet.key)
             if not facet.is_reviewed:
                 continue
-            for crs in facet.reviewed_station_codes:
-                if crs in self.locations_by_crs:
-                    self._tag_station(crs, facet.key)
             for marker in facet.reviewed_name_markers:
                 needle = marker.upper()
                 for crs, location in self.locations_by_crs.items():

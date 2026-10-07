@@ -63,6 +63,11 @@ Landscape gateways) sit on the backlog in
 `adr/ADR-0062-three-day-out-sources-wait-on-the-backlog.md`; none of them ships
 without its own reviewed list.
 
+Coastal & seaside follows the chip-implies-named-proof rule in
+dr/ADR-0064-seaside-chip-implies-named-coastal-proof.md: ONS stays primary,
+a reviewed CRS supplement covers Blackpool / Brighton / Southend / Weston, and
+COASTAL_SITE_PROOFS must name a day-out for every seaside-tagged station.
+
 The `nature` list is a floor, and the tool that keeps it honest is
 `tools/propose_nature_stations.py`. Given reserve pages it reads the station
 each one names, matches it against the codes the feed carries, and prints every
