@@ -19,6 +19,9 @@ from datetime import date
 from pathlib import Path
 
 from atoc_fares import (
+    COASTAL_SITE_PROOFS,
+    SEASIDE_SUPPLEMENT_CRS,
+    seaside_crs_missing_coastal_proofs,
     DESTINATION_FACET_SOURCES,
     DESTINATION_FACETS_BY_KEY,
     DESTINATION_FACET_READERS,
@@ -295,9 +298,43 @@ class FaresParserTest(unittest.TestCase):
         )
         db.location_facets_by_crs = {"SKG": set()}
         self.assertEqual(db.coastal_sites("SKG"), [])
-        # Inland seaside tag without a curated day-out must not invent a beach.
+        # A seaside tag with no proof row yields an empty subline; the coverage
+        # invariant below refuses to leave that state in a real facet map.
         db.location_facets_by_crs = {"LCN": {"seaside"}}
         self.assertEqual(db.coastal_sites("LCN"), [])
+        self.assertEqual(
+            seaside_crs_missing_coastal_proofs(db.location_facets_by_crs),
+            ["LCN"],
+        )
+
+    def test_seaside_supplement_tags_classic_day_out_stations(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {
+            "BTN": Location("1", "BTN", "BRIGHTON", ""),
+            "BPN": Location("2", "BPN", "BLACKPOOL NORTH", ""),
+            "WSM": Location("3", "WSM", "WESTON SUPR MARE", ""),
+            "SOC": Location("4", "SOC", "SOUTHEND CENTRAL", ""),
+        }
+        db._apply_reviewed_facets()
+        for crs in ("BTN", "BPN", "WSM", "SOC"):
+            self.assertIn("seaside", db.location_facets_by_crs.get(crs, set()), crs)
+            self.assertTrue(db.coastal_sites(crs), crs)
+
+    def test_every_seaside_tagged_crs_in_the_cache_has_a_coastal_proof(self) -> None:
+        # Chip implies named subline: ONS seaside set + supplements ⊆ proofs.
+        path = Path("feeds/location-types.json")
+        if not path.is_file():
+            self.skipTest("feeds/location-types.json not present")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        facets = {crs: set(values) for crs, values in data.get("facets", {}).items()}
+        for crs in SEASIDE_SUPPLEMENT_CRS:
+            facets.setdefault(crs, set()).add("seaside")
+        missing = seaside_crs_missing_coastal_proofs(facets)
+        self.assertEqual(missing, [], msg=f"seaside without coastal proof: {missing}")
+
+    def test_coastal_proof_table_covers_the_seaside_supplement(self) -> None:
+        proved = {crs for crs, _name, _url in COASTAL_SITE_PROOFS}
+        self.assertTrue(SEASIDE_SUPPLEMENT_CRS <= proved)
 
     def test_tenby_carries_a_named_coastal_day_out(self) -> None:
         db = FaresDb()
