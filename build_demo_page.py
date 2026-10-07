@@ -1763,6 +1763,8 @@ def build_payload(
             "destinationType": fares.destination_type(crs),
             "destinationTypes": fares.destination_types(crs),
             "heritageSites": fares.heritage_sites(crs),
+            "natureSites": fares.nature_sites(crs),
+            "coastalSites": fares.coastal_sites(crs),
             "ticket": " + ".join(part.ticket_code for part in parts),
             "isAdvance": any(
                 fares.is_advance_fare(part.ticket_name, part.restriction_code)

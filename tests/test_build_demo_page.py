@@ -318,6 +318,47 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("World heritage: ", self.html)
         self.assertIn("destination.heritageSites", self.html)
 
+    def test_a_nature_destination_carries_its_named_reserve(self) -> None:
+        # The synthetic GRN page has no ATB row; the builder still stamps the
+        # field on every destination, and the page template names the proof.
+        from atoc_fares import FaresDb, Location
+
+        for row in self.payload["destinations"]:
+            self.assertIn("natureSites", row)
+            self.assertEqual(row["natureSites"], [])
+        self.assertIn("Nature sites: ", self.html)
+        self.assertIn("destination.natureSites", self.html)
+        db = FaresDb()
+        db.locations_by_crs = {"ATB": Location("7100", "ATB", "ATTENBOROUGH", "")}
+        db.location_facets_by_crs = {"ATB": {"nature"}}
+        self.assertEqual(
+            db.nature_sites("ATB"),
+            [{
+                "name": "Attenborough Nature Reserve",
+                "url": "https://www.nottinghamshirewildlife.org/attenborough-plan-your-visit",
+            }],
+        )
+
+    def test_a_coastal_destination_carries_its_named_day_out(self) -> None:
+        from atoc_fares import FaresDb, Location
+
+        for row in self.payload["destinations"]:
+            self.assertIn("coastalSites", row)
+        self.assertIn("Coastal & seaside: ", self.html)
+        self.assertIn("destination.coastalSites", self.html)
+        db = FaresDb()
+        db.locations_by_crs = {"SKG": Location("8200", "SKG", "SKEGNESS", "")}
+        db.location_facets_by_crs = {"SKG": {"seaside"}}
+        self.assertEqual(
+            db.coastal_sites("SKG"),
+            [{
+                "name": "Skegness Beach",
+                "url": "https://www.visitlincolnshire.com/destinations/skegness/",
+            }],
+        )
+        # LCN is seaside-tagged in the fixture but has no curated coastal day-out.
+        self.assertEqual(self.fares.coastal_sites("LCN"), [])
+
     def test_expired_flows_are_absent_from_all_ticket_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fares = FaresDb().load_feed(

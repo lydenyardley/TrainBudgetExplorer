@@ -268,6 +268,31 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.destination_type("ATB"), "village")
         self.assertIn("nature", db.destination_types("ATB"))
         self.assertNotIn("other", db.destination_types("ATB"))
+        self.assertEqual(
+            db.nature_sites("ATB"),
+            [{
+                "name": "Attenborough Nature Reserve",
+                "url": "https://www.nottinghamshirewildlife.org/attenborough-plan-your-visit",
+            }],
+        )
+        self.assertEqual(db.nature_sites("NOT"), [])
+
+    def test_coastal_site_proof_requires_the_seaside_facet(self) -> None:
+        db = FaresDb()
+        db.locations_by_crs = {"SKG": Location("1", "SKG", "SKEGNESS", "")}
+        db.location_facets_by_crs = {"SKG": {"seaside"}}
+        self.assertEqual(
+            db.coastal_sites("SKG"),
+            [{
+                "name": "Skegness Beach",
+                "url": "https://www.visitlincolnshire.com/destinations/skegness/",
+            }],
+        )
+        db.location_facets_by_crs = {"SKG": set()}
+        self.assertEqual(db.coastal_sites("SKG"), [])
+        # Inland seaside tag without a curated day-out must not invent a beach.
+        db.location_facets_by_crs = {"LCN": {"seaside"}}
+        self.assertEqual(db.coastal_sites("LCN"), [])
 
     def test_an_airport_station_is_in_the_airport_category(self) -> None:
         db = FaresDb()

@@ -568,9 +568,9 @@ STATION_CSS = """  /* No width of its own: the column, the padding and the headi
      sentence. */
   .validity { display: block; margin-top: .15rem; }
   .restriction[data-status="unrestricted"] { color: var(--muted); }
-  .heritage-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
-  .heritage-proof a { color: inherit; text-underline-offset: .15em; }
-  .heritage-proof a:hover, .heritage-proof a:focus-visible { color: var(--accent); }
+  .site-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
+  .site-proof a { color: inherit; text-underline-offset: .15em; }
+  .site-proof a:hover, .site-proof a:focus-visible { color: var(--accent); }
   /* A chip's count is part of its label, so it sits inside the chip and is
      never the only thing carrying the type's name. */
   .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em;
@@ -2214,22 +2214,31 @@ function stationCell(destination) {
   code.className = "station-code";
   code.textContent = destination.crs;
   cell.append(name, " (", code, ")");
-  if (destination.heritageSites?.length) {
-    const heritage = document.createElement("span");
-    heritage.className = "heritage-proof";
-    heritage.append("World heritage: ");
-    destination.heritageSites.forEach((site, index) => {
-      if (index) heritage.append("; ");
+  function appendSiteProof(label, sites, titleFor) {
+    if (!sites?.length) return;
+    const proof = document.createElement("span");
+    proof.className = "site-proof";
+    proof.append(label);
+    sites.forEach((site, index) => {
+      if (index) proof.append("; ");
       const link = document.createElement("a");
       link.href = site.url;
       link.target = "_blank";
       link.rel = "noopener";
       link.textContent = site.name;
-      link.title = "UNESCO World Heritage List site " + site.id;
-      heritage.append(link);
+      const title = titleFor ? titleFor(site) : "";
+      if (title) link.title = title;
+      proof.append(link);
     });
-    cell.append(heritage);
+    cell.append(proof);
   }
+  appendSiteProof(
+    "World heritage: ",
+    destination.heritageSites,
+    (site) => "UNESCO World Heritage List site " + site.id,
+  );
+  appendSiteProof("Nature sites: ", destination.natureSites);
+  appendSiteProof("Coastal & seaside: ", destination.coastalSites);
   return cell;
 }
 
