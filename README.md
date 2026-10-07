@@ -51,6 +51,9 @@ finding a second place to remember. The current facets:
 | `airport` | reviewed list of rail stations serving a UK airport | United Kingdom, as the DTD feed covers them |
 | `nature` | reviewed list of stations reaching The Wildlife Trusts' reserve sites and the WWT wetland centres, from the station each reserve or trust page names | United Kingdom, as the DTD feed covers them |
 | `transport` | reviewed coach, tram, metro, stadium, and parkway or park-and-ride locations, matched from the feed's own station names | United Kingdom, as the DTD feed covers them |
+| `rspb` | reviewed list of stations reaching RSPB reserves, linked by the hybrid closest-station prune | United Kingdom, as the DTD feed covers them |
+| `national_trust` | reviewed list of stations reaching National Trust visitor properties, linked by the hybrid closest-station prune | England, Wales and Northern Ireland, as the DTD feed covers them |
+| `national_park` | reviewed gateway stations for National Parks and National Landscapes (AONBs), linked by the hybrid closest-station prune | England, Wales and Scotland, as the DTD feed covers them |
 
 `reference-data/destination-facets.json` is the checked-in, source-backed
 mapping, and `tools/regenerate_destination_facets.py` rebuilds it from those
@@ -58,10 +61,14 @@ sources against a real fares download. A facet whose source is temporarily
 unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
-Planned day-out sources (RSPB, National Trust, National Park / National
-Landscape gateways) sit on the backlog in
-`adr/ADR-0062-three-day-out-sources-wait-on-the-backlog.md`; none of them ships
-without its own reviewed list.
+The three day-out sources ADR-0062 put on the backlog shipped on 7 October
+2026, in that ADR's order: 9 RSPB reserves, 9 National Trust visitor properties
+and 19 National Park / National Landscape gateways, each one reviewed list on
+its own facet, each station linked by the hybrid closest-station prune from
+`adr/ADR-0063-hybrid-closest-station-prune.md`. The decision is recorded in
+`adr/ADR-0065-three-day-out-sources-ship-on-one-reviewed-list-each.md`, and
+ADR-0062's non-goals (no VisitBritain dump, no full NHLE sweep, no raw OSM
+tourism tags, no polygon-wide landscape tagging) still hold.
 
 Coastal & seaside follows the chip-implies-named-proof rule in
 dr/ADR-0064-seaside-chip-implies-named-coastal-proof.md: ONS stays primary,
@@ -118,7 +125,11 @@ cares about, so the entry says so in its own `source` text. `transport` and
 parkway tags come from the feed's own station names, with a small list of
 settlements the markers catch wrongly (Bushey, BUSBY, CAMBUSLANG and Shepherd's
 Bush are places, not interchanges), and the nature tag only credits reserves a
-Wildlife Trust or the WWT actually manages. `heritage` has a
+Wildlife Trust or the WWT actually manages. The three day-out sources ship that
+way too: `rspb`, `national_trust` and `national_park` are reviewed lists, and a
+station on one of them has been checked against the coordinates in the
+Knowledgebase file, so a town that merely shares an attraction's name cannot
+claim it. `heritage` has a
 reviewed settlement side for the same reason — UNESCO names whole properties,
 not the towns inside them — but its site ids are checked against UNESCO's live
 list on every build, so a delisted site stops tagging destinations and a
@@ -1133,6 +1144,14 @@ the build the rest of these figures describe:
 Which is a long time to wait for a page you are not going to read all of. For one
 station, or two, use the script below instead.
 
+`docs/build-performance-findings.md` measures the same work from the other end,
+and names why it costs what it does: one page built against the fully loaded fares
+feed takes **5.1 s** with a timetable index scoped to that origin's destinations
+and **did not finish in 8 minutes** with the whole national index. Every figure in
+this section is that shape of cost. The fix (a focused index per origin in the
+all-origins pool, as the single-origin path already does) is open work in
+`docs/open-work.md`, and both documents were written on 7 October 2026.
+
 **To build just Grantham and Nottingham, fares *and* timetable, in one command:**
 
 ```
@@ -1143,10 +1162,16 @@ python build_stations.py
 That builds exactly those two stations against the real feeds in `feeds/fares`
 and `feeds/timetable`, writes their pages, a two-station chooser and the privacy
 page into `_stations/` (which is not what `run.py` serves, so the two never
-fight), and serves it at http://localhost:8742. Measured end to end on this
-machine: **under five minutes**, with `--workers 1` because two timetable-holding
-workers do not fit in this machine's free memory; the script prints a warning if
-there is not even room for one. It takes `--timetable`, `--knowledgebase`,
+fight), and serves it at http://localhost:8742. It uses `--workers 1`, because two
+timetable-holding workers do not fit in this machine's free memory, and the
+script prints a warning if there is not even room for one. Measured end to end on
+this machine on 7 October 2026: **23 minutes, and it wrote no page**. Free memory
+was 5.5 GB against the build's own 6.4 GB floor and the test suite was running
+alongside, so part of that is paging; an earlier run of the same command on an
+idle machine came in **under five minutes**, and the two figures have not been
+reconciled. The controlled measurement, and the cause, are in
+`docs/build-performance-findings.md`: this path builds through `--all-origins`,
+which hands every page the whole national timetable index. It takes `--timetable`, `--knowledgebase`,
 `--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
 codes as bare arguments (`python build_stations.py LEI`).
 
@@ -1222,6 +1247,6 @@ sessions inherit the reasoning rather than just the conclusions.
 
 Answered during the grill on 21 September, and now recorded in the ADRs: the
 real user (affiliate lead-gen), the budget unit (return per adult, party maths
-for Two Together), and the validation gate (communities first, dated tripwire).
+for a chosen railcard), and the validation gate (communities first, dated tripwire).
 Still open: the licence terms for commercial use, and the Grantham count that
 decides go/no-go.

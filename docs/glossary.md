@@ -10,9 +10,9 @@ printed for a reader.
 | Term | Meaning |
 |---|---|
 | **Station page** | The page for one origin station. It answers "where can I go from here, and what will it cost". One page per station (ADR-0019). |
-| **Priced place** | A destination the fares feed publishes a fare for from this station, which the page can therefore put a number against. The page's own list is made of these and nothing else, until ADR-0061 lands. |
+| **Priced place** | A destination the fares feed publishes a fare for from this station, which the page can therefore put a number against. The page's own list is made of these, plus the two-ticket places below (ADR-0061). |
 | **Reachable place** | A destination a train can actually get you to, with the connection time the feed states, within one change. Larger than the priced list, and measured to be much larger: from Grantham, 582 stations are reachable within one change on Monday 5 October 2026 and 50 are priced. |
-| **Two-ticket place** | A destination the feed prices in two parts: a fare from the origin to a calling point on the journey shown, plus a fare from there to the destination. It becomes one row priced at the sum, naming both tickets and the pricing-split station (ADR-0061). The split need not be where the reader leaves the train. |
+| **Two-ticket place** | A destination the feed prices in two parts: a fare from the origin to a calling point on the journey shown, plus a fare from there to the destination. It becomes one row priced at the sum, naming both tickets and the pricing-split station (ADR-0061). The split need not be where the reader leaves the train, and the row's own railcard price is the two card fares added together, with the feed's minimum fare applied to each ticket. |
 | **The build's own day** | The date the page was built for. It is the default the reader sees when they touch nothing, and it is why the page cannot say "today". A build may be days old. |
 | **The chosen day** | The date the reader has selected in the day control. It changes the Time and Changes columns and nothing else, not the list, not the prices (ADR-0060). It travels in the address as `day=N`, so a shared link opens on the sender's day. |
 | **A day of the week is not a date** | Sunday 4 October 2026 reaches 238 stations from Grantham and Sunday 11 October reaches 416, and 50 of the 220 both reach have a different time. The day control therefore names a date, with the weekday leading. |
@@ -23,6 +23,9 @@ printed for a reader.
 | **Budget** | The price limit the reader sets. It filters rows; it does not change what a fare costs. |
 | **The count above the table** | How many places are inside the budget right now, under every filter in force. ADR-0040 controls what may stand between it and the first row. |
 | **Feed record** | The disclosure in a row's panel carrying the ticket code, route, quality and restriction validity, for a reader who needs to sell or check rather than travel. ADR-0053 moved the code there from the table. |
+| **Destination type** | The chip in the refinement bar: a settlement band (city, town, small town, village) or one sourced facet. A type is offered only where the page can prove it, so the chip comes with named proof under the station's name (ADR-0026, ADR-0064). |
+| **Named proof** | The subline a chip carries: the World Heritage property, the reserve, the beach or the gateway that station actually reaches, linked to the source's own page. |
+| **Railcard collection** | The cards this feed prices, offered as one control with nothing selected by default. Naming one prices it per fare and per row, and the browser remembers the choice per station (ADR-0052). |
 
 ## What a seller asks for
 
@@ -60,4 +63,6 @@ printed for a reader.
 | **Record type** | In a fares flow record it is the *second* character; the first is the update marker. A reader that filters on the first character reads zero records out of 727,315 and reports an empty feed as a finding. |
 | **Onward departure cap** | How many of the earliest departures at an interchange the one-change search will consider. Currently 200, chosen by measurement (ADR-0009). |
 | **Transfer-only pair** | An origin and destination whose only route needs a change. The set where a departure cap can lose a journey. |
+| **Reviewed list** | A list a person has read and stands behind, rather than a dataset read off a download: RSPB reserves, National Trust properties, park and landscape gateways, islands, airports, coach and parkway interchanges, and the coastal supplement. The reviewed facets say `reviewed` in their own source text, so a page cannot read as though an official list produced them (ADR-0026). |
+| **Hybrid closest-station prune** | How a named attraction earns a station: the curated candidate is kept unless the coordinates put it more than 15 km from the attraction, the nearest station per component point is kept plus a soft twin inside 2 km, and a candidate the coordinate file does not locate is kept, because distance cannot judge it (ADR-0063). |
 | **Hub-and-spoke feed** | An invented feed where one hub is the only place two routes meet, so every journey past it needs a change. |

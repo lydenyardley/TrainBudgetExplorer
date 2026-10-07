@@ -333,6 +333,11 @@ class DestinationFacet:
     coverage: str
     reader: str
     reviewed_station_codes: frozenset[str] = frozenset()
+    #: Reviewed attraction proofs, linked to the feed by the hybrid prune
+    #: (ADR-0062/0063) rather than by a static CRS set: the nearest station is
+    #: a fact about coordinates the build has on disk, not something to write
+    #: into this table and keep true by hand.
+    reviewed_attractions: tuple[ReviewedAttraction, ...] = ()
     reviewed_name_markers: tuple[str, ...] = ()
     # Settlements whose own name merely contains a marker -- Bushey, BUSBY,
     # CAMBUSLANG and Shepherd's Bush are places, not interchanges. The feed
@@ -1473,6 +1478,283 @@ def seaside_crs_missing_coastal_proofs(
 
 UNESCO_WORLD_HERITAGE_FILE_URL = "https://whc.unesco.org/en/list/xml"
 
+
+# The day-out sources ADR-0062 put on the integration backlog, each as its own
+# reviewed list. ADR-0063 links a list to the feed with the hybrid
+# closest-station prune: the curated candidate stations are kept, any candidate
+# beyond ``max_km`` from the attraction point is dropped, and the nearest
+# station or a soft twin survives. A reviewed list is a floor rather than a
+# ceiling -- a reserve, a property or a gateway added later needs one entry
+# here -- and the source text on the facet says so.
+@dataclass(frozen=True)
+class ReviewedAttraction:
+    """One reviewed day-out and the station(s) a reader reaches it from.
+
+    ``stations`` are the curated candidate names as the feed writes them;
+    ``points`` are WGS84 decimals near the attraction, with a component point
+    per gateway for a corridor or a multi-entrance landscape, so a valley or a
+    coastline is not collapsed by one centroid. The point judges the candidate,
+    it does not replace it: with no coordinate file the curated list stands as
+    written.
+    """
+
+    name: str
+    url: str
+    stations: tuple[str, ...]
+    points: tuple[tuple[float, float], ...]
+
+
+# RSPB reserves. Rainham Marshes is the Rainham-class gap the nature comments
+# already named: a reserve on the Thames estuary no Wildlife Trust list covers.
+RSPB_RESERVES: tuple[ReviewedAttraction, ...] = (
+    ReviewedAttraction(
+        "Rainham Marshes",
+        "https://www.rspb.org.uk/nature-reserves/rainham-marshes/",
+        ("Purfleet",),
+        ((51.4870, 0.2190),),
+    ),
+    ReviewedAttraction(
+        "Leighton Moss",
+        "https://www.rspb.org.uk/nature-reserves/leighton-moss/",
+        ("Silverdale",),
+        ((54.1704, -2.7996),),
+    ),
+    ReviewedAttraction(
+        "Bempton Cliffs",
+        "https://www.rspb.org.uk/nature-reserves/bempton-cliffs/",
+        ("Bempton",),
+        ((54.1500, -0.1660),),
+    ),
+    ReviewedAttraction(
+        "Minsmere",
+        "https://www.rspb.org.uk/nature-reserves/minsmere/",
+        ("Darsham",),
+        ((52.2430, 1.6140),),
+    ),
+    ReviewedAttraction(
+        "Conwy",
+        "https://www.rspb.org.uk/nature-reserves/conwy/",
+        ("Conwy",),
+        ((53.2880, -3.8180),),
+    ),
+    ReviewedAttraction(
+        "Frampton Marsh",
+        "https://www.rspb.org.uk/nature-reserves/frampton-marsh/",
+        ("Boston",),
+        ((52.9240, 0.0120),),
+    ),
+    ReviewedAttraction(
+        "Fairburn Ings",
+        "https://www.rspb.org.uk/nature-reserves/fairburn-ings/",
+        ("Castleford",),
+        ((53.7400, -1.3420),),
+    ),
+    ReviewedAttraction(
+        "Newport Wetlands",
+        "https://www.rspb.org.uk/nature-reserves/newport-wetlands/",
+        ("Newport (S Wales)",),
+        ((51.5560, -2.9560),),
+    ),
+    ReviewedAttraction(
+        "Saltholme",
+        "https://www.rspb.org.uk/nature-reserves/saltholme/",
+        ("Middlesbrough",),
+        ((54.5950, -1.2200),),
+    ),
+)
+
+# National Trust visitor properties. Bookham already carries the CRS + URL
+# proof shape the ADR names; these are the same shape rather than a sweep of
+# every NT holding.
+NATIONAL_TRUST_PROPERTIES: tuple[ReviewedAttraction, ...] = (
+    ReviewedAttraction(
+        "Bookham Commons",
+        "https://www.nationaltrust.org.uk/visit/surrey/bookham-commons",
+        ("Bookham",),
+        ((51.2880, -0.3730),),
+    ),
+    ReviewedAttraction(
+        "Cliveden",
+        "https://www.nationaltrust.org.uk/visit/buckinghamshire/cliveden",
+        ("Bourne End",),
+        ((51.5580, -0.6930),),
+    ),
+    ReviewedAttraction(
+        "Quarry Bank",
+        "https://www.nationaltrust.org.uk/visit/cheshire/quarry-bank-mill",
+        ("Styal",),
+        ((53.3450, -2.2420),),
+    ),
+    ReviewedAttraction(
+        "Speke Hall",
+        "https://www.nationaltrust.org.uk/visit/liverpool/speke-hall-garden-and-estate",
+        # The feed truncates this name to "LIVERPOOL S PWAY"; a curated list
+        # names a station the way the feed writes it (ADR-0026).
+        ("Liverpool S Pway",),
+        ((53.3420, -2.8580),),
+    ),
+    ReviewedAttraction(
+        "Sissinghurst Castle Garden",
+        "https://www.nationaltrust.org.uk/visit/kent/sissinghurst-castle-garden",
+        ("Staplehurst",),
+        ((51.1160, 0.5600),),
+    ),
+    ReviewedAttraction(
+        "Bodiam Castle",
+        "https://www.nationaltrust.org.uk/visit/east-sussex/bodiam-castle",
+        ("Robertsbridge",),
+        ((50.9460, 0.5430),),
+    ),
+    ReviewedAttraction(
+        "Corfe Castle",
+        "https://www.nationaltrust.org.uk/visit/dorset/corfe-castle",
+        # Corfe Castle has its own station in the feed (CFC), so the reader
+        # steps off beside the castle rather than at Wareham, six miles away.
+        ("Corfe Castle",),
+        ((50.6390, -2.0580),),
+    ),
+    ReviewedAttraction(
+        "Chartwell",
+        "https://www.nationaltrust.org.uk/visit/kent/chartwell",
+        ("Sevenoaks",),
+        ((51.2440, 0.0820),),
+    ),
+    ReviewedAttraction(
+        "Kedleston Hall",
+        "https://www.nationaltrust.org.uk/visit/derbyshire/kedleston-hall",
+        ("Derby",),
+        ((52.9590, -1.5350),),
+    ),
+)
+
+# National Park and National Landscape (AONB) gateways. The reviewed list names
+# gateways only, never every station inside a polygon: a chip that tagged the
+# whole of Snowdonia would be louder and less useful, which is the failure
+# ADR-0026 exists to prevent.
+NATIONAL_PARK_GATEWAYS: tuple[ReviewedAttraction, ...] = (
+    ReviewedAttraction(
+        "Peak District",
+        "https://www.peakdistrict.gov.uk/",
+        ("Edale",),
+        ((53.3650, -1.8160),),
+    ),
+    ReviewedAttraction(
+        "Lake District",
+        "https://www.lakedistrict.gov.uk/",
+        ("Windermere",),
+        ((54.3796, -2.9034),),
+    ),
+    ReviewedAttraction(
+        "Eryri (Snowdonia)",
+        "https://www.eryri.llyw.cymru/",
+        ("Betws-y-Coed",),
+        ((53.0930, -3.8030),),
+    ),
+    ReviewedAttraction(
+        "Yorkshire Dales",
+        "https://www.yorkshiredales.org.uk/",
+        ("Settle",),
+        ((54.0680, -2.2790),),
+    ),
+    ReviewedAttraction(
+        "North York Moors",
+        "https://www.northyorkmoors.org.uk/",
+        ("Whitby",),
+        ((54.4850, -0.6150),),
+    ),
+    ReviewedAttraction(
+        "South Downs",
+        "https://www.southdowns.gov.uk/",
+        ("Amberley",),
+        ((50.8970, -0.5350),),
+    ),
+    ReviewedAttraction(
+        "New Forest",
+        "https://www.newforestnpa.gov.uk/",
+        ("Brockenhurst",),
+        ((50.8160, -1.5730),),
+    ),
+    ReviewedAttraction(
+        "Broads",
+        "https://www.broads-authority.gov.uk/",
+        # The feed truncates this name to "HOVETON &WROXHM".
+        ("Hoveton &Wroxhm",),
+        ((52.7150, 1.4090),),
+    ),
+    ReviewedAttraction(
+        "Pembrokeshire Coast",
+        "https://www.pembrokeshirecoast.wales/",
+        ("Tenby",),
+        ((51.6720, -4.7030),),
+    ),
+    ReviewedAttraction(
+        "Cairngorms",
+        "https://cairngorms.co.uk/",
+        ("Aviemore",),
+        ((57.1890, -3.8290),),
+    ),
+    ReviewedAttraction(
+        "Dartmoor",
+        "https://www.dartmoor.gov.uk/",
+        ("Okehampton",),
+        ((50.7320, -4.0000),),
+    ),
+    ReviewedAttraction(
+        "Northumberland",
+        "https://www.northumberlandnationalpark.org.uk/",
+        ("Haltwhistle",),
+        ((54.9700, -2.4560),),
+    ),
+    ReviewedAttraction(
+        "Cotswolds",
+        "https://www.cotswolds-nl.org.uk/",
+        ("Moreton-in-Marsh",),
+        ((51.9880, -1.7030),),
+    ),
+    ReviewedAttraction(
+        "Chilterns",
+        "https://www.chilterns.org.uk/",
+        ("Great Missenden",),
+        ((51.7040, -0.7070),),
+    ),
+    ReviewedAttraction(
+        "Shropshire Hills",
+        "https://www.shropshirehills-nl.org.uk/",
+        ("Craven Arms",),
+        ((52.4400, -2.8300),),
+    ),
+    ReviewedAttraction(
+        "Wye Valley",
+        "https://www.wyevalley-nl.org.uk/",
+        ("Chepstow",),
+        ((51.6420, -2.6760),),
+    ),
+    ReviewedAttraction(
+        "Malvern Hills",
+        "https://www.malvernhills-nl.org.uk/",
+        ("Great Malvern",),
+        ((52.1130, -2.3170),),
+    ),
+    ReviewedAttraction(
+        "Cannock Chase",
+        "https://www.cannockchase-nl.org.uk/",
+        ("Rugeley Town",),
+        ((52.7630, -1.9300),),
+    ),
+    ReviewedAttraction(
+        "Dedham Vale",
+        "https://www.dedhamvale-nl.org.uk/",
+        ("Manningtree",),
+        ((51.9700, 0.9500),),
+    ),
+)
+
+REVIEWED_ATTRACTIONS_BY_FACET: dict[str, tuple[ReviewedAttraction, ...]] = {
+    "rspb": RSPB_RESERVES,
+    "national_trust": NATIONAL_TRUST_PROPERTIES,
+    "national_park": NATIONAL_PARK_GATEWAYS,
+}
+
 DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
     DestinationFacet(
         key="seaside",
@@ -1568,6 +1850,42 @@ DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
             "S PWAY", "PRK LDNR",
         ),
         excluded_station_codes=frozenset({"BSH", "BUS", "CBL", "SPB"}),
+    ),
+    DestinationFacet(
+        key="rspb",
+        label="RSPB reserves",
+        source=(
+            "reviewed list of stations reaching RSPB reserves, linked by the "
+            "hybrid closest-station prune"
+        ),
+        url="https://www.rspb.org.uk/nature-reserves/",
+        coverage="United Kingdom, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_attractions=RSPB_RESERVES,
+    ),
+    DestinationFacet(
+        key="national_trust",
+        label="National Trust",
+        source=(
+            "reviewed list of stations reaching National Trust visitor "
+            "properties, linked by the hybrid closest-station prune"
+        ),
+        url="https://www.nationaltrust.org.uk/visit",
+        coverage="England, Wales and Northern Ireland, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_attractions=NATIONAL_TRUST_PROPERTIES,
+    ),
+    DestinationFacet(
+        key="national_park",
+        label="National parks and landscapes",
+        source=(
+            "reviewed gateway stations for National Parks and National "
+            "Landscapes (AONBs), linked by the hybrid closest-station prune"
+        ),
+        url="https://www.nationalparks.uk/",
+        coverage="England, Wales and Scotland, as covered by the DTD feed",
+        reader="reviewed_station_codes",
+        reviewed_attractions=NATIONAL_PARK_GATEWAYS,
     ),
 )
 SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACET_SOURCES)
@@ -2330,6 +2648,11 @@ class FaresDb:
         # a heritage (or multi-CRS nature) prune needs it.
         self._station_coordinates: dict[str, tuple[float, float]] | None = None
         self._station_coordinates_path: Path | None = None
+        # Reviewed attraction -> the CRS codes the prune kept, per facet. Built
+        # lazily because a page asks for a destination's proof once per row and
+        # a whole-network build asks for thousands: without this the prune would
+        # be recomputed for every attraction on every row.
+        self._attraction_crs_cache: dict[str, dict[str, frozenset[str]]] = {}
         # Every source whose classes this database carries, in load order. One
         # slot made the provenance line the last writer's: a cache beside the
         # feed described classes the ONS workbook had supplied, and the reviewed
@@ -2851,11 +3174,18 @@ class FaresDb:
         intersected with the feed's own stations: a stale code is dropped.
         Name markers stay reviewed-only.
         """
+        # The attraction prune reads the station names on file, and this pass is
+        # the one place that set changes: a first pass over a feed with no
+        # classification yet would cache every attraction's kept CRS as empty,
+        # and the pass after the ONS read would reuse it and tag nothing.
+        self._attraction_crs_cache.clear()
         for facet in DESTINATION_FACET_SOURCES:
             if facet.reviewed_station_codes:
                 for crs in facet.reviewed_station_codes:
                     if crs in self.locations_by_crs:
                         self._tag_station(crs, facet.key)
+            for crs in self._facet_attraction_crs(facet):
+                self._tag_station(crs, facet.key)
             if not facet.is_reviewed:
                 continue
             for marker in facet.reviewed_name_markers:
@@ -3399,7 +3729,7 @@ class FaresDb:
             )
         return self._station_coordinates
 
-    def _heritage_candidate_crs(self, stations: tuple[str, ...]) -> list[str]:
+    def _candidate_crs(self, stations: tuple[str, ...]) -> list[str]:
         """Return feed CRS codes whose names match the curated station tokens."""
         names = {self._normalise_settlement_name(station) for station in stations}
         return [
@@ -3408,13 +3738,55 @@ class FaresDb:
             if self._settlement_matches(location.name, names)
         ]
 
+    def _pruned_attraction_crs(self, attraction: ReviewedAttraction) -> list[str]:
+        """Return the curated candidate CRS codes kept by the hybrid prune.
+
+        The same rule the heritage reader uses (ADR-0063): keep the curated
+        candidates, drop any beyond ``max_km`` from an attraction point, keep
+        the nearest and a soft twin, and leave a candidate the coordinate file
+        does not locate in place, because distance cannot judge it.
+        """
+        candidates = self._candidate_crs(attraction.stations)
+        coordinates = self.station_coordinates()
+        if not candidates or not coordinates:
+            return candidates
+        located = [
+            (crs, coordinates[crs][0], coordinates[crs][1])
+            for crs in candidates
+            if crs in coordinates
+        ]
+        missing = [crs for crs in candidates if crs not in coordinates]
+        selected = select_nearest_stations(located, attraction.points)
+        return [*selected, *missing]
+
+    def _facet_attraction_crs(self, facet: DestinationFacet) -> set[str]:
+        """Every CRS the facet's reviewed attractions are reached from."""
+        if not facet.reviewed_attractions:
+            return set()
+        return {
+            crs
+            for attraction in facet.reviewed_attractions
+            for crs in self._attraction_crs_by_facet(facet.key).get(attraction.name, ())
+        }
+
+    def _attraction_crs_by_facet(self, facet_key: str) -> dict[str, frozenset[str]]:
+        """Attraction name -> kept CRS codes, computed once per facet."""
+        cached = self._attraction_crs_cache.get(facet_key)
+        if cached is not None:
+            return cached
+        cached = {}
+        for attraction in REVIEWED_ATTRACTIONS_BY_FACET.get(facet_key, ()):
+            cached[attraction.name] = frozenset(self._pruned_attraction_crs(attraction))
+        self._attraction_crs_cache[facet_key] = cached
+        return cached
+
     def _pruned_heritage_crs(
         self,
         site_id: int,
         stations: tuple[str, ...],
     ) -> list[str]:
         """Return curated candidate CRS codes kept by the hybrid distance prune."""
-        candidates = self._heritage_candidate_crs(stations)
+        candidates = self._candidate_crs(stations)
         points = HERITAGE_SITE_POINTS.get(site_id)
         if not candidates or not points:
             return candidates
@@ -3594,6 +3966,35 @@ class FaresDb:
             for site_crs, name, url in COASTAL_SITE_PROOFS
             if site_crs == code
         ]
+
+    def _attraction_sites(self, crs: str, facet_key: str) -> list[dict[str, object]]:
+        """Return the named day-outs that make this station a facet match.
+
+        The same chip-implies-named-proof shape as the coastal and nature
+        sublimes (ADR-0064): if the facet tagged the station, the reviewed
+        attraction it was tagged for is named rather than left to a bare chip.
+        """
+        code = crs.strip().upper()
+        if facet_key not in self.location_facets_by_crs.get(code, set()):
+            return []
+        by_attraction = self._attraction_crs_by_facet(facet_key)
+        return [
+            {"name": attraction.name, "url": attraction.url}
+            for attraction in REVIEWED_ATTRACTIONS_BY_FACET.get(facet_key, ())
+            if code in by_attraction.get(attraction.name, ())
+        ]
+
+    def rspb_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the RSPB reserves that make this station an RSPB match."""
+        return self._attraction_sites(crs, "rspb")
+
+    def national_trust_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the National Trust properties this station is a proof for."""
+        return self._attraction_sites(crs, "national_trust")
+
+    def national_park_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the National Park / Landscape gateways this station serves."""
+        return self._attraction_sites(crs, "national_park")
 
     def _load_lines(self, name: str, lines) -> None:
         extension = Path(name).suffix.lower().lstrip(".")
