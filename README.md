@@ -1147,10 +1147,13 @@ station, or two, use the script below instead.
 `docs/build-performance-findings.md` measures the same work from the other end,
 and names why it costs what it does: one page built against the fully loaded fares
 feed takes **5.1 s** with a timetable index scoped to that origin's destinations
-and **did not finish in 8 minutes** with the whole national index. Every figure in
-this section is that shape of cost. The fix (a focused index per origin in the
-all-origins pool, as the single-origin path already does) is open work in
-`docs/open-work.md`, and both documents were written on 7 October 2026.
+and **did not finish in 17 minutes** with the whole national index, and the
+difference is mostly footprint rather than search time. The national index holds
+**1.87 GB** where the focused one holds **50 MB**, on a machine with about 5 GB
+free once the fares feed is loaded; the searches are 2.3x slower, not 80x. Every
+figure in this section is that shape of cost. The fix (a timetable scoped per
+page in the all-origins pool, as the single-origin path already does) is open work
+in `docs/open-work.md`, and both documents were written on 7 October 2026.
 
 **To build just Grantham and Nottingham, fares *and* timetable, in one command:**
 
@@ -1164,14 +1167,25 @@ and `feeds/timetable`, writes their pages, a two-station chooser and the privacy
 page into `_stations/` (which is not what `run.py` serves, so the two never
 fight), and serves it at http://localhost:8742. It uses `--workers 1`, because two
 timetable-holding workers do not fit in this machine's free memory, and the
-script prints a warning if there is not even room for one. Measured end to end on
-this machine on 7 October 2026: **23 minutes, and it wrote no page**. Free memory
-was 5.5 GB against the build's own 6.4 GB floor and the test suite was running
-alongside, so part of that is paging; an earlier run of the same command on an
-idle machine came in **under five minutes**, and the two figures have not been
-reconciled. The controlled measurement, and the cause, are in
-`docs/build-performance-findings.md`: this path builds through `--all-origins`,
-which hands every page the whole national timetable index. It takes `--timetable`, `--knowledgebase`,
+script prints a warning if there is not even room for one.
+
+**Measured twice on this machine, and the two answers are about memory.** Twice
+now the same command has written no page: 23 minutes on 6 October 2026 (5.5 GB
+free, the suite running alongside) and **24 minutes on 7 October 2026 with the
+machine idle**, stopped by hand, no station page written (5.1 GB free against the
+build's own **6.4 GB** floor, so the script said "it will still run, slowly, by
+paging" before it started). An earlier run of the same command, when the machine
+had the memory the floor asks for, came in **under five minutes**. The
+reconciliation is the floor, not the station count: the in-process build loads the
+fares feed (727,315 flows) and the national timetable (419,589 schedules) into one
+process and only then starts rendering, so it holds ~4.2 GB before the first page
+and has ~0.8 GB left to render it in, and those two loads took **11 minutes** in
+that state against the **93 seconds** they take when there is room (37 s + 56 s,
+measured). That 7x is the paging, and it is where the earlier under-five-minute
+figure came from. Close the browser and the editor, or build one
+station with `run.py --origin`, and the shape of the cost changes. The phase
+measurements, and the code-level cause (every page is handed the whole national
+timetable index), are in `docs/build-performance-findings.md`. It takes `--timetable`, `--knowledgebase`,
 `--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
 codes as bare arguments (`python build_stations.py LEI`).
 
