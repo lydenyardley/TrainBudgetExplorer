@@ -51,32 +51,27 @@ whose licence and provenance are recorded alongside the station index. That is a
 decision with a data question inside it, which is why it is here and not in the
 code.
 
-### The checked-in facet reference data lags the registry
+### The checked-in facet reference data lags the registry (closed 7 October 2026)
 
 **Severity:** P3. **Route:** `reference-data/destination-facets.json`, read by
 `atoc_fares.location_lookup_candidates` as one more additive facet source.
-**Raised:** 7 October 2026, measured the same day, still open.
+**Raised:** 7 October 2026, measured the same day. **Closed:** the same day, by
+one `tools/regenerate_destination_facets.py` run committed on its own.
 
-**Evidence.** A regeneration run on the 24 September 2026 download
-(`python tools/regenerate_destination_facets.py --out <a copy>`) writes 10 facets
-and 463 station records against the checked-in file's 7 facets and 294. Beyond
-the three day-out sources that run added (rspb 9, national_trust 9,
-national_park 19), the file predates three shipped decisions: the ADR-0063
-hybrid prune (heritage 43 -> 38, dropping BDI, BDQ, BUX, CTR, RMD, which is what
-the prune exists to do), the ADR-0064 seaside supplement (+8: Blackpool x3,
-Brighton, Southend x3, Weston-super-Mare), and the transport name markers
-(6 -> 155).
+**What moved.** 7 facets and 294 station records become 10 and 463. rspb 0 -> 9,
+national_trust 0 -> 9, national_park 0 -> 19 (the three sources ADR-0065 shipped),
+heritage 43 -> 38 (dropping BDI, BDQ, BUX, CTR and RMD, which is what the ADR-0063
+prune is for), seaside 142 -> 150 (the ADR-0064 reviewed supplement), transport
+6 -> 155 and the source list 7 -> 10 (drift from registry changes that predate
+this build). airport, island, nature and university are unchanged.
 
-**Why it is still open.** It is a generated artefact and it is read additively,
-so a stale copy costs nothing at build time; refreshing it is a data commit of
-its own, and bundling three releases of drift into one facet change hides what
-moved. ADR-0062 and ADR-0064 each shipped without a regeneration run, so the
-lag is a habit rather than a decision.
-
-**What would close it.** One `tools/regenerate_destination_facets.py` run on the
-current download, committed on its own with the per-facet counts in the message,
-plus a decision on whether the run belongs in the release checklist or in CI
-behind a comparison that fails when the file and the registry disagree.
+**Still open, and it is the part that matters.** Nothing runs the regenerator
+when it should. ADR-0062 and ADR-0064 each shipped without one, so the drift was
+a habit rather than a decision, and nothing in the suite fails when the file and
+the registry disagree. The fix is structural, not a commit: a comparison in the
+release checklist or in CI that regenerates into a temporary file and refuses a
+release when the checked-in copy differs (ADR-0026's recording rule, in the shape
+`tools/check_release_clearance.py` already uses).
 
 ### A whole-network build gives every page the national timetable
 
@@ -84,30 +79,40 @@ behind a comparison that fails when the file and the registry disagree.
 deploy workflow, that is, every path that builds through `--all-origins`.
 **Raised:** 7 October 2026, measured the same day, still open.
 
-**Evidence.** A page built against the fully loaded fares feed takes **5.1 s**
-with a timetable index scoped to that origin's destinations and **did not finish
-in 8 minutes** with the whole national index (5,262 schedules against 419,589).
-`python build_stations.py GRA NOT --no-serve` wrote no page in 23 minutes. The
-full table, the reproduction commands, and the caveats (5.5 GB free against a
-6.4 GB floor, the unit suite running alongside) are in
-`docs/build-performance-findings.md`.
+**Evidence, corrected by measurement on 7 October 2026.** The index's *footprint*
+costs the minutes, not the work per search. National index: 1.87 GB held (4.92 ->
+3.05 GB free), 30 `best_journey` searches in 0.31 s, `_ensure_indexes` 1.1-2.3 s
+per day. Focused on one origin: 50 MB held, the same 30 searches in 0.14 s, the
+index build free. Searches are 2.3x slower nationally, not 80x: the page against
+the unloaded-for-it national index does not fail because it is slow, it fails
+because 1.87 GB is held beside the 2.1 GB fares feed on a machine with ~5 GB
+free, and the build pages. `python build_stations.py GRA NOT --no-serve` wrote no
+page in 23 minutes on 6 October 2026, and none in **24 minutes** on 7 October 2026
+with the machine idle: 5.1 GB free against the 6.4 GB floor, the two feeds taking
+11 minutes to load against the 93 s they take with room, and 0.88 GB free when the
+first page started. `docs/build-performance-findings.md` has the table and the
+reproduction.
 
 **Why it is still open.** The cause is named and not fixed. `build_demo_page`'s
 single-origin path already computes `focus_destinations` and a per-origin cache;
 `--all-origins` passes `focus_origin=None` and no cache, so
-`build_workers.init_worker` indexes the whole country for every worker and every
-page.
+`build_workers.init_worker` parses and holds the whole country for every worker
+and every page.
 
-**What it is not.** Not a machine problem and not a fares problem. The whole
-fares feed loads in 37.6 s, the pricing pre-pass is 0.01-0.09 s per origin, and a
-prices-only page renders in under half a second. Only the timetable index is out
-of scale.
+**What it is not.** Not a fares problem. The whole fares feed loads in 36.9 s,
+the pricing pre-pass is 0.01-0.09 s per origin, and a prices-only page renders in
+under half a second.
 
-**What would close it.** Give each origin in the all-origins pool its own focused
-timetable index and its own cache, exactly as the single-origin path does, and
-re-measure the published build's wall clock against the workflow's
-`timeout-minutes: 150` (that figure predates ADR-0061 and the service week, so it
-needs re-measuring in any case).
+**The prescribed fix does not hold as written.** "A focused index and its own
+cache per origin" cannot be built by parsing: a focused parse still costs 50.6 s
+because the loader reads every record to decide what to drop, so 3,424 origins is
+two days of CPU, and one pickle per origin is gigabytes of disk. A per-origin
+focus has to be derived in memory from one parse. That is cheap per origin, but
+it only reduces the peak if the national schedule list is not retained, and today
+it is: one worker holds one database for every page it builds. So the work is a
+shape decision first (what a worker holds) and an index change second, and either
+way it needs a re-measure of the published build against the workflow's
+`timeout-minutes: 150` (that figure predates ADR-0061 and the service week too).
 
 ---
 
