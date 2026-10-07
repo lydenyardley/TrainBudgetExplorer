@@ -2632,10 +2632,45 @@ function cardNote(destination) {
   note.className = "card-note";
 
   const card = railcards[railcardSelect.value];
+  // ADR-0061: a two-ticket row is two published fares, so a card is decided on
+  // each ticket and the row's card price is the two card prices added together.
+  // The reader is quoted the pair the journey is, not a card applied to half of
+  // it, and a card the feed bans on either ticket is refused rather than shown
+  // as a price nobody could buy.
   if (destination.tickets) {
-    note.dataset.state = "two-tickets";
-    note.textContent = "This row is two tickets, and this page does not apply " + card.label +
-      " to a pair, so it shows the two standard fares.";
+    const pair = (destination.railcards || {})[card.key];
+    if (!pair) {
+      note.dataset.state = "unavailable";
+      note.textContent = "This feed prices no " + card.label + " fare for this two-ticket " +
+        "journey, so the row shows the two standard fares.";
+      return note;
+    }
+    note.dataset.state = pair.state;
+    if (pair.pricePence === null || pair.pricePence === undefined) {
+      note.textContent = card.label + " cannot be applied to this journey, because a current DTD " +
+        "RR rule bans it on one of the two tickets, so the row shows both standard fares.";
+      return note;
+    }
+    if (pair.pricePence >= destination.adultPence) {
+      // The figure first is the row's own, the same rule as a single-ticket row:
+      // opening with the larger card price makes the reader hunt for theirs.
+      note.textContent = "This journey is " + money(priceOf(destination)) + " per adult, and " +
+        card.label + " does not reduce it. The card's own price for the two tickets is " +
+        money(pair.pricePence) + " per adult" + (pair.minimumFarePence === null
+          ? "."
+          : ", because the minimum fare the feed applies to these tickets is " +
+            money(pair.minimumFarePence) + ".");
+      return note;
+    }
+    note.textContent = "Two tickets, and " + card.label + " applies to each one: " +
+      money(pair.pricePence) + " per adult is the two card fares added together" +
+      (pair.minimumFarePence === null
+        ? "."
+        // The figure is the two minimums added, so it is the pair's own total
+        // and not a floor on one ticket: read as one, it would quote twice what
+        // the feed floors each of the two tickets at.
+        : ", with the feed's minimum fares on the two tickets adding to " +
+          money(pair.minimumFarePence) + ".");
     return note;
   }
   const details = (destination.railcards || {})[card.key];
