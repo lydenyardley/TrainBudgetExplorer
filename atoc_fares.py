@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
 import io
+import math
 import os
 import json
 import pickle
@@ -514,7 +515,7 @@ HERITAGE_PROPERTIES: tuple[tuple[int, str, tuple[str, ...]], ...] = (
     (422, "English Lake District", ("Ulverston", "Windermere")),
     (426, "Westminster Palace, Westminster Abbey and St Margaret's Church", ("Westminster Und",)),
     (429, "New Lanark", ("Lanark",)),
-    (430, "Hadrian's Wall", ("Carlisle", "Chester", "Corbridge", "Newcastle")),
+    (430, "Hadrian's Wall", ("Carlisle", "Chester-le-Street", "Corbridge", "Newcastle")),
     (488, "Tower of London", ("Tower Hill Und",)),
     (496, "Canterbury Cathedral, St Augustine's Abbey, and St Martin's Church", ("Canterbury East", "Canterbury West", "Dover Priory")),
     (514, "Heart of Neolithic Orkney", ("Stromness",)),
@@ -535,6 +536,152 @@ HERITAGE_SITE_NAMES_BY_ID = {
 HERITAGE_STATIONS_BY_SITE = {
     site_id: stations for site_id, _name, stations in HERITAGE_PROPERTIES
 }
+
+# Attraction geometry for the hybrid closest-station prune (ADR-0063). Point
+# sites carry one coordinate. Corridor and multi-gateway sites carry component
+# points so a valley or wall is not collapsed by a single centroid. Coordinates
+# are reviewed WGS84 decimals near the property or gateway, not a GIS import.
+HERITAGE_SITE_POINTS: dict[int, tuple[tuple[float, float], ...]] = {
+    370: ((54.7747, -1.5761),),  # Durham Castle and Cathedral
+    374: (  # Edward I castles in Gwynedd
+        (53.1393, -4.2769),  # Caernarfon
+        (53.2801, -3.8257),  # Conwy
+        (52.8603, -4.1092),  # Harlech
+    ),
+    422: (  # English Lake District gateways
+        (54.1916, -3.0979),  # Ulverston
+        (54.3796, -2.9034),  # Windermere
+    ),
+    426: ((51.4995, -0.1248),),  # Westminster
+    429: ((55.6634, -3.7817),),  # New Lanark
+    430: (  # Hadrian's Wall gateways
+        (54.8951, -2.9338),  # Carlisle
+        (54.8546, -1.5780),  # Chester-le-Street
+        (54.9663, -2.0186),  # Corbridge
+        (54.9682, -1.6173),  # Newcastle
+    ),
+    488: ((51.5081, -0.0759),),  # Tower of London
+    496: (  # Canterbury / Dover
+        (51.2790, 1.0830),  # Canterbury
+        (51.1257, 1.3053),  # Dover Priory
+    ),
+    514: ((58.9636, -3.2950),),  # Heart of Neolithic Orkney / Stromness
+    728: ((55.9533, -3.1883),),  # Old and New Towns of Edinburgh
+    1028: ((53.8389, -1.7916),),  # Saltaire
+    1029: (  # Dorset and East Devon Coast
+        (50.6216, -3.4150),  # Exmouth
+        (50.7194, -1.9833),  # Poole
+        (50.6090, -1.9590),  # Swanage
+        (50.6160, -2.4549),  # Weymouth
+    ),
+    1030: (  # Derwent Valley Mills
+        (53.0246, -1.4826),  # Belper
+        (53.1129, -1.5488),  # Cromford
+        (53.1382, -1.5590),  # Matlock
+        (53.1220, -1.5577),  # Matlock Bath
+    ),
+    1084: ((51.4780, -0.2950),),  # Kew Gardens
+    1215: (  # Cornwall and West Devon Mining Landscape
+        (50.2104, -5.2975),  # Camborne
+        (50.2332, -5.2260),  # Redruth
+        (50.2638, -5.0649),  # Truro
+    ),
+    1303: ((52.9700, -3.0880),),  # Pontcysyllte Aqueduct
+    1594: ((53.2365, -2.3070),),  # Jodrell Bank
+    1613: ((51.3810, -2.3590),),  # City of Bath
+    1633: (  # Slate Landscape of Northwest Wales
+        (52.7223, -4.0565),  # Barmouth
+        (53.1393, -4.2769),  # Caernarfon
+        (52.9309, -4.1345),  # Porthmadog
+    ),
+}
+
+HERITAGE_PRUNE_MAX_KM = 15.0
+HERITAGE_PRUNE_TWIN_M = 2000.0
+
+# Default on-disk Knowledgebase stations file used for CRS -> lat/lon. Builds
+# that already pass --knowledgebase still resolve stations.xml beside that
+# folder; tests without the file fail open and keep the curated candidates.
+DEFAULT_STATIONS_XML = Path("feeds") / "knowledgebase" / "stations.xml"
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in kilometres between two WGS84 points."""
+    radius_km = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    chord = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    )
+    return 2 * radius_km * math.asin(math.sqrt(chord))
+
+
+def select_nearest_stations(
+    candidates: Sequence[tuple[str, float, float]],
+    points: Sequence[tuple[float, float]],
+    *,
+    max_km: float = HERITAGE_PRUNE_MAX_KM,
+    twin_m: float = HERITAGE_PRUNE_TWIN_M,
+) -> list[str]:
+    """Keep the nearest CRS per attraction point, plus a soft twin.
+
+    For each component point, drop candidates beyond ``max_km``, keep the
+    nearest, and keep the second when its distance to the point is within
+    ``twin_m`` metres of the nearest's distance. Corridor sites pass several
+    points and the survivors are unioned, so a valley set is not forced through
+    a hard top-2.
+    """
+    kept: dict[str, float] = {}
+    twin_km = twin_m / 1000.0
+    for point_lat, point_lon in points:
+        scored = sorted(
+            (
+                haversine_km(lat, lon, point_lat, point_lon),
+                crs,
+            )
+            for crs, lat, lon in candidates
+        )
+        within = [(distance, crs) for distance, crs in scored if distance <= max_km]
+        if not within:
+            continue
+        best_distance, best_crs = within[0]
+        kept[best_crs] = min(kept.get(best_crs, best_distance), best_distance)
+        if len(within) > 1:
+            second_distance, second_crs = within[1]
+            if second_distance - best_distance <= twin_km:
+                kept[second_crs] = min(
+                    kept.get(second_crs, second_distance), second_distance
+                )
+    return sorted(kept, key=lambda crs: (kept[crs], crs))
+
+
+def load_station_coordinates(path: Path | str | None = None) -> dict[str, tuple[float, float]]:
+    """Return CRS -> (lat, lon) from a Knowledgebase stations.xml file."""
+    source = Path(path) if path is not None else DEFAULT_STATIONS_XML
+    if not source.is_file():
+        return {}
+    coordinates: dict[str, tuple[float, float]] = {}
+    for _event, element in ET.iterparse(source, events=("end",)):
+        if element.tag.rsplit("}", 1)[-1] != "Station":
+            continue
+        fields = {
+            child.tag.rsplit("}", 1)[-1]: (child.text or "").strip()
+            for child in element
+        }
+        crs = fields.get("CrsCode", "").upper()
+        try:
+            lat = float(fields.get("Latitude", ""))
+            lon = float(fields.get("Longitude", ""))
+        except ValueError:
+            element.clear()
+            continue
+        if crs:
+            coordinates[crs] = (lat, lon)
+        element.clear()
+    return coordinates
+
 
 # Named coastal day-outs for stations that also carry the seaside facet. Floor,
 # not ceiling: only places where the town or beach is the attraction a reader
@@ -810,7 +957,7 @@ SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACE
 # correction, and the wrong class would have kept being served from it. A
 # schema bump is the existing mechanism for exactly this: the old primary
 # classes are discarded and re-derived, and the facets are kept.
-LOCATION_CACHE_SCHEMA = 5
+LOCATION_CACHE_SCHEMA = 6
 # The two file names the classification pass may read from beside a feed, and
 # the only ones it trusts. A build writes the bare name beside the feed; a
 # fixture or a download writes the same name behind its own feed's name
@@ -1554,6 +1701,10 @@ class FaresDb:
         # can populate it from the ONS Census built-up-area source.
         self.location_types_by_crs: dict[str, str] = {}
         self.location_facets_by_crs: dict[str, set[str]] = {}
+        # CRS -> (lat, lon) from Knowledgebase stations.xml, loaded lazily when
+        # a heritage (or multi-CRS nature) prune needs it.
+        self._station_coordinates: dict[str, tuple[float, float]] | None = None
+        self._station_coordinates_path: Path | None = None
         # Every source whose classes this database carries, in load order. One
         # slot made the provenance line the last writer's: a cache beside the
         # feed described classes the ONS workbook had supplied, and the reviewed
@@ -2206,9 +2357,17 @@ class FaresDb:
         discarded = False
         if isinstance(data, dict) and isinstance(data.get("schema"), int):
             if data["schema"] < LOCATION_CACHE_SCHEMA and isinstance(data.get("records"), dict):
+                heritage_note = ""
+                if data["schema"] < 6:
+                    # Schema 6 introduced the hybrid closest-station prune.
+                    # Cached heritage chips can still name Buxton for Bath, so
+                    # heritage is stripped here and re-applied by the live reader.
+                    heritage_note = "; heritage facets discarded for closest-station prune"
+                    data = self._without_cached_heritage_facets(data)
                 self.report.skip_file(
                     f"station classification cache is schema {data['schema']}, this build writes "
                     f"schema {LOCATION_CACHE_SCHEMA}: its primary classes were ignored, its facets kept"
+                    f"{heritage_note}"
                 )
                 # Keep the facets, which are additive and still true, and drop
                 # only the primary class each record carried.
@@ -2276,6 +2435,33 @@ class FaresDb:
 
     def _tag_station(self, crs: str, facet_key: str) -> None:
         self.location_facets_by_crs.setdefault(crs, set()).add(facet_key)
+
+    @staticmethod
+    def _without_cached_heritage_facets(data: dict) -> dict:
+        """Drop heritage chips from a pre-prune cache so the live reader retags."""
+
+        def strip(value: object) -> object:
+            if isinstance(value, list):
+                return [facet for facet in value if facet != "heritage"]
+            if isinstance(value, set):
+                return {facet for facet in value if facet != "heritage"}
+            if isinstance(value, dict):
+                return {
+                    key: strip(item) if key == "facets" else item
+                    for key, item in value.items()
+                }
+            return value
+
+        cleaned = dict(data)
+        if isinstance(cleaned.get("facets"), dict):
+            cleaned["facets"] = {
+                crs: strip(facets) for crs, facets in cleaned["facets"].items()
+            }
+        if isinstance(cleaned.get("records"), dict):
+            cleaned["records"] = {
+                crs: strip(record) for crs, record in cleaned["records"].items()
+            }
+        return cleaned
 
     def _merge_location_facets(self, crs: object, value: object) -> None:
         """Add a station's facets to what is already known about it.
@@ -2516,7 +2702,9 @@ class FaresDb:
 
         The list is validated against UNESCO's own XML on every read: an id
         that is no longer a current UK property stops contributing, so a
-        delisted site cannot keep tagging destinations.
+        delisted site cannot keep tagging destinations. Surviving curated
+        names are then pruned to the nearest station (or soft twin) for each
+        attraction point so a distant namesake cannot keep the chip.
         """
         request = urllib.request.Request(
             UNESCO_WORLD_HERITAGE_FILE_URL,
@@ -2546,11 +2734,79 @@ class FaresDb:
                     "property; its stations were not applied"
                 )
                 continue
+            for crs in self._pruned_heritage_crs(site_id, stations):
+                location = self.locations_by_crs.get(crs)
+                if location is None:
+                    continue
+                names.add(self._normalise_settlement_name(location.name))
+                # Keep the curated token too when the feed name is a longer
+                # form (Bradford Forster Square vs Bradford F Sq), so the
+                # later settlement match still finds the station.
+                for station in stations:
+                    if self._settlement_matches(
+                        location.name, {self._normalise_settlement_name(station)}
+                    ):
+                        names.add(self._normalise_settlement_name(station))
+            # Tokens that match no feed station stay in the set so the apply
+            # path can report a stale curated list. Distance-pruned stations
+            # that do exist in the feed are omitted on purpose.
             for station in stations:
-                names.add(self._normalise_settlement_name(station))
+                token = self._normalise_settlement_name(station)
+                if not any(
+                    self._settlement_matches(location.name, {token})
+                    for location in self.locations_by_crs.values()
+                ):
+                    names.add(token)
         if not names:
             raise ValueError("no curated World Heritage site is a current UK property")
         return names
+
+    def station_coordinates(self) -> dict[str, tuple[float, float]]:
+        """Return CRS -> (lat, lon), loading Knowledgebase stations.xml once."""
+        if self._station_coordinates is not None:
+            return self._station_coordinates
+        path = self._station_coordinates_path or DEFAULT_STATIONS_XML
+        self._station_coordinates = load_station_coordinates(path)
+        if not self._station_coordinates and path.is_file() is False:
+            self.report.skip_file(
+                f"heritage prune: station coordinates file {path} is missing; "
+                "curated candidates were kept without a distance filter"
+            )
+        return self._station_coordinates
+
+    def _heritage_candidate_crs(self, stations: tuple[str, ...]) -> list[str]:
+        """Return feed CRS codes whose names match the curated station tokens."""
+        names = {self._normalise_settlement_name(station) for station in stations}
+        return [
+            crs
+            for crs, location in self.locations_by_crs.items()
+            if self._settlement_matches(location.name, names)
+        ]
+
+    def _pruned_heritage_crs(
+        self,
+        site_id: int,
+        stations: tuple[str, ...],
+    ) -> list[str]:
+        """Return curated candidate CRS codes kept by the hybrid distance prune."""
+        candidates = self._heritage_candidate_crs(stations)
+        points = HERITAGE_SITE_POINTS.get(site_id)
+        if not candidates or not points:
+            return candidates
+        coordinates = self.station_coordinates()
+        if not coordinates:
+            return candidates
+        located = [
+            (crs, coordinates[crs][0], coordinates[crs][1])
+            for crs in candidates
+            if crs in coordinates
+        ]
+        missing = [crs for crs in candidates if crs not in coordinates]
+        selected = select_nearest_stations(located, points)
+        # Stations absent from the Knowledgebase file (some Underground and
+        # heritage-railway names) stay as curated candidates: distance cannot
+        # judge them, and dropping them would silence real gateways.
+        return [*selected, *missing]
 
     def _read_learning_provider_facet(self) -> set[str]:
         """Return the towns that have a university in the UKPRN provider list.
@@ -2597,6 +2853,9 @@ class FaresDb:
             # feed's own station names, so a cache written under 3 holds
             # classes the current lists would not produce and is discarded
             # rather than served.
+            # 6: hybrid closest-station prune for World Heritage, so a cache
+            # written under 5 can still chip Buxton for Bath; those files are
+            # ignored rather than partially reused.
             "schema": LOCATION_CACHE_SCHEMA,
             # Every source the classes came from, in the order they were read,
             # and the joined form beside it for a reader from before the list
@@ -2655,29 +2914,50 @@ class FaresDb:
         location = self.locations_by_crs.get(code)
         if location is None or "heritage" not in self.location_facets_by_crs.get(code, set()):
             return []
-        return [
-            {
-                "id": site_id,
-                "name": name,
-                "url": f"https://whc.unesco.org/en/list/{site_id}/",
-            }
-            for site_id, name, stations in HERITAGE_PROPERTIES
-            if self._settlement_matches(
-                location.name,
-                {self._normalise_settlement_name(station) for station in stations},
+        sites: list[dict[str, object]] = []
+        for site_id, name, stations in HERITAGE_PROPERTIES:
+            if code not in self._pruned_heritage_crs(site_id, stations):
+                continue
+            sites.append(
+                {
+                    "id": site_id,
+                    "name": name,
+                    "url": f"https://whc.unesco.org/en/list/{site_id}/",
+                }
             )
-        ]
+        return sites
 
     def nature_sites(self, crs: str) -> list[dict[str, object]]:
         """Return the named nature reserves that make this station a nature match."""
         code = crs.strip().upper()
         if "nature" not in self.location_facets_by_crs.get(code, set()):
             return []
-        return [
-            {"name": name, "url": url}
-            for site_crs, name, url in NATURE_SITE_PROOFS
-            if site_crs == code
-        ]
+        by_name: dict[tuple[str, str], list[str]] = {}
+        for site_crs, name, url in NATURE_SITE_PROOFS:
+            by_name.setdefault((name, url), []).append(site_crs)
+        results: list[dict[str, object]] = []
+        coordinates = None
+        for (name, url), site_codes in by_name.items():
+            kept = site_codes
+            if len(site_codes) > 1:
+                if coordinates is None:
+                    coordinates = self.station_coordinates()
+                located = [
+                    (site_crs, coordinates[site_crs][0], coordinates[site_crs][1])
+                    for site_crs in site_codes
+                    if site_crs in coordinates
+                ]
+                if len(located) >= 2:
+                    # One attraction point: the centroid of the reviewed CRS set.
+                    lats = [lat for _crs, lat, _lon in located]
+                    lons = [lon for _crs, _lat, lon in located]
+                    point = (sum(lats) / len(lats), sum(lons) / len(lons))
+                    kept = select_nearest_stations(located, (point,))
+                    missing = [site_crs for site_crs in site_codes if site_crs not in coordinates]
+                    kept = [*kept, *missing]
+            if code in kept:
+                results.append({"name": name, "url": url})
+        return results
 
     def coastal_sites(self, crs: str) -> list[dict[str, object]]:
         """Return the named coastal day-outs for a seaside-tagged station."""
