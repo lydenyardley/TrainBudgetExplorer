@@ -393,37 +393,95 @@ WILDLIFE_TRUSTS = (
     "South and West Wales", "Ulster", "Warwickshire", "Wiltshire",
     "Worcestershire",
 )
-NATURE_SITE_STATION_CRS = frozenset({
+# Named-site proof for the nature facet. Each tuple is (CRS, official name,
+# visit URL). The CRS set is still the facet source of truth; deriving it from
+# this table keeps one reviewed list instead of two that can drift. Prefer the
+# trust or centre "plan your visit" page over Wikipedia.
+NATURE_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
     # Attenborough Nature Reserve, five minutes from the station on the trust's
     # own "plan your visit" page (Nottinghamshire Wildlife Trust)
-    "ATB",
+    (
+        "ATB",
+        "Attenborough Nature Reserve",
+        "https://www.nottinghamshirewildlife.org/attenborough-plan-your-visit",
+    ),
     # Martin Mere Wetland Centre, named as the recommended station on WWT's
-    # own directions page (Wildfowl and Wetlands Trust, the reserve the
-    # Lancashire, Manchester and North Merseyside Wildlife Trust sits beside)
-    "BCB", "BCJ",
+    # own directions page (Wildfowl and Wetlands Trust)
+    (
+        "BCB",
+        "Martin Mere Wetland Centre",
+        "https://www.wwt.org.uk/wetland-centres/martin-mere/plan-your-visit/directions",
+    ),
+    (
+        "BCJ",
+        "Martin Mere Wetland Centre",
+        "https://www.wwt.org.uk/wetland-centres/martin-mere/plan-your-visit/directions",
+    ),
     # Thorndon Country Park, "close to Brentwood station" per the trust
     # (Essex Wildlife Trust)
-    "BRE",
+    (
+        "BRE",
+        "Thorndon Country Park",
+        "https://www.essexwt.org.uk/nature-reserves/thorndon",
+    ),
     # Weeting Heath, about 3.5 km from Brandon on the only documented walk
     # (Norfolk Wildlife Trust)
-    "BND",
+    (
+        "BND",
+        "Weeting Heath",
+        "https://www.norfolkwildlifetrust.org.uk/WeetingHeath",
+    ),
     # Sevenoaks Wildlife Reserve, just under 2 km from the station out of town
-    # and up past the A25 (Kent Wildlife Trust)
-    "SEV",
+    # (Kent Wildlife Trust)
+    (
+        "SEV",
+        "Sevenoaks Wildlife Reserve",
+        "https://www.kentwildlifetrust.org.uk/nature-reserves/sevenoaks-wildlife-reserve-and-jeffery-harrison-visitor-centre",
+    ),
     # Bodenham Arboretum, about fifteen minutes from Hartlebury
-    # (Worcestershire Wildlife Trust)
-    "HBY",
+    (
+        "HBY",
+        "Bodenham Arboretum",
+        "https://www.bodenhamarboretum.co.uk/visiting",
+    ),
     # WWT Slimbridge: "the nearest train station is Cam & Dursley"
-    "CDU",
+    (
+        "CDU",
+        "Slimbridge Wetland Centre",
+        "https://www.wwt.org.uk/wetland-centres/slimbridge/plan-your-visit/directions",
+    ),
     # The three London Wildlife Trust sites that name their station themselves
-    "HAY",  # Yeading Brook Meadows, 30 minutes from Hayes and Harlington
-    "ZHX",  # Huckerby's Meadows, 15 minutes from Hatton Cross
-    "ZHD",  # Gutteridge Wood and Meadows, 12 minutes from Hillingdon
-    # Reserves whose trust names no station of its own, checked against the
-    # trust's reserve page
-    "BKA",  # Bookham Common (Surrey Wildlife Trust)
-    "HLS",  # Titchfield Haven (Hampshire and Isle of Wight Wildlife Trust)
-})
+    (
+        "HAY",
+        "Yeading Brook Meadows",
+        "https://www.wildlondon.org.uk/nature-reserves/yeading-brook-meadows",
+    ),
+    (
+        "ZHX",
+        "Huckerby's Meadows",
+        "https://www.wildlondon.org.uk/nature-reserves/huckerbys-meadows",
+    ),
+    (
+        "ZHD",
+        "Gutteridge Wood and Meadows",
+        "https://www.wildlondon.org.uk/nature-reserves/gutteridge-wood-and-meadows",
+    ),
+    # Bookham Commons is National Trust land (not Surrey Wildlife Trust); the
+    # official visit page is the proof we can link.
+    (
+        "BKA",
+        "Bookham Commons",
+        "https://www.nationaltrust.org.uk/visit/surrey/bookham-commons",
+    ),
+    # Titchfield Haven NNR is run by Hampshire County Council; HIWWT does not
+    # publish a visit page for the reserve itself.
+    (
+        "HLS",
+        "Titchfield Haven National Nature Reserve",
+        "https://www.visit-hampshire.co.uk/things-to-do/titchfield-haven-national-nature-reserve-p1521681",
+    ),
+)
+NATURE_SITE_STATION_CRS = frozenset(crs for crs, _name, _url in NATURE_SITE_PROOFS)
 # Three places a reader might expect here are deliberately absent: Kempton Park
 # is one of the Royal Parks, Epping Forest is run by Epping Forest District
 # Council, and Rainham Marshes is an RSPB reserve. None of them is a Wildlife
@@ -477,6 +535,32 @@ HERITAGE_SITE_NAMES_BY_ID = {
 HERITAGE_STATIONS_BY_SITE = {
     site_id: stations for site_id, _name, stations in HERITAGE_PROPERTIES
 }
+
+# Named coastal day-outs for stations that also carry the seaside facet. Floor,
+# not ceiling: only places where the town or beach is the attraction a reader
+# would catch a train for. Do not invent beaches for inland CRS codes.
+COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
+    (
+        "SKG",
+        "Skegness Beach",
+        "https://www.visitlincolnshire.com/destinations/skegness/",
+    ),
+    (
+        "RHL",
+        "Rhyl Central Beach",
+        "https://www.visitwales.com/attraction/beach/rhyl-central-beachseafront-557761",
+    ),
+    (
+        "PRT",
+        "Prestatyn Central Beach",
+        "https://www.visitwales.com/attraction/beach/prestatyn-central-beach-556641",
+    ),
+    (
+        "CWB",
+        "Colwyn Bay Beach",
+        "https://www.visitwales.com/attraction/beach/colwyn-bayrhos-sea-beach-535141",
+    ),
+)
 UNESCO_WORLD_HERITAGE_FILE_URL = "https://whc.unesco.org/en/list/xml"
 
 DESTINATION_FACET_SOURCES: tuple[DestinationFacet, ...] = (
@@ -2442,6 +2526,28 @@ class FaresDb:
                 location.name,
                 {self._normalise_settlement_name(station) for station in stations},
             )
+        ]
+
+    def nature_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the named nature reserves that make this station a nature match."""
+        code = crs.strip().upper()
+        if "nature" not in self.location_facets_by_crs.get(code, set()):
+            return []
+        return [
+            {"name": name, "url": url}
+            for site_crs, name, url in NATURE_SITE_PROOFS
+            if site_crs == code
+        ]
+
+    def coastal_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the named coastal day-outs for a seaside-tagged station."""
+        code = crs.strip().upper()
+        if "seaside" not in self.location_facets_by_crs.get(code, set()):
+            return []
+        return [
+            {"name": name, "url": url}
+            for site_crs, name, url in COASTAL_SITE_PROOFS
+            if site_crs == code
         ]
 
     def _load_lines(self, name: str, lines) -> None:
