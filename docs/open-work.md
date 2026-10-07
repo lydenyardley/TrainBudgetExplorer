@@ -4,12 +4,13 @@
 **Scope:** every item the project's own audits left open, in one place, so that
 nothing is open only because it lives in a file nobody has re-read.
 
-This file replaces three audit documents that sat in `docs/audits/`. Two of them
-are closed — every finding in each is fixed, and the record of the fix is the
-ADR that carries it, not a restatement here. One had a single open finding. What
-is left is what is below, and the closed work is listed at the foot so that a
-reader looking for "was this ever looked at" finds the answer without reading
-three files of prose first.
+This file replaces three audit documents that sat in `docs/audits/` and were
+removed in `826dfeb`, the commit that created this one. Two of them are closed —
+every finding in each is fixed, and the record of the fix is the ADR that carries
+it, not a restatement here. One had a single open finding. What is left is what
+is below, and the closed work is listed at the foot so that a reader looking for
+"was this ever looked at" finds the answer without reading three files of prose
+first.
 
 An item leaves this file when it is done, and it leaves by naming the commit and
 the test that hold it, or by naming the ADR where it was a decision rather than a
@@ -17,7 +18,7 @@ fix. Nothing leaves on the strength of having been discussed.
 
 ---
 
-## The one open finding
+## The open findings
 
 ### C27 — the chooser requires a known station name or a code prefix
 
@@ -49,6 +50,64 @@ the location permission explained in full before it is asked for — and a sourc
 whose licence and provenance are recorded alongside the station index. That is a
 decision with a data question inside it, which is why it is here and not in the
 code.
+
+### The checked-in facet reference data lags the registry
+
+**Severity:** P3. **Route:** `reference-data/destination-facets.json`, read by
+`atoc_fares.location_lookup_candidates` as one more additive facet source.
+**Raised:** 7 October 2026, measured the same day, still open.
+
+**Evidence.** A regeneration run on the 24 September 2026 download
+(`python tools/regenerate_destination_facets.py --out <a copy>`) writes 10 facets
+and 463 station records against the checked-in file's 7 facets and 294. Beyond
+the three day-out sources that run added (rspb 9, national_trust 9,
+national_park 19), the file predates three shipped decisions: the ADR-0063
+hybrid prune (heritage 43 -> 38, dropping BDI, BDQ, BUX, CTR, RMD, which is what
+the prune exists to do), the ADR-0064 seaside supplement (+8: Blackpool x3,
+Brighton, Southend x3, Weston-super-Mare), and the transport name markers
+(6 -> 155).
+
+**Why it is still open.** It is a generated artefact and it is read additively,
+so a stale copy costs nothing at build time; refreshing it is a data commit of
+its own, and bundling three releases of drift into one facet change hides what
+moved. ADR-0062 and ADR-0064 each shipped without a regeneration run, so the
+lag is a habit rather than a decision.
+
+**What would close it.** One `tools/regenerate_destination_facets.py` run on the
+current download, committed on its own with the per-facet counts in the message,
+plus a decision on whether the run belongs in the release checklist or in CI
+behind a comparison that fails when the file and the registry disagree.
+
+### A whole-network build gives every page the national timetable
+
+**Severity:** P1 for build cost. **Route:** `run.bat` / `build_stations.py` / the
+deploy workflow, that is, every path that builds through `--all-origins`.
+**Raised:** 7 October 2026, measured the same day, still open.
+
+**Evidence.** A page built against the fully loaded fares feed takes **5.1 s**
+with a timetable index scoped to that origin's destinations and **did not finish
+in 8 minutes** with the whole national index (5,262 schedules against 419,589).
+`python build_stations.py GRA NOT --no-serve` wrote no page in 23 minutes. The
+full table, the reproduction commands, and the caveats (5.5 GB free against a
+6.4 GB floor, the unit suite running alongside) are in
+`docs/build-performance-findings.md`.
+
+**Why it is still open.** The cause is named and not fixed. `build_demo_page`'s
+single-origin path already computes `focus_destinations` and a per-origin cache;
+`--all-origins` passes `focus_origin=None` and no cache, so
+`build_workers.init_worker` indexes the whole country for every worker and every
+page.
+
+**What it is not.** Not a machine problem and not a fares problem. The whole
+fares feed loads in 37.6 s, the pricing pre-pass is 0.01-0.09 s per origin, and a
+prices-only page renders in under half a second. Only the timetable index is out
+of scale.
+
+**What would close it.** Give each origin in the all-origins pool its own focused
+timetable index and its own cache, exactly as the single-origin path does, and
+re-measure the published build's wall clock against the workflow's
+`timeout-minutes: 150` (that figure predates ADR-0061 and the service week, so it
+needs re-measuring in any case).
 
 ---
 
@@ -261,13 +320,20 @@ next reader does not file it as a defect.
 
 ## Where this came from
 
+All four files below are gone from the working tree; each was removed by the
+commit named with it, and the findings they held are either fixed or restated
+above. `git show <commit>` reads one back.
+
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
-  Thirty-one findings, thirty closed across five passes, C27 open.
+  Thirty-one findings, thirty closed across five passes, C27 open. Removed in
+  `826dfeb`.
 - `docs/audits/2026-09-27-reenvision.md` — the re-envision pass. Thirty of its
   suggestions built; the rest are above, with the three this pass closed marked
-  in the settled table.
+  in the settled table. Removed in `826dfeb`.
 - `docs/audits/2026-09-29-real-grantham-page.md` — the rendered-page audit of
   the published Grantham page. Five findings, all settled; its measurements are
-  above because three ADRs cite them.
+  above because three ADRs cite them. Removed in `826dfeb`.
 - `docs/audits/2026-09-29-promise-gap-audit.md` — filed away in `d33b762` after
   the gap it found was closed, and deliberately not reopened here.
+- `docs/audits/2026-09-23-poteto-mode-audit.md` — retired in `1ce8741`, before
+  this file existed.
