@@ -560,6 +560,146 @@ COASTAL_SITE_PROOFS: tuple[tuple[str, str, str], ...] = (
         "Colwyn Bay Beach",
         "https://www.visitwales.com/attraction/beach/colwyn-bayrhos-sea-beach-535141",
     ),
+    (
+        "SCA",
+        "Scarborough North Bay",
+        "https://visitnorthyorkshire.com/index/scarborough-north-bay",
+    ),
+    (
+        "GYM",
+        "Great Yarmouth Central Beach",
+        "https://www.visitgreatyarmouth.co.uk/things-to-do/great-yarmouth-central-beach-p1379051",
+    ),
+    (
+        "BMH",
+        "Bournemouth Beach",
+        "https://www.bcpcouncil.gov.uk/beaches-and-seafront/visit-a-beach/bournemouth-beach",
+    ),
+    (
+        "TQY",
+        "Torre Abbey Sands",
+        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/torre-abbey-sands/",
+    ),
+    (
+        "NQY",
+        "Fistral Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/fistral-beach",
+    ),
+    (
+        "WHI",
+        "Whitstable Beach",
+        "https://www.visitkent.co.uk/attractions/whitstable-beach-2847/",
+    ),
+    (
+        "MAR",
+        "Margate Main Sands",
+        "https://www.thanet.gov.uk/locations/margate-main-sands/",
+    ),
+    (
+        "CLT",
+        "Clacton-on-Sea",
+        "https://www.visitessex.com/explore/coastal-destinations/clacton-on-sea",
+    ),
+    (
+        "FIL",
+        "Filey Beach",
+        "https://visitnorthyorkshire.com/index/filey-beach",
+    ),
+    (
+        "BDT",
+        "Bridlington",
+        "https://www.visiteastyorkshire.co.uk/explore/bridlington/",
+    ),
+    (
+        "LLD",
+        "Llandudno West Shore Beach",
+        "https://www.visitwales.com/attraction/beach/llandudno-west-shore-beach-547071",
+    ),
+    (
+        "TEN",
+        "Tenby North Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/tenby-north-beach",
+    ),
+    (
+        "AYW",
+        "Aberystwyth North Beach",
+        "https://www.visitwales.com/attraction/beach/aberystwyth-north-beach-526471",
+    ),
+    (
+        "WTB",
+        "Whitby Beach",
+        "https://visitnorthyorkshire.com/index/whitby-beach",
+    ),
+    (
+        "WEY",
+        "Weymouth Beach",
+        "https://www.weymouthtowncouncil.gov.uk/services/the-beach/",
+    ),
+    (
+        "EXM",
+        "Exmouth Beach",
+        "https://www.visitsouthdevon.co.uk/beaches/exmouth",
+    ),
+    (
+        "SOP",
+        "Southport Beach",
+        "https://sefton.gov.uk/around-sefton/coast-and-countryside/visiting-our-beaches/southport-beach",
+    ),
+    (
+        "CLE",
+        "Cleethorpes",
+        "https://discovernortheastlincolnshire.co.uk/explore/cleethorpes/",
+    ),
+    (
+        "HGS",
+        "Hastings Beach",
+        "https://www.visit1066country.com/things-to-do/outdoors/beaches/hastings-beach",
+    ),
+    (
+        "EBN",
+        "Eastbourne Beaches",
+        "https://www.visiteastbourne.com/explore/seafront/beaches",
+    ),
+    (
+        "BOG",
+        "Bognor Regis East Beach",
+        "https://www.bognorregisbeach.co.uk/beaches/east-beach",
+    ),
+    (
+        "SIV",
+        "Porthmeor Beach",
+        "https://www.visitcornwall.com/things-to-do/beaches/porthmeor-beach",
+    ),
+    (
+        "SDF",
+        "Saundersfoot Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/saundersfoot-beach",
+    ),
+    (
+        "SWA",
+        "Swansea Bay Beach",
+        "https://www.visitswanseabay.com/things-to-do/beaches/swansea-bay/",
+    ),
+    (
+        "PGN",
+        "Paignton Sands",
+        "https://www.torbay.gov.uk/leisure-sports-and-community/beaches/find-a-beach/paignton-sands/",
+    ),
+    (
+        "MCM",
+        "Morecambe Beach",
+        "https://lancasterandmorecambebay.com/things-to-do/days-out/morecambe-beach",
+    ),
+    (
+        "RHO",
+        "Rhosneigr Beach",
+        "https://www.visitanglesey.co.uk/en-gb/explore/rhosneigr-beach",
+    ),
+    (
+        "MRB",
+        "Manorbier Beach",
+        "https://www.visitpembrokeshire.com/explore-pembrokeshire/beaches/manorbier",
+    ),
 )
 UNESCO_WORLD_HERITAGE_FILE_URL = "https://whc.unesco.org/en/list/xml"
 
