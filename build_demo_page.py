@@ -1587,14 +1587,85 @@ def build_payload(
             family.key: railcard_detail_for(family, one) for family in railcard_families
         }
 
-    def railcard_detail_for(family, one) -> dict:
-        """One card's decision for one fare: its price and its rule key."""
+    def railcard_pair_details(two_part) -> dict:
+        """Each reviewed railcard's decision for a two-ticket row (ADR-0061).
+
+        A two-ticket row is two published fares, so a card is decided on each
+        ticket and the row's card price is the two card prices added -- the same
+        sum the standard price is. A card the feed bans on either ticket cannot
+        price the pair as a pair, so it is not offered; the row says so rather
+        than quoting half a journey.
+        """
+        return {
+            family.key: railcard_pair_detail_for(family, two_part)
+            for family in railcard_families
+        }
+
+    def railcard_pair_detail_for(family, two_part) -> dict:
+        """One card's decision for a two-ticket row: both tickets, added together."""
+        legs = (
+            railcard_detail_for(family, two_part.first, leg_origin_crs=origin.crs),
+            railcard_detail_for(
+                family, two_part.second, leg_origin_crs=two_part.change_crs
+            ),
+        )
+        leg_rule = lambda leg: railcard_rules.get(leg["rule"]) if leg["rule"] else None  # noqa: E731
+        blocking = next((leg for leg in legs if leg["pricePence"] is None), None)
+        if blocking is not None:
+            price = None
+            minimum = None
+            state = "blocked"
+            total_ban = True
+        else:
+            price = sum(leg["pricePence"] for leg in legs)
+            minimums = [leg["minimumFarePence"] for leg in legs]
+            minimum = None if any(value is None for value in minimums) else sum(minimums)
+            state = "eligible"
+            total_ban = False
+        restrictions = [
+            (leg_rule(leg) or {}).get("restrictionCode") for leg in legs
+        ]
+        restrictions = [code for code in restrictions if code and code != "none"]
+        texts = [
+            (leg_rule(leg) or {}).get("text") for leg in legs
+        ]
+        rule = {
+            "sequence": "two",
+            "status": "current",
+            "ticketCode": two_part.first.ticket_code + " + " + two_part.second.ticket_code,
+            "routeCode": two_part.first.route_code + " + " + two_part.second.route_code,
+            "location": (
+                f"{origin.crs}/{two_part.change_crs} + "
+                f"{two_part.change_crs}/{two_part.crs}"
+            ),
+            "restrictionCode": " + ".join(restrictions) or "none",
+            "totalBan": total_ban,
+            "text": (
+                f"Two tickets, both checked for {family.label}: "
+                + " ".join(text for text in texts if text)
+            ),
+        }
+        return {
+            "state": state,
+            "pricePence": price,
+            "minimumFarePence": minimum,
+            "rule": share_rule(rule),
+        }
+
+    def railcard_detail_for(family, one, *, leg_origin_crs: str | None = None) -> dict:
+        """One card's decision for one fare: its price and its rule key.
+
+        ``leg_origin_crs`` names where the fare starts when that is not the page's
+        own station: the second leg of a two-ticket row (ADR-0061) begins at the
+        pricing split, and an RR rule matches the endpoints of the journey the
+        fare is sold for.
+        """
         railcard_code = family.key
         rules = fares.railcard_rules(
             railcard_code,
             ticket_code=one.ticket_code,
             route_code=one.route_code,
-            origin_crs=origin.crs,
+            origin_crs=leg_origin_crs or origin.crs,
             destination_crs=one.crs,
             origin_nlc=one.origin_nlc,
             destination_nlc=one.destination_nlc,
@@ -1756,10 +1827,12 @@ def build_payload(
             "partyPence": one.best_pence * 2,
             # One entry per reviewed railcard the feed carries. The reader holds
             # one at a time, so the page picks the key rather than offering six
-            # prices per row in the table. A two-ticket row carries none: a card
-            # is decided per ticket, and this page does not yet decide it for a
-            # pair, so the row is priced at the two standard fares and says so.
-            "railcards": {} if two_part else railcard_details(one),
+            # prices per row in the table. A two-ticket row (ADR-0061) is a card
+            # decision per ticket, and the row's card price is the two card
+            # prices added together, so the card still prices the row.
+            "railcards": (
+                railcard_pair_details(two_part) if two_part else railcard_details(one)
+            ),
             "destinationType": fares.destination_type(crs),
             "destinationTypes": fares.destination_types(crs),
             "heritageSites": fares.heritage_sites(crs),

@@ -1385,6 +1385,16 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("is the price here, so the discount took it no lower.", self.html)
         self.assertIn("does not raise it.", self.html)
 
+    def test_the_two_ticket_note_adds_the_minimums_rather_than_calling_one_per_ticket(self) -> None:
+        # A two-ticket row's card price is the two card fares added, and the
+        # minimum the note names beside it is the two minimums added. The sum is
+        # the pair's own total: reading it as a per-ticket figure would quote
+        # 24.00 as the floor on each of two 12.00 tickets.
+        self.assertIn(
+            "with the feed's minimum fares on the two tickets adding to", self.html
+        )
+        self.assertNotIn("applied per ticket", self.html)
+
     def test_the_railcard_note_names_the_card_it_is_about(self) -> None:
         # The reader picked one card out of six, so the note has to name it.
         # A note that explained "the railcard" while the page listed six would
@@ -5888,7 +5898,17 @@ class TwoPartRowTest(unittest.TestCase):
         self.assertEqual([t["restrictionCode"] for t in leicester["tickets"]], ["", "1A"])
         self.assertTrue(leicester["tickets"][1]["restrictionDescription"])
         self.assertIn("1A", payload["restrictionValidity"])
-        self.assertEqual(leicester["railcards"], {})
+        # A two-ticket row is a card decision per ticket, so its card price is
+        # the two card prices added together: 1200 (the £12.00 minimum, above
+        # two-thirds of the 870 first fare) plus 1785 (two-thirds of 2680,
+        # rounded down to 5p). Reporting no card at all showed the reader two
+        # standard fares they could plausibly beat.
+        yng = leicester["railcards"]["YNG"]
+        self.assertEqual(yng["state"], "eligible")
+        self.assertEqual(yng["pricePence"], 1200 + 1785)
+        self.assertEqual(yng["minimumFarePence"], 1200 + 1200)
+        self.assertIn("R9", payload["railcardRules"][yng["rule"]]["text"])
+        self.assertLess(yng["pricePence"], leicester["adultPence"])
 
     def test_the_pair_is_the_journeys_own_and_not_the_cheapest(self) -> None:
         # Skegness's journey changes at Lincoln, so it is quoted the Lincoln

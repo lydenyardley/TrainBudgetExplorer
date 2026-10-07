@@ -1871,7 +1871,19 @@ async function runPage(browser, index, given, file, body, base) {
       await page.locator(`input[name="ticketMode"][value="${heritage.mode}"]`).check({ force: true });
       await page.fill("#budgetNumber", String(heritage.pounds));
       const heritageText = await page.textContent("#rows");
-      const heritageHref = await page.locator("#rows .heritage-proof a").first().getAttribute("href");
+      // Read the link off the row the payload named rather than the first proof
+      // on the page. The station cell's proof span is `.site-proof` since the
+      // nature and coastal sublimes joined it (6f1f4ad), and the first proof in
+      // `#rows` can belong to a different row than the property under test.
+      const heritageHref = await page.evaluate((name) => {
+        for (const row of document.querySelectorAll("#rows tr")) {
+          const station = row.querySelector(".station-name");
+          if (!station || station.textContent.trim() !== name) continue;
+          const link = row.querySelector(".site-proof a");
+          return link ? link.getAttribute("href") : null;
+        }
+        return null;
+      }, heritage.name);
       check(
         "a heritage row links the UNESCO property the payload names",
         heritageText.includes("World heritage: " + heritage.site.name) && heritageHref === heritage.site.url,
@@ -3130,14 +3142,26 @@ async function runPage(browser, index, given, file, body, base) {
     // fare it came from; a row it does not lower carries one price; and with
     // no card chosen no row carries a second number at all.
     if (cardChoice) {
+      // Each reading carries the row's own standard price beside the two cells.
+      // The list is "cheapest of any type", so the card can change which fare
+      // wins for a destination -- a two-part row the card lowers can displace
+      // the one that won without it (the re-sort check below asserts exactly
+      // that). Comparing the card render's "was" against the clear render's
+      // price therefore compares two different rows whenever the winner moves;
+      // what the check is about is that the "was" beside a card price is the
+      // standard fare of the row it sits in.
       const readCells = () => page.evaluate(() => {
         const cells = {};
         for (const row of document.querySelectorAll("#rows tr[data-crs]")) {
           const price = row.querySelector("td.num .price");
           const was = row.querySelector("td.num .was");
+          const destination = activeDestinations().find((d) => d.crs === row.dataset.crs);
           cells[row.dataset.crs] = {
             price: price ? price.textContent.trim() : null,
             was: was ? was.textContent.trim() : null,
+            standard: destination
+              ? standardPrice(destination)
+              : null,
           };
         }
         return cells;
@@ -3209,7 +3233,8 @@ async function runPage(browser, index, given, file, body, base) {
           ? helped.length > 0 &&
             helped.every(
               (crs) =>
-                amount(card[crs].was) === amount(clear[crs].price) && /standard/.test(card[crs].was)
+                Math.round(amount(card[crs].was) * 100) === card[crs].standard &&
+                /standard/.test(card[crs].was)
             )
           : notExercised("no destination on this page is lowered by the card"),
         JSON.stringify(helped.slice(0, 3).map((crs) => [crs, clear[crs], card[crs]]))
