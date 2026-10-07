@@ -58,6 +58,10 @@ sources against a real fares download. A facet whose source is temporarily
 unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
+Planned day-out sources (RSPB, National Trust, National Park / National
+Landscape gateways) sit on the backlog in
+`adr/ADR-0062-three-day-out-sources-wait-on-the-backlog.md`; none of them ships
+without its own reviewed list.
 
 The `nature` list is a floor, and the tool that keeps it honest is
 `tools/propose_nature_stations.py`. Given reserve pages it reads the station
