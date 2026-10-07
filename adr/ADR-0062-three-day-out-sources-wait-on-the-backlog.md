@@ -1,6 +1,6 @@
 # ADR-0062: Three day-out sources wait on the backlog
 
-**Status:** Accepted (backlog; not implemented)
+**Status:** Accepted; all three sources shipped, see ADR-0065
 **Date:** 7 October 2026
 **Relates to:** ADR-0026 (destination facet registry), the heritage / nature /
 coastal proof sublines already on the station row.
@@ -83,3 +83,11 @@ Ordering protects the day-tripper first: named reserves and visitor properties
 before polygon-wide landscape chips. Skipping that order for a noisier dump
 would make the filter less trustworthy, which is the failure ADR-0026 exists to
 prevent.
+
+## Amendment, 7 October 2026
+
+All three sources shipped, in the order above, on the hybrid prune this ADR
+asked for: `rspb`, `national_trust` and `national_park` are registry facets
+with one reviewed list each (9, 9 and 19 day-outs). The decision is recorded in
+`adr/ADR-0065-three-day-out-sources-ship-on-one-reviewed-list-each.md`. The
+non-goals in point 4 and the later candidates in point 5 are unchanged.

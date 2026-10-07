@@ -359,6 +359,21 @@ class DemoPageTest(unittest.TestCase):
         # LCN is not a coastal proof CRS; without the seaside facet it stays empty.
         self.assertEqual(self.fares.coastal_sites("LCN"), [])
 
+    def test_the_three_day_out_chips_name_their_own_proof(self) -> None:
+        # ADR-0064's rule, applied to the sources ADR-0065 shipped: the chip is
+        # only honest if the row can name the place behind it. Two halves, and
+        # both are checked here because either alone looks like it works -- a
+        # payload field with no reader renders no proof, and a reader with no
+        # field renders an undefined one.
+        for label, key in (
+            ("RSPB reserves: ", "destination.rspbSites"),
+            ("National Trust: ", "destination.nationalTrustSites"),
+            ("National parks and landscapes: ", "destination.nationalParkSites"),
+        ):
+            self.assertIn(label, self.html)
+            self.assertIn(key, self.html)
+
+
     def test_expired_flows_are_absent_from_all_ticket_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fares = FaresDb().load_feed(
@@ -5788,6 +5803,15 @@ class ReturnNetworkFixtureTest(unittest.TestCase):
         types = {t for row in payload["anytimeDestinations"] for t in row["destinationTypes"]}
         self.assertIn("small_town", types)
         self.assertIn("seaside", types)
+
+    def test_every_row_carries_the_backlog_day_out_lists(self) -> None:
+        # ADR-0062: the station cell reads rspbSites, nationalTrustSites and
+        # nationalParkSites off each row, so a row without one would render an
+        # undefined proof. The key is always present and always a list.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "LCN")
+        for row in payload["destinations"]:
+            for key in ("rspbSites", "nationalTrustSites", "nationalParkSites"):
+                self.assertIsInstance(row[key], list, (row["crs"], key))
 
     def test_some_fares_sit_above_the_railcard_minimum_and_some_below(self) -> None:
         # Both directions matter: a card with nothing to discount cannot be

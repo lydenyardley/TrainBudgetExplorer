@@ -1765,6 +1765,11 @@ def build_payload(
             "heritageSites": fares.heritage_sites(crs),
             "natureSites": fares.nature_sites(crs),
             "coastalSites": fares.coastal_sites(crs),
+            # ADR-0062: RSPB, National Trust and National Park / Landscape
+            # gateways, each with its own reviewed list and named proof.
+            "rspbSites": fares.rspb_sites(crs),
+            "nationalTrustSites": fares.national_trust_sites(crs),
+            "nationalParkSites": fares.national_park_sites(crs),
             "ticket": " + ".join(part.ticket_code for part in parts),
             "isAdvance": any(
                 fares.is_advance_fare(part.ticket_name, part.restriction_code)

@@ -28,6 +28,11 @@ from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
     HERITAGE_PROPERTIES,
     HERITAGE_SITE_POINTS,
+    NATIONAL_PARK_GATEWAYS,
+    NATIONAL_TRUST_PROPERTIES,
+    REVIEWED_ATTRACTIONS_BY_FACET,
+    RSPB_RESERVES,
+    ReviewedAttraction,
     LOCATION_BAND_TYPES,
     LOCATION_CACHE_SCHEMA,
     LOCATION_FALLBACK_SOURCE,
@@ -511,6 +516,39 @@ class FaresParserTest(unittest.TestCase):
             "a cache this build wrote must survive its own next load",
         )
 
+    def test_a_cache_written_before_the_day_out_sources_still_earns_them(self) -> None:
+        # ADR-0065: the three reviewed day-out lists shipped *without* a cache
+        # schema bump, and the reason has to keep holding. A cache written by
+        # the previous release is the current schema with no rspb /
+        # national_trust / national_park chip anywhere on it; the reviewed pass
+        # runs after the cache is read and tags additively, so those chips
+        # appear anyway. If that pass were ever moved before the cache load, or
+        # made to respect a cached facet list as final, a build on a warm cache
+        # would silently lose three chips until the schema was bumped.
+        db = FaresDb()
+        db.locations_by_crs = {
+            "PFL": Location("1", "PFL", "PURFLEET", ""),
+            "ANC": Location("2", "ANC", "ANCASTER", ""),
+        }
+        db._load_location_types_json(
+            {
+                "schema": LOCATION_CACHE_SCHEMA,
+                "source": "a build from before the day-out sources",
+                "records": {
+                    "PFL": {"primary": "other", "facets": []},
+                    "ANC": {"primary": "village", "facets": []},
+                },
+            }
+        )
+        self.assertEqual(db.location_facets_by_crs.get("PFL", set()), set())
+        db._apply_reviewed_facets()
+        self.assertIn("rspb", db.destination_types("PFL"))
+        self.assertEqual(db.rspb_sites("PFL")[0]["name"], "Rainham Marshes")
+        # A warm cache is not a stale-cache note: nothing was discarded.
+        self.assertEqual(
+            [note for note in db.report.skipped_files if "schema" in note], []
+        )
+
     def test_a_discard_does_not_cost_a_later_source_its_label(self) -> None:
         # The flag that records a discard is sticky, and it must not be
         # consulted for every candidate after the one that discarded: a file
@@ -948,6 +986,111 @@ class FaresParserTest(unittest.TestCase):
         self.assertNotIn("transport", db.destination_types("ATB"))
         self.assertIn(("transport", "Transport interchanges"), DESTINATION_TYPE_FILTERS)
 
+    def test_the_three_backlog_sources_are_facets_with_reviewed_lists(self) -> None:
+        # ADR-0062: RSPB, National Trust and National Park / Landscape gateways
+        # each ship as one facet and one reviewed list, never as a raw dump.
+        expected = {
+            "rspb": RSPB_RESERVES,
+            "national_trust": NATIONAL_TRUST_PROPERTIES,
+            "national_park": NATIONAL_PARK_GATEWAYS,
+        }
+        for key, attractions in expected.items():
+            facet = DESTINATION_FACETS_BY_KEY[key]
+            self.assertIn(key, SUPPORTED_DESTINATION_FACETS)
+            self.assertIn((key, facet.label), DESTINATION_TYPE_FILTERS)
+            self.assertTrue(facet.url.startswith("http"), key)
+            self.assertIn("reviewed", facet.source.lower(), key)
+            self.assertEqual(facet.reviewed_attractions, attractions, key)
+            self.assertTrue(attractions, key)
+            for attraction in attractions:
+                self.assertTrue(attraction.name.strip(), key)
+                self.assertTrue(attraction.url.startswith("http"), attraction.name)
+                self.assertTrue(attraction.stations, attraction.name)
+                self.assertTrue(attraction.points, attraction.name)
+                for lat, lon in attraction.points:
+                    self.assertTrue(-90 <= lat <= 90, attraction.name)
+                    self.assertTrue(-180 <= lon <= 180, attraction.name)
+
+    def test_an_attraction_prune_drops_a_distant_namesake_and_keeps_the_near_one(self) -> None:
+        # ADR-0063: the curated candidate is kept, any candidate beyond max_km
+        # from the attraction point is dropped. Newport Wetlands is the shape:
+        # the curated name reaches both Newports, and the prune keeps the Welsh
+        # one the reserve is actually beside.
+        attraction = ReviewedAttraction(
+            "Newport Wetlands",
+            "https://example.org/newport-wetlands",
+            ("Newport (S Wales)",),
+            ((51.5560, -2.9560),),
+        )
+        db = FaresDb()
+        db.locations_by_crs = {
+            "NWP": Location("1", "NWP", "NEWPORT S.WALES", ""),
+            "NWE": Location("2", "NWE", "NEWPORT", ""),
+        }
+        db._station_coordinates = {
+            "NWP": (51.5890, -2.9990),
+            "NWE": (51.7920, 0.2110),
+        }
+        kept = db._pruned_attraction_crs(attraction)
+        self.assertIn("NWP", kept)
+        self.assertNotIn("NWE", kept)
+
+    def test_an_attraction_fails_open_when_the_coordinate_file_is_absent(self) -> None:
+        # No stations.xml means distance cannot judge the candidate, so the
+        # reviewed list stands as written rather than tagging nothing.
+        attraction = ReviewedAttraction(
+            "Rainham Marshes",
+            "https://example.org/rainham-marshes",
+            ("Purfleet",),
+            ((51.4870, 0.2190),),
+        )
+        db = FaresDb()
+        db.locations_by_crs = {"PFL": Location("1", "PFL", "PURFLEET", "")}
+        db._station_coordinates = {}
+        self.assertEqual(db._pruned_attraction_crs(attraction), ["PFL"])
+
+    def test_a_reviewed_attraction_tags_its_station_and_names_the_proof(self) -> None:
+        # Chip implies a named proof (ADR-0064), extended to the ADR-0062
+        # sources: the station carries the facet and the reserve by name.
+        db = FaresDb()
+        db.locations_by_crs = {
+            "PFL": Location("1", "PFL", "PURFLEET", ""),
+            "BEM": Location("2", "BEM", "BEMPTON", ""),
+            "NOT": Location("3", "NOT", "NOTTINGHAM", ""),
+        }
+        db._station_coordinates = {
+            "PFL": (51.4810161506, 0.2367813953),
+            "BEM": (54.1440, -0.1730),
+        }
+        db._apply_reviewed_facets()
+        self.assertIn("rspb", db.destination_types("PFL"))
+        self.assertIn("rspb", db.destination_types("BEM"))
+        self.assertNotIn("NOT", db.location_facets_by_crs)
+        self.assertEqual(
+            db.rspb_sites("PFL"),
+            [{
+                "name": "Rainham Marshes",
+                "url": "https://www.rspb.org.uk/nature-reserves/rainham-marshes/",
+            }],
+        )
+        # A station the facet did not tag carries no proof for it.
+        self.assertEqual(db.rspb_sites("NOT"), [])
+
+    def test_a_day_out_list_survives_a_pass_made_before_the_stations_were_known(self) -> None:
+        # The loader applies the reviewed facets twice, and the first pass can
+        # run before any classification file has named a station. The prune's
+        # answer is a fact about the station set, so a first pass that cached it
+        # as "no candidates" would leave the second pass, after the ONS read,
+        # tagging nothing at all.
+        db = FaresDb()
+        db._station_coordinates = {"PFL": (51.4810, 0.2368)}
+        db._apply_reviewed_facets()
+        self.assertNotIn("PFL", db.location_facets_by_crs)
+        db.locations_by_crs = {"PFL": Location("1", "PFL", "PURFLEET", "")}
+        db._apply_reviewed_facets()
+        self.assertIn("rspb", db.destination_types("PFL"))
+        self.assertEqual(db.rspb_sites("PFL")[0]["name"], "Rainham Marshes")
+
     def test_every_reviewed_facet_code_is_a_station_code(self) -> None:
         # The codes are intersected with the feed's own stations, so a typo is
         # silently dropped rather than failing a build. Checking the shape here
@@ -955,7 +1098,12 @@ class FaresParserTest(unittest.TestCase):
         for facet in DESTINATION_FACET_SOURCES:
             if not facet.is_reviewed:
                 continue
-            self.assertTrue(facet.reviewed_station_codes or facet.reviewed_name_markers, facet.key)
+            self.assertTrue(
+                facet.reviewed_station_codes
+                or facet.reviewed_name_markers
+                or facet.reviewed_attractions,
+                facet.key,
+            )
             for crs in facet.reviewed_station_codes:
                 self.assertRegex(crs, r"^[A-Z]{3}$", facet.key)
             for marker in facet.reviewed_name_markers:

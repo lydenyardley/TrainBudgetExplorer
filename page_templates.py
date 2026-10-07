@@ -2239,6 +2239,11 @@ function stationCell(destination) {
   );
   appendSiteProof("Nature sites: ", destination.natureSites);
   appendSiteProof("Coastal & seaside: ", destination.coastalSites);
+  // ADR-0062: the backlog day-out sources, each a reviewed list whose proof is
+  // the property, reserve or gateway the station was tagged for.
+  appendSiteProof("RSPB reserves: ", destination.rspbSites);
+  appendSiteProof("National Trust: ", destination.nationalTrustSites);
+  appendSiteProof("National parks and landscapes: ", destination.nationalParkSites);
   return cell;
 }
 
