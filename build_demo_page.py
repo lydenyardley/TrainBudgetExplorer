@@ -43,7 +43,7 @@ from atoc_fares import (
     is_pseudo_station,
     location_lookup_candidates,
 )
-from atoc_timetable import TimetableDb
+from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex, TimetableDb
 from atoc_knowledgebase import (
     ABSENT,
     UNKNOWN,
@@ -636,6 +636,98 @@ def timetable_cache_path(feed: str | Path, origin: str, destinations: set[str]) 
     return CACHE_DIR / f"timetable-{origin.strip().upper()}-{digest}.pickle"
 
 
+#: Where a build keeps the per-origin timetable slices it can be built from
+#: instead of the feed. Under `_cache/`, like every other derived artefact here:
+#: a slice is cut from a feed and reproducible from it, and it is not part of
+#: any site.
+TIMETABLE_INDEX_ROOT = CACHE_DIR / "timetable-index"
+
+
+def timetable_index_identity(feed: str | Path) -> str:
+    """Everything a slice index is only valid against, as one digest.
+
+    The same discipline as ``timetable_cache_identity``: the feed's bytes, the
+    source that reads them, and the layout version of what is written. A slice
+    is a database cut from one download by one version of the parser, so an
+    index that names which is an index a build can trust, and one that does not
+    is a miss rather than a page assembled from another download's services.
+    """
+    digest = hashlib.sha256()
+    digest.update(feed_content_digest(feed).encode())
+    digest.update(source_fingerprint().encode())
+    digest.update(f"slice-index-{SLICE_INDEX_SCHEMA}".encode())
+    return digest.hexdigest()
+
+
+def timetable_index_location(root: str | Path, feed: str | Path) -> tuple[Path, str]:
+    """Where one feed's slices live, and the identity they are only valid against.
+
+    A pair rather than two functions because the identity costs a content digest
+    of the whole feed -- about 1.7s over the 419MB timetable -- and both callers
+    write into this directory and record the identity in the same breath.
+
+    A directory whose own manifest already names this identity is the identity
+    directory rather than a root of them, because that is the path a build log
+    prints and so the path a reader has in hand. Only that identity is honoured:
+    a directory cut from another download is not this feed's index, so naming it
+    is a miss -- and, since this is also what the writer resolves its `--root`
+    through, it is not a directory the writer will overwrite either.
+    """
+    identity = timetable_index_identity(feed)
+    root = Path(root)
+    if _declared_identity(root) == identity:
+        return root, identity
+    return root / identity[:20], identity
+
+
+def _declared_identity(directory: Path) -> str | None:
+    """The identity a directory's own manifest declares, if it declares one."""
+    try:
+        raw = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return raw.get("identity") if isinstance(raw, dict) else None
+
+
+def open_timetable_index(root: str | Path, feed: str | Path | None) -> SliceIndex | None:
+    """The slice index a build asked for, or None when there is not a usable one.
+
+    With the feed in hand the directory is derived from it, so the index can only
+    be the one that was cut from that download. Without it -- a build whose whole
+    point is not to read the feed -- the index is opened by its own manifest,
+    which is the only description of itself there is.
+    """
+    if feed is not None and Path(feed).exists():
+        directory, identity = timetable_index_location(root, feed)
+        return SliceIndex(
+            directory,
+            identity=identity,
+            source={"feed": str(feed), "schema": SLICE_INDEX_SCHEMA},
+        )
+    return SliceIndex.open(root)
+
+
+def missing_slice_message(index: SliceIndex, missing: list[str]) -> str:
+    """What to say when the index has not got a slice for a page being built.
+
+    Named rather than counted, and named before the build rather than per page:
+    a page silently built without times is a page that lies about the services
+    its station has, which is the one outcome worse than a build that stops.
+    """
+    shown = ", ".join(missing[:SLICE_MISSING_SHOWN])
+    rest = "" if len(missing) <= SLICE_MISSING_SHOWN else f" and {len(missing) - SLICE_MISSING_SHOWN} more"
+    return (
+        f"{index.directory} holds no slice for {len(missing):,} of the pages this build "
+        f"would write: {shown}{rest}.\n"
+        "Add them with tools/build_timetable_index.py --origins, or pass --timetable "
+        "to cut them from the feed as the build runs."
+    )
+
+
+#: Codes named in that message before it counts the rest.
+SLICE_MISSING_SHOWN = 12
+
+
 # The newest timetable caches kept per origin. One origin holds at most two
 # live caches -- the common and the outbound-single focus -- and every older
 # digest belongs to a feed revision that no build can hit again (audit B4).
@@ -1178,6 +1270,16 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--feed", required=True, help="fares feed folder or zip")
     parser.add_argument("--timetable", default=None, help="CIF timetable feed folder or zip")
     parser.add_argument(
+        "--timetable-index",
+        type=Path,
+        default=None,
+        help=(
+            "directory of per-origin timetable slices to build from, written by "
+            "tools/build_timetable_index.py; when it holds a slice for every "
+            "page, no timetable feed is read at all"
+        ),
+    )
+    parser.add_argument(
         "--knowledgebase",
         default=None,
         help=(
@@ -1463,6 +1565,7 @@ def build_payload(
     reference: "Knowledgebase | None" = None,
     reference_published: str = "",
     reference_checked: str = "",
+    timetable_index: SliceIndex | None = None,
 ) -> dict:
     """Every publishable destination from the origin, at both party prices.
 
@@ -1470,7 +1573,24 @@ def build_payload(
     journeys are options in the feed, not a booking: an unrestricted fare is
     valid on any of them, while an Advance single is valid only on a
     qualifying train, which is why no train is chosen for the reader.
+
+    ``timetable_index`` is where this page's timetable comes from when there is
+    no ``timetable``: the slice of the feed that was cut for this origin and
+    written to disk. The caller checked that the slice was there before the
+    build started, so a miss here is a file that vanished or will not read --
+    and it raises, because a page assembled without times would say the station
+    has no services.
     """
+    if timetable is None and timetable_index is not None:
+        timetable = timetable_index.load(origin_crs)
+        if timetable is None:
+            # The caller checked every page this build writes had a slice before
+            # it got here, so a miss now is a file that vanished or one that will
+            # not read. A page assembled without times would say the station has
+            # no services, which is worse than a build that stops.
+            raise OSError(
+                f"{origin_crs} has no readable slice in {timetable_index.directory}"
+            )
     origin = fares.locations_by_crs[origin_crs.strip().upper()]
     # Every destination is included, then the browser's price filter decides
     # which rows are within the reader's budget. The fare shown is the cheapest
@@ -1515,6 +1635,15 @@ def build_payload(
     # (ADR-0060).
     split_at: dict[str, list[str]] = {}
     if timetable is not None:
+        # One page, one station, so the page is built from the slice of the
+        # timetable it can use rather than from the national index. The
+        # all-origins path hands every page the whole country -- one feed, one
+        # page for each of 3,424 stations -- and holding that while a page is
+        # assembled is where a two-station build's hour of paging went
+        # (docs/build-performance-findings.md). A database that was already
+        # loaded for this origin is returned unchanged, so the single-origin
+        # path pays nothing here and its pages do not move.
+        timetable = timetable.focused(origin.crs)
         reached = timetable.journeys_from(origin.crs, max_changes=max_changes, day=day)
         for crs, journey in reached.items():
             if journey.changes > max_changes or is_pseudo_station(crs):
@@ -3117,6 +3246,29 @@ def main(argv: list[str] | None = None) -> int:
                 f"Removed {stale_fares} file(s) from the fares caches of older feeds.",
                 flush=True,
             )
+    timetable_index: SliceIndex | None = None
+    if args.timetable_index is not None:
+        timetable_index = open_timetable_index(args.timetable_index, args.timetable)
+        if timetable_index is None:
+            print(
+                f"no usable timetable index under {args.timetable_index}; "
+                "tools/build_timetable_index.py writes one",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"Timetable index: {timetable_index.describe()}", flush=True)
+    # The codes a named station subset build writes, known before anything is
+    # priced: an index that holds all of them means the timetable feed is not
+    # read at all. Empty means this build is not a named subset.
+    planned = [
+        code.strip().upper()
+        for code in (args.only_stations or "").split(",")
+        if code.strip()
+    ]
+    # What the pool workers are handed to parse. A build that skipped the feed
+    # has no timetable to give them: passing the path would have every worker
+    # parse the national index the parent has just decided not to read.
+    worker_timetable: str | None = args.timetable
     cache_path: Path | None = None
     if args.timetable:
         # Every station the page can show, not only the ones a return reaches.
@@ -3149,28 +3301,55 @@ def main(argv: list[str] | None = None) -> int:
         # Whether the cache was there before this build asked for it, which is
         # what distinguishes a restore from a parse that also happened to write.
         cache_was_there = cache_path is not None and cache_path.is_file()
-        print(f"Loading timetable feed from {args.timetable} ...", flush=True)
-        timetable = TimetableDb().load_feed(
-            args.timetable,
-            focus_origin=None if args.all_origins else args.origin,
-            focus_destinations=focus_destinations,
-            cache_path=cache_path,
-        )
-        # The cache note says which of the two happened, because on the real
-        # feed they are 2.6s and 55.6s and an operator reading a build log is
-        # exactly the person who needs to know which one they paid.
+        # A named station subset whose slices are all in the index needs no feed
+        # at all, and every code is known before anything is priced, so the 56.7s
+        # and 1.87 GB can be skipped rather than paid and then ignored. Not with
+        # `--with-single-timetable`: that focus is a second cut of the feed, and
+        # this index holds each page's own reach rather than it.
+        if (
+            timetable_index is not None
+            and planned
+            and not args.with_single_timetable
+            and timetable_index.covers(planned)
+        ):
+            print(
+                f"The index holds all {len(planned)} station(s) this build will write; "
+                "the timetable feed is not read.",
+                flush=True,
+            )
+            timetable = None
+            worker_timetable = None
+        else:
+            print(f"Loading timetable feed from {args.timetable} ...", flush=True)
+            timetable = TimetableDb().load_feed(
+                args.timetable,
+                focus_origin=None if args.all_origins else args.origin,
+                focus_destinations=focus_destinations,
+                cache_path=cache_path,
+            )
+            # The cache note says which of the two happened, because on the real
+            # feed they are 2.6s and 55.6s and an operator reading a build log is
+            # exactly the person who needs to know which one they paid.
+            print(
+                f"Loaded timetable: {timetable.stats()['schedules']:,} schedules, "
+                f"{timetable.stats()['calling_points']:,} calling points"
+                + (
+                    ""
+                    if cache_path is None
+                    else f" (restored from {cache_path.name})"
+                    if cache_was_there
+                    else f" (parsed; wrote {cache_path.name})"
+                ),
+                flush=True,
+            )
+    elif timetable_index is not None:
+        # The point of the index: no feed on the machine, and no national index
+        # in memory. Each page reads its own slice from disk instead.
         print(
-            f"Loaded timetable: {timetable.stats()['schedules']:,} schedules, "
-            f"{timetable.stats()['calling_points']:,} calling points"
-            + (
-                ""
-                if cache_path is None
-                else f" (restored from {cache_path.name})"
-                if cache_was_there
-                else f" (parsed; wrote {cache_path.name})"
-            ),
+            "No timetable feed: every page is built from its slice in the index.",
             flush=True,
         )
+        timetable = None
     else:
         print("No timetable supplied; building a prices-only page.", flush=True)
         timetable = None
@@ -3348,7 +3527,11 @@ def main(argv: list[str] | None = None) -> int:
     single_cache: Path | None = None
     if args.with_single_timetable:
         if not args.timetable:
-            print("--with-single-timetable requires --timetable", file=sys.stderr)
+            print(
+                "--with-single-timetable requires --timetable: the index holds each "
+                "page's own reach, not the outbound-single focus",
+                file=sys.stderr,
+            )
             return 2
 
         single_focus = {
@@ -3386,6 +3569,38 @@ def main(argv: list[str] | None = None) -> int:
     payload_origin = args.origin
     if args.all_origins and payload_origin not in fares.locations_by_crs:
         payload_origin = sorted(fares.locations_by_crs)[0]
+    # A single-origin build writes this payload, so it is a page like any other
+    # and its slice has to be here too, or the page would be assembled without
+    # times and say the station has no services.
+    sampled_index: SliceIndex | None = timetable_index
+    if (
+        timetable is None
+        and timetable_index is not None
+        and not timetable_index.has(payload_origin)
+    ):
+        if not args.all_origins:
+            print(missing_slice_message(timetable_index, [payload_origin]), file=sys.stderr)
+            return 2
+        # An all-origins build does not write this payload: it is the first
+        # origin built, to prove one can be and to time it before a long batch.
+        # Refusing here instead would refuse the request the index is for -- an
+        # index of exactly the pages this build writes, whose sample origin is a
+        # station nobody asked to build (GRN is Grindleford in the real feed).
+        # What is lost is said rather than assumed: with no timetable the sample
+        # measures the fares half of a page, and every page the build does write
+        # is checked against the index before the pool starts.
+        print(
+            f"the index holds no slice for {payload_origin}, the origin this build "
+            "samples first; the sample is built from the fares feed alone, so "
+            "--max-origin-seconds measures the fares half of a page here rather than "
+            "a whole one. Every page this build writes is checked against the index "
+            "before the pool starts",
+            flush=True,
+        )
+        # Not a page, so no slice is owed for it and the index is not handed
+        # over: `build_payload` raises on an index that cannot answer, and this
+        # is the one payload that is legitimately built without a timetable.
+        sampled_index = None
     started = time.perf_counter()
     try:
         payload = build_payload(
@@ -3411,6 +3626,7 @@ def main(argv: list[str] | None = None) -> int:
             reference=reference,
             reference_published=reference_published,
             reference_checked=reference_checked,
+            timetable_index=sampled_index,
         )
     except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
@@ -3601,6 +3817,11 @@ def main(argv: list[str] | None = None) -> int:
             "index": index,
             "feed": args.feed,
             "timetable": args.timetable,
+            "timetable_index": (
+                None
+                if timetable_index is None
+                else {"directory": str(timetable_index.directory), "identity": timetable_index.identity}
+            ),
             # The reference feed's identity, for the resume signature. The
             # feed itself travels as its own initialiser argument below, and
             # not in here: this dict is serialised into the signature, and a
@@ -3637,6 +3858,16 @@ def main(argv: list[str] | None = None) -> int:
                 f"progress is saved after every page",
                 flush=True,
             )
+
+        # Every page this build is about to write has to have a slice when
+        # there is no feed to fall back on. Checked on the jobs that survived
+        # the resume, so a build that already wrote a page is not refused for
+        # it, and before the fares work rather than one page at a time.
+        if timetable is None and timetable_index is not None:
+            missing = [job["crs"] for job in jobs if not timetable_index.has(job["crs"])]
+            if missing:
+                print(missing_slice_message(timetable_index, missing), file=sys.stderr)
+                return 2
 
         workers = max(1, args.workers)
         built_now = 0
@@ -3737,7 +3968,7 @@ def main(argv: list[str] | None = None) -> int:
             with ProcessPoolExecutor(
                 workers,
                 initializer=init_worker,
-                initargs=(args.feed, args.timetable, shared, reference),
+                initargs=(args.feed, worker_timetable, shared, reference),
             ) as executor:
                 futures = [executor.submit(build_page_job, job) for job in jobs]
                 for future in as_completed(futures):
