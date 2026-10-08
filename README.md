@@ -325,6 +325,13 @@ The root holds the executable pipeline and its launchers. Automated tests live i
 report, the licence enquiry), one-off diagnostics and their tests in `tools/`, and
 decisions in `adr/`. The root stays the build, not the filing cabinet.
 
+**[AGENTS.md](AGENTS.md) is the maintained map**: every root module, every file
+under `page/`, every operator tool, the command to verify a change, and each rule
+with the thing that enforces it. `tests/test_agents_map.py` fails when a module,
+a page asset or a tool is not on it, so the map cannot drift. The table below is
+orientation for a reader and is not kept complete; AGENTS.md is the one that is
+checked:
+
 | File | Purpose |
 |---|---|
 | `atoc_fares.py` | Fares feed parser, the budget query, and the publishable selector |
