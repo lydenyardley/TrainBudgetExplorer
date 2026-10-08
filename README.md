@@ -370,7 +370,12 @@ checked:
 | `tests/test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `tests/test_dtd_download.py` | Downloader safety, authentication, validation, and DTD audit tests |
 | `tests/test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `tests/test_build_demo_page.py` | Page payload, template, licence slot, copy control, and origin-picker tests |
+| `tests/test_build_demo_page.py` | What the page says: payload, template, licence slot, copy control, and the page's own prose (the seams below have modules of their own) |
+| `tests/test_page_runner.py` | The runner's station flags, what it passes to the builder, build-or-serve, and the worker count |
+| `tests/test_page_gates.py` | What a build refuses to publish: unsourced destinations, unreviewed codes, pseudo-stations, partial metadata, the ceilings |
+| `tests/test_page_caches.py` | The parsed-fares and timetable caches, their prune rules, the timetable index a build cuts, and the return leg |
+| `tests/test_page_output.py` | The shared station asset, slug and route agreement, the release manifest, and the payload the page carries |
+| `tests/page_harness.py` | The page suite's shared fixture and helpers, imported by every `tests/test_page_*.py` module |
 | `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
 | `tests/browser_test.cjs` | Playwright test: drives the generated page in a real browser |
 | `tests/test_fare_shapes.py` | Route codes, shared station codes, and the skip tally |
@@ -1144,38 +1149,15 @@ Ctrl+C) to stop.
 
 ### What a whole-network build costs, measured
 
-The default run is **prices only**: `run.py` reads `feeds/fares` and loads no
-timetable unless `--with-timetable` is given. On this machine — free memory
-moving between 0.1 GB and 4.5 GB over the run, so `worker_budget` returned 1 —
-that is **2,712 pages in 23 min 38 s, 1.91 pages/s**, 592 MB of output, about
-30 s of which is loading fares.
-
-Journey times need `--with-timetable`, which loads the national timetable and is
-the build the rest of these figures describe:
-
-| Workers | Whole network, fares *and* timetable |
-| --- | --- |
-| 1 | 8 h 06 m |
-| 2 | ~4 h 15 m |
-| 3 | ~2 h 50 m |
-| 4 (16 GB GitHub runner) | ~2 h 10 m |
-
-Which is a long time to wait for a page you are not going to read all of. For one
-station, or two, use the script below instead.
-
-`docs/build-performance-findings.md` measures the same work from the other end,
-and names why it costs what it does: one page built against the fully loaded fares
-feed takes **5.1 s** with a timetable index scoped to that origin's destinations
-and **did not finish in 17 minutes** with the whole national index, and the
-difference is mostly footprint rather than search time. The national index holds
-**1.87 GB** where the focused one holds **50 MB**, on a machine with about 5 GB
-free once the fares feed is loaded; the searches are 2.3x slower, not 80x. Every
-figure in this section is that shape of cost. The timetable half of that fix
-landed on 8 October 2026: every page is built from its own origin's slice of the
-index, and those slices can be written to disk so that a build never parses the
-timetable at all (`--timetable-index`, below). What a feed-parsing build still
-holds is the index the slices are cut from, which is open work in
-`docs/open-work.md`.
+Every measured figure lives in `docs/build-performance-findings.md`, which is the
+one place for them (ADR-0032). The short version: the default run is **prices
+only** -- `run.py` reads `feeds/fares` and loads no timetable unless
+`--with-timetable` is given -- and it builds **2,712 pages in 23 min 38 s**, 1.91
+pages/s, 592 MB of output. Journey times need `--with-timetable`, which loads the
+national timetable, and that build is **hours**: 8 h 06 m on one worker, about 2 h
+10 m on the four a 16 GB GitHub runner offers. Which is a long time to wait for a
+page you are not going to read all of, so for one station, or two, use the script
+below instead.
 
 **To build just Grantham and Nottingham, fares *and* timetable, in one command:**
 
@@ -1191,41 +1173,13 @@ fight), and serves it at http://localhost:8742. It uses `--workers 1`, because t
 timetable-holding workers do not fit in this machine's free memory, and the
 script prints a warning if there is not even room for one.
 
-**Measured four times on this machine, and the answers are about memory.** The
-first two runs wrote no page: 23 minutes on 6 October 2026 (5.5 GB free, the suite
-running alongside) and **24 minutes on 7 October 2026 with the machine idle**,
-stopped by hand (5.1 GB free against the build's own **6.4 GB** floor, so the
-script said "it will still run, slowly, by paging" before it started). The third
-run, the same command on the same idle machine once the fares feed stopped being
-held through the render, **finished: exit 0 in 63 minutes 38 seconds**, the first
-page at 35 minutes and the second at 63, with free memory bottoming at 0.39 GB
-during the two feed loads and back to 2.6-3.0 GB once the fares feed was released.
-The fourth, on 8 October 2026 with the fares release and the timetable slice both
-in place, **finished in 20 minutes 53 seconds** -- the first page at 9.7 minutes,
-the second at 20.8 -- with **2.1 GB free** when it started, less than either run
-before it, and the two pages it wrote are character-for-character the third run's
-apart from the build timestamp and the source fingerprint. A control run of the
-same build with the slice switched off wrote no page in 25 minutes, on more free
-memory through its page phase than the fourth run had. An earlier run of the
-same command, when the machine had the memory the floor asks for, came in **under
-five minutes**. The reconciliation is the floor, not the station count: the
-in-process build loads the fares feed (727,315 flows) and the national timetable
-(419,589 schedules) into one process and only then starts rendering, and those two
-loads took **11 minutes** in that state against the **93 seconds** they take when
-there is room (37 s + 56 s, measured). That 7x is the paging. What the third and
-fourth runs changed is the render phase: every build now writes a per-origin fare
-index and releases the whole fares feed before the first page, so a page no longer
-holds 2.1 GB it never reads, and each page is built from its own origin's slice of
-the national timetable rather than from the whole index -- 114,244 of its 419,589
-schedules for Grantham -- so what a page indexes is one origin's reach as well.
-What the build still holds for its whole length is the index those slices are cut
-from, which is why the floor has not moved. Close the browser and the editor, or
-build one station with `run.py --origin`, and the shape of the cost changes. The
-phase measurements, and the code-level cause (every page used to be handed the
-whole national timetable index), are in `docs/build-performance-findings.md`.
- It takes `--timetable`, `--knowledgebase`,
-`--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
-codes as bare arguments (`python build_stations.py LEI`).
+The two-station build's own figures -- five runs, the **6.4 GB** floor they hit,
+and the phase split behind them -- are in `docs/build-performance-findings.md`,
+next to the whole-network numbers above.
+
+`build_stations.py` takes `--timetable`, `--knowledgebase`, `--feed`, `--out`,
+`--workers`, `--date`, `--port` and `--no-serve`, and station codes as bare
+arguments (`python build_stations.py LEI`).
 
 Underneath it is one flag on the builder itself, usable without the script:
 `python build_demo_page.py --all-origins --only-stations GRA,NOT` builds
