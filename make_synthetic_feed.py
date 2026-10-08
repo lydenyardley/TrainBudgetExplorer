@@ -670,7 +670,9 @@ def _restriction_lines() -> list[str]:
     ]
 
 
-def build_synthetic_timetable(path: str | Path, *, include_return_network: bool = False) -> Path:
+def build_synthetic_timetable(
+    path: str | Path, *, include_return_network: bool = False, include_passing_stop: bool = False
+) -> Path:
     """Write a CIF timetable and a station names file in the real record layouts."""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -728,6 +730,65 @@ def build_synthetic_timetable(path: str | Path, *, include_return_network: bool 
                     "location": terminus[0],
                     "scheduled_arrival": terminus[1],
                     "public_arrival": terminus[1],
+                },
+                CIF_TERMINUS,
+            )
+        )
+    if include_passing_stop:
+        # A train that passes a station rather than calling at it, in the feed's
+        # own shape: the through time sits in `scheduled_pass` and both public
+        # time fields carry `0000`, which is the marker for "no time of this kind
+        # here" and not midnight, because the CIF has no midnight -- a time after
+        # it is written 2400 to 2949. Read as a clock time, `0000` manufactured a
+        # departure from every station the train ran through; it took four
+        # symptoms on one real page to find, and 569e477 fixed it in one line of
+        # `_minutes`. That defect's test builds its own feed, so this record is
+        # the same shape available to any test that wants it: see
+        # SyntheticPassingStopTest in tests/test_atoc_timetable.py.
+        cif_lines.append(
+            _line(
+                {
+                    "record_type": "BS",
+                    "transaction_type": "N",
+                    "train_uid": "T10009",
+                    "date_runs_from": "260921",
+                    "date_runs_to": "261211",
+                    "days": "1111110",
+                    "stp_indicator": "P",
+                },
+                CIF_SCHEDULE,
+            )
+        )
+        cif_lines.append(
+            _line(
+                {
+                    "record_type": "LO",
+                    "location": "NWRK",
+                    "scheduled_departure": "0905",
+                    "public_departure": "0905",
+                },
+                CIF_ORIGIN,
+            )
+        )
+        cif_lines.append(
+            _line(
+                {
+                    "record_type": "LI",
+                    "location": "GRNT",
+                    "scheduled_pass": "0912",
+                    "public_arrival": "0000",
+                    "public_departure": "0000",
+                },
+                CIF_INTERMEDIATE,
+            )
+        )
+        cif_lines.append(
+            _line(
+                {
+                    "record_type": "LT",
+                    "location": "NOTT",
+                    "scheduled_arrival": "0950",
+                    "public_arrival": "0950",
                 },
                 CIF_TERMINUS,
             )
