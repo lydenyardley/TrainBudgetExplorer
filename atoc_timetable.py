@@ -12,6 +12,8 @@ open-source parsers named in README.md.
 from __future__ import annotations
 
 import bisect
+import datetime
+import json
 import pickle
 import zipfile
 from dataclasses import dataclass, field
@@ -404,13 +406,28 @@ class TimetableDb:
         self._schedule_crs: dict[int, tuple[str | None, ...]] = {}
         self._schedule_dest_stops: dict[int, dict[str, list[int]]] = {}
         self._change_times: dict[str, int] = {}
+        self._schedules_by_uid: dict[str, list[int]] = {}
         # A focused load keeps only schedules touching the requested stations.
         # None means the normal complete database used by audit and analysis.
         self._focus_tiplocs: set[str] | None = None
+        # The origin this database was loaded or cut for, so `focused()` can
+        # tell one that already answers a page's question from one that has to
+        # be cut down to it.
+        self._focus_origin: str | None = None
+        # TIPLOC -> the indexes of the schedules calling there, and the indexes
+        # of this database's overlays and cancellations. Built on the first
+        # `focused()` call and kept: a build cuts one slice per page, and the
+        # pass that builds these costs more than every slice after the first.
+        self._by_tiploc: dict[str, list[int]] | None = None
+        self._by_tiploc_len = 0
+        self._overlays: list[int] = []
         # Overlays and cancellations the focus dropped, by train identity, so
         # the activity test can still honour them (audit A10).
         self._superseding: dict[str, list[_SupersedingRecord]] = {}
         self._service_window: tuple[tuple[str, str], int] | None = None
+        # The counts a slice reports: the database it was cut from rather than
+        # the part of it the page needed.
+        self._source_stats: dict[str, int] | None = None
 
     # -- loading ---------------------------------------------------------
 
@@ -485,7 +502,8 @@ class TimetableDb:
 
         focus_crs = set(focus_destinations or ())
         if focus_origin:
-            focus_crs.add(focus_origin.strip().upper())
+            self._focus_origin = focus_origin.strip().upper()
+            focus_crs.add(self._focus_origin)
         if focus_crs:
             self._preload_focus_stations(path, focus_crs)
         read_feed_files(path, self.report, self._load_lines)
@@ -498,6 +516,139 @@ class TimetableDb:
                 pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
             temporary.replace(cache)
         return self
+
+    def _tiploc_index(self) -> tuple[dict[str, list[int]], list[int]]:
+        """Which schedules call at each TIPLOC, and which records are overlays.
+
+        Indexes rather than schedules: a slice is assembled from the source's
+        own schedule objects, so all it costs is a list of references, and this
+        is the one pass that has to touch every calling point in the feed to
+        make that possible. Rebuilt if the schedule list has since grown, the
+        way ``service_window`` re-derives its own answer rather than trusting a
+        memo of a database that has changed.
+        """
+        if self._by_tiploc is None or self._by_tiploc_len != len(self.schedules):
+            by_tiploc: dict[str, list[int]] = {}
+            overlays: list[int] = []
+            for index, schedule in enumerate(self.schedules):
+                if schedule.stp_indicator in ("O", "C"):
+                    overlays.append(index)
+                for stop in schedule.stops:
+                    indexes = by_tiploc.get(stop.tiploc)
+                    if indexes is None:
+                        by_tiploc[stop.tiploc] = [index]
+                    else:
+                        indexes.append(index)
+            self._by_tiploc = by_tiploc
+            self._by_tiploc_len = len(self.schedules)
+            self._overlays = overlays
+        return self._by_tiploc, self._overlays
+
+    def focused(self, origin_crs: str) -> "TimetableDb":
+        """The slice of this database that one origin's page is built from.
+
+        A page asks its timetable about one station: what leaves it, where the
+        journey changes, and where the onward service calls. Nothing else in the
+        feed can answer any of those questions, and on the real DTD download the
+        rest of it is 1.87 GB held while the page is assembled -- which is what
+        turned a two-station build into an hour of paging on a machine with
+        5.1 GB free (docs/build-performance-findings.md).
+
+        The schedules a page can use are exactly two sets. The first is the
+        schedules that call the origin, because a journey starts there. The
+        second is the schedules that call a station the first set calls, because
+        a one-change journey boards its onward service at an interchange on the
+        first train's own stop chain. Both are read off the feed's own calling
+        points, so every page of every build gets the same answer; the
+        single-origin path's focus comes from the destinations the fares feed
+        prices, which is a different question and a narrower answer.
+
+        The focus is taken by station code rather than by the exact TIPLOC a
+        service was seen to use. A station can have more than one, and an onward
+        service calling at another platform group's TIPLOC of an interchange is
+        a journey a slice that dropped it would lose while the national index
+        still answered it.
+
+        Cut, not parsed. A focused parse costs the same 50.6s as a national one,
+        because the loader reads every record before it can decide to drop one
+        (measured; see the findings document), so one parse per origin is two
+        days of CPU for the network. This is a pass over indexes of a database
+        already in memory.
+
+        A database that was already loaded or cut for this origin is returned as
+        it is. The single-origin build loads focused on its own origin and then
+        asks here for that same focus; re-cutting it would rebuild a database
+        that answers identically, and would cut the differently focused
+        ``--with-single-timetable`` database down to one focus that has to
+        answer for both.
+
+        The slice reports the window and the counts of the database it was cut
+        from. The dates and the figures a page carries are claims about the feed
+        behind it, and a reader cannot tell which part of a feed the page
+        needed.
+        """
+        origin = origin_crs.strip().upper()
+        if self._focus_origin == origin:
+            return self
+        by_tiploc, overlays = self._tiploc_index()
+        # Station code -> its TIPLOCs, from both maps `crs_for_tiploc` resolves
+        # through, so a station the CIF inserts name but the station names file
+        # does not is still a station this can be asked about.
+        by_crs: dict[str, set[str]] = {}
+        for mapping in (self.crs_by_tiploc, self.cif_crs_by_tiploc):
+            for tiploc, crs in mapping.items():
+                by_crs.setdefault(crs, set()).add(tiploc)
+        origin_tiplocs = by_crs.get(origin, frozenset())
+        origin_indexes: set[int] = set()
+        for tiploc in origin_tiplocs:
+            origin_indexes.update(by_tiploc.get(tiploc, ()))
+        reachable: set[str] = set()
+        for index in origin_indexes:
+            reachable.update(stop.tiploc for stop in self.schedules[index].stops)
+        focus_crs = {origin}
+        focus_tiplocs = set(origin_tiplocs)
+        for tiploc in reachable:
+            crs = self.crs_for_tiploc(tiploc)
+            if crs:
+                focus_crs.add(crs)
+                focus_tiplocs.update(by_crs.get(crs, ()))
+        kept: set[int] = set()
+        for tiploc in focus_tiplocs:
+            kept.update(by_tiploc.get(tiploc, ()))
+        schedules = [self.schedules[index] for index in sorted(kept)]
+        # The overlays and cancellations the slice drops still decide whether the
+        # permanent schedule of the same train runs on a day (audit A10).
+        superseding: dict[str, list[_SupersedingRecord]] = {}
+        for index in overlays:
+            if index in kept:
+                continue
+            dropped = self.schedules[index]
+            superseding.setdefault(dropped.train_uid, []).append(
+                _SupersedingRecord(
+                    dropped.date_from,
+                    dropped.date_to,
+                    dropped.days,
+                    dropped.stp_indicator,
+                )
+            )
+        slice_ = TimetableDb()
+        # Shared, not copied. A station record is not a schedule, and a page
+        # answering about one origin still names every station it can be asked
+        # about.
+        slice_.stations_by_tiploc = self.stations_by_tiploc
+        slice_.crs_by_tiploc = self.crs_by_tiploc
+        slice_.cif_crs_by_tiploc = self.cif_crs_by_tiploc
+        slice_.cif_locations_by_tiploc = self.cif_locations_by_tiploc
+        slice_.tiploc_variants = self.tiploc_variants
+        slice_.report = self.report
+        slice_.files_read = self.files_read
+        slice_._focus_origin = origin
+        slice_._source_stats = self.stats()
+        slice_.schedules = schedules
+        slice_._superseding = superseding
+        first, last = self.service_window()
+        slice_._service_window = ((first, last), len(schedules))
+        return slice_
 
     def _load_lines(self, name: str, lines) -> None:
         kind = self._kind_from_name(name)
@@ -694,6 +845,7 @@ class TimetableDb:
         self._schedule_crs.clear()
         self._schedule_dest_stops.clear()
         self._change_times.clear()
+        self._schedules_by_uid.clear()
 
     # -- lookups ---------------------------------------------------------
 
@@ -816,6 +968,18 @@ class TimetableDb:
                 if stop_crs is not None:
                     stops_of.setdefault(stop_crs, []).append(position)
             self._schedule_dest_stops[schedule_index] = stops_of
+        # Train identity -> the indexes of that train's schedules today. A page
+        # asks which stations a journey's train calls at between two ends, once
+        # per leg (ADR-0061), and that question was answered by scanning every
+        # schedule in the day for the identity: measured at 0.6s a call on the
+        # real feed, which is minutes inside one page and was most of what an
+        # equivalence sweep spent its time on. Building this is one more pass
+        # over indexes the loop above already walks.
+        self._schedules_by_uid = {}
+        for schedule_index in schedule_indexes:
+            self._schedules_by_uid.setdefault(
+                self.schedules[schedule_index].train_uid, []
+            ).append(schedule_index)
         # Connection time per station, first station record wins - the same
         # answer connection_minutes_at gives, minus its linear scan per call,
         # which sat inside the search's hottest loop.
@@ -848,6 +1012,15 @@ class TimetableDb:
         self._index_day = day
 
     def stats(self) -> dict[str, int]:
+        """What this database holds: its stations, schedules and calling points.
+
+        A slice reports the database it was cut from. Those figures are a claim
+        about the feed a page was built from, and a page is built from a slice
+        of a feed rather than from a feed's worth of it -- the payload carries
+        them for the same reason it carries the download's date.
+        """
+        if self._source_stats is not None:
+            return dict(self._source_stats)
         return {
             "stations": len(self.stations_by_tiploc),
             "schedules": len(self.schedules),
@@ -1236,13 +1409,11 @@ class TimetableDb:
         origin = origin_crs.strip().upper()
         destination = destination_crs.strip().upper()
         uid = train_uid.strip()
-        schedule_indexes = (
-            range(len(self.schedules)) if day is None else self.active_schedules(day)
-        )
-        for schedule_index in schedule_indexes:
+        # One lookup, from the day's own index. This scanned every schedule in
+        # the day for the identity, which is why a page that asks the question
+        # once per leg spent minutes here (see `_ensure_indexes`).
+        for schedule_index in self._schedules_by_uid.get(uid, ()):
             schedule = self.schedules[schedule_index]
-            if schedule.train_uid != uid:
-                continue
             crs_chain = self._schedule_crs.get(schedule_index)
             if crs_chain is None:
                 crs_chain = tuple(self.crs_for_tiploc(stop.tiploc) for stop in schedule.stops)
@@ -1286,3 +1457,254 @@ class TimetableDb:
                 if station is not None and station != origin_crs:
                     found.add(station)
         return found
+
+
+#: The on-disk layout of a slice index. Bumped when what a slice file holds
+#: changes, because a pickle says nothing about which version of these classes
+#: wrote it: without a version, an index written by an older build would be read
+#: as if it were current, and a page would be assembled from a timetable that is
+#: not the one the code expects.
+SLICE_INDEX_SCHEMA = 1
+
+
+class SliceIndex:
+    """A directory of per-origin timetable slices, so a build can skip the feed.
+
+    `TimetableDb.focused` cuts a page's timetable out of a database already in
+    memory, which costs holding the whole national index first -- 56.7 s and
+    1.87 GB on the real DTD download, in every process that builds a page. A
+    slice is the part one page needs and it stays the same for as long as the
+    feed does, so it can be written once and read by every build after that.
+    That is what this directory is: the timetables a set of pages are built
+    from, on disk, so a build can answer them with no feed on the machine at
+    all.
+
+    **What a hit depends on.** Everything a slice was cut from: the feed's bytes
+    and the source that reads them, as the identity the caller passes. The
+    directory *is* that identity, so an index cut from another download is a
+    different directory rather than a wrong answer, which is the same discipline
+    the fare index and the focused timetable cache follow (ADR-0031).
+
+    **What it costs.** One file per origin, and a slice is as large as that
+    origin's reach -- about a quarter of the feed for a main-line station, and
+    the schedules are what the bytes are. An index is therefore for the origins
+    a build actually writes: `tools/build_timetable_index.py --origins` names
+    them, and it reports the size before and after rather than leaving the
+    discovery to the file system.
+
+    **What it is not.** Not a whole-network cache. Holding every origin's slice
+    is holding the network 3,400 times over, so the tool refuses `--all-origins`
+    unless it is told where to put them and how much room it may use.
+    """
+
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        identity: str,
+        source: dict | None = None,
+    ) -> None:
+        self.directory = Path(directory)
+        self.identity = identity
+        #: Written into the manifest by the first `save`, so a reader can see
+        #: what the index was cut from without re-deriving the identity.
+        self.source = dict(source or {})
+        # The manifest as last read, with the file's own stamp. A build asks
+        # `has` once per page -- 3,424 JSON reads of a file that grows with every
+        # slice, which is quadratic in the number of slices for no answer that
+        # changed -- and another process may write the file while this one runs,
+        # so it is revalidated by stamp rather than trusted.
+        self._manifest_memo: dict | None = None
+        self._manifest_stamp: tuple[int, int] | None = None
+
+    @classmethod
+    def open(cls, location: str | Path) -> "SliceIndex | None":
+        """Open an index that is already on disk, or None when there is not one.
+
+        Two shapes are accepted, because both are things a build log prints: the
+        directory a feed's slices live in, and the root they were written under,
+        holding one directory per feed-and-parser identity. With more than one
+        identity under the root this is a None rather than a guess, because
+        which download a page was built from is not a question to answer by
+        taking the first name in a folder.
+        """
+        root = Path(location)
+        if (root / "manifest.json").is_file():
+            return cls._opened(root)
+        candidates = sorted(
+            child for child in root.glob("*") if child.is_dir() and (child / "manifest.json").is_file()
+        ) if root.is_dir() else []
+        if len(candidates) == 1:
+            return cls._opened(candidates[0])
+        return None
+
+    @classmethod
+    def _opened(cls, directory: Path) -> "SliceIndex | None":
+        """An index checking itself against the identity its manifest declares.
+
+        A build with no feed to compare against has only the index's own word
+        for what it was cut from, so this trusts the manifest's identity -- and
+        the manifest's schema is still checked, because a directory written by a
+        different version of this code is not a directory this one can read.
+        """
+        try:
+            raw = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(raw, dict) or raw.get("schema") != SLICE_INDEX_SCHEMA:
+            return None
+        identity = raw.get("identity")
+        if not identity:
+            return None
+        return cls(directory, identity=identity, source=raw.get("source"))
+
+    @property
+    def manifest_path(self) -> Path:
+        return self.directory / "manifest.json"
+
+    def slice_path(self, origin_crs: str) -> Path:
+        """Where one origin's slice lives, whether or not it is there yet."""
+        return self.directory / f"{origin_crs.strip().upper()}.pickle"
+
+    def manifest(self) -> dict:
+        """What this directory says it holds, or an empty index when it says nothing.
+
+        A manifest that cannot be read, that another schema wrote, or that was
+        cut from a different feed or a different parser is not a manifest: it is
+        an empty index, so every origin in it is a miss and the build falls back
+        to the feed instead of answering from a stale slice.
+        """
+        empty = {"schema": SLICE_INDEX_SCHEMA, "identity": self.identity, "origins": {}}
+        try:
+            stat = self.manifest_path.stat()
+        except OSError:
+            self._manifest_memo = self._manifest_stamp = None
+            return empty
+        stamp = (stat.st_mtime_ns, stat.st_size)
+        if self._manifest_memo is not None and self._manifest_stamp == stamp:
+            return self._manifest_memo
+        try:
+            raw = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return empty
+        if (
+            not isinstance(raw, dict)
+            or raw.get("schema") != SLICE_INDEX_SCHEMA
+            or raw.get("identity") != self.identity
+        ):
+            # A directory another feed or another version of this code wrote.
+            self._manifest_memo = self._manifest_stamp = None
+            return empty
+        raw.setdefault("origins", {})
+        self._manifest_memo = raw
+        self._manifest_stamp = stamp
+        return raw
+
+    def has(self, origin_crs: str) -> bool:
+        """Whether this index holds a usable file for one origin."""
+        origin = origin_crs.strip().upper()
+        return origin in self.manifest()["origins"] and self.slice_path(origin).is_file()
+
+    def covers(self, origins) -> bool:
+        """Whether every one of these origins is here, so no feed is needed."""
+        return all(self.has(origin) for origin in origins)
+
+    def load(self, origin_crs: str) -> TimetableDb | None:
+        """One origin's slice, or None when this index has not got it.
+
+        None is a miss, never a partial answer: a file that is not a database,
+        that was cut for another origin, or that cannot be read is treated the
+        same as one that is not here, and the caller decides whether to fall
+        back on the feed or to build the page without times.
+        """
+        origin = origin_crs.strip().upper()
+        if not self.has(origin):
+            return None
+        try:
+            with self.slice_path(origin).open("rb") as handle:
+                loaded = pickle.load(handle)
+        except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError, ValueError):
+            return None
+        if not isinstance(loaded, TimetableDb) or loaded._focus_origin != origin:
+            return None
+        loaded._invalidate_indexes()
+        return loaded
+
+    def save(self, origin_crs: str, db: TimetableDb) -> Path:
+        """Write one origin's slice, and read it back before calling it written.
+
+        The read-back is the point of this method rather than a formality: a
+        slice is written once and read by every build after it, so a file that
+        was written badly would be a miss on every one of those builds and the
+        cost of finding out would be paid at the far end. A writer that cannot
+        read its own output raises here, where the feed that produced it is
+        still in hand.
+        """
+        origin = origin_crs.strip().upper()
+        path = self.slice_path(origin)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        with temporary.open("wb") as handle:
+            pickle.dump(db, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        temporary.replace(path)
+        # The file itself, not `load`: that one consults the manifest, and this
+        # is the step that decides whether the manifest entry is true yet.
+        try:
+            with path.open("rb") as handle:
+                restored = pickle.load(handle)
+        except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError, ValueError):
+            restored = None
+        if (
+            not isinstance(restored, TimetableDb)
+            or restored._focus_origin != origin
+            or len(restored.schedules) != len(db.schedules)
+        ):
+            raise OSError(
+                f"{path} was written but does not read back as {origin}'s slice "
+                f"of {len(db.schedules):,} schedules"
+            )
+        manifest = self.manifest()
+        first, last = db.service_window()
+        manifest["schema"] = SLICE_INDEX_SCHEMA
+        manifest["identity"] = self.identity
+        manifest.setdefault("created", datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"))
+        manifest.setdefault("source", self.source)
+        manifest["origins"][origin] = {
+            "schedules": len(db.schedules),
+            "feed_schedules": db.stats()["schedules"],
+            "calling_points": sum(len(schedule.stops) for schedule in db.schedules),
+            "window": [first, last],
+            "bytes": path.stat().st_size,
+        }
+        temporary_manifest = self.manifest_path.with_suffix(".json.tmp")
+        temporary_manifest.write_text(
+            json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8"
+        )
+        temporary_manifest.replace(self.manifest_path)
+        # The write is this instance's own, so the memo is replaced rather than
+        # left to be re-derived: a writer saving 3,400 slices should not read
+        # back a manifest it just wrote 3,400 times to find out it is unchanged.
+        self._manifest_memo = None
+        self._manifest_stamp = None
+        return path
+
+    def totals(self) -> dict[str, int]:
+        """What the manifest says this index holds, without reading a slice."""
+        origins = self.manifest()["origins"]
+        return {
+            "origins": len(origins),
+            "schedules": sum(entry.get("schedules", 0) for entry in origins.values()),
+            "calling_points": sum(entry.get("calling_points", 0) for entry in origins.values()),
+            "bytes": sum(entry.get("bytes", 0) for entry in origins.values()),
+        }
+
+    def describe(self) -> str:
+        """One line naming what is here, for a build log."""
+        totals = self.totals()
+        if not totals["origins"]:
+            return f"no slices yet at {self.directory}"
+        return (
+            f"{totals['origins']:,} slice(s), {totals['schedules']:,} schedules, "
+            f"{totals['calling_points']:,} calling points, "
+            f"{totals['bytes'] / 1_000_000:.1f} MB at {self.directory}"
+        )

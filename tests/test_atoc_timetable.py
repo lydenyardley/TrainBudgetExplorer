@@ -5,10 +5,13 @@ Each assertion is a literal value, so a parser that returned nothing would fail.
 
 from __future__ import annotations
 
+import json
+import shutil
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 from atoc_timetable import (
     CIF_INTERMEDIATE,
@@ -18,6 +21,7 @@ from atoc_timetable import (
     CIF_TIPLOC_DELETE,
     CIF_TIPLOC_INSERT,
     MSN_STATION,
+    SliceIndex,
     TimetableDb,
     format_minutes,
 )
@@ -784,6 +788,222 @@ class TimetableFocusTest(unittest.TestCase):
 
 
 
+class FocusedSliceTest(unittest.TestCase):
+    """A page is built from a slice of the timetable, not from the whole feed.
+
+    The all-origins build hands every page the national index -- one feed and a
+    page for each station the feed prices -- and holding 1.87 GB of it while a
+    page is assembled is what made a two-station build take an hour on a machine
+    with 5.1 GB free (docs/build-performance-findings.md). `focused()` cuts the
+    schedules that page can use out of the database the build already holds.
+
+    The fixture is two corridors with nothing between them, because a slice of a
+    connected network is the whole network. What has to be proved is that the
+    schedules a page cannot reach are exactly the ones it loses, and that the
+    ones it keeps answer every question the same.
+    """
+
+    # October dates, so the corridor's own window is narrower than the fixture's
+    # and the window a slice reports can be told apart from the window of the
+    # schedules it happened to keep.
+    MONDAY = date(2026, 10, 5)
+    TUESDAY = date(2026, 10, 6)
+    CORRIDOR = {"T90001", "T90002", "T90004"}
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.feed = build_synthetic_timetable(Path(self.tmp.name) / "feed")
+        self._add_station("SKEG", "SKG", "SKEGNESS")
+        self._add_station("MATL", "MAT", "MATLOCK")
+        # A station no station names record mentions: it is resolvable through
+        # the CIF TIPLOC inserts or not at all.
+        (self.feed / "insert.mca").write_text(
+            _line({"record_type": "TI", "tiploc": "IRON", "crs": "IRN"}, CIF_TIPLOC_INSERT)
+            + EOL,
+            encoding="utf-8",
+        )
+        self._train("T90001", "SKEG", "0800", "MATL", "0900")
+        self._train("T90002", "SKEG", "1000", "MATL", "1100")
+        self._train("T90004", "SKEG", "1200", "IRON", "1300")
+        # An overlay of T90002 that runs Mondays in the other corridor, and a
+        # cancellation of T90001 that runs on the same day in the same place. A
+        # slice for SKEG holds neither, and both still decide what runs.
+        self._train("T90002", "NOTT", "1400", "NWRK", "1500", days="1000000", stp="O")
+        self._train("T90001", "NOTT", "1600", "NWRK", "1700", days="1000000", stp="C")
+        self.whole = TimetableDb().load_feed(self.feed)
+        self.slice = self.whole.focused("SKG")
+
+    def _add_station(self, tiploc: str, crs: str, name: str) -> None:
+        """Name a station the fixture does not already have, as the feed would."""
+        msn = next(self.feed.glob("*.msn"))
+        existing = msn.read_bytes()
+        prefix = b"" if existing.endswith(EOL.encode()) else EOL.encode()
+        # Appended rather than rewritten: a record joined onto the last line of
+        # the file is not a record at all, and the station it names then has no
+        # code, so nothing can be routed through it.
+        record = _line(
+            {"record_type": "A", "name": name, "category": "0", "tiploc": tiploc, "crs": crs},
+            MSN_STATION,
+        )
+        with msn.open("ab") as handle:
+            handle.write(prefix + (record + EOL).encode("utf-8"))
+
+    def _train(
+        self,
+        uid: str,
+        origin: str,
+        departure: str,
+        terminus: str,
+        arrival: str,
+        *,
+        days: str = "1111111",
+        stp: str = "P",
+    ) -> None:
+        """One two-stop schedule, or the overlay of one."""
+        (self.feed / f"{uid}-{origin}-{stp}.mca").write_text(
+            EOL.join(
+                [
+                    _line(
+                        {
+                            "record_type": "BS",
+                            "transaction_type": "N",
+                            "train_uid": uid,
+                            "date_runs_from": "261001",
+                            "date_runs_to": "261130",
+                            "days": days,
+                            "stp_indicator": stp,
+                        },
+                        CIF_SCHEDULE,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LO",
+                            "location": origin,
+                            "scheduled_departure": departure,
+                            "public_departure": departure,
+                        },
+                        CIF_ORIGIN,
+                    ),
+                    _line(
+                        {
+                            "record_type": "LT",
+                            "location": terminus,
+                            "scheduled_arrival": arrival,
+                            "public_arrival": arrival,
+                        },
+                        CIF_TERMINUS,
+                    ),
+                ]
+            )
+            + EOL,
+            encoding="utf-8",
+        )
+
+    def _uids(self, day: date) -> set[str]:
+        return {
+            self.whole.schedules[index].train_uid
+            for index in self.whole.active_schedules(day)
+        }
+
+    def test_a_slice_holds_only_the_schedules_that_page_can_use(self) -> None:
+        self.assertEqual(
+            sorted(schedule.train_uid for schedule in self.slice.schedules),
+            sorted(self.CORRIDOR),
+        )
+        self.assertLess(len(self.slice.schedules), len(self.whole.schedules))
+        self.assertIn("T10001", self._uids(self.TUESDAY), "the fixture still holds it")
+        self.assertNotIn(
+            "T10001",
+            {schedule.train_uid for schedule in self.slice.schedules},
+            "a schedule the page cannot reach, in a slice of the whole feed",
+        )
+
+    def test_a_slice_shares_the_schedules_it_keeps(self) -> None:
+        # A slice is a list of references, not a second copy of the feed: the
+        # object a slice answers from is the object the database it was cut from
+        # holds, which is what makes the cut cheap rather than a re-parse.
+        self.assertTrue(
+            {id(schedule) for schedule in self.slice.schedules}
+            <= {id(schedule) for schedule in self.whole.schedules}
+        )
+
+    def test_a_slice_answers_every_page_question_the_same(self) -> None:
+        for day in (self.MONDAY, self.TUESDAY):
+            with self.subTest(day=day):
+                mine = self.whole.journeys_from("SKG", max_changes=1, day=day)
+                theirs = self.slice.journeys_from("SKG", max_changes=1, day=day)
+                self.assertEqual(set(theirs), set(mine))
+                for destination in sorted(set(mine)):
+                    self.assertEqual(theirs[destination], mine[destination], destination)
+                    self.assertEqual(
+                        self.slice.best_journey("SKG", destination, day=day),
+                        self.whole.best_journey("SKG", destination, day=day),
+                        destination,
+                    )
+                    self.assertEqual(
+                        self.slice.departures("SKG", destination, day=day, limit=6),
+                        self.whole.departures("SKG", destination, day=day, limit=6),
+                        destination,
+                    )
+                for journey in mine.values():
+                    for leg in journey.legs:
+                        self.assertEqual(
+                            self.slice.intermediate_crs(
+                                leg.train_uid, leg.origin_crs, leg.destination_crs, day=day
+                            ),
+                            self.whole.intermediate_crs(
+                                leg.train_uid, leg.origin_crs, leg.destination_crs, day=day
+                            ),
+                            leg.train_uid,
+                        )
+
+    def test_a_dropped_overlay_and_a_dropped_cancellation_still_decide_the_day(self) -> None:
+        # audit A10, through a cut. Neither record calls SKEG, so a slice for it
+        # holds neither -- and T90002 must not run on the Monday its overlay
+        # covers, nor T90001 on the Monday its cancellation covers.
+        self.assertEqual(
+            [option.legs[0].train_uid for option in self.slice.departures("SKG", "MAT", day=self.TUESDAY, limit=6)],
+            ["T90001", "T90002"],
+        )
+        self.assertEqual(
+            self.slice.departures("SKG", "MAT", day=self.MONDAY, limit=6), []
+        )
+        self.assertEqual(
+            self.whole.departures("SKG", "MAT", day=self.MONDAY, limit=6),
+            self.slice.departures("SKG", "MAT", day=self.MONDAY, limit=6),
+        )
+
+    def test_a_slice_keeps_a_train_whose_station_only_the_cif_inserts_name(self) -> None:
+        # "IRN" has no station names record, and `crs_for_tiploc` resolves it
+        # from the CIF TIPLOC inserts. A cut that read the station names file
+        # for its stations would drop the train that reaches it.
+        self.assertIn("IRN", self.slice.journeys_from("SKG", day=self.TUESDAY))
+        self.assertEqual(
+            self.slice.best_journey("SKG", "IRN", day=self.TUESDAY),
+            self.whole.best_journey("SKG", "IRN", day=self.TUESDAY),
+        )
+
+    def test_a_slice_reports_the_feed_it_was_cut_from(self) -> None:
+        # The dates and the counts a page carries are claims about the feed
+        # behind it: this fixture's corridor covers a month of the three the
+        # rest of the feed covers, and the page still names the three.
+        self.assertEqual(self.slice.service_window(), ("260921", "261211"))
+        self.assertEqual(self.slice.service_window(), self.whole.service_window())
+        self.assertEqual(self.slice.stats(), self.whole.stats())
+
+    def test_a_database_loaded_for_this_origin_is_returned_as_it_is(self) -> None:
+        # The single-origin build loads focused on its own origin and asks here
+        # for that same focus, and `--with-single-timetable` holds a second
+        # database focused differently. Neither is re-cut: cutting a slice of a
+        # slice would rebuild a database that answers identically, and would cut
+        # the second one down to one focus that has to answer for both.
+        focused = TimetableDb().load_feed(self.feed, focus_origin="SKG")
+        self.assertIs(focused.focused("SKG"), focused)
+        self.assertIs(self.slice.focused("SKG"), self.slice)
+        self.assertIsNot(self.whole.focused("SKG"), self.whole)
+
+
 class IntermediateCrsTest(unittest.TestCase):
     """Calling points between a leg's ends, for ADR-0061 wider splits."""
 
@@ -802,6 +1022,120 @@ class IntermediateCrsTest(unittest.TestCase):
         )
         self.assertEqual(self.db.intermediate_crs("T20006", "GRN", "NOT"), ())
         self.assertEqual(self.db.intermediate_crs("T10001", "GRN", "NOT"), ())
+
+
+class SliceIndexTest(unittest.TestCase):
+    """The on-disk slices a build can be built from instead of a feed.
+
+    One process writes these and every build after it reads them, so the
+    properties that matter are the ones that decide whether a page is a miss or
+    a wrong answer: a slice that reads back answering what the feed answers, an
+    index cut from another feed or another parser refused, a file that is not a
+    slice refused, and a writer that will not call a file written until it has
+    read it back.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.feed = build_synthetic_timetable(Path(cls._tmp.name) / "timetable")
+        cls.db = TimetableDb().load_feed(cls.feed)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def setUp(self) -> None:
+        # One root per test: `open` looks at what is beside the index, and a
+        # shared root would make one test's second index another test's finding.
+        self.root = Path(self._tmp.name) / "index" / self._testMethodName
+        self.index = SliceIndex(self.root / "id-1", identity="id-1")
+
+    def test_a_saved_slice_reads_back_and_answers_the_same(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        restored = self.index.load("GRN")
+        self.assertIsNotNone(restored)
+        self.assertEqual(
+            restored.best_journey("GRN", "NOT", day=MONDAY),
+            self.db.best_journey("GRN", "NOT", day=MONDAY),
+        )
+
+    def test_the_restored_slice_reports_the_feed_it_was_cut_from(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        restored = self.index.load("GRN")
+        self.assertEqual(restored.stats(), self.db.stats())
+        self.assertEqual(restored.service_window(), self.db.service_window())
+        # The same cut, so the same schedules: what a slice holds is decided by
+        # `focused`, and this is the restored copy of one.
+        self.assertEqual(
+            len(restored.schedules), len(self.db.focused("GRN").schedules)
+        )
+
+    def test_an_index_of_another_identity_is_a_miss(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        other = SliceIndex(self.index.directory, identity="id-2")
+        self.assertFalse(other.has("GRN"))
+        self.assertIsNone(other.load("GRN"))
+        self.assertEqual(other.totals()["origins"], 0)
+
+    def test_a_slice_filed_under_another_origin_is_a_miss(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        shutil.copy(self.index.slice_path("GRN"), self.index.slice_path("NOT"))
+        manifest = json.loads(self.index.manifest_path.read_text(encoding="utf-8"))
+        manifest["origins"]["NOT"] = manifest["origins"]["GRN"]
+        self.index.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.assertTrue(self.index.has("NOT"))
+        self.assertIsNone(self.index.load("NOT"))
+
+    def test_a_file_that_is_not_a_slice_is_a_miss(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        self.index.slice_path("GRN").write_bytes(b"not a pickle at all")
+        self.assertIsNone(self.index.load("GRN"))
+
+    def test_an_origin_that_was_never_saved_is_a_miss(self) -> None:
+        self.assertFalse(self.index.has("NOT"))
+        self.assertIsNone(self.index.load("NOT"))
+        self.assertFalse(self.index.covers(["GRN", "NOT"]))
+        self.assertIn("no slices yet", self.index.describe())
+
+    def test_the_writer_will_not_call_a_file_written_it_cannot_read(self) -> None:
+        # The file on disk is something else -- a truncated write, another
+        # program's file -- which is the failure a writer has to notice, because
+        # every build after this one would read a miss and say nothing.
+        with mock.patch("atoc_timetable.pickle.load", return_value=None):
+            with self.assertRaises(OSError):
+                self.index.save("GRN", self.db.focused("GRN"))
+
+    def test_open_finds_the_only_identity_under_a_root(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        opened = SliceIndex.open(self.root)
+        self.assertIsNotNone(opened)
+        self.assertEqual(opened.directory, self.index.directory)
+        self.assertTrue(opened.has("GRN"))
+
+    def test_open_finds_an_identity_directory_itself(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        opened = SliceIndex.open(self.index.directory)
+        self.assertIsNotNone(opened)
+        self.assertEqual(opened.identity, "id-1")
+
+    def test_open_refuses_an_empty_root_and_a_root_with_two_indexes(self) -> None:
+        empty = Path(self._tmp.name) / "empty" / self._testMethodName
+        empty.mkdir(parents=True)
+        self.assertIsNone(SliceIndex.open(empty))
+        SliceIndex(self.root / "id-2", identity="id-2").save("NOT", self.db.focused("NOT"))
+        self.index.save("GRN", self.db.focused("GRN"))
+        self.assertIsNone(SliceIndex.open(self.root))
+
+    def test_the_manifest_describes_what_is_inside(self) -> None:
+        self.index.save("GRN", self.db.focused("GRN"))
+        entry = self.index.manifest()["origins"]["GRN"]
+        self.assertEqual(entry["schedules"], len(self.db.focused("GRN").schedules))
+        self.assertEqual(entry["feed_schedules"], self.db.stats()["schedules"])
+        self.assertGreater(entry["bytes"], 0)
+        self.assertEqual(entry["window"], list(self.db.service_window()))
+        self.assertEqual(self.index.totals()["origins"], 1)
+        self.assertIn("1 slice(s)", self.index.describe())
 
 
 if __name__ == "__main__":
