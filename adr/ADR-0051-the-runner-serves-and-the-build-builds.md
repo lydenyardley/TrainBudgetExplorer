@@ -60,5 +60,5 @@ Read by running:
 
 ```bash
 python run.py --help
-python -m unittest tests.test_build_demo_page.RunnerBuildOrServeTest -v
+python -m unittest tests.test_page_runner.RunnerBuildOrServeTest -v
 ```

@@ -30,7 +30,7 @@ than passing quietly. One module while you work on it:
 | Feeds | `dtd_download.py`, `feeds_cli.py`, `make_synthetic_feed.py` (the fixture every test builds on), `feed_audit.py`, `dtd_audit.py`, `damage_feed.py`, `fuzz_feed.py` |
 | Measurements | `benchmark.py`, `grantham_sweep.py`, `sanity_report.py` |
 | Operator tools | `tools/verify.py`, `tools/build_inputs.py`, `tools/build_timetable_index.py`, `tools/page_bytes.py`, `tools/check_slice_equivalence.py`, `tools/check_facet_reference.py`, `tools/check_commit_message.py`, `tools/check_fare_rate.py`, `tools/check_links.py`, `tools/check_release_clearance.py`, `tools/feed_change_report.py`, `tools/measure_build_memory.py`, `tools/measure_worker_pages.py`, `tools/regenerate_destination_facets.py`, `tools/easy_fares_check.py`, `tools/inspect_knowledgebase.py`, `tools/propose_fare_construction_stations.py`, `tools/propose_nature_stations.py`, `tools/propose_reviewed_settlements.py` |
-| Tests | `tests/` (23 modules, one per area) and `tests/browser_test.cjs` |
+| Tests | `tests/` (28 modules, one per area); the page suite's shared fixture is `tests/page_harness.py`, and the browser suite is `tests/browser_test.cjs` |
 | Decisions | `adr/` (68 ADRs, each with a Status line), `docs/open-work.md` (what is still open and why), `docs/build-performance-findings.md` (every measured figure) |
 | Data | `reference-data/destination-facets.json`, checked against the registry in CI |
 | Release | `.github/workflows/deploy.yml`, `licences/release-clearance.md` (a person's decision, and it gates publishing) |
