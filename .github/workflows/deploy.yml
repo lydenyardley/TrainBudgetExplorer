@@ -156,7 +156,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p .feed-state
-          INPUTS=$(sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1)
+          # Every source a build is made of, from one rule rather than a
+          # hand-kept list. The three-file list this replaced missed the only
+          # changed input of eight of the last 150 commits, so a fix could wait
+          # for something else to trigger a rebuild (F4 of the 8 October 2026
+          # agent-efficiency audit).
+          INPUTS=$(python tools/build_inputs.py --fingerprint)
           # Compare what the feeds ARE, not the bytes of the manifest file. The
           # manifest also records when a download was last *checked*, and that
           # moves on every run -- including a run where the portal answered 304
@@ -592,7 +597,7 @@ jobs:
 
       - name: Save the successful feed manifest and build fingerprint
         if: steps.feed_check.outputs.changed == 'true'
-        run: sha256sum build_demo_page.py atoc_fares.py page_templates.py | sha256sum | cut -d' ' -f1 > .feed-state/build-inputs.sha256
+        run: python tools/build_inputs.py --fingerprint > .feed-state/build-inputs.sha256
 
       - name: Save the timetable index
         if: steps.feed_check.outputs.changed == 'true'
