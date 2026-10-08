@@ -34,9 +34,9 @@ class WithoutTest(unittest.TestCase):
             def test_two(self) -> None:  # noqa: D102
                 pass
 
-        dropped = "tools.test_verify.WithoutTest.test_it_drops_only_the_named_tests.<locals>.Named.test_one"
-        suite = unittest.TestSuite([unittest.TestSuite([Named("test_one")]), Named("test_two")])
-        kept = [test.id() for test in _flatten(verify.without(suite, frozenset({dropped})))]
+        one, two = Named("test_one"), Named("test_two")
+        suite = unittest.TestSuite([unittest.TestSuite([one]), two])
+        kept = [test.id() for test in _flatten(verify.without(suite, frozenset({one.id()})))]
         self.assertEqual(len(kept), 1)
         self.assertTrue(kept[0].endswith("test_two"))
 
