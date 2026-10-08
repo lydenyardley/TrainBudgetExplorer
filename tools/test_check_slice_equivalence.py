@@ -32,8 +32,11 @@ from tools.check_slice_equivalence import (
     feed_origins,
     load_progress,
     main,
+    parse_shard,
     sampled_legs,
     save_progress,
+    shard_origins,
+    shard_progress_path,
     week_days,
 )
 
@@ -52,6 +55,12 @@ class Fixture(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
+
+    def _run(self, argv: list[str]) -> tuple[int, str]:
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            code = main(argv)
+        return code, stream.getvalue()
 
 
 class WeekDaysTest(unittest.TestCase):
@@ -220,12 +229,6 @@ class ProgressTest(unittest.TestCase):
 
 
 class CliTest(Fixture):
-    def _run(self, argv: list[str]) -> tuple[int, str]:
-        stream = io.StringIO()
-        with contextlib.redirect_stdout(stream):
-            code = main(argv)
-        return code, stream.getvalue()
-
     def test_a_missing_feed_is_exit_two(self) -> None:
         code, output = self._run(["--timetable", str(Path(self._tmp.name) / "absent")])
         self.assertEqual(code, 2)
@@ -344,6 +347,256 @@ class CliTest(Fixture):
         )
         self.assertEqual(code, 0, output)
         self.assertIn("projects to", output)
+
+
+class ParseShardTest(unittest.TestCase):
+    def test_a_share_reads_as_an_index_and_a_count(self) -> None:
+        self.assertEqual(parse_shard("3/8"), (3, 8))
+        self.assertEqual(parse_shard("1/1"), (1, 1))
+
+    def test_what_is_not_a_share_is_refused(self) -> None:
+        # Including 0/4 and 5/4: a shard that is not one of the M is a request
+        # for a share of the work that does not exist, and a run that compared
+        # nothing would report the request as unwitnessed rather than wrong.
+        for text in ("3", "0/4", "5/4", "x/y", "/3", "3/", "-1/4"):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    parse_shard(text)
+
+
+class ShardOriginsTest(unittest.TestCase):
+    def test_the_shares_are_disjoint_and_together_the_request(self) -> None:
+        origins = [f"S{index:03d}" for index in range(10)]
+        shares = [shard_origins(origins, index, 4) for index in range(1, 5)]
+        seen = [origin for share in shares for origin in share]
+        self.assertEqual(sorted(seen), origins)
+        self.assertEqual(len(seen), len(set(seen)), "a shard repeated another shard's origin")
+        self.assertEqual([len(share) for share in shares], [3, 3, 2, 2])
+
+    def test_a_share_is_the_same_list_however_the_others_are_ordered(self) -> None:
+        origins = [f"S{index:03d}" for index in range(10)]
+        self.assertEqual(shard_origins(origins, 2, 3), ["S001", "S004", "S007"])
+
+    def test_a_share_of_a_larger_run_is_empty_rather_than_the_whole_list(self) -> None:
+        # parse_shard refuses N > M, and this is what the slice would answer if
+        # it were ever called with one: an empty share, never the request.
+        self.assertEqual(shard_origins(["GRA", "NOT"], 5, 4), [])
+
+    def test_the_checkpoint_a_shard_owns_is_named_for_it(self) -> None:
+        base = Path("_cache/slice-equivalence.json")
+        self.assertEqual(
+            shard_progress_path(base, 2, 8).name, "slice-equivalence.shard-2-of-8.json"
+        )
+        # Beside the base file, so M shards write M files and none of them is
+        # the base one a single-process sweep resumes from.
+        self.assertEqual(shard_progress_path(base, 2, 8).parent, base.parent)
+        self.assertEqual(shard_progress_path(Path("progress"), 1, 2).name, "progress.shard-1-of-2.json")
+
+
+class MergeTest(Fixture):
+    """The partition behind a merged verdict, which is what a merge has to check."""
+
+    def _base(self, tmp: str) -> Path:
+        return Path(tmp) / "slice-equivalence.json"
+
+    def _argv(self, progress: Path, *extra: str) -> list[str]:
+        return [
+            "--timetable",
+            str(self.feed),
+            "--date",
+            MONDAY.isoformat(),
+            "--days",
+            "1",
+            "--max-legs",
+            "2",
+            "--progress",
+            str(progress),
+            *extra,
+        ]
+
+    def test_disjoint_shards_merge_into_the_one_verdict_a_single_run_prints(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            origins = feed_origins(self.db)
+            total = 0
+            for index in (1, 2, 3):
+                code, output = self._run(self._argv(base, "--shard", f"{index}/3"))
+                self.assertEqual(code, 0, output)
+                self.assertIn(f"shard {index} of 3:", output)
+                written = json.loads(
+                    shard_progress_path(base, index, 3).read_text(encoding="utf-8")
+                )
+                # A shard's own file holds its own origin-days and the request
+                # they are a share of, and nothing else.
+                self.assertEqual(written["origins"], shard_origins(origins, index, 3))
+                self.assertEqual(written["request_origins"], origins)
+                self.assertEqual(len(written["pairs"]), len(written["origins"]))
+                total += len(written["pairs"])
+            self.assertEqual(total, len(origins))
+            # The shards share no state: the base checkpoint is not theirs.
+            self.assertFalse(base.exists())
+
+            code, output = self._run(self._argv(base, "--merge", "3"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("merged shard checkpoint(s)", output)
+            self.assertIn("every origin-day asked for agreed", output)
+            # Each shard's own coverage, so a merge that is short says which
+            # shell to run again rather than which file to go and read.
+            for index in (1, 2, 3):
+                self.assertIn(f"shard {index} of 3: ", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertEqual(len(merged["pairs"]), len(origins))
+            self.assertTrue(all(value == "ok" for value in merged["pairs"].values()))
+            self.assertEqual(len(merged["merged_from"]), 3)
+
+    def test_a_missing_shard_is_a_reason_rather_than_a_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/3"))
+            self.assertEqual(code, 0, output)
+            code, output = self._run(self._argv(base, "--merge", "3"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("shard 2 of 3 has no checkpoint", output)
+            self.assertNotIn("every origin-day asked for agreed", output)
+            self.assertFalse(base.exists(), "a refused merge writes no verdict")
+
+    def test_shards_asked_different_questions_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/2"))
+            self.assertEqual(code, 0, output)
+            # The same shard index, a different request: two days instead of one.
+            code, output = self._run(
+                [
+                    "--timetable",
+                    str(self.feed),
+                    "--date",
+                    MONDAY.isoformat(),
+                    "--days",
+                    "2",
+                    "--max-legs",
+                    "2",
+                    "--progress",
+                    str(base),
+                    "--shard",
+                    "2/2",
+                ]
+            )
+            self.assertEqual(code, 0, output)
+            code, output = self._run(self._argv(base, "--merge", "2"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("was made against another request", output)
+
+    def test_shards_that_overlap_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/2"))
+            self.assertEqual(code, 0, output)
+            # A shard file copied over the other one's: the same origins twice,
+            # and the ones the second share should have held in no shard at all.
+            shard_progress_path(base, 2, 2).write_bytes(
+                shard_progress_path(base, 1, 2).read_bytes()
+            )
+            code, output = self._run(self._argv(base, "--merge", "2"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("so the shards overlap", output)
+            self.assertIn("are in no shard", output)
+
+    def test_a_checkpoint_holding_pairs_it_does_not_record_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/1"))
+            self.assertEqual(code, 0, output)
+            path = shard_progress_path(base, 1, 1)
+            written = json.loads(path.read_text(encoding="utf-8"))
+            written["pairs"]["ZZZ|2026-10-07"] = "ok"
+            path.write_text(json.dumps(written), encoding="utf-8")
+            code, output = self._run(self._argv(base, "--merge", "1"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("not one of the origin-days it records", output)
+
+    def test_a_shard_that_did_not_agree_merges_into_exit_one(self) -> None:
+        original = TimetableDb.focused
+
+        def damaged(self, origin_crs):
+            slice_db = original(self, origin_crs)
+            if slice_db is self or not slice_db.schedules:
+                return slice_db
+            thinner = copy.copy(slice_db)
+            thinner.schedules = slice_db.schedules[:-1]
+            thinner._invalidate_indexes()
+            return thinner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            origins = feed_origins(self.db)
+            # One origin per shard, so the shard that carries the origin this
+            # damage shows on is known rather than hoped for: a damaged slice
+            # does not move every origin's answers.
+            with mock.patch.object(TimetableDb, "focused", damaged):
+                sensitive = [origin for origin in origins if compare_origin(self.db, origin, MONDAY)]
+            self.assertTrue(sensitive, "this damage shows on no origin at all")
+            count = len(origins)
+            for index in range(1, count + 1):
+                share = f"{index}/{count}"
+                expected = 1 if origins[index - 1] in sensitive else 0
+                patcher = mock.patch.object(TimetableDb, "focused", damaged)
+                if expected:
+                    patcher.start()
+                try:
+                    code, output = self._run(self._argv(base, "--shard", share))
+                finally:
+                    if expected:
+                        patcher.stop()
+                self.assertEqual(code, expected, output)
+            code, output = self._run(self._argv(base, "--merge", str(count)))
+            self.assertEqual(code, 1, output)
+            self.assertIn("did not agree or could not be compared", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertTrue(merged["differences"], "the merge keeps what differed")
+
+    def test_a_shard_with_origin_days_still_to_compare_merges_to_exit_two(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            for index in (1, 2):
+                code, output = self._run(self._argv(base, "--shard", f"{index}/2"))
+                self.assertEqual(code, 0, output)
+            path = shard_progress_path(base, 1, 2)
+            written = json.loads(path.read_text(encoding="utf-8"))
+            written["pairs"].pop(sorted(written["pairs"])[0])
+            path.write_text(json.dumps(written), encoding="utf-8")
+            code, output = self._run(self._argv(base, "--merge", "2"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("still to compare", output)
+
+    def test_a_shard_holding_an_origin_this_request_never_asked_for_is_refused(self) -> None:
+        # The other direction of the coverage check: a file that claims an origin
+        # outside the merge's own list. Its pair is inside the origin-days it
+        # records, so nothing else here would catch it.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/1"))
+            self.assertEqual(code, 0, output)
+            path = shard_progress_path(base, 1, 1)
+            written = json.loads(path.read_text(encoding="utf-8"))
+            written["origins"].append("ZZZ")
+            written["pairs"]["ZZZ|2026-10-07"] = "ok"
+            path.write_text(json.dumps(written), encoding="utf-8")
+            code, output = self._run(self._argv(base, "--merge", "1"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("are in a shard and not in this request", output)
+
+    def test_a_shard_and_a_merge_together_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/2", "--merge", "2"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("give one", output)
+
+    def test_a_share_that_is_not_a_share_is_refused_before_the_feed_is_read(self) -> None:
+        code, output = self._run(self._argv(Path("_cache/unused.json"), "--shard", "3/2"))
+        self.assertEqual(code, 2)
+        self.assertIn("--shard '3/2' is not a share of a run", output)
 
 
 if __name__ == "__main__":

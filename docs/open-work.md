@@ -51,6 +51,43 @@ whose licence and provenance are recorded alongside the station index. That is a
 decision with a data question inside it, which is why it is here and not in the
 code.
 
+### The slice equivalence sweep is a third done, in shards now (open)
+
+**Severity:** P2, because it is the one claim about the published page that is
+argued rather than witnessed. **Route:** `tools/check_slice_equivalence.py`.
+**Raised:** 8 October 2026 with the slice work; re-measured the same day.
+
+**What is proven.** The seven-day sample -- every 30th code of the feed's own
+sorted origin list, 126 origins, **882 of 882 origin-days, every one agreed** --
+and the first day's exhaustive sweep, a third of its origins. Nothing compared
+has ever differed: a slice is the whole feed's answers, so far as anyone has
+asked. The measurements, the rates and the residue are in
+`docs/build-performance-findings.md`.
+
+**What is not.** The other 24,000-odd origin-days of the request are uncompared.
+One process needs the better part of a day for the whole request, which is why it
+was argued rather than finished.
+
+**What sharding changes.** `--shard N/M` compares a disjoint share of the request
+and checkpoints to a file of its own; `--merge M` reads them back into one
+verdict and refuses a union that is not the request (ADR-0066). At the rate
+re-measured on 8 October 2026 -- **2.45 s per origin-day** -- that is **about 4.5
+hours over 4 shards**, against 1.87 GB of index per shard, so the count that fits
+is a memory question first: 4 shards want 7.5 GB and this machine had 4.7 GB free.
+
+**What would close it.** One `--merge` whose output says every origin-day asked
+for agreed, from a partition that covered the request. Until then the residue is
+this entry, and a page that ships on a slice is shipping on the strength of a
+sample, a third of a day, and the argument that an origin-day's answers do not
+depend on another's.
+
+```
+python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+    --days 7 --progress _cache/slice-equivalence.json --shard 1/4
+python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+    --days 7 --progress _cache/slice-equivalence.json --merge 4
+```
+
 ### The checked-in facet reference data lags the registry (closed 7 October 2026)
 
 **Severity:** P3. **Route:** `reference-data/destination-facets.json`, read by

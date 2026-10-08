@@ -21,11 +21,28 @@ feed.
     python tools/check_slice_equivalence.py --timetable feeds/timetable \\
         --date 2026-10-07 --days 7 --progress _cache/slice-equivalence.json
     python tools/check_slice_equivalence.py --timetable feeds/timetable --origins GRA,NOT --limit 2
+    python tools/check_slice_equivalence.py --timetable feeds/timetable --shard 1/8
+    python tools/check_slice_equivalence.py --timetable feeds/timetable --merge 8
 
 The sweep is hours of CPU on the real feed, so it checkpoints every origin and
 resumes: run it again with the same `--progress` file and it skips the pairs it
 has already compared. `--probe N` times the first N origins and prints the
 projected total instead of running it.
+
+`--shard N/M` compares only its own share of the request -- origins N, N+M,
+N+2M ... of the request's origin list, which is the feed's own sorted list
+unless `--origins` named an order -- and checkpoints to a file of its own beside the
+base one, so M shards can run side by side without sharing a byte of state.
+`--merge M` reads those M files, refuses a union that is not the request it was
+given, and prints the one verdict a single run would have printed. The shards
+are disjoint by construction, and the merge checks that partition rather than
+trusting it: a shard asked a different question, a shard whose pairs are not
+the origin-days it records, or two shards that overlap are refused rather than
+counted as coverage.
+
+**What a shard costs to hold.** Each shard parses the feed and holds its own
+index -- 1.87 GB on the national download -- so how many fit beside each other
+is a memory question before it is a CPU one.
 
 Exit codes: 0 every compared pair agreed, 1 at least one pair differed and every
 difference is named, 2 the feed could not be read or nothing was compared.
@@ -55,6 +72,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from atoc_timetable import TimetableDb  # noqa: E402
+from build_workers import free_memory_bytes  # noqa: E402
 
 #: The service week the harness compares unless told otherwise. The build's own
 #: date, so a failure names a day a page was actually assembled for.
@@ -66,6 +84,12 @@ DEFAULT_DATE = "2026-10-07"
 #: before that index existed this call read the day's whole schedule list, 0.6s
 #: on the real feed, and a sample was the only way to ask it at scale.
 DEFAULT_MAX_LEGS: int | None = None
+
+#: What the national download's index holds, measured: 1.87 GB for 419,589
+#: schedules (`docs/build-performance-findings.md`). A shard parses the feed for
+#: itself rather than sharing one, so M shards hold M of these, which is the
+#: number that decides how many fit on a machine before the CPU does.
+INDEX_GB = 1.87
 
 #: Differences named per origin-day before the rest are counted instead.
 DIFFERENCES_SHOWN = 5
@@ -196,6 +220,175 @@ def requested_pairs(origins: list[str], days: list[date]) -> list[str]:
     return [_pair_key(origin, day) for day in days for origin in origins]
 
 
+def parse_shard(text: str) -> tuple[int, int]:
+    """`N/M` as a 1-based (index, count), or a ValueError saying why not.
+
+    One flag rather than two, so the index and the count cannot disagree about
+    which run this is: a shard checkpoint names both, and a merge reads both
+    back out of it rather than being told them a second time.
+    """
+    left, _, right = text.partition("/")
+    if not left.isdigit() or not right.isdigit():
+        raise ValueError(f"--shard {text!r} is not N/M")
+    index, count = int(left), int(right)
+    if count < 1 or not 1 <= index <= count:
+        raise ValueError(f"--shard {text!r} is not a share of a run: M at least 1, N in 1..M")
+    return index, count
+
+
+def shard_origins(origins: list[str], index: int, count: int) -> list[str]:
+    """Shard N of M's share of the request: disjoint, and together the request.
+
+    Every M-th origin from N-1, so the shares cover the sorted list exactly once
+    and the work a shard holds does not move when another shard finishes first.
+    """
+    return origins[index - 1 :: count]
+
+
+def shard_progress_path(base: Path, index: int, count: int) -> Path:
+    """The checkpoint one shard owns, beside the base one.
+
+    Named rather than numbered: a file called `slice-equivalence.3.json` says
+    nothing about which run wrote it or how many there were, and a merge has to
+    be able to refuse a shard that came from a run of a different size.
+    """
+    return base.with_name(f"{base.stem}.shard-{index}-of-{count}{base.suffix or '.json'}")
+
+
+def shard_request(progress: dict) -> tuple:
+    """The question a checkpoint was made against, for a merge to compare.
+
+    `max_legs` is part of it for the reason the resume guard exists: a pair
+    compared with a bounded sample of calling points is not evidence about the
+    complete question, and a shard asked the weaker one is not a shard of this
+    run.
+    """
+    return (
+        progress.get("timetable"),
+        tuple(progress.get("days") or ()),
+        progress.get("max_legs", "unrecorded"),
+        tuple(progress.get("request_origins") or ()),
+    )
+
+
+def merge_shard_checkpoints(
+    base: Path,
+    count: int,
+    timetable: str,
+    days: list[date],
+    max_legs: int | None,
+    origins: list[str],
+) -> tuple[dict, list[str]]:
+    """The M shard checkpoints as one, and every reason they are not those M.
+
+    A merged verdict is only as good as the partition behind it, so the
+    partition is checked rather than assumed: every shard file present, each
+    made against this request, the shards' own origins disjoint and together
+    the request, and every pair inside the origin-days its own file records.
+    Anything else is a reason, and a reason is an exit 2 rather than a verdict.
+    """
+    request = (timetable, tuple(day.isoformat() for day in days), max_legs, tuple(origins))
+    merged: dict = {
+        "schema": 1,
+        "pairs": {},
+        "differences": {},
+        "timetable": timetable,
+        "days": list(request[1]),
+        "max_legs": max_legs,
+        "origins": list(origins),
+        "request_origins": list(origins),
+        "shards": count,
+    }
+    problems: list[str] = []
+    owner: dict[str, int] = {}
+    read: list[str] = []
+    for index in range(1, count + 1):
+        path = shard_progress_path(base, index, count)
+        if not path.is_file():
+            problems.append(f"shard {index} of {count} has no checkpoint at {path}")
+            continue
+        progress = load_progress(path)
+        if shard_request(progress) != request:
+            problems.append(
+                f"{path.name} was made against another request "
+                f"({len(progress.get('request_origins') or [])} origins, "
+                f"{len(progress.get('days') or [])} days, "
+                f"max_legs={progress.get('max_legs', 'unrecorded')!r}); "
+                "it is not evidence about this one"
+            )
+            continue
+        # Read, and this request's: only then is it a shard of this merge rather
+        # than a file that merely sits where one should be.
+        read.append(path.name)
+        own = list(progress.get("origins") or ())
+        for origin in own:
+            if origin in owner:
+                problems.append(
+                    f"{origin} is in shard {owner[origin]} and shard {index}, so the shards overlap"
+                )
+            owner[origin] = index
+        allowed = {_pair_key(origin, day) for origin in own for day in days}
+        for key in progress.get("pairs", {}):
+            if key not in allowed:
+                problems.append(
+                    f"{path.name} holds {key}, which is not one of the origin-days it records"
+                )
+        merged["pairs"].update(progress.get("pairs") or {})
+        merged["differences"].update(progress.get("differences") or {})
+    unowned = [origin for origin in origins if origin not in owner]
+    if unowned:
+        problems.append(
+            f"{len(unowned)} origin(s) of the request are in no shard, starting {unowned[0]}"
+        )
+    strangers = [origin for origin in owner if origin not in set(origins)]
+    if strangers:
+        problems.append(
+            f"{len(strangers)} origin(s) are in a shard and not in this request, "
+            f"starting {strangers[0]}"
+        )
+    merged["merged_from"] = read
+    return merged, problems
+
+
+def verdict(
+    progress: dict,
+    origins: list[str],
+    days: list[date],
+    compared: int,
+    note: str,
+    checkpoint: Path,
+) -> int:
+    """The one exit code, and the lines that explain it, over the request.
+
+    One owner for both a run and a merge: the verdict is about the request
+    rather than about the process that produced the pairs, so a sweep resumed to
+    the end of its work compares nothing and has still concluded, and a merge
+    that read M files has concluded about the union of them. What decides is
+    whether every pair asked for is in the pairs, and what it says.
+    """
+    print(coverage(progress, origins, days), flush=True)
+    print(f"checkpoint: {checkpoint.resolve()}", flush=True)
+    requested = requested_pairs(origins, days)
+    pairs = progress.get("pairs") or {}
+    outcomes = [pairs.get(key) for key in requested]
+    differing = [value for value in outcomes if value not in (None, "ok")]
+    if differing:
+        print(f"{len(differing)} origin-day(s) did not agree or could not be compared", flush=True)
+        return 1
+    missing = sum(1 for value in outcomes if value is None)
+    if missing:
+        print(f"{missing} origin-day(s) still to compare", flush=True)
+        return 2
+    if not requested:
+        print("no origins to compare", flush=True)
+        return 2
+    print(
+        f"every origin-day asked for agreed ({len(requested):,} {note}: {compared:,})",
+        flush=True,
+    )
+    return 0
+
+
 def compared_counts(progress: dict, origins: list[str], days: list[date]) -> tuple[int, int]:
     """Of the request's origin-days, how many agreed and how many did not.
 
@@ -245,9 +438,25 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_MAX_LEGS,
         help="legs whose calling points are compared per origin-day (default: every leg; 0 to skip)",
     )
-    parser.add_argument("--progress", type=Path, default=Path("_cache/slice-equivalence.json"), help="checkpoint file, resumed on the next run")
+    parser.add_argument("--progress", type=Path, default=Path("_cache/slice-equivalence.json"), help="checkpoint file, resumed on the next run; a shard writes its own beside it and --merge reads all of them")
     parser.add_argument("--probe", type=int, default=None, help="time this many origins and print the projection")
+    parser.add_argument("--shard", default=None, metavar="N/M", help="compare only share N of M disjoint origin sets, checkpointing to a file of its own")
+    parser.add_argument("--merge", type=int, default=None, metavar="M", help="merge M shard checkpoints into one verdict")
     args = parser.parse_args(argv)
+
+    if args.shard and args.merge:
+        print("--shard compares this process's share and --merge concludes about M of them; give one", flush=True)
+        return 2
+    if args.merge and args.probe:
+        print("--probe times origins and writes nothing, which a merge does not do; give one", flush=True)
+        return 2
+    shard = None
+    if args.shard:
+        try:
+            shard = parse_shard(args.shard)
+        except ValueError as error:
+            print(str(error), flush=True)
+            return 2
 
     if not Path(args.timetable).exists():
         print(f"no timetable feed at {args.timetable}", flush=True)
@@ -270,15 +479,44 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.limit is not None:
         origins = origins[: args.limit]
+    if args.merge:
+        return _merge(args, days, origins)
+    # The request is the whole set, whatever share this process carries: every
+    # shard records it, which is how a merge tells a shard of this run from a
+    # checkpoint of an earlier, narrower one.
+    request_origins = list(origins)
+    checkpoint = args.progress
+    if shard:
+        index, count = shard
+        origins = shard_origins(origins, index, count)
+        checkpoint = shard_progress_path(args.progress, index, count)
     legs_note = (
         "every leg of every journey" if args.max_legs is None else f"{args.max_legs} legs sampled"
     )
-    print(f"{len(origins):,} origin(s) x {len(days)} day(s), {legs_note}", flush=True)
+    if shard:
+        print(
+            f"shard {shard[0]} of {shard[1]}: {len(origins):,} of {len(request_origins):,} "
+            f"origin(s) x {len(days)} day(s), {legs_note}",
+            flush=True,
+        )
+        # The shards share no state, so the count that fits is a memory
+        # question, and it is the same warning `build_workers` prints before a
+        # build: say what this machine has rather than let the paging be
+        # discovered in the timing.
+        print(
+            f"  each shard parses the feed for itself, and the national download's "
+            f"index is {INDEX_GB} GB (measured), so {shard[1]} shard(s) want about "
+            f"{shard[1] * INDEX_GB:.1f} GB of index; "
+            f"{free_memory_bytes() / 1e9:.1f} GB is free here now",
+            flush=True,
+        )
+    else:
+        print(f"{len(origins):,} origin(s) x {len(days)} day(s), {legs_note}", flush=True)
 
     if args.probe:
         return _probe(db, origins, days, args)
 
-    progress = load_progress(args.progress)
+    progress = load_progress(checkpoint)
     # A checkpoint answers the question it was made against. `--max-legs`
     # bounds which calling points were compared, so pairs compared under one
     # bound are not evidence about another: a quick sampled run leaving 26,369
@@ -298,6 +536,12 @@ def main(argv: list[str] | None = None) -> int:
     progress["timetable"] = str(args.timetable)
     progress["days"] = [day.isoformat() for day in days]
     progress["max_legs"] = args.max_legs
+    # What this file is a share of, so a merge can check the partition instead
+    # of trusting it: the origins it holds, and the request they are a share of.
+    progress["origins"] = list(origins)
+    progress["request_origins"] = list(request_origins)
+    if shard:
+        progress["shard"] = {"index": shard[0], "count": shard[1]}
     compared = 0
     sweep_started = time.monotonic()
     for day in days:
@@ -316,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
                 progress["pairs"][key] = "error"
                 progress["differences"][key] = [f"{type(error).__name__}: {error}"]
                 print(f"{key}: RAISED {type(error).__name__}: {error}", flush=True)
-                save_progress(args.progress, progress)
+                save_progress(checkpoint, progress)
                 continue
             compared += 1
             if differences:
@@ -332,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 progress["pairs"][key] = "ok"
             if compared % 25 == 0:
-                save_progress(args.progress, progress)
+                save_progress(checkpoint, progress)
                 # Over the whole run, not over this origin: a rate computed from
                 # the origin that happened to be last reported 0.01s and 0.37s
                 # for the same sweep, which is a number that tells a reader
@@ -345,30 +589,52 @@ def main(argv: list[str] | None = None) -> int:
                     f"origin-day, about {per_origin_day * remaining / 60:.0f} min left",
                     flush=True,
                 )
-        save_progress(args.progress, progress)
+        save_progress(checkpoint, progress)
         print(f"{day.isoformat()}: {coverage(progress, origins, days)}", flush=True)
 
-    save_progress(args.progress, progress)
-    print(coverage(progress, origins, days), flush=True)
-    print(f"checkpoint: {args.progress.resolve()}", flush=True)
-    # The verdict is about the request, not about this run: a sweep resumed to
-    # the end of its work compares nothing and has still concluded. What decides
-    # is whether every pair asked for is in the checkpoint, and what it says.
-    requested = requested_pairs(origins, days)
-    outcomes = [progress["pairs"].get(key) for key in requested]
-    differing = [value for value in outcomes if value not in (None, "ok")]
-    if differing:
-        print(f"{len(differing)} origin-day(s) did not agree or could not be compared", flush=True)
-        return 1
-    missing = sum(1 for value in outcomes if value is None)
-    if missing:
-        print(f"{missing} origin-day(s) still to compare", flush=True)
+    save_progress(checkpoint, progress)
+    return verdict(progress, origins, days, compared, "compared this run", checkpoint)
+
+
+def _merge(args, days: list[date], origins: list[str]) -> int:
+    """The shards' checkpoints as one verdict, or the reasons there is none.
+
+    The feed has been loaded and the request's origins resolved by the time this
+    runs, because a merge compares the shards against the same request each of
+    them was given: a request guessed here would be a different question, and
+    the whole point of the check is that it is the same one.
+    """
+    merged, problems = merge_shard_checkpoints(
+        args.progress, args.merge, str(args.timetable), days, args.max_legs, origins
+    )
+    if problems:
+        print(f"{len(problems)} reason(s) these are not one verdict:", flush=True)
+        for problem in problems:
+            print(f"  {problem}", flush=True)
         return 2
-    if not requested:
-        print("no origins to compare", flush=True)
-        return 2
-    print(f"every origin-day asked for agreed ({len(requested):,} compared this run: {compared:,})", flush=True)
-    return 0
+    print("merged shard checkpoint(s): " + ", ".join(merged["merged_from"]), flush=True)
+    # Each shard's own coverage, because the reason a merged verdict is exit 2 is
+    # nearly always one shard short: a line per shard names which shell to run
+    # again instead of leaving the reader to find it in M files.
+    for index in range(1, args.merge + 1):
+        path = shard_progress_path(args.progress, index, args.merge)
+        if not path.is_file():
+            continue
+        one = load_progress(path)
+        print(
+            f"  shard {index} of {args.merge}: "
+            f"{coverage(one, list(one.get('origins') or ()), [date.fromisoformat(day) for day in one.get('days') or ()])}",
+            flush=True,
+        )
+    save_progress(args.progress, merged)
+    return verdict(
+        merged,
+        origins,
+        days,
+        len(merged["pairs"]),
+        f"from {args.merge} shard checkpoint(s)",
+        args.progress,
+    )
 
 
 def _probe(db: TimetableDb, origins: list[str], days: list[date], args) -> int:
