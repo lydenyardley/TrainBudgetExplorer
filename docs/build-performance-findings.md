@@ -403,16 +403,24 @@ because it is hours of CPU on the national download.
 **about 17 hours**: the question is complete there and it is not a turn's work,
 which is why the tool resumes rather than being trimmed.
 
-**The result, at the time of writing (8 October 2026, mid-afternoon).** Everything
-compared agrees: **0 differing, 0 errors** in the 800 origin-days the checkpoint
-holds, every one of them asked the complete question -- every leg of every journey
-the page would show. Those are origins of 2026-10-07, the first day of the week,
-plus a seven-day sample being compared as this was written: every 30th code of the
-feed's own sorted origin list (126 origins, so the sample spreads across the
-alphabet rather than being picked). The whole request is 3,767 origins by seven
-days, 26,369 origin-days at about 2.4 s each, which is **about 17 hours**: the
-complete sweep is not a turn's work, which is why the tool stops and resumes
-instead of being trimmed to a question it could finish:
+**The result, measured (8 October 2026, 14:50).** Everything compared agrees:
+**0 differing, 0 errors**, and the checkpoint records two runs.
+
+- **The seven-day sample is complete.** Every 30th code of the feed's own sorted
+  origin list -- 126 origins, so the sample spreads across the alphabet rather
+  than being picked -- asked all seven questions: **882 of 882 origin-days,
+  every one agreed**, exit 0.
+- **The exhaustive sweep of the first day is a third done and running.** It ran
+  command by command with the checkpoint as the handover, reaching **1,277 of
+  the 3,767 origins of 2026-10-07** by the time this was written; the checkpoint
+  holds **2,033 origin-days, all of them `ok`** -- those origins plus the six
+  later days of the sample's 126.
+
+Every one of those pairs asked the complete question -- every leg of every journey
+the page would show. The whole request is 3,767 origins by seven days, 26,369
+origin-days at about 2.4-3.1 s each, which is **about 17 hours**: the complete
+sweep is not a turn's work, which is why the tool stops and resumes instead of
+being trimmed to a question it could finish:
 
 ```
 python tools/check_slice_equivalence.py --timetable feeds/timetable \
@@ -523,8 +531,9 @@ when done with it.
 - A network-wide re-measurement of the focused-index fix. The 5.1 s figure is
   one page on one feed; the shape transfers, the per-origin spread does not.
 - The whole equivalence sweep. Nothing compared has differed, and the sweep's own
-  rate puts the rest of the request at about 17 hours; the rest has not been
-  compared, and this document does not claim it has.
+  rate puts the rest of the request at about 17 hours. The seven-day sample is
+  complete and the first day is a third done; the other 24,000-odd origin-days
+  have not been compared, and this document does not claim they have.
 - A whole-network build from an index, and an index for a whole network. The first
   is unmeasured and the second is refused without a byte budget, because it is
   3,767 files of a quarter of the feed each.
