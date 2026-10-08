@@ -30,9 +30,12 @@ One of these, and nothing else:
 
 ### Scope
 
-Optional, lowercase, and one of the module names: `fares`, `timetable`, `sweep`,
-`feeds`, `docs`. Use it when a commit touches one module. Leave it out when the
-change spans several.
+Optional, lowercase, and the area the change touches: `fares`, `timetable`,
+`page`, `tools`, `ci`, or whatever names it best. Use it when a commit touches
+one area and leave it out when the change spans several. The checker accepts
+letters, digits and hyphens and keeps no list, which is the honest rule: the five
+names this paragraph used to give held for neither the checker nor the history,
+which uses 29 scopes in its last 150 commits.
 
 ### Description
 
@@ -87,5 +90,14 @@ worse trade than a linter the older history is honestly outside of.
 ## Run the tests
 
 ```
+python tools/verify.py --fast      # the unit suites minus the feed-scale tests, and the page's JavaScript parsed
+python tools/verify.py --full      # every unit test, which is what the deploy workflow runs
+python tools/verify.py --browser   # the demo and shape builds, then the Playwright suite
+```
+
+The two discoveries that make up the full run, which CI also runs:
+
+```
 python -m unittest discover -s tests -p "test_*.py"
+python -m unittest discover -s tools -p "test_*.py"
 ```
