@@ -1,0 +1,9 @@
+  /* C30: a policy page is read, not skimmed past. The shared --h1 scales to
+     6rem for the pages whose heading is the question a reader came to answer;
+     here it is sized for a document title, and the brand line that used to sit
+     above it is gone -- a small uppercase eyebrow above a large heading reads
+     as a marketing hero and competes with the document's own title. The same
+     argument is why the chooser no longer carries one. */
+  :root { --h1: 2rem; --page-max: 42rem; }
+  h1 { margin: 0 0 1rem; }
+  h2 { font-size: 1.15rem; }

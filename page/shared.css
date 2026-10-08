@@ -1,0 +1,284 @@
+  /* S39: the tokens and components every route shares, written once here and
+     inlined into each generated file. The chooser, a station page and the
+     privacy page therefore cannot drift apart -- and the site still ships no
+     external asset, because this block is part of the HTML it is written into.
+     A route that needs to differ sets a token (--page-max, --page-pad, --h1)
+     in its own :root rather than restating the rule. */
+  /* The palette, in one list, both schemes at once.
+     Each colour token is written twice: the plain light value first, so a
+     browser without light-dark() paints the light page rather than resolving
+     an invalid value to nothing, and light-dark() after it, so a browser that
+     has it takes both palettes from one declaration and the switcher's only
+     job is to say which one. :root asks for "light dark", so a reader with no
+     stored choice still gets their system preference; the reader's own choice
+     overrides it through the attribute below. The system default is dark --
+     this is a page read at night, on a phone, on a train. */
+  :root {
+    color-scheme: light dark;
+    --bg: #fff; --bg: light-dark(#fff, #14181d);
+    --fg: #11161d; --fg: light-dark(#11161d, #e7ebf0);
+    --line: #d0d5dd; --line: light-dark(#d0d5dd, #3a424c);
+    --muted: #5b6472; --muted: light-dark(#5b6472, #a7b2c0);
+    --accent: #14509b; --accent: light-dark(#14509b, #7db4f5);
+    --ochre: #a65d00; --ochre: light-dark(#a65d00, #f0b35b);
+    --best: rgba(20, 80, 155, .07); --best: light-dark(rgba(20, 80, 155, .07), rgba(125, 180, 245, .12));
+    --field: #fff; --field: light-dark(#fff, #1c2127);
+    /* The stylesheet arrived. A route that fetches this block reads the
+       marker to know, and a route that inlined it can always answer yes
+       (ADR-0047). It is a token rather than a flag on <html> so the answer
+       is the browser's own, not a guess about whether a request is still
+       in flight. */
+    --tbe-stylesheet: 1;
+    /* The warn token is the restricted fare's own words and the "advance"
+       and "restricted" marks beside a code, and the cheapest list leads with
+       exactly those rows (Q4), so it is measured where the text actually
+       sits: on the row panel's --best tint, which is #eff3f8 in the light
+       palette. #9a6700 came to 4.36:1 there and the matrix holds every
+       kind of text to 4.5:1; #8f5f00 is 4.94:1 on that tint and 5.52:1 on
+       white, and the dark value already cleared it. */
+    --warn: #8f5f00; --warn: light-dark(#8f5f00, #f0b35b);
+    /* The NRE credit, reversed. The file in assets/ is NRE's own, byte for
+       byte; the reversal is applied here rather than by editing the artwork,
+       because an edited file stops being the file the brand supplied and
+       nothing downstream could tell. The mark is painted in a light rendering
+       of NRE's blue on a deep plate of the same blue, which is what makes the
+       credit read as a designed chip rather than a white box in a dark footer.
+       The plate is dark in both palettes, so the mark looks the same either
+       way and its contrast does not have to be re-earned per theme.
+
+       This is a judgement call, not a licence finding: NRE's pack ships no
+       reversed asset, and their developer page says brand materials are
+       subject to their permission, so a reversed rendering is recorded as an
+       open question in licences/release-clearance.md. Taking these two tokens
+       and the rule at the bottom of this block out, and giving .nre-logo a
+       light background, puts NRE's own colours back. */
+    --nre-plate: #141b3d; --nre-ink: #cdd6ff;
+    --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); --h1: clamp(2rem, 7vw, 7rem);
+  }
+  /* The reader's choice, which beats the system preference: the tokens are
+     already resolved by light-dark(), so naming the scheme is the whole of it,
+     and it also moves the form controls, the scrollbars and the canvas. */
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  /* The theme control, at the top right of the page and in the flow rather
+     than pinned to the corner. A fixed control in the corner sits on top of
+     whatever the reader scrolls there: on a phone the filter chips land under
+     it, and a tap that should have chosen a destination type chooses the
+     palette instead. 44px, because that is the promise the accessibility
+     matrix holds every control to. */
+  #themeToggle { display: flex; align-items: center; justify-content: center;
+                 margin: 0 0 .2rem auto; width: 2.75rem; height: 2.75rem; padding: .4rem;
+                 border: 0; border-radius: .6rem;
+                 background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+  #themeToggle:hover { background: var(--field); color: var(--fg); }
+  #themeToggle .glyph { font-size: 1.15rem; line-height: 1; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  /* The column is centred on the page. It was not: a max-width with no auto
+     margins pinned the whole site to the left edge, so on a wide screen every
+     route sat in the first 40rem of the viewport with the rest of the page
+     empty. The background goes on the root element as well, or the band either
+     side of the column would belong to no design and show the canvas white in
+     a dark page. The text inside the column stays left-aligned: this centres
+     the measure, not the prose. */
+  html { background: var(--bg); }
+  /* No padding above the content. The heading's own margin is the space
+     above the heading, and a gutter above it as well put the first fare
+     further below the fold than it needed to be. */
+  body { margin: 0 auto; padding: 0 var(--page-pad); max-width: var(--page-max);
+         background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  /* 1.2, not the 1.35 a paragraph wants: at six rem the line box is most of a
+     phone screen, and a display heading that keeps body leading reads as two
+     separate sentences. balance splits the long question into two lines of
+     similar length instead of one long and one short, which is the difference
+     between a heading and a paragraph that happens to be large. */
+  /* Half an em, in the heading's own size: the space above the page's
+     question, and the only space above it now that the body has no top
+     padding. */
+  h1 { font-size: var(--h1); line-height: 1.06; letter-spacing: -.03em; font-weight: 700;
+       text-wrap: balance; margin: .5em 0; }
+  h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+  p, li { margin: .4rem 0; }
+  a { color: var(--accent); }
+  /* A single unbroken run of characters must not decide the width of the
+     page. Real text contains these and the project cannot choose their
+     content: a privacy contact address, a tracked affiliate link, a
+     restriction code list, a URL in a feed-record line. One that cannot fit
+     its column used to widen the whole document, so a 200%-zoom phone reader
+     scrolled sideways on a page whose only fault was an email address.
+
+     `anywhere` rather than `break-word` because the text sits inside grid and
+     table tracks, and only `anywhere` also shrinks the intrinsic min-content
+     size those tracks are sized against -- `break-word` leaves a flex or grid
+     child able to overflow before the text has anywhere to break. Prose is
+     untouched: a word that fits on a line is never split.
+
+     Inherited, so one rule covers every element including those the page
+     script creates after load, which no selector here could name. */
+  body { overflow-wrap: anywhere; }
+  /* One focus ring for the whole site, on every route, so a keyboard reader
+     finds the same affordance wherever they are. */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
+  ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+  .muted, .tag, .disclosure { color: var(--muted); }
+  .tag { font-size: .8rem; margin: .2rem 0; }
+  .sub { color: var(--muted); max-width: 75ch; }
+  .back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 1rem; }
+  input[type=search], input[type=number], select { width: 100%; padding: .5rem; border: 1px solid var(--line);
+                                                    border-radius: .35rem; font: inherit; color: var(--fg);
+                                                    background: var(--field); }
+  /* The two slots a reader edits inside the page's own sentence: the budget,
+     and the station they are starting from. They are one component on every
+     route -- same accent, same dashed underline, same focus wash -- because
+     they are the same two gaps in the same question, and a reader who has met
+     one has met the other. The underline is the whole affordance: it is the
+     shape a browser draws under a text field, so it says "this part of the
+     sentence is yours" without a label floating above it.
+
+     Before a station has been chosen the second slot is a real text field, so
+     the caret in it is the browser's own and blinks, and the word in it is a
+     placeholder rather than a value. That word is muted: the reader's answer is
+     what belongs in the accent, not the page's suggestion. */
+  .heading-field, .origin-slot-wrap { display: inline-flex; align-items: baseline; color: var(--accent);
+                                 border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+                                 border-radius: .15rem .15rem 0 0; }
+  /* Focus is carried by the underline and by the caret, never by a wash. At
+     heading size a background box turns a word in a sentence into a form
+     field, which is the one thing this component exists to avoid -- and the
+     caret is already sitting in the slot, blinking, which no other affordance
+     can say. A keyboard reader gets the page's own focus ring on top, because
+     :focus-visible is a different question from :focus-within. */
+  .heading-field:focus-within, .origin-slot-wrap:focus-within { border-bottom-style: solid; border-bottom-width: 2px; }
+  .heading-field { cursor: text; }
+  /* The name inside the wrapper is a button, not a slot of its own, so the
+     shared rule does not draw a second underline under it. */
+  .origin-slot-wrap .origin-slot { display: inline-flex; align-items: baseline;
+                                   color: inherit; border-bottom: 0; padding: 0; }
+  /* The currency sign is read, not decorative. It was aria-hidden, so the
+     heading's accessible name was "for up to 20" while the page said 20 pounds
+     everywhere else; the number field keeps its own label, so nothing is
+     announced twice. */
+  .budget-prefix { user-select: none; }
+  /* "from" sits on the second line in the page's own voice rather than as
+     punctuation between the two halves. The middots it replaced were at
+     .38em in the muted colour, and at six-plus rem a pair of them either side
+     of the number the reader came to set said "and also" about a word that was
+     already a separate line. The line break is the separator. */
+  .heading-lead { color: var(--muted); margin-right: .15em; }
+  /* The amount and the words around it, in one box that cannot wrap. A break
+     opportunity sits at the edge of an inline field whatever follows it, so
+     without this the second line can begin with the number and the "from" can
+     be left at the end of the first. */
+  .heading-slot { white-space: nowrap; }
+  #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
+                  background: transparent; color: inherit; font: inherit; font-weight: inherit;
+                  letter-spacing: inherit; appearance: textfield; }
+  #budgetNumber::-webkit-inner-spin-button { appearance: none; }
+  /* The station slot's field, on both routes. The chooser's field and a
+     station page's field are the same control in the same sentence, and a
+     reader who moved between them was getting the browser's own input on one
+     and this one on the other.
+
+     The width is the width of the word in the field, which is what a word in a
+     sentence is: opening the picker used to put a fixed eighteen-character box
+     where four letters had been, which is most of the line, and the sentence
+     under the heading dropped a line to make room. `field-sizing: content` is
+     what lets the browser do that sizing, because the field is a word in the
+     heading rather than a control with a size of its own.
+
+     The height is pinned, because content sizing takes the height with it: a
+     content-sized field measured 121px against the 97px the same field is with
+     a fixed width, and a taller inline box is a taller line box in the heading.
+     Measured on a built Grantham page at 1280px, the heading stood 220px with
+     the picker open and 195px with it shut. One line box plus the field's own
+     padding is exactly the 97px it was, so the heading holds one height at
+     1280, 1024 and 760px.
+
+     Eighteen ch is the cap, and it is what a completion can need -- the field
+     only offers a name that fits in it, or the typed part scrolls out of its own
+     window -- and it costs the heading nothing at any viewport down to about
+     420px. Below the page's own 44rem breakpoint it does cost one line (108px
+     rather than 74px at 390px), so the cap is fifteen ch there, which is still
+     every name a phone reader is likely to be typing. ch scales with the
+     heading's own size and the viewport share is what fits on the narrowest one.
+     A name longer than the cap takes the field to the cap and the field's own
+     line, which is the one case where the sentence is allowed to move. */
+  #originSearch { field-sizing: content; width: auto; height: calc(1lh + .1rem);
+                  max-width: min(18ch, 90vw);
+                  padding: .05rem .15rem; border: 0; outline: 0;
+                  background: transparent; color: inherit; font: inherit;
+                  font-weight: inherit; letter-spacing: inherit;
+                  caret-color: var(--accent); }
+  #originSearch::placeholder { color: var(--muted); opacity: 1; }
+  /* The rest of the name the reader is halfway through is shown by selecting
+     it inside the field, so the only thing to say is that the selection is
+     quieter than the text, rather than a second copy of the text drawn
+     behind the field and kept in step with its caret and width. */
+  #originSearch::selection { background: color-mix(in srgb, var(--muted) 38%, transparent);
+                                 color: var(--fg); }
+  /* The list under an open station field, on both routes. It is placed from
+     the field's own rectangle by the script rather than anchored to a
+     wrapper, because the field is a word in the middle of a heading, and
+     the only thing that knows where that word is at this width is the
+     browser. Fixed, so no element has to become its ancestor and no list
+     has to move inside a heading, which a heading may not hold, to be drawn
+     under the word the reader just clicked. */
+  .under-field { position: fixed; z-index: 5; margin: 0; padding: .3rem 0;
+    background: var(--bg); border: 1px solid var(--line); border-radius: .4rem;
+    box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .2); max-height: 58vh; overflow-y: auto; }
+  /* One drawn disclosure mark, used by both the refinements control and the
+     station slot. Authored rather than a character: a character has no stroke
+     weight of its own, is styled differently by every font, and the one this
+     replaced was written as a CSS escape inside a Python string -- where
+     Python read it first, so "\25be" shipped as a control character followed
+     by the letters "be" on every station page. */
+  .chevron { width: 1em; height: 1em; flex: none; align-self: center;
+             transition: transform .18s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+  /* C29: one main landmark per route, so landmark navigation works. It wraps
+     the route's own content only; the back link and the footer stay outside it
+     as the navigation landmarks they are. */
+  main { display: block; padding-top: .5rem; }
+  /* The footer, the back link and the footer nav are the same shape on every
+     route: a quiet rule above, 44px of touch target for a phone. The height is
+     on the anchor itself, not only on a container around it -- a nav that is
+     44px tall with a 24px link in it is not a 44px target (C25). */
+  /* The NRE "Powered by" mark, reversed onto a dark plate: see --nre-plate.
+     The artwork keeps its own fill, and this paints over it, so the file in
+     assets/ is still exactly what NRE supplied. The !important is not
+     decoration: Illustrator wrote fill:#2E2D7F into a style attribute on each
+     of the mark's 22 shapes, and a style attribute outranks any stylesheet
+     rule however specific it is, so a plain selector here loses silently and
+     the mark stays NRE's blue on a dark plate -- 1.4:1, which the browser
+     suite measures and fails on, so the two cannot drift apart. */
+  .nre-credit { margin: 0 0 .7rem; }
+  /* The link is the pointer target, so it has to be as tall as the plate it
+     wraps. Left inline, its box is the line box -- 18px -- while the mark
+     overflows it, and a 24px-target check rightly fails. */
+  .nre-credit a { display: inline-flex; align-items: center; }
+  .nre-logo { display: inline-flex; align-items: center; padding: .3rem .55rem;
+              background: var(--nre-plate);
+              border: 1px solid color-mix(in srgb, var(--nre-ink) 22%, transparent);
+              border-radius: .3rem; }
+  /* Every shape in the mark, not just the paths: two of the 22 are rects, and
+     a rule that caught the paths alone would leave those in NRE's blue. */
+  .nre-logo svg * { fill: var(--nre-ink) !important; }
+  .nre-logo svg { display: block; height: 2rem; width: auto; }
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .85rem; }
+  .footnav { margin-top: 1.5rem; }
+  .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
+  .back-link a { color: var(--accent); }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+             clip-path: inset(50%); white-space: nowrap; border: 0; }
+  /* S45: the synthetic-data state, in the same component on every route, so
+     an invented fare cannot be mistaken for a real one in a review, a demo or
+     a shared screenshot. It is a banner rather than a footnote because the
+     footnote is what gets cropped. */
+  .synthetic-banner { display: block; margin: 0 0 1rem; padding: .5rem .7rem;
+                      border: 1px solid var(--ochre); border-left-width: .3rem; border-radius: .35rem;
+                      background: color-mix(in srgb, var(--ochre) 10%, transparent);
+                      color: var(--fg); font-size: .85rem; }
+  .synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }

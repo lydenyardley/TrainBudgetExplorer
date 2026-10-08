@@ -6017,7 +6017,10 @@ class TwoPartRowTest(unittest.TestCase):
                 index += 1
             raise AssertionError(name + " did not close")
 
-        source = (Path(__file__).resolve().parents[1] / "page_templates.py").read_text(encoding="utf-8")
+        # The page's JavaScript is a file of its own (F1 of the 8 October 2026
+        # agent-efficiency audit), so this reads the block the page ships rather
+        # than a copy of it inside a Python string.
+        source = (Path(__file__).resolve().parents[1] / "page" / "station.js").read_text(encoding="utf-8")
         script = (
             js_function(source, "fareSentence")
             + "\n"
