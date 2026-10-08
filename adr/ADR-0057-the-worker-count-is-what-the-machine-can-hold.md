@@ -298,7 +298,7 @@ half the memory, and neither case is 81 minutes.
 python tools/measure_build_memory.py --measure machine
 python tools/measure_build_memory.py --measure worker
 python tools/measure_worker_pages.py --origins GRN,LCN
-python -m unittest tests.test_build_demo_page.WorkerBudgetTest
+python -m unittest tests.test_page_runner.WorkerBudgetTest
 python -m unittest discover -s tools -p "test_measure_worker_pages.py"
 ```
 
