@@ -58,6 +58,28 @@ def configure_worker(shared: dict, reference: Knowledgebase | None = None) -> No
     _WORKER["reference"] = reference
 
 
+def restore_worker_fares(feed: str, shared: dict, loaded: FaresDb | None = None) -> None:
+    """Put this process's fare database in place: one origin's slice, or the feed.
+
+    Builds persist the shared fare metadata and one index per origin first
+    (audit B1), so a process that has them restores the slice it is about to
+    render instead of re-parsing all 8.5M flow lines, and holds no national
+    fare data while it renders a page. Without those keys it keeps the whole
+    feed, because a working page beats a released one.
+
+    Both ways into a page come through here on purpose. The pool took the
+    slice and the in-process build kept the feed, which is why a one-worker
+    build held 2.1 GB it never read for the whole of its render phase.
+    ``loaded`` is a feed this process has already parsed, so the in-process
+    caller hands it here rather than paying for a second parse.
+    """
+    if shared.get("fare_common_cache") and shared.get("fare_index_dir"):
+        _WORKER["fares_common"] = FaresDb.load_fare_common(shared["fare_common_cache"])
+        _WORKER["fares"] = None
+    else:
+        _WORKER["fares"] = loaded if loaded is not None else FaresDb().load_feed(feed)
+
+
 def init_worker(
     feed: str,
     timetable: str | None,
@@ -65,16 +87,7 @@ def init_worker(
     reference: Knowledgebase | None = None,
 ) -> None:
     configure_worker(shared, reference)
-    # Parallel builds persist the shared fare metadata and one index per
-    # origin first (audit B1), so a worker restores the slice it is about to
-    # render instead of re-parsing all 8.5M flow lines. Without those keys the
-    # worker falls back to a full load: the in-process path never calls this,
-    # and a direct caller that shares no cache still gets a working feed.
-    if shared.get("fare_common_cache") and shared.get("fare_index_dir"):
-        _WORKER["fares_common"] = FaresDb.load_fare_common(shared["fare_common_cache"])
-        _WORKER["fares"] = None
-    else:
-        _WORKER["fares"] = FaresDb().load_feed(feed)
+    restore_worker_fares(feed, shared)
     _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
 
 
@@ -123,6 +136,16 @@ MAX_WORKERS = 4
 #: whichever is bigger, and counting both at once would refuse builds this
 #: machine can finish. The sum was correct while the parent held its databases
 #: for the whole build; it is 7.3 GB as a sum and 6.4 GB here.
+#:
+#: The release is what makes the two phases sequential on the one-worker path
+#: too, and until 7 October 2026 it was pool-only: the in-process build rendered
+#: every page from the parent's own fares feed, so its render phase held the
+#: 2.1 GB feed beside the 1.87 GB timetable. `restore_worker_fares` now hands
+#: that path the same per-origin slice a worker takes, and the feed is released
+#: before the first page. The preparation peak is untouched by that -- it is the
+#: two whole feeds and the index write, and it is what `PARENT_BYTES` covers --
+#: so this floor does not move. What moves is the render phase: it held a whole
+#: fares feed it never read, and it no longer does.
 ONE_WORKER_FLOOR = max(PARENT_BYTES, WORKER_BYTES) + RESERVED_BYTES
 
 

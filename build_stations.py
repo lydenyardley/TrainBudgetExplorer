@@ -19,11 +19,16 @@ with one chooser offering exactly those two and nothing linking to a page that
 was not written.
 
 **What it costs.** The two feeds, not the number of stations. The fares feed and
-the national timetable load once -- 727,315 flows and 419,589 schedules, about
-three minutes on this machine -- and then each station page costs about ten
-seconds (ADR-0057). Two stations is a five-minute build. The whole network is
-the same command without `--only-stations`, and it is two hours on four workers
-or most of a working day on one.
+the national timetable load once -- 727,315 flows and 419,589 schedules, 93
+seconds measured on this machine when there is room -- and then each station page
+costs about ten seconds (ADR-0057). Two stations is a five-minute build when there
+is memory for the two feeds. Measured on 7 October 2026 with 5.1 GB free against
+the 6.4 GB floor `build_workers.ONE_WORKER_FLOOR` sets, the same two loads took 11
+minutes under paging and the build took 63 minutes end to end, writing both pages
+where the two earlier runs had written none in 24. That floor is what the script's
+memory warning is about, and it is the difference between five minutes and 63. The
+whole network is the same command without `--only-stations`, and it is two hours on
+four workers or most of a working day on one.
 
 The output goes to `_stations/`, not `_site/`: the runner owns `_site/` and
 removes station folders a build did not write, so sharing the folder would have
@@ -140,8 +145,9 @@ def main() -> int:
               f"{floor_gb:.1f} GB (ADR-0057).", flush=True)
     print(f"Building {len(codes)} station page(s): {', '.join(codes)}", flush=True)
     print("Reading the fares feed and the national timetable now. That is the "
-          "whole cost of the build -- about three minutes on this machine -- and "
-          "it does not grow with the number of stations.", flush=True)
+          "whole cost of the build, and it does not grow with the number of "
+          "stations: about 93 seconds with room, and minutes of paging when "
+          "memory is short.", flush=True)
     result = subprocess.run(build_command(args, codes), cwd=ROOT)
     if result.returncode != 0:
         return result.returncode

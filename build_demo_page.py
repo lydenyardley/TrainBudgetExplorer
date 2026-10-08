@@ -3640,21 +3640,24 @@ def main(argv: list[str] | None = None) -> int:
 
         workers = max(1, args.workers)
         built_now = 0
-        if workers > 1:
-            # Audit B1: without this, every pool worker re-parsed all 8.5M
-            # flow lines on top of the parent's parse -- nine parses for eight
-            # workers. Every parallel build now writes the shared metadata and
-            # one small index per origin first, so a worker restores its own
-            # slice instead of parsing the national feed.
-            common_cache, index_dir = fares_index_cache_paths(args.feed)
-            fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
-            shared["fare_common_cache"] = str(common_cache)
-            shared["fare_index_dir"] = str(index_dir)
-            print(
-                f"Persisted {len(jobs):,} per-origin fare indexes; workers load the shared metadata once.",
-                flush=True,
-            )
-            prune_fare_index_caches(common_cache, index_dir)
+        # Audit B1: without this, every pool worker re-parsed all 8.5M flow
+        # lines on top of the parent's parse -- nine parses for eight workers.
+        # Every build writes the shared metadata and one small index per origin
+        # first, single-worker builds included, because the write is what lets a
+        # page be built from its own slice rather than the national feed. It was
+        # pool-only, so the one-worker build -- the one `build_stations.py` and
+        # the double-click runner use on a small machine -- was the one holding
+        # 2.1 GB of fares through every page it rendered.
+        common_cache, index_dir = fares_index_cache_paths(args.feed)
+        fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
+        shared["fare_common_cache"] = str(common_cache)
+        shared["fare_index_dir"] = str(index_dir)
+        print(
+            f"Persisted {len(jobs):,} per-origin fare indexes; a page loads one "
+            "slice and the shared metadata once.",
+            flush=True,
+        )
+        prune_fare_index_caches(common_cache, index_dir)
 
         def publish_result(result: tuple[str, str, str]) -> None:
             nonlocal built_now
@@ -3675,15 +3678,31 @@ def main(argv: list[str] | None = None) -> int:
 
         if workers == 1:
             # The in-process path builds through the same job function the
-            # pool uses, with the live databases placed in the job dict, so
-            # both modes share one page-building code path.
-            from build_workers import _WORKER, build_page_job, configure_worker
+            # pool uses, and takes its fares the same way a worker does: the
+            # per-origin slice off disk, with the shared metadata loaded once.
+            # It used to keep the parent's whole feed, and that is what paged:
+            # 2.1 GB of fares held beside the national timetable through every
+            # page of the render, on a machine whose own floor is 6.4 GB free.
+            from build_workers import (
+                _WORKER,
+                build_page_job,
+                configure_worker,
+                restore_worker_fares,
+            )
 
             # Through the same state assembly the pool initialiser uses, so the
             # two paths cannot disagree about what a worker was given.
             configure_worker(shared, reference)
-            _WORKER["fares"] = fares
+            restore_worker_fares(args.feed, shared, loaded=fares)
             _WORKER["timetable"] = timetable
+            # A page reads its own slice now, and the no-cache fallback has
+            # already handed this same object to the worker, so the parent's
+            # own name for the feed is finished with. `gc.collect` because the
+            # fares are millions of small objects and CPython returns their
+            # arenas when they are freed, not when the reference count reaches
+            # zero.
+            del fares
+            gc.collect()
             for job in jobs:
                 publish_result(build_page_job(job))
         else:
