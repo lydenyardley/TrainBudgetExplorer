@@ -340,13 +340,20 @@ because a reader checking a closure wants the ADR and the test.
 
 ### The 8 October 2026 agent-efficiency audit
 
-`docs/audits/2026-10-08-agent-efficiency-architecture.md` is pruned to the
-findings still open. Its eight findings are settled here with the artifact that
+`docs/audits/2026-10-08-agent-efficiency-architecture.md` is pruned to what it
+found still open. Its eight findings are settled here with the artifact that
 holds each one.
 
 | Finding | Closed by | Held by |
 |---|---|---|
+| F1, the station page was one 2,938-line string, so no linter or `rg --type js` could see it and half of all fixes landed in it | the page's CSS and JavaScript are real files now, inlined by `page_templates.py` at import time | `page/*.js` and `page/*.css`, `tests/test_page_assets.py` for the seam, and `node --check page/*.js` in `tools/verify.py --fast` |
+| F2, there was no agent entry point and the README's file table had drifted to omit 26 tracked files | `AGENTS.md` is the entry point: the map, both verify commands, and a rule table naming each rule's enforcer | `tests/test_agents_map.py` checks the map in both directions, so a module, page asset or operator tool that is not on it fails the suite |
 | F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
+| F4, the CI rebuild fingerprint was a hand-kept three-file list, written twice, and eight of the last 150 commits had changed only unlisted inputs | one script hashes every build input and both workflow steps call it | `tools/build_inputs.py`, held by `tools/test_build_inputs.py`, which fails on a transitively imported module that is not covered |
+| F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--fast` is the two feed-scale tests its docstring names, and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
+| F6, the two hot test files were the biggest in the repository | the Python half: the page suite's classes moved out by feature seam, unchanged, over the fixture in `tests/page_harness.py` | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; the same 32 classes and 327 tests as before the split. **Still open: `DemoPageTest` itself, 3,043 lines and 163 methods in one class, and the unsplit `tests/browser_test.cjs`** |
+| F7, fixture-versus-real-feed gaps recurred | the rule is in `AGENTS.md`: a real-feed defect fix adds the minimal synthetic record with the fixing commit named | the passing-stop record in `make_synthetic_feed.py`, held by a test in `tests/test_atoc_timetable.py` |
+| F8, measured figures lived in the README and were withdrawn rather than corrected | the README's measured section is a summary that links | `docs/build-performance-findings.md`, which holds "The whole network, measured" behind the README's link |
 
 ### The measurements three ADRs lean on
 

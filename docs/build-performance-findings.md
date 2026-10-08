@@ -434,6 +434,27 @@ or could not be compared, 2 some are still to compare. The 150 pairs an earlier
 sampled run left in the checkpoint -- `--max-legs 25` -- were **not** carried over
 when the complete question was asked, which is the guard the tool now enforces.
 
+## The whole network, measured
+
+The whole-network figures, kept here rather than in `README.md` so that measured
+numbers live in one file (F8 of the 8 October 2026 agent-efficiency audit). They
+were taken before the per-origin fare index and the timetable slice, so they
+describe the cost those two fixes were aimed at.
+
+**Prices only.** `run.py` reads `feeds/fares` and loads no timetable unless
+`--with-timetable` is given: **2,712 pages in 23 min 38 s, 1.91 pages/s**, 592 MB
+of output, about 30 s of which is loading fares. Free memory moved between 0.1 GB
+and 4.5 GB over the run, so `worker_budget` returned 1.
+
+**With journey times.** The build the rest of this document describes:
+
+| Workers | Whole network, fares and timetable |
+| --- | --- |
+| 1 | 8 h 06 m |
+| 2 | ~4 h 15 m |
+| 3 | ~2 h 50 m |
+| 4 (16 GB GitHub runner) | ~2 h 10 m |
+
 ## What is actually wrong
 
 **`--all-origins` gave every page the whole country's timetable.** In
