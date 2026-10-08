@@ -27,6 +27,7 @@ from make_synthetic_feed import build_synthetic_timetable
 from tools.check_slice_equivalence import (
     DEFAULT_MAX_LEGS,
     compare_origin,
+    compared_counts,
     coverage,
     feed_origins,
     load_progress,
@@ -212,6 +213,10 @@ class ProgressTest(unittest.TestCase):
         line = coverage(progress, origins, days)
         self.assertIn("1 of 2 origin-days compared", line)
         self.assertIn("0 differing", line)
+        # And the same count is what the run estimates its remaining work from,
+        # so a request run after a wider one does not read its file's pairs as
+        # its own and report itself finished.
+        self.assertEqual(compared_counts(progress, origins, days), (1, 0))
 
 
 class CliTest(Fixture):

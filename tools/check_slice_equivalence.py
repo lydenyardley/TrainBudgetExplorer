@@ -196,12 +196,26 @@ def requested_pairs(origins: list[str], days: list[date]) -> list[str]:
     return [_pair_key(origin, day) for day in days for origin in origins]
 
 
-def coverage(progress: dict, origins: list[str], days: list[date]) -> str:
-    """What has been compared, as one line, so a partial sweep says so plainly."""
+def compared_counts(progress: dict, origins: list[str], days: list[date]) -> tuple[int, int]:
+    """Of the request's origin-days, how many agreed and how many did not.
+
+    The request, not the file: a checkpoint holds every pair written into it by
+    every run that has shared it, and a run asked for two origins after a run
+    asked for one has to count arithmetically. Both the coverage line and the
+    estimate of what is left are this count.
+    """
     pairs = progress.get("pairs", {})
     requested = requested_pairs(origins, days)
     done = sum(1 for key in requested if pairs.get(key) == "ok")
     failed = sum(1 for key in requested if pairs.get(key) not in (None, "ok"))
+    return done, failed
+
+
+def coverage(progress: dict, origins: list[str], days: list[date]) -> str:
+    """What has been compared, as one line, so a partial sweep says so plainly."""
+    pairs = progress.get("pairs", {})
+    requested = requested_pairs(origins, days)
+    done, failed = compared_counts(progress, origins, days)
     named = sum(
         1
         for origin in origins
@@ -324,7 +338,8 @@ def main(argv: list[str] | None = None) -> int:
                 # for the same sweep, which is a number that tells a reader
                 # nothing about how long the work takes.
                 per_origin_day = (time.monotonic() - sweep_started) / compared
-                remaining = len(requested_pairs(origins, days)) - len(progress["pairs"])
+                done, failed = compared_counts(progress, origins, days)
+                remaining = len(requested_pairs(origins, days)) - (done + failed)
                 print(
                     f"{coverage(progress, origins, days)}; {per_origin_day:.3f}s per "
                     f"origin-day, about {per_origin_day * remaining / 60:.0f} min left",
