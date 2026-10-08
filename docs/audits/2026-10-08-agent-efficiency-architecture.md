@@ -37,7 +37,7 @@ Rating is as reviewed; the second column says what it is now, and the enforcer t
 | Search hygiene | Weak | Good | `tools/replay/` held 6,485 lines of stale page edits and supplied 40% of repo hits for `priceOf` and `shortlist` (measured). It is deleted, with the recovery command recorded in `docs/open-work.md` (`dc64e5d`). |
 | Boundaries and single owners | Mixed | Good | The CI rebuild fingerprint was a hand-kept three-file list, written twice. One script computes it and both steps call it (`9e7873d`). |
 | Scoped verification | Mixed | Good | `tests/test_atoc_fares.py` takes 164 s and `tests/test_build_demo_page.py` 182 s, and there was no single verify command. `tools/verify.py --fast` runs both suites minus the two feed-scale tests plus `node --check`, and `--browser` runs the Playwright suite locally, which previously existed only as 115 lines of bash inside the workflow (`b4532ed`). |
-| Decision record | Good | Good | 68 ADRs, each with a Status line. `.py` and `.cjs` files cite ADR ids throughout (measured). |
+| Decision record | Good | Good | 65 ADRs, each with a Status line. `.py` and `.cjs` files cite ADR ids throughout (measured). |
 
 ## Findings, closed
 
