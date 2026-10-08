@@ -18,7 +18,7 @@ from pathlib import Path
 
 from atoc_fares import FaresDb
 from atoc_knowledgebase import Knowledgebase
-from atoc_timetable import TimetableDb
+from atoc_timetable import SliceIndex, TimetableDb
 
 from build_demo_page import (
     STATION_ASSET_NAME,
@@ -56,6 +56,14 @@ def configure_worker(shared: dict, reference: Knowledgebase | None = None) -> No
     _WORKER.clear()
     _WORKER.update(shared)
     _WORKER["reference"] = reference
+    # The per-origin slices this build reads its timetables from, when it has an
+    # index: `shared` carries where they are and which feed cut them, and the
+    # object assembled here is the one a page uses. Both ways into a page come
+    # through this function, so neither can be the one that forgot it.
+    spec = shared.get("timetable_index")
+    _WORKER["timetable_index"] = (
+        SliceIndex(spec["directory"], identity=spec["identity"]) if spec else None
+    )
 
 
 def restore_worker_fares(feed: str, shared: dict, loaded: FaresDb | None = None) -> None:
@@ -88,6 +96,12 @@ def init_worker(
 ) -> None:
     configure_worker(shared, reference)
     restore_worker_fares(feed, shared)
+    # The national index, kept for the life of the worker as the source every
+    # page's slice is cut from. The page itself is built from that slice, so
+    # what a page holds and indexes while it renders is its own origin's reach.
+    # `timetable` is None for a build whose index covers every page it writes:
+    # the parent hands the path down only when it read the feed itself, so a
+    # worker of an indexed build parses nothing and reads each page's slice.
     _WORKER["timetable"] = TimetableDb().load_feed(timetable) if timetable else None
 
 
@@ -107,11 +121,15 @@ PARENT_BYTES = 4_400 * MB
 #: initialiser and an 852 MB worker, against a real 2,100 MB and 2,188 MB.
 #:
 #: This is the whole of a worker's cost, because a worker parses the national
-#: timetable itself and keeps it for every page it builds. It is not a sum with
-#: the parent: `build_demo_page.py` releases `fares` and `timetable` before the
-#: pool starts, so the parent runs first and the workers run second. Measured
-#: on the real feed, that release sheds 4,000 MB of the 4,017 MB held and leaves
-#: the parent 36 MB.
+#: timetable itself and keeps it for every page it builds -- as the database
+#: each page's slice is cut from (`atoc_timetable.TimetableDb.focused`), so the
+#: index a page assembles is its own origin's reach rather than the network's.
+#: A worker handed an index instead parses nothing and holds one page's slice
+#: at a time, which is a different, smaller shape: see `ONE_WORKER_FLOOR`.
+#: It is not a sum with the parent: `build_demo_page.py` releases `fares` and
+#: `timetable` before the pool starts, so the parent runs first and the workers
+#: run second. Measured on the real feed, that release sheds 4,000 MB of the
+#: 4,017 MB held and leaves the parent 36 MB.
 #:
 #: See ADR-0057 for the two figures this replaced and for why the four-worker
 #: tree that appeared to contradict them was a sample taken mid-parse.
@@ -146,6 +164,16 @@ MAX_WORKERS = 4
 #: two whole feeds and the index write, and it is what `PARENT_BYTES` covers --
 #: so this floor does not move. What moves is the render phase: it held a whole
 #: fares feed it never read, and it no longer does.
+#:
+#: The timetable half of the render phase is two shapes now. A build that reads
+#: the feed holds the database its pages' slices are cut from -- the parent's on
+#: the one-worker path, its own in a pool worker, parsed in `init_worker` -- and
+#: that is what these two constants describe. A build given `--timetable-index`
+#: holds no national index at all: each page reads its own slice off disk, so a
+#: worker carries one origin's reach and its fares slice, and nothing parses the
+#: timetable. Neither constant moves for that second shape, because they are the
+#: floor for the first one and every build without an index still pays it. What
+#: an indexed worker costs is measured in docs/build-performance-findings.md.
 ONE_WORKER_FLOOR = max(PARENT_BYTES, WORKER_BYTES) + RESERVED_BYTES
 
 
@@ -280,6 +308,10 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         # every page, so this page carries the request and not the rows (audit,
         # 30 September 2026: the list was 445 MB across the network).
         published_routes=[],
+        # This page's timetable when there is no feed in the process: its own
+        # slice, read from the index. `build_payload` uses it only when
+        # `_WORKER["timetable"]` is None, so a build with a feed is unchanged.
+        timetable_index=_WORKER.get("timetable_index"),
     )
     base_path = _WORKER["base_path"]
     payload["stations"] = []

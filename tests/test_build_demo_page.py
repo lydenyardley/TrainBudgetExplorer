@@ -1751,6 +1751,38 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(snippet, html)
         self.assertNotIn("__ANALYTICS__", html)
 
+    def test_a_page_built_from_a_slice_of_the_timetable_is_the_same_page(self) -> None:
+        # The all-origins build hands every page the national index -- one feed
+        # and a page for each station it prices -- and a page is built from the
+        # slice of it that page can use (`TimetableDb.focused`). A slice is a
+        # subset of the database the page would otherwise read from, so the
+        # proof that nothing moved is the page itself: two payloads from two
+        # databases, one byte-diff. On the real feed the cut is a strict one --
+        # 5,262 of 419,589 schedules for Grantham -- and the same byte-diff is
+        # taken there (`docs/build-performance-findings.md`).
+        day = date(2026, 9, 28)
+        whole = build_payload(
+            self.fares, self.timetable, "GRN", day=day, built_at="2026-09-27T00:00:00Z"
+        )
+        slice_ = build_payload(
+            self.fares,
+            self.timetable.focused("GRN"),
+            "GRN",
+            day=day,
+            built_at="2026-09-27T00:00:00Z",
+        )
+        self.assertEqual(
+            render_page(whole, budget_pounds=20),
+            render_page(slice_, budget_pounds=20),
+        )
+        # The figures a page carries are claims about the feed behind it, and
+        # this page was built from a slice of one. A page that reported its
+        # slice's own counts would describe a different feed to the one the
+        # build read.
+        self.assertEqual(slice_["timetable"], whole["timetable"])
+        self.assertEqual(slice_["timetableFrom"], whole["timetableFrom"])
+        self.assertEqual(slice_["timetableTo"], whole["timetableTo"])
+
     def test_the_default_link_is_the_sellers_own_search_page(self) -> None:
         # ADR-0018: no seller's parameterised link is known to land on a search,
         # so the page does not walk readers into a "no journeys" page.
@@ -6177,6 +6209,264 @@ class EncodedPayloadTest(unittest.TestCase):
 
     def test_a_rendered_page_reads_back_as_the_payload_it_was_built_from(self) -> None:
         self.assertTrue(embedded_payload(self.page)["destinations"])
+
+
+class TimetableIndexBuildTest(unittest.TestCase):
+    """A build from an index writes the pages a build from the feed writes.
+
+    The index exists so a build can drop the national feed, and what makes that
+    safe is that the slices on disk answer what the feed answered. The pages are
+    the comparison, and the feed is booby-trapped rather than merely absent, so a
+    build that reads it anyway fails here instead of going unnoticed.
+    """
+
+    BUILT_AT = re.compile(r'("builtAt"\s*:\s*)"[^"]*"')
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(
+            self.root / "fares", include_unserved_station=True, include_restrictions=True
+        )
+        self.timetable = build_synthetic_timetable(self.root / "timetable")
+        self.index_root = self.root / "index"
+
+    def build(
+        self,
+        name: str,
+        *extra: str,
+        stations: str = "GRN,NOT",
+        feed_readable: bool = True,
+    ) -> tuple[int, str, str]:
+        """Run the build. With ``feed_readable`` False, reading the feed raises."""
+        out, err = io.StringIO(), io.StringIO()
+        argv = [
+            "--feed", str(self.feed),
+            "--all-origins",
+            "--only-stations", stations,
+            "--out", str(self.root / name / "index.html"),
+            *extra,
+        ]
+        trap = (
+            mock.patch.object(TimetableDb, "load_feed", side_effect=AssertionError("the timetable feed was read"))
+            if not feed_readable
+            else contextlib.nullcontext()
+        )
+        with trap, contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = build_demo_page.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def pages(self, name: str) -> dict[str, str]:
+        """The station pages written, with the build's own timestamp masked."""
+        return {
+            path.parent.name: self.BUILT_AT.sub(r'\1"X"', path.read_text(encoding="utf-8"))
+            for path in sorted((self.root / name / "from").glob("*/index.html"))
+        }
+
+    def write_index(self, *origins: str) -> None:
+        from tools.build_timetable_index import main as index_main
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = index_main(
+                [
+                    "--timetable", str(self.timetable),
+                    "--root", str(self.index_root),
+                    "--origins", ",".join(origins),
+                ]
+            )
+        self.assertEqual(code, 0, out.getvalue())
+
+    def test_a_build_from_the_index_writes_the_same_pages_as_a_build_from_the_feed(self) -> None:
+        code, said, _ = self.build("from_feed", "--timetable", str(self.timetable))
+        self.assertEqual(code, 0, said)
+        self.write_index("GRN", "NOT")
+        code, said, _ = self.build(
+            "from_index", "--timetable-index", str(self.index_root), feed_readable=False
+        )
+        self.assertEqual(code, 0, said)
+        self.assertIn("No timetable feed", said)
+        self.assertEqual(sorted(self.pages("from_feed")), ["grantham", "nottingham"])
+        self.assertEqual(self.pages("from_index"), self.pages("from_feed"))
+
+    def test_a_station_subset_the_index_covers_does_not_read_the_feed(self) -> None:
+        # The feed is named on the command line and still not read: the whole
+        # point of the index, and the one claim a `--timetable` argument would
+        # otherwise hide.
+        self.write_index("GRN", "NOT")
+        code, said, err = self.build(
+            "covered",
+            "--timetable", str(self.timetable),
+            "--timetable-index", str(self.index_root),
+            feed_readable=False,
+        )
+        self.assertEqual(code, 0, err + said)
+        self.assertIn("the timetable feed is not read", said)
+        self.assertEqual(sorted(self.pages("covered")), ["grantham", "nottingham"])
+
+    def test_a_page_with_no_slice_stops_the_build_before_it_writes_one(self) -> None:
+        self.write_index("GRN")
+        code, said, err = self.build(
+            "partial", "--timetable-index", str(self.index_root), feed_readable=False
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("NOT", err)
+        self.assertFalse(
+            (self.root / "partial" / "from").exists(), "a refused build writes no page"
+        )
+
+    def test_a_page_with_no_slice_is_built_from_the_feed_when_there_is_one(self) -> None:
+        # An index is an optimisation when a feed is present and a requirement
+        # when it is not, so a partly indexed build finishes rather than stops.
+        self.write_index("GRN")
+        code, said, _ = self.build(
+            "fallback", "--timetable", str(self.timetable), "--timetable-index", str(self.index_root)
+        )
+        self.assertEqual(code, 0, said)
+        self.assertEqual(sorted(self.pages("fallback")), ["grantham", "nottingham"])
+
+    def test_an_index_cut_from_another_download_is_not_used_by_a_build_that_has_the_feed(self) -> None:
+        # The download changed, so the index is keyed to a feed that is no longer
+        # here. A build holding the new feed must reach for the new feed rather
+        # than for slices of the old one, which is one byte of difference and a
+        # different timetable.
+        self.write_index("GRN", "NOT")
+        target = next(item for item in sorted(self.timetable.iterdir()) if item.is_file())
+        original = target.read_text(encoding="utf-8")
+        target.write_text(original.replace("NOT", "NT1", 1), encoding="utf-8")
+        self.assertEqual(len(target.read_text(encoding="utf-8")), len(original))
+        code, said, err = self.build(
+            "replaced", "--timetable", str(self.timetable), "--timetable-index", str(self.index_root)
+        )
+        self.assertEqual(code, 0, said + err)
+        self.assertIn("no slices yet", said)
+        self.assertEqual(sorted(self.pages("replaced")), ["grantham", "nottingham"])
+
+    def pool_initargs(self, *extra: str) -> tuple:
+        """What the pool is created with, captured before it starts a worker.
+
+        The pool is replaced rather than run: what is under test is the argument
+        a worker is handed, and a real worker's own parse of the feed is exactly
+        what cannot be observed from the parent's stdout.
+        """
+        seen: list[tuple] = []
+
+        class Stop(BaseException):
+            """Raised once the pool has recorded what it was created with."""
+
+        class RecordingPool:
+            def __init__(self, workers, *, initializer, initargs, **kwargs):
+                seen.append(initargs)
+                raise Stop
+
+        argv = [
+            "--feed", str(self.feed),
+            "--all-origins",
+            "--only-stations", "GRN,NOT",
+            "--workers", "2",
+            "--out", str(self.root / "pool" / "index.html"),
+            *extra,
+        ]
+        with mock.patch("concurrent.futures.ProcessPoolExecutor", RecordingPool):
+            with contextlib.redirect_stdout(io.StringIO()):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(Stop):
+                        build_demo_page.main(argv)
+        return seen[0]
+
+    def test_a_worker_is_handed_the_feed_only_when_the_build_reads_it(self) -> None:
+        # A worker given a feed path parses the national timetable itself, which
+        # is 56s and 1.87 GB per worker. A build that decided not to read the
+        # feed has to hand its workers nothing as well, or the saving is the
+        # parent's only and every worker holds what the build set out to drop.
+        self.write_index("GRN", "NOT")
+        self.assertEqual(
+            self.pool_initargs("--timetable", str(self.timetable))[1], str(self.timetable)
+        )
+        self.assertIsNone(
+            self.pool_initargs(
+                "--timetable", str(self.timetable), "--timetable-index", str(self.index_root)
+            )[1]
+        )
+
+    def test_a_canary_origin_the_index_lacks_is_named_and_the_build_goes_on(self) -> None:
+        # An all-origins build does not write the origin it samples first: it
+        # builds one to prove one can be and to time it before a long batch.
+        # With no feed there is no timetable for an origin the index does not
+        # hold, so the sample is named and skipped. Refusing instead would
+        # refuse the request the index is for -- an index of exactly the pages
+        # this build writes, where the sample is a station nobody asked for.
+        self.write_index("NOT")
+        code, said, err = self.build(
+            "canary",
+            "--timetable-index", str(self.index_root),
+            "--origin", "GRN",
+            stations="NOT",
+            feed_readable=False,
+        )
+        self.assertEqual(code, 0, said + err)
+        self.assertIn("the index holds no slice for GRN", said)
+        self.assertEqual(sorted(self.pages("canary")), ["nottingham"])
+
+    def test_the_sample_with_no_slice_says_what_it_cannot_measure(self) -> None:
+        # `--max-origin-seconds` measures a page, and a sample with no timetable
+        # behind it measures the fares half of one. The build says so rather
+        # than reporting that half as the per-origin cost, and rather than
+        # refusing a request an index of the pages it writes is the point of.
+        self.write_index("NOT")
+        code, said, err = self.build(
+            "timed",
+            "--timetable-index", str(self.index_root),
+            "--origin", "GRN",
+            stations="NOT",
+            feed_readable=False,
+        )
+        self.assertEqual(code, 0, said + err)
+        self.assertIn("--max-origin-seconds measures the fares half of a page", said)
+        self.assertEqual(sorted(self.pages("timed")), ["nottingham"])
+
+    def test_a_page_whose_slice_will_not_read_stops_the_build(self) -> None:
+        # The index says the slice is there and the file says otherwise. A page
+        # assembled without times says the station has no services, so the build
+        # stops while the feed that cut the slice is still in hand.
+        self.write_index("GRN", "NOT")
+        broken = next(self.index_root.glob("*/NOT.pickle"))
+        broken.write_bytes(b"not a slice")
+        with self.assertRaises(OSError):
+            self.build(
+                "broken", "--timetable-index", str(self.index_root), feed_readable=False
+            )
+
+    def test_a_build_that_names_the_identity_directory_itself_uses_it(self) -> None:
+        # A build log prints the identity directory rather than the root it sits
+        # under, so a reader who copies that path has named one. The identity is
+        # still the feed's, so naming another download's directory is an empty
+        # index rather than another feed's timetables.
+        self.write_index("GRN", "NOT")
+        named = next(path for path in self.index_root.iterdir() if path.is_dir())
+        code, said, err = self.build(
+            "named",
+            "--timetable", str(self.timetable),
+            "--timetable-index", str(named),
+            feed_readable=False,
+        )
+        self.assertEqual(code, 0, said + err)
+        self.assertIn("the timetable feed is not read", said)
+        self.assertEqual(sorted(self.pages("named")), ["grantham", "nottingham"])
+
+    def test_an_index_is_used_without_a_feed_however_the_download_changed(self) -> None:
+        # With no feed there is nothing to compare the index against, and the
+        # caller named it: this is the "no feed on the machine" case, and it
+        # builds from the slices that are there.
+        self.write_index("GRN", "NOT")
+        target = next(item for item in sorted(self.timetable.iterdir()) if item.is_file())
+        target.write_text(target.read_text(encoding="utf-8").replace("NOT", "NT1", 1), encoding="utf-8")
+        code, said, err = self.build(
+            "no_feed", "--timetable-index", str(self.index_root), feed_readable=False
+        )
+        self.assertEqual(code, 0, said + err)
+        self.assertEqual(sorted(self.pages("no_feed")), ["grantham", "nottingham"])
 
 
 if __name__ == "__main__":
