@@ -338,6 +338,16 @@ because a reader checking a closure wants the ADR and the test.
 | The shortlist is one select and one strip above the table, not a button on every row | ADR-0054 | the browser suite's five shortlist checks, and the select's change listener's tests in `tests/test_build_demo_page.py` |
 | The station name in the heading is the field you type into | ADR-0056 | the heading-picker checks, including Escape pressed in the field rather than in the panel |
 
+### The 8 October 2026 agent-efficiency audit
+
+`docs/audits/2026-10-08-agent-efficiency-architecture.md` is pruned to the
+findings still open. Its eight findings are settled here with the artifact that
+holds each one.
+
+| Finding | Closed by | Held by |
+|---|---|---|
+| F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
+
 ### The measurements three ADRs lean on
 
 ADR-0040, ADR-0041 and ADR-0043 were settled from a rendered-page audit of the
