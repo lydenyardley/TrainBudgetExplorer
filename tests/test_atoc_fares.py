@@ -5,6 +5,7 @@ Each test asserts a literal value, so a parser that returned nothing would fail.
 
 from __future__ import annotations
 
+import functools
 import io
 import dataclasses
 import json
@@ -127,6 +128,20 @@ class PseudoStationTest(unittest.TestCase):
         self.assertFalse(is_pseudo_station(""))
 
 
+@functools.lru_cache(maxsize=1)
+def real_gra_fares() -> FaresDb:
+    """The licensed feed, focused on GRA, parsed once for every test that reads it.
+
+    Two tests read this file, and they are 58 s and 49 s of this module's 200 s
+    (measured 8 October 2026 with `python -m unittest --durations 15
+    tests.test_atoc_fares`), because each one parses the whole archive. Both only
+    read what they are handed, so one parse answers both. A test that mutated the
+    database would change what the next one sees, which is why this returns a
+    loaded database and says so here rather than being a bare module global.
+    """
+    return FaresDb().load_feed("feeds/fares/dtd-fares.zip", focus_origin="GRA")
+
+
 class FaresParserTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -168,7 +183,7 @@ class FaresParserTest(unittest.TestCase):
         # The synthetic feed cannot catch the spelling, so the licensed file is
         # the only place this can be asserted. Before the fix every advance
         # ticket in the real feed read as unrestricted: 378 of them did not.
-        db = FaresDb().load_feed("feeds/fares/dtd-fares.zip", focus_origin="GRA")
+        db = real_gra_fares()
         advance = [
             ticket
             for ticket in db.ticket_types.values()
@@ -1374,7 +1389,7 @@ class FaresParserTest(unittest.TestCase):
         "licensed DTD feed is not available",
     )
     def test_real_gra_to_not_keeps_two_together_r9_price(self) -> None:
-        db = FaresDb().load_feed("feeds/fares/dtd-fares.zip", focus_origin="GRA")
+        db = real_gra_fares()
         row = next(
             row
             for row in db.page_destinations_within("GRA", 1_000_000)
