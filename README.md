@@ -79,7 +79,7 @@ ADR-0062's non-goals (no VisitBritain dump, no full NHLE sweep, no raw OSM
 tourism tags, no polygon-wide landscape tagging) still hold.
 
 Coastal & seaside follows the chip-implies-named-proof rule in
-dr/ADR-0064-seaside-chip-implies-named-coastal-proof.md: ONS stays primary,
+adr/ADR-0064-seaside-chip-implies-named-coastal-proof.md: ONS stays primary,
 a reviewed CRS supplement covers Blackpool / Brighton / Southend / Weston, and
 COASTAL_SITE_PROOFS must name a day-out for every seaside-tagged station.
 
