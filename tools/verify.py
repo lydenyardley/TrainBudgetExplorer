@@ -34,6 +34,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# `python tools/verify.py` puts tools/ on the path, not the directory this
+# repository's modules live in, and every test module under tests/ imports those
+# by bare name. Without this the whole suite loads as 16 failed imports.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 #: The tests that read the licensed national feed. Two of them are 58 s and 49 s
 #: of the fares module's 200 s, measured on 8 October 2026 with `python -m
