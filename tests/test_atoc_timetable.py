@@ -639,6 +639,33 @@ class TiplocNormalizationTest(unittest.TestCase):
         self.assertNotIn("NOTT", timetable.cif_crs_by_tiploc)
 
 
+class SyntheticPassingStopTest(unittest.TestCase):
+    """The fixture carries the passing stop as a shape any test can ask for.
+
+    `PassingStopTest` below builds its own feed, because the fixture's timetable
+    holds a quicker Grindleford to Lincoln service that would answer its query
+    either way. That left the shape, and the defect it reproduces, reachable by
+    exactly one test: nothing that builds a page or a journey could ask for a
+    feed with a through service in it. `include_passing_stop=True` is that
+    shape, and make_synthetic_feed.py names 569e477 beside the record it holds.
+    """
+
+    def test_a_train_that_passes_grantham_is_not_a_departure_from_it(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            feed = build_synthetic_timetable(Path(folder) / "timetable", include_passing_stop=True)
+            timetable = TimetableDb().load_feed(feed)
+            rows = timetable.departures("GRN", "NOT", day=MONDAY, limit=50)
+        # The through train leaves NWRK at 09:05 and passes GRN at 09:12 without
+        # stopping. Its `0000` public times read as a clock time would leave GRN
+        # at minute zero and arrive at 09:50, a journey nobody can take, and one
+        # every station on the network would appear to have.
+        self.assertEqual([row.departure for row in rows if row.departure == 0], [])
+        self.assertIn(
+            (9 * 60, 9 * 60 + 50, 0),
+            [(row.departure, row.arrival, row.changes) for row in rows],
+        )
+
+
 class PassingStopTest(unittest.TestCase):
     """A train that passes a station is not a journey from it.
 
