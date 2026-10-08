@@ -329,7 +329,7 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 |---|---|
 | `atoc_fares.py` | Fares feed parser, the budget query, and the publishable selector |
 | `atoc_restrictions.py` | RSPS5045 `.RST` restriction parser and its publication gate |
-| `atoc_timetable.py` | CIF timetable parser, journey and reachability queries |
+| `atoc_timetable.py` | CIF timetable parser, journey and reachability queries, and the per-origin slice a page is built from |
 | `grantham_sweep.py` | CLI: every destination in a budget, with journeys |
 | `dtd_download.py` | Credential-safe NRDP/DTD and Knowledgebase downloader |
 | `dtd_audit.py` | DTD archive validation plus the real fares/timetable audit |
@@ -1163,9 +1163,12 @@ and **did not finish in 17 minutes** with the whole national index, and the
 difference is mostly footprint rather than search time. The national index holds
 **1.87 GB** where the focused one holds **50 MB**, on a machine with about 5 GB
 free once the fares feed is loaded; the searches are 2.3x slower, not 80x. Every
-figure in this section is that shape of cost. The fix (a timetable scoped per
-page in the all-origins pool, as the single-origin path already does) is open work
-in `docs/open-work.md`, and both documents were written on 7 October 2026.
+figure in this section is that shape of cost. The timetable half of that fix
+landed on 8 October 2026: every page is built from its own origin's slice of the
+index, and those slices can be written to disk so that a build never parses the
+timetable at all (`--timetable-index`, below). What a feed-parsing build still
+holds is the index the slices are cut from, which is open work in
+`docs/open-work.md`.
 
 **To build just Grantham and Nottingham, fares *and* timetable, in one command:**
 
@@ -1181,7 +1184,7 @@ fight), and serves it at http://localhost:8742. It uses `--workers 1`, because t
 timetable-holding workers do not fit in this machine's free memory, and the
 script prints a warning if there is not even room for one.
 
-**Measured three times on this machine, and the answers are about memory.** The
+**Measured four times on this machine, and the answers are about memory.** The
 first two runs wrote no page: 23 minutes on 6 October 2026 (5.5 GB free, the suite
 running alongside) and **24 minutes on 7 October 2026 with the machine idle**,
 stopped by hand (5.1 GB free against the build's own **6.4 GB** floor, so the
@@ -1190,20 +1193,30 @@ run, the same command on the same idle machine once the fares feed stopped being
 held through the render, **finished: exit 0 in 63 minutes 38 seconds**, the first
 page at 35 minutes and the second at 63, with free memory bottoming at 0.39 GB
 during the two feed loads and back to 2.6-3.0 GB once the fares feed was released.
-An earlier run of the same command, when the machine had the memory the floor asks
-for, came in **under five minutes**. The reconciliation is the floor, not the
-station count: the in-process build loads the fares feed (727,315 flows) and the
-national timetable (419,589 schedules) into one process and only then starts
-rendering, and those two loads took **11 minutes** in that state against the **93
-seconds** they take when there is room (37 s + 56 s, measured). That 7x is the
-paging. What the third run changed is the render phase: every build now writes a
-per-origin fare index and releases the whole fares feed before the first page, so
-a page no longer holds 2.1 GB it never reads. What did not change is the timetable,
-which is still the whole national index per page, and that is why the first page
-is 35 minutes. Close the browser and the editor, or build one station with `run.py
---origin`, and the shape of the cost changes. The phase measurements, and the
-code-level cause (every page is handed the whole national timetable index), are in
-`docs/build-performance-findings.md`. It takes `--timetable`, `--knowledgebase`,
+The fourth, on 8 October 2026 with the fares release and the timetable slice both
+in place, **finished in 20 minutes 53 seconds** -- the first page at 9.7 minutes,
+the second at 20.8 -- with **2.1 GB free** when it started, less than either run
+before it, and the two pages it wrote are character-for-character the third run's
+apart from the build timestamp and the source fingerprint. A control run of the
+same build with the slice switched off wrote no page in 25 minutes, on more free
+memory through its page phase than the fourth run had. An earlier run of the
+same command, when the machine had the memory the floor asks for, came in **under
+five minutes**. The reconciliation is the floor, not the station count: the
+in-process build loads the fares feed (727,315 flows) and the national timetable
+(419,589 schedules) into one process and only then starts rendering, and those two
+loads took **11 minutes** in that state against the **93 seconds** they take when
+there is room (37 s + 56 s, measured). That 7x is the paging. What the third and
+fourth runs changed is the render phase: every build now writes a per-origin fare
+index and releases the whole fares feed before the first page, so a page no longer
+holds 2.1 GB it never reads, and each page is built from its own origin's slice of
+the national timetable rather than from the whole index -- 114,244 of its 419,589
+schedules for Grantham -- so what a page indexes is one origin's reach as well.
+What the build still holds for its whole length is the index those slices are cut
+from, which is why the floor has not moved. Close the browser and the editor, or
+build one station with `run.py --origin`, and the shape of the cost changes. The
+phase measurements, and the code-level cause (every page used to be handed the
+whole national timetable index), are in `docs/build-performance-findings.md`.
+ It takes `--timetable`, `--knowledgebase`,
 `--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
 codes as bare arguments (`python build_stations.py LEI`).
 
@@ -1212,6 +1225,28 @@ Underneath it is one flag on the builder itself, usable without the script:
 exactly those stations, and refuses an unknown code rather than quietly building
 all 2,712 of them. Add `--timetable feeds/timetable` for journey times, or leave
 it off for prices only.
+
+**To build those pages without reading the national timetable at all**, write the
+per-origin slices once and point builds at them:
+
+```
+python tools/build_timetable_index.py --timetable feeds/timetable --origins GRA,NOT
+python build_stations.py GRN --timetable-index _cache/timetable-index
+```
+
+The writer parses the feed once and writes one file per station (Grantham's is
+157 MB of the feed's 419,589 schedules, Nottingham's 209 MB); every build after
+that reads its page's own slice off disk in 4-6 seconds and holds a slice rather
+than the 1.87 GB national index (855 MB for Grantham's, 1.13 GB for Nottingham's,
+measured as Python heap). `build_stations.py` and `build_demo_page.py
+--timetable-index` both take the directory, and when the index holds a slice for
+every page the build writes, no timetable feed is read at all -- not by the pool
+workers either. A station the index has not got is refused before the build starts
+rather than published without times. The index is keyed to the feed's bytes and the
+source that reads them, so a new download writes a new directory rather than
+reusing the old one. Measured on 8 October 2026, the two-station command given the
+index **finished, exit 0, in 3 min 44 s** with 4.7 GB free and wrote the same site
+as the build from the feed.
 
 Useful variants: `--origin GRA` for the fast single-station page — its root at
 `/`, that one station under `/from/<slug>/`, and the privacy page, with a root

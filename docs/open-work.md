@@ -86,11 +86,14 @@ from AYW it exits 1 having printed `facet seaside: 149 in the checked-in copy,
 reading a feed. `tests/test_check_facet_reference.py` holds 16 tests over the
 comparison itself, which is a pure function and needs no feed.
 
-### A whole-network build gives every page the national timetable
+### A whole-network build holds the national timetable for its whole life
 
-**Severity:** P1 for build cost. **Route:** `run.bat` / `build_stations.py` / the
-deploy workflow, that is, every path that builds through `--all-origins`.
-**Raised:** 7 October 2026, measured the same day, still open.
+**Severity:** P1 for build cost, and no longer blocking a two-station preview.
+**Route:** `run.bat` / `build_stations.py` / the deploy workflow, that is, every
+path that builds through `--all-origins`. **Raised:** 7 October 2026.
+**Partial fix landed:** the same day for the fares feed, 8 October 2026 for the
+timetable a page reads, and the same day again for the feed that timetable is
+read from.
 
 **Evidence, corrected by measurement on 7 October 2026.** The index's *footprint*
 costs the minutes, not the work per search. National index: 1.87 GB held (4.92 ->
@@ -114,31 +117,77 @@ feed is released before the first page. The same command on the same idle machin
 that had written no page in 24 minutes now **finished, exit 0 in 63 min 38 s**:
 Grantham at 35 minutes, Nottingham at 63. Free memory bottomed at 0.39 GB while
 both feeds were held, was back to 2.6-3.0 GB once the fares feed was released, and
-held above 1.5 GB through both page writes. **This entry stays open** because the
-timetable half is untouched: `focus_origin=None` still holds the 1.87 GB national
-index for every page, and that is what 35 minutes to the first page is.
+held above 1.5 GB through both page writes. The entry stayed open after that run,
+because the timetable half was untouched: `focus_origin=None` still held the
+1.87 GB national index for every page, and that is what 35 minutes to the first
+page was.
 
-**Why the timetable half is still open.** That cause is named and not fixed.
-`build_demo_page`'s
-single-origin path already computes `focus_destinations` and a per-origin cache;
-`--all-origins` passes `focus_origin=None` and no cache, so
-`build_workers.init_worker` parses and holds the whole country for every worker
-and every page.
+**Fixed for the page, 8 October 2026, and re-measured.** A page is now built from
+`TimetableDb.focused(origin)`: the schedules that call the origin, and the
+schedules that call any station those services call, cut in one pass out of the
+database the build already holds. The cut costs **1.66 s** the first time (it
+builds a TIPLOC-to-schedules index) and **0.248 s** for every cut after that, and
+Grantham's slice is **114,244 of 419,589 schedules** -- a quarter of the feed
+rather than the 5,262 a focus built from the fares feed's destination lists would
+keep, because ADR-0061 lets a page show a row for a place with no flow, so the
+services those rows are timed from have to be in the slice whatever the fares feed
+priced. The same two-station command on the same feeds, on a machine with **2.1 GB
+free** against the 6.4 GB floor, **finished, exit 0, in 20 min 53 s**: Grantham at
+9.7 minutes against the 35 the run before it took, Nottingham at 20.8 against 63.
+Both pages carry the same destinations, times and change counts as the pages of
+that release and the same bytes apart from `builtAt`, the source fingerprint and
+the key order of the page's `serviceWeek` object, which follows the process hash
+seed (see `docs/build-performance-findings.md`). A control run of the same build with
+`TimetableDb.focused` replaced by one that hands back the whole database wrote no
+page in **25 minutes**, on more free memory through its page phase than the fixed
+run had: `docs/build-performance-findings.md` has the numbers, the diff and that
+control.
+
+**Fixed on disk, 8 October 2026: the slices no longer need the feed.** A slice
+used to be a list of references into the database it was cut from, so that
+database had to be in the process: the one-worker path kept the parent's national
+index for the whole build, and a pool worker parsed its own in `init_worker`,
+56 s and 1.87 GB per process. `atoc_timetable.SliceIndex` writes each slice once
+as a pickle, under a directory named for the feed, the parser's source
+fingerprint and the layout version, and `build_demo_page.py --timetable-index`
+reads a page's slice back with no timetable feed on the machine at all. When the
+index covers every page the build writes, the feed is not read in the parent and
+the pool workers are handed no timetable to parse either.
+
+Measured on the real DTD download on 8 October 2026. Writing the index for
+Grantham and Nottingham is one parse of the feed (53.9 s) plus the writes, **88 s
+in total**, and the two files are 365.8 MB: GRA **114,244 of the feed's 419,589
+schedules**, 2,747,086 calling points, 157.0 MB, and NOT 143,560 schedules,
+3,728,248 calling points, 208.8 MB. Reading one back costs **4.4-5.9 s** and
+**855 MB / 1,133 MB** of Python heap (tracemalloc) for those two files, against
+the 56.7 s and 1.87 GB of parsing and holding the national index. `SliceIndex.save`
+reads every file back before it reports it written, so an index that cannot be
+restored fails at the tool that wrote it rather than at the far end of a build.
+The same two-station command, given the index and the same feeds, **finished,
+exit 0, in 3 min 44 s** with 4.7 GB free and wrote the same site -- both station
+pages line for line apart from `builtAt`, the source fingerprint and the key order
+of the page's `serviceWeek` object, which follows the process hash seed and did so
+before this change (see `docs/build-performance-findings.md`).
+
+**What is left of this entry, after that.** `build_workers.ONE_WORKER_FLOOR`
+still describes the feed-parsing shape, because every build without an index
+still pays it, and the indexed shape -- the fares feed plus one page's slice -- is
+smaller and is measured in `docs/build-performance-findings.md` rather than
+guessed at here. Indexing the whole network is still not a thing to do: holding
+every origin's slice is holding the network 3,400 times over, so
+`tools/build_timetable_index.py --all-origins` refuses without `--max-bytes`.
 
 **What it is not.** Not a fares problem. The whole fares feed loads in 36.9 s,
 the pricing pre-pass is 0.01-0.09 s per origin, and a prices-only page renders in
 under half a second.
 
-**The prescribed fix does not hold as written.** "A focused index and its own
+**The prescription, and what was built instead.** "A focused index and its own
 cache per origin" cannot be built by parsing: a focused parse still costs 50.6 s
 because the loader reads every record to decide what to drop, so 3,424 origins is
-two days of CPU, and one pickle per origin is gigabytes of disk. A per-origin
-focus has to be derived in memory from one parse. That is cheap per origin, but
-it only reduces the peak if the national schedule list is not retained, and today
-it is: one worker holds one database for every page it builds. So the work is a
-shape decision first (what a worker holds) and an index change second, and either
-way it needs a re-measure of the published build against the workflow's
-`timeout-minutes: 150` (that figure predates ADR-0061 and the service week too).
+two days of CPU, and one pickle per origin is gigabytes of disk. The fix was the
+other half of that sentence: one parse, and a focus derived from it in memory,
+with the fares feed released before the first page so the render phase has room
+for the slice it is about to cut.
 
 ---
 
