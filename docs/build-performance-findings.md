@@ -418,7 +418,7 @@ which is why the tool resumes rather than being trimmed.
 
 Every one of those pairs asked the complete question -- every leg of every journey
 the page would show. The whole request is 3,767 origins by seven days, 26,369
-origin-days at about 2.4-3.1 s each, which is **about 17 hours**: the complete
+origin-days at about 2.4-3.1 s each, which is **about 17-18 hours**: the complete
 sweep is not a turn's work, which is why the tool stops and resumes instead of
 being trimmed to a question it could finish:
 
@@ -433,6 +433,42 @@ rather than about the run: exit 0 every requested origin-day agreed, 1 one did n
 or could not be compared, 2 some are still to compare. The 150 pairs an earlier
 sampled run left in the checkpoint -- `--max-legs 25` -- were **not** carried over
 when the complete question was asked, which is the guard the tool now enforces.
+
+**The same request in shards, 8 October 2026 (ADR-0066).** An origin-day is
+compared against the feed and nothing else, so the request is embarrassingly
+parallel and the tool now takes a share of it: `--shard N/M` compares origins N,
+N+M, N+2M ... of the request's origin list, checkpoints to a file of its own beside the
+base one, and `--merge M` reads those files back into the one verdict a single run
+would have printed. The shares are disjoint by construction, and the merge checks
+that partition rather than trusting it -- a missing shard, a shard asked a
+different request, two shards that overlap, an origin in no shard, or a pair
+outside the origin-days its own file records are all exit 2 rather than a verdict.
+
+**Re-measured the same day, and the rates still hold.** The feed loads in **58.0 s**
+(419,589 schedules, 7,700,987 calling points) and a probe of eight origins on
+2026-10-07 gives **2.45 s per origin-day** (0.29-9.32 s; the first origin of a day
+carries that day's index build), against 2.4-3.1 s when the figure was first taken,
+so the projections are:
+
+| Shards | Wall clock for 26,369 origin-days | Index they hold |
+| --- | --- | --- |
+| 1 | about 18 hours | 1.87 GB |
+| 4 | about 4.5 hours | 7.5 GB |
+| 8 | about 2.2 hours | 15.0 GB |
+
+```
+# shard i of 4, in four shells, then one verdict over all of them
+python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+    --days 7 --progress _cache/slice-equivalence.json --shard 1/4
+python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+    --days 7 --progress _cache/slice-equivalence.json --merge 4
+```
+
+The number that fits is a memory question first: the wall clock divides by the
+shard count, the index does not, and **4.7 GB** was free on this machine while the
+8-shard row wants 15.0 GB. A sharded run prints both counts against that free
+memory before it starts, which is the same warning shape `build_workers` prints
+before a build.
 
 ## The whole network, measured
 
@@ -552,9 +588,10 @@ when done with it.
 - A network-wide re-measurement of the focused-index fix. The 5.1 s figure is
   one page on one feed; the shape transfers, the per-origin spread does not.
 - The whole equivalence sweep. Nothing compared has differed, and the sweep's own
-  rate puts the rest of the request at about 17 hours. The seven-day sample is
-  complete and the first day is a third done; the other 24,000-odd origin-days
-  have not been compared, and this document does not claim they have.
+  rate puts the rest of the request at about 17-18 hours in one process, or about
+  4.5 hours over 4 shards (ADR-0066). The seven-day sample is complete and the
+  first day is a third done; the other 24,000-odd origin-days have not been
+  compared, and this document does not claim they have.
 - A whole-network build from an index, and an index for a whole network. The first
   is unmeasured and the second is refused without a byte budget, because it is
   3,767 files of a quarter of the feed each.

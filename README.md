@@ -350,6 +350,8 @@ checked:
 | `tools/test_page_bytes.py` | Tests for the measurer: where a payload's split ends, and what may count as shared |
 | `tools/feed_change_report.py` | CLI: two feed snapshots compared -- the fares whose prices moved, the ones removed and added, the restrictions that changed at an unchanged price, and the stations whose coverage changed; `--fail-on-material` is the opt-in refusal |
 | `tools/inspect_knowledgebase.py` | CLI: what a Knowledgebase reference feed actually contains, what the reader makes of it, and which element name to add when it guesses wrong |
+| `tools/check_slice_equivalence.py` | CLI: whether a page's slice of the timetable answers every question the whole feed does, over every origin and day; `--shard N/M` takes a disjoint share of that request and `--merge M` concludes about all M (ADR-0066) |
+| `tools/test_check_slice_equivalence.py` | Tests for the sweep: a damaged slice is named, the request is what is counted, and a merge refuses a partition that is not the request |
 | `tools/test_inspect_knowledgebase.py` | Tests for the inspector's element summary, name matching and verdicts |
 | `tools/test_feed_change_report.py` | Tests for the change report: both materiality bars, a renumbered flow id, an unattributable fare, and the wording that must not claim a change that did not happen |
 | `parse_report.py` | Shared parse counters and the streaming line reader |
@@ -1255,6 +1257,8 @@ To question a count, and to break a feed on purpose:
 
 ```
 python sanity_report.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20
+python tools/check_slice_equivalence.py --timetable _demo_feed --days 1 --probe 3
+python tools/check_slice_equivalence.py --timetable _demo_feed --days 1 --progress _cache/demo-equivalence.json --shard 1/4   # then --merge 4
 python damage_feed.py --list
 python damage_feed.py _demo_feed _damaged crlf
 python damage_feed.py _demo_feed _damaged truncated_record --target ffl
