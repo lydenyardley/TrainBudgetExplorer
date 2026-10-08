@@ -65,13 +65,26 @@ prune is for), seaside 142 -> 150 (the ADR-0064 reviewed supplement), transport
 6 -> 155 and the source list 7 -> 10 (drift from registry changes that predate
 this build). airport, island, nature and university are unchanged.
 
-**Still open, and it is the part that matters.** Nothing runs the regenerator
-when it should. ADR-0062 and ADR-0064 each shipped without one, so the drift was
-a habit rather than a decision, and nothing in the suite fails when the file and
-the registry disagree. The fix is structural, not a commit: a comparison in the
-release checklist or in CI that regenerates into a temporary file and refuses a
-release when the checked-in copy differs (ADR-0026's recording rule, in the shape
-`tools/check_release_clearance.py` already uses).
+**The part that mattered, closed the same day.** Nothing ran the regenerator when
+it should, so the drift was a habit rather than a decision: nothing in the suite
+or in CI failed when the file and the registry disagreed. The fix was structural,
+not a commit. `tools/check_facet_reference.py` regenerates the file into a
+temporary directory and compares the result with the checked-in copy, naming
+every facet that moved and the codes it gained or lost (capped at twelve a line,
+because the transport facet moved 149 at once). It exits 1 on any difference, 2
+when a facet could not be read at all or the checked-in copy is missing, and 0
+when the two agree. The deploy workflow runs it beside the other gates, with no
+`changed` guard: a gate that skips when the feeds are unchanged cannot catch a
+file that is already stale, which is the only case there is. A feed revision that
+moves the station count fails it too, deliberately -- the file describes the feed
+it was generated from -- and the fix is the regenerator plus a commit.
+
+**Proved against the real thing, not only the fixtures.** On the committed file
+it exits 0 (10 facets, 463 station records). Given a copy with `seaside` removed
+from AYW it exits 1 having printed `facet seaside: 149 in the checked-in copy,
+150 regenerated; added AYW`. Given a path that does not exist it exits 2 before
+reading a feed. `tests/test_check_facet_reference.py` holds 16 tests over the
+comparison itself, which is a pure function and needs no feed.
 
 ### A whole-network build gives every page the national timetable
 

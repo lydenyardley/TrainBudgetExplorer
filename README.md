@@ -61,6 +61,14 @@ sources against a real fares download. A facet whose source is temporarily
 unreachable can be carried forward with `--keep-unavailable`, which prints what
 it could not read rather than writing a file that quietly lost it.
 
+`tools/check_facet_reference.py` is what keeps the checked-in copy honest. It
+regenerates the file into a temporary directory and compares the result with the
+repository's copy, naming every facet that moved and the station codes it gained
+or lost; it exits 1 on a difference, 2 when a facet could not be read or the copy
+is missing, and 0 when the two agree. The deploy workflow runs it on every build,
+so a source that ships without the file being regenerated fails the run instead
+of classifying stations from an older registry.
+
 The three day-out sources ADR-0062 put on the backlog shipped on 7 October
 2026, in that ADR's order: 9 RSPB reserves, 9 National Trust visitor properties
 and 19 National Park / National Landscape gateways, each one reviewed list on
@@ -366,6 +374,8 @@ decisions in `adr/`. The root stays the build, not the filing cabinet.
 | `tests/test_fuzzed_feed.py` | Accounting and fuzzer tests |
 | `tools/test_commit_message.py` | Commit-message checker tests |
 | `tools/check_release_clearance.py` | The gate that refuses a public release no licence clearance covers |
+| `tools/check_facet_reference.py` | The gate that refuses a release whose checked-in destination facet data no longer matches the registry, regenerating it into a temporary file and naming every facet that moved |
+| `tests/test_check_facet_reference.py` | Tests for the facet check: drift that must be caught, and the drift it must not invent on the feed path, the source constant, or a facet it was told not to read |
 | `tests/test_destination_coverage.py` | Coverage-report tests: dedup, ranking, the summary, and the refusal |
 | `docs/dtd-licensing-and-data-access.md` | DTD/KB licensing research, zero-cost conclusion, and entitlement caveats |
 | `docs/stage-1-results.md` | Stage 1 findings, evidence, and residual risks |
