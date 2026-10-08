@@ -101,6 +101,14 @@ jobs:
           fi
           exit "$FAILED"
 
+      - name: Verify the sources
+        # The cheap gate, before the feeds rather than after the build: the two
+        # unit suites minus the two tests that read the licensed national
+        # download, and the page's JavaScript parsed. A push that cannot pass
+        # this should not spend five minutes downloading feeds to find out, and
+        # the same command runs on a developer's machine (F5).
+        run: python tools/verify.py --fast
+
       - name: Restore the last successful feed manifest
         uses: actions/cache/restore@v4
         with:
@@ -452,6 +460,9 @@ jobs:
           echo "every station page carries journey times"
 
       - name: Test the build
+        # `tools/verify.py --full` is the whole suite in the same command a
+        # developer runs, so a green run here and a green run there mean the
+        # same thing (F5 of the 8 October 2026 agent-efficiency audit).
         # Coverage runs with a floor, not a target (audit C5): unreachable
         # code and untested branches show up in the printed report, and a
         # drop below 79% of the product fails the step. A point and a half
@@ -460,8 +471,7 @@ jobs:
         # reason.
         run: |
           python -m pip install coverage
-          python -m coverage run -m unittest discover -s tests -p "test_*.py"
-          python -m coverage run --append -m unittest discover -s tools -p "test_*.py"
+          python -m coverage run tools/verify.py --full
           python -m coverage report --fail-under=79 --precision=1
 
       - name: Test the page in a real browser
