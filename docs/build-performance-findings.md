@@ -17,6 +17,13 @@ Measured properly, the searches are **2.3x** slower and the per-day index build 
 fares feed. The headline figures are unchanged -- they are measurements -- and the
 explanation of them is corrected below.
 
+**Revision, 7 October 2026 (later the same day).** The fares half of that
+footprint is now released before a page renders. The two-station build that had
+written no page in 24 minutes **finished, exit 0, in 63 min 38 s**. The timetable
+half is untouched, and it is why the first page still takes 35 minutes. The third
+row of "The two-station build, measured three times" is the new measurement, and
+"What is actually wrong" now separates the two halves.
+
 ## The one-line answer
 
 **The cost is not the number of stations.** It is the **national timetable**, and
@@ -138,32 +145,50 @@ of single-threaded work, or a handful of minutes across four workers. Neither
 figure explains a two-station build that has not written a page in 23 minutes.
 The unfocused timetable does.
 
-## The two-station build, measured twice
+## The two-station build, measured three times
 
 | Run | Conditions | Result |
 | --- | --- | --- |
 | 6 October 2026 | 5.5 GB free, unit suite running alongside | **no page in 23 minutes**, stopped |
-| 7 October 2026 | 5.1 GB free, machine otherwise idle | **no page in 24 minutes**, stopped by hand |
+| 7 October 2026, before the fares release | 5.1 GB free, machine otherwise idle | **no page in 24 minutes**, stopped by hand |
+| 7 October 2026, after the fares release | 5.1 GB free, machine otherwise idle | **finished, exit 0, 63 min 38 s** -- Grantham at 35 min, Nottingham at 63 |
 
-Both runs printed the same warning before starting: *"5.1 GB of memory is free and
+All three printed the same warning before starting: *"5.1 GB of memory is free and
 this build wants about 6.4 GB for the two feeds and one page at a time. It will
 still run, slowly, by paging."* The 6.4 GB is
 `build_workers.ONE_WORKER_FLOOR` (4.4 GB parent + 2.0 GB reserved).
 
-The idle run also gives the phase split, because the script names each one:
+Reproduction, both idle runs: `python build_stations.py GRA NOT --no-serve --date
+2026-10-07`, free memory sampled every 15 s alongside it.
 
-- fares feed + national timetable load: **11 minutes** (the log's last write before
-  rendering began), where the same two loads measured **93 s** -- 37 s + 56 s --
-  when the machine had room. That 7x is paging, and it happens before a single
-  page is built.
-- free memory once both feeds were held and the first page began: **0.88 GB**.
-- the two station pages: not written inside the remaining 13 minutes.
+The two idle runs give the phase split, because the script names each one:
 
-An earlier run of the same command, on a machine with the memory the floor asks
-for, came in **under five minutes**. The reconciliation is the floor, not the
-station count: the in-process build holds ~4.2 GB before the first page and
-renders with ~0.8 GB left. That is why the flagged strategies below are ordered by
-memory first.
+- **Before the fares release.** fares feed + national timetable load: **11
+  minutes** (the log's last write before rendering began), where the same two
+  loads measured **93 s** -- 37 s + 56 s -- when the machine had room. That 7x is
+  paging, and it happens before a single page is built. Free memory once both
+  feeds were held and the first page began: **0.88 GB**. The two station pages:
+  not written inside the remaining 13 minutes.
+- **After the fares release.** The same paged 11-minute load, bottoming at **0.39
+  GB** free while both feeds were held. Free memory was back to **2.6-3.0 GB** as
+  soon as the fares feed was released, and stayed above 1.5 GB through both page
+  writes. Both pages landed and the process exited 0.
+
+**What the release is.** Every build now writes the shared fare metadata and one
+index per origin before it renders, and `build_workers.restore_worker_fares`
+gives the one-worker path the same per-origin slice a pool worker takes. The 2.1
+GB national fare feed is therefore released before the first page, and a page
+holds only its own origin's fares while it renders. The **6.4 GB floor does not
+move**: the preparation peak is the two whole feeds plus the index write, which is
+what `PARENT_BYTES` covers, and the timetable half of it is untouched. What moved
+is the render phase, which used to hold a whole fares feed it never read.
+
+Reconciling the earlier figure. An earlier run of the same command, on a machine
+with the memory the floor asks for, came in **under five minutes**. The
+reconciliation is the floor, not the station count, and it still is: 93 s of feed
+loading with room against 11 minutes without, and the render then had a page's
+worth of fares rather than the country's. That is why the flagged strategies below
+are ordered by memory first.
 
 ## What is actually wrong
 
@@ -173,7 +198,9 @@ set and passes a per-origin `cache_path`; the all-origins path passes
 `focus_origin=None` and no cache, and `build_workers.init_worker` then does
 `TimetableDb().load_feed(timetable)` per worker with no focus. A page only ever
 asks about its own origin's destinations, so holding the other 3,300 stations'
-schedules buys nothing and holds 1.87 GB the page never reads.
+schedules buys nothing and holds 1.87 GB the page never reads. **This half is not
+fixed.** The fares half is: see "What the release is" above. The timetable half is
+what turns the first page into a 35-minute wait, and it is the remaining work.
 
 This is a code-level cause and a memory-level one at the same time, and which one
 bites depends on the machine. The measured facts above say the search is 2.3x
@@ -205,13 +232,16 @@ question, and it is written up in `docs/open-work.md`.
    therefore much cheaper. Only pass `--with-timetable` when the times matter.
 5. **Free memory first.** Below 6.4 GB free the build pages and the worker
    budget drops to one. Close the browser and the editor before a whole-network
-   build; a preview does not need the headroom.
+   build; a preview does not need the headroom. Below the floor a two-station
+   build now finishes rather than stopping at no page, but it takes 63 minutes
+   instead of five, because the two feeds page their way in.
 6. **Repeat builds are warmer, not free.** The focused timetable cache takes the
    single-origin build from 2 m 57 s to 2 m 03 s (54 s saved). It does not help
    the unfocused all-origins path, which writes no such cache.
 7. **Fix the footprint for real.** Give each page a timetable scoped to that
    origin's destinations, as the single-origin path already does, and stop
-   holding the national index while a page is built.
+   holding the national index while a page is built. The fares half of this
+   footprint landed on 7 October 2026; the timetable half is what remains.
 
    **In plain words:** right now, when the build writes the page for one town, it
    first loads every train in the country and keeps that in memory while it

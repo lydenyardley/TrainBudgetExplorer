@@ -647,8 +647,10 @@ are resolved with the CRS code at build time. The picker cannot offer "nearest
 station": the fare feed records no county, region, or coordinates for a station,
 only its name and code.
 
-Build caches live in `_cache/` (git-ignored): the shared feed metadata and
-per-origin fare indexes the workers restore, and the timetable pickles a
+Build caches live in `_cache/` (git-ignored): the shared feed metadata and one
+per-origin fare index per station page, which every build writes and restores its
+pages from, single-worker builds included -- that is what lets a whole fares feed
+be released before the first page is rendered -- and the timetable pickles a
 single-origin build keys by the feed's bytes and its focus stations. Every
 build that reads or writes a timetable pickle then keeps the newest two per
 origin — the caches it just used are protected — and deletes the older
@@ -1169,23 +1171,29 @@ fight), and serves it at http://localhost:8742. It uses `--workers 1`, because t
 timetable-holding workers do not fit in this machine's free memory, and the
 script prints a warning if there is not even room for one.
 
-**Measured twice on this machine, and the two answers are about memory.** Twice
-now the same command has written no page: 23 minutes on 6 October 2026 (5.5 GB
-free, the suite running alongside) and **24 minutes on 7 October 2026 with the
-machine idle**, stopped by hand, no station page written (5.1 GB free against the
-build's own **6.4 GB** floor, so the script said "it will still run, slowly, by
-paging" before it started). An earlier run of the same command, when the machine
-had the memory the floor asks for, came in **under five minutes**. The
-reconciliation is the floor, not the station count: the in-process build loads the
-fares feed (727,315 flows) and the national timetable (419,589 schedules) into one
-process and only then starts rendering, so it holds ~4.2 GB before the first page
-and has ~0.8 GB left to render it in, and those two loads took **11 minutes** in
-that state against the **93 seconds** they take when there is room (37 s + 56 s,
-measured). That 7x is the paging, and it is where the earlier under-five-minute
-figure came from. Close the browser and the editor, or build one
-station with `run.py --origin`, and the shape of the cost changes. The phase
-measurements, and the code-level cause (every page is handed the whole national
-timetable index), are in `docs/build-performance-findings.md`. It takes `--timetable`, `--knowledgebase`,
+**Measured three times on this machine, and the answers are about memory.** The
+first two runs wrote no page: 23 minutes on 6 October 2026 (5.5 GB free, the suite
+running alongside) and **24 minutes on 7 October 2026 with the machine idle**,
+stopped by hand (5.1 GB free against the build's own **6.4 GB** floor, so the
+script said "it will still run, slowly, by paging" before it started). The third
+run, the same command on the same idle machine once the fares feed stopped being
+held through the render, **finished: exit 0 in 63 minutes 38 seconds**, the first
+page at 35 minutes and the second at 63, with free memory bottoming at 0.39 GB
+during the two feed loads and back to 2.6-3.0 GB once the fares feed was released.
+An earlier run of the same command, when the machine had the memory the floor asks
+for, came in **under five minutes**. The reconciliation is the floor, not the
+station count: the in-process build loads the fares feed (727,315 flows) and the
+national timetable (419,589 schedules) into one process and only then starts
+rendering, and those two loads took **11 minutes** in that state against the **93
+seconds** they take when there is room (37 s + 56 s, measured). That 7x is the
+paging. What the third run changed is the render phase: every build now writes a
+per-origin fare index and releases the whole fares feed before the first page, so
+a page no longer holds 2.1 GB it never reads. What did not change is the timetable,
+which is still the whole national index per page, and that is why the first page
+is 35 minutes. Close the browser and the editor, or build one station with `run.py
+--origin`, and the shape of the cost changes. The phase measurements, and the
+code-level cause (every page is handed the whole national timetable index), are in
+`docs/build-performance-findings.md`. It takes `--timetable`, `--knowledgebase`,
 `--feed`, `--out`, `--workers`, `--date`, `--port` and `--no-serve`, and station
 codes as bare arguments (`python build_stations.py LEI`).
 

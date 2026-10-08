@@ -93,7 +93,20 @@ with the machine idle: 5.1 GB free against the 6.4 GB floor, the two feeds takin
 first page started. `docs/build-performance-findings.md` has the table and the
 reproduction.
 
-**Why it is still open.** The cause is named and not fixed. `build_demo_page`'s
+**Partly fixed, 7 October 2026, and re-measured.** The fares half of the peak is
+gone. Every build now writes the shared fare metadata and one index per origin
+before it renders, and `build_workers.restore_worker_fares` gives the in-process
+path the same per-origin slice a pool worker takes, so the 2.1 GB national fare
+feed is released before the first page. The same command on the same idle machine
+that had written no page in 24 minutes now **finished, exit 0 in 63 min 38 s**:
+Grantham at 35 minutes, Nottingham at 63. Free memory bottomed at 0.39 GB while
+both feeds were held, was back to 2.6-3.0 GB once the fares feed was released, and
+held above 1.5 GB through both page writes. **This entry stays open** because the
+timetable half is untouched: `focus_origin=None` still holds the 1.87 GB national
+index for every page, and that is what 35 minutes to the first page is.
+
+**Why the timetable half is still open.** That cause is named and not fixed.
+`build_demo_page`'s
 single-origin path already computes `focus_destinations` and a per-origin cache;
 `--all-origins` passes `focus_origin=None` and no cache, so
 `build_workers.init_worker` parses and holds the whole country for every worker

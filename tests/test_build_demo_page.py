@@ -5581,12 +5581,15 @@ class WorkerBudgetTest(unittest.TestCase):
         self.assertIn("fares", released)
         self.assertIn("timetable", released)
 
-    def test_the_in_process_branch_keeps_the_databases_it_renders_from(self) -> None:
+    def test_the_in_process_branch_restores_a_slice_and_releases_the_feed(self) -> None:
         # The other half, and the one a careless reader of the test above would
-        # break. With one worker the build renders in this process and puts both
-        # objects straight into `_WORKER`, so releasing them there would delete
-        # the databases the build is about to use. No number in this file can
-        # catch that; only the placement can.
+        # break. With one worker the build renders in this process, and what it
+        # renders from is the worker state: the per-origin slice the shared
+        # helper restores, not the national feed. That feed was held through the
+        # whole render phase until the indexes were written for this path too,
+        # and holding 2.1 GB of fares beside the national timetable is what
+        # paged a two-station build on a machine whose own floor is 6.4 GB free.
+        # No number in this file can catch that; only the placement can.
         in_process, _pool = self._worker_branch()
         # Structurally rather than by text: `ast.unparse` normalises quotes, so
         # a test written against the source's own spelling fails on `"` vs `'`
@@ -5602,9 +5605,41 @@ class WorkerBudgetTest(unittest.TestCase):
             and isinstance(node.targets[0].slice, ast.Constant)
             and isinstance(node.value, ast.Name)
         }
-        self.assertIn(("fares", "fares"), handed)
         self.assertIn(("timetable", "timetable"), handed)
-        self.assertEqual(self._deleted_names(in_process), set())
+        self.assertNotIn(("fares", "fares"), handed)
+        self.assertIn("fares", self._deleted_names(in_process))
+        called = {
+            node.func.id
+            for node in ast.walk(ast.Module(body=list(in_process), type_ignores=[]))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertIn("restore_worker_fares", called)
+
+    def test_a_process_with_the_indexes_takes_a_slice_and_one_without_keeps_the_feed(self) -> None:
+        # The one decision both ways into a page now make, held as behaviour
+        # rather than as placement: with the shared metadata and the index
+        # directory, a process holds no national fare data and lets the page
+        # function restore its own slice. Without them it keeps the feed it was
+        # handed, and does not pay for a second parse to get one, because a
+        # working page beats a released one and two copies of the feed is the
+        # one answer that is worse than either.
+        shared = {
+            "fare_common_cache": str(pathlib.Path(tempfile.gettempdir()) / "common.pickle"),
+            "fare_index_dir": str(pathlib.Path(tempfile.gettempdir()) / "origins"),
+        }
+        try:
+            with mock.patch.object(
+                build_workers.FaresDb, "load_fare_common", return_value="the shared metadata"
+            ) as loader:
+                build_workers.restore_worker_fares("feeds/fares", shared, loaded="the whole feed")
+            self.assertIsNone(build_workers._WORKER["fares"])
+            self.assertEqual(build_workers._WORKER["fares_common"], "the shared metadata")
+            loader.assert_called_once_with(shared["fare_common_cache"])
+            build_workers._WORKER.clear()
+            build_workers.restore_worker_fares("feeds/fares", {}, loaded="the whole feed")
+            self.assertEqual(build_workers._WORKER["fares"], "the whole feed")
+        finally:
+            build_workers._WORKER.clear()
 
 
 class RunnerWorkerCountTest(unittest.TestCase):
