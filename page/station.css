@@ -1,0 +1,484 @@
+  /* No width of its own: the column, the padding and the heading size are the
+     shared ones, so a station page and the chooser are the same page with
+     different content. The table simply uses the width it is given. */
+  /* The station slot wears the shared .origin-slot skin, so the same underline
+     sits under a name that navigates here and under one that is typed into on
+     the chooser. This rule only takes the browser's own button chrome off it:
+     border-bottom is left to the class, because the border shorthand here
+     would win on specificity and erase the affordance. The mark is the shared
+     drawn chevron -- an affordance, not a word, and aria-hidden so it is not
+     read out as part of the heading's name. */
+  #changeOrigin { display: inline-flex; align-items: baseline; gap: .35rem; padding: .05rem .15rem;
+                  border-top: 0; border-right: 0; border-left: 0;
+                  background: transparent; color: var(--accent);
+                  font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
+  #changeOrigin:hover, #changeOrigin:focus-visible { border-bottom-style: solid; }
+  #changeOrigin:hover .chevron, #changeOrigin:focus-visible .chevron { opacity: 1; }
+  #changeOrigin .chevron { width: .8em; height: .8em; opacity: .75; }
+  /* One control that is always there and one block that folds away, at every
+     width rather than below a breakpoint. Live at 1440px this bar put four
+     controls a reader had not asked for -- a budget slider, three ticket
+     types, three party choices and six destination chips -- above a list that
+     was the reason they came. The budget stays outside the disclosure because
+     it is the page's question rather than a refinement of it, and the toggle
+     carries what is currently narrowed, so a folded bar is never a hidden
+     filter. Nothing here depends on a viewport width or on a resize event. */
+  /* No panel around them. The bar was a bordered, tinted card holding two
+     controls, so the page had a box for a slider and a box for the button
+     inside it -- and the box did not say anything the two controls do not
+     say themselves. What is left is the budget under the heading's own
+     budget, then the one control that folds the rest away. */
+  .filter-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; margin: 1rem auto; }
+  .filter-bar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .budget-track { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; }
+  /* Capped rather than stretched: a range input at the full width of a 78rem
+     table is a long thin rule with a thumb somewhere on it, and the reader
+     has to find the control inside it. At a control's own width the note
+     beside it stays beside it. */
+  .budget-track #budget { flex: 1 1 12rem; max-width: 34rem; min-width: 0; }
+  .more-filters { display: block; }
+  .more-filters-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem;
+                          width: 100%; min-height: 44px; padding: .5rem 1rem;
+                          border: 1px solid var(--line); border-radius: .45rem;
+                          background: var(--field); color: var(--fg); font: inherit; text-align: left;
+                          cursor: pointer; }
+  .more-filters-toggle:hover { border-color: var(--accent); }
+  .more-filters-label { font-weight: 700; }
+  .more-filters-toggle .chevron { margin-left: auto; color: var(--accent); }
+  .more-filters[data-open="true"] .more-filters-toggle { border-color: var(--accent);
+                                                          border-radius: .45rem .45rem 0 0; }
+  .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
+  .more-filters-panel { display: none; }
+  /* The panel is not a card of its own. It and the toggle above it are one
+     shape: the open toggle keeps the accent border and squares off its bottom
+     corners, and the panel carries the accent border on its other three sides
+     with no fill and no gap under it, so the two read as one thing that was
+     opened rather than as a button with a second panel below it. A grid of
+     controls floating on the background read as loose rows of words, and
+     wrapping the panel in its own tint said "card" twice for one disclosure. */
+  .more-filters[data-open="true"] .more-filters-panel { display: grid;
+                                                          grid-template-columns: repeat(2, minmax(0, 1fr));
+                                                          gap: 1rem 2rem; align-items: start;
+                                                          /* background: var(--field); */
+                                                          padding: 1rem;
+                                                          /* margin-bottom: 1rem; */
+                                                          border: 1px solid var(--accent); border-top: 0;
+                                                          border-radius: 0 0 .45rem .45rem; }
+  /* Which ticket, and whose budget, are one decision, so the two controls
+     that make it share a row and the reader can see that they belong
+     together. The destination chips take the full width under them,
+     because half of that row wraps every chip onto two lines. */
+  .more-filters[data-open="true"] .destination-filter { grid-column: 1 / -1; }
+  .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
+                                      text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
+  /* C23: these three families were 36px, below the 44px the row actions are
+     already held to. A control a thumb has to hit gets the same floor as the
+     others the project promised, and the floor is on the label a finger
+     actually touches, not on the input hidden inside it. */
+  .segmented label, .choice-chip { position: relative; display: inline-flex; align-items: center; justify-content: center;
+                                   min-height: 2.75rem; min-width: 2.75rem;
+                                   padding: .4rem .7rem; border: 1px solid var(--line); border-radius: .45rem;
+                                   color: var(--fg); background: var(--field); cursor: pointer; font-size: .9rem; }
+  .segmented input, .choice-chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented label:has(input:checked), .choice-chip:has(input:checked) { border-color: var(--accent);
+                                                                       background: var(--best); color: var(--accent); font-weight: 650; }
+  .segmented label:has(input:focus-visible), .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .segmented label:hover, .choice-chip:hover { border-color: var(--accent); }
+  .choice-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: .15rem; }
+  .choice-chip input { pointer-events: auto; }
+  .choice-chip span { pointer-events: none; }
+  .choice-chip input { position: absolute; opacity: 0; }
+  .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; margin: 0; }
+  .filter-bar input[type=checkbox] { accent-color: var(--accent); }
+  .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; }
+  .railcard-choice input { width: 1.1rem; height: 1.1rem; margin: 0; }
+  .railcard-help { display: block; color: var(--muted); font-size: .8rem; }
+  /* The card list is one control, not six checkboxes. A select says "none of
+     these" in its own first option, so the default needs no separate control
+     and cannot be left on by a reader who meant standard fares. */
+  #railcardSelect { width: auto; max-width: 100%; min-height: 2.75rem; }
+  #railcardSelect[disabled] { opacity: .6; }
+  /* One row that wraps: the label, the control, and the help line, which is
+     why the gap is a column gap that becomes a row gap at the phone width
+     rather than three separate margins. The margin is the filter bar's own
+     grid gap, because the control is one of its children now and a margin of
+     its own would be a second answer to the same question. */
+  .service-day {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: .35rem .75rem;
+  }
+  .service-day label { font-weight: 600; }
+  #serviceDay { width: auto; max-width: 100%; min-height: 2.75rem; }
+  .service-day .tag { flex: 1 1 14rem; min-width: 0; }
+  /* Tight onto its table, which is the only thing it belongs to: the count
+     now sits directly above the first row with the provenance above it
+     (finding, 29 September 2026). The 1.75rem this used to carry separated it
+     from a block of six paragraphs, and that margin is part of why the first
+     fare sat below the fold on a laptop. */
+  #summary { margin: .6rem 0 .3rem; font-weight: 600; }
+  /* The table is the width of the page. It was content-width instead, on the
+     recorded grounds that stretched to the page's 78rem the price sat 800px
+     from the place it belongs to and the ticket action floated in the middle
+     of an otherwise empty row; the reader asked for a full-width results
+     table, and that is the call, so the objection is kept here rather than
+     deleted with the rule it argued for.
+
+     What stops the row coming apart is the pair of rules below rather than the
+     width: every numeric column is nowrap, so a column is as wide as its
+     widest number and no wider, and the slack all lands in the station name.
+     The price and the ticket action stay in the same part of the row as the
+     place they belong to. `max-width` still keeps a very long station name
+     from pushing the last column off a narrow screen, and below the phone
+     breakpoint the table stops being a table at all. */
+  table { border-collapse: collapse; width: 100%; max-width: 100%; }
+  th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
+  td[data-label]::before { content: none; }
+  /* A column's width is not the header's to decide. Measured on the real
+     Grantham page, the Price column was 56px wide and CHANGES wrapped
+     mid-word in 72px, and the two are one bug: the header was setting the
+     width and the number paid for it. Neither half of this table wraps now,
+     so each column is as wide as the widest number in it (finding, 29
+     September 2026). */
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+  /* The headings stay with the rows. A reader scrolled to the fortieth fare is
+     reading a number with nothing above it that says what the number is, and
+     these are the only words on the page that name its own columns. Sticky
+     needs a background of its own: the cells are transparent, so without one
+     the rows show through the letters. --bg is the page's own canvas, so the
+     heading sits on the same surface whichever theme is on. */
+  thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+  /* A row brought into view from the shortlist lands under the stuck heading
+     unless it reserves the heading's height first. */
+  #rows > tr[data-crs] { scroll-margin-top: 3.2rem; }
+  .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
+            border-radius: .3rem; font: inherit; font-size: .85rem; padding: .3rem .55rem;
+            margin-left: .75rem; cursor: pointer; position: relative; }
+  /* Hit-slop: the visible mark stays small beside its neighbours, but the
+     touch target reaches 44px past it. */
+  .toggle::after { content: ""; position: absolute; inset: -6px; }
+  .toggle[aria-expanded=true] { border-color: var(--accent); }
+  /* The row's own expander is the shared chevron and nothing else. It read
+     "5 times" or "Fare details", which made the last column of a price-first
+     table a column of prose: the same four words repeated down every row, in
+     the column a reader's eye goes to last. A chevron is the affordance, it
+     says "more behind this" the way the filter bar's own does, and the count
+     it used to carry is still in the row's panel and in the accessible name.
+     The mark rotates on open because a closed chevron and an open one are the
+     same shape otherwise, and the panel is above the fold either way. */
+  .row-expand { display: inline-flex; align-items: center; justify-content: center;
+                width: 2.75rem; height: 2.75rem; padding: 0; margin-left: .5rem;
+                border-radius: .35rem; }
+  .row-expand .chevron { width: 1.1rem; height: 1.1rem; }
+  .row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }
+  .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
+         white-space: nowrap; position: relative; }
+  .buy::after { content: ""; position: absolute; inset: -11px -4px; }
+  tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
+  tr.detail ul { margin: 0; padding-left: 1.1rem; }
+  tr.detail li { font-variant-numeric: tabular-nums; }
+  /* The fare in words and the condition that goes with it, where the FARE and
+     CONDITIONS columns put them except on the row the reader is reading
+     (finding, 29 September 2026). The condition keeps the muted .restriction
+     voice it had in the cell: same sentence, same measured contrast. */
+  tr.detail .fare-line { margin: .55rem 0 0; font-weight: 600; }
+  tr.detail .condition { margin: .15rem 0 0; }
+  tr.detail .two-tickets { margin: .15rem 0 0; padding-left: 1.1rem; }
+  tr.detail .two-ticket-note { margin: .15rem 0 0; }
+  /* £10.10 painted as "£10.1" over "0" on 13 of the first 20 rows: a wrapped
+     price is not a cramped column, it is a different number, and the reader
+     comparing it with the row above has been told something false. */
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* The price the card was taken off, in the same cell as the price: a
+     discounted number never stands alone (Q3), and the second number is
+     quieter because the first is the one the reader asked for. */
+  td.num .was { color: var(--muted); font-size: .8em; }
+  /* The destination and its three-letter code, which a seller asks for. The
+     name carries the weight and the code recedes, because the code identifies
+     the place to a booking system and says nothing to a reader. */
+  .station-name { font-weight: 600; }
+  .station-code { color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* The change count, and under it the station the journey changes at. Q2
+     (ADR-0045) put the station in a disclosure on every row, which is a click
+     per row to learn the one fact in the row worth acting on. */
+  .changes-count { display: block; }
+  .interchange { display: block; color: var(--muted); font-size: .82em; font-weight: 400; }
+  /* The fare in three words. Two of the three are a warning, so they are the
+     accent and the warning colour respectively, and the common case -- an
+     ordinary fare -- stays in the page's own voice rather than being tinted to
+     draw attention to nothing. The feed's code is in the row's own record. */
+  .fare-kind { white-space: nowrap; }
+  .fare-type[data-kind="advance"] .fare-kind { color: var(--warn); }
+  .fare-type[data-kind="restricted"] .fare-kind { color: var(--warn); }
+  .fare-type[data-kind="regular"] .fare-kind { color: var(--muted); }
+  /* No row is highlighted for rank. The top row was tinted as the "best" fare,
+     which on a page that refuses to imply a recommendation is a recommendation
+     stated by a colour and never by a word (finding, 29 September 2026). The
+     order the tint stood for is in the count line above the table, in words
+     (ADR-0041).
+
+     A row IS tinted under the pointer, and that is a different promise: it
+     answers "which line am I reading", which is the one question a table of
+     six columns asks and the one the eye cannot otherwise answer when the
+     numbers run down the page. It is the field colour, not the accent, so it
+     never reads as "this is the best fare", and it is skipped on touch, where
+     there is no pointer to hover and the tint would stick. */
+  @media (hover: hover) {
+    #rows > tr[data-crs]:hover > td, #shortlistDock tbody tr:hover > td { background: var(--field); }
+    #rows > tr[data-crs]:hover > td:first-child, #shortlistDock tbody tr:hover > td:first-child {
+      border-radius: .3rem 0 0 .3rem; }
+    #rows > tr[data-crs]:hover > td:last-child, #shortlistDock tbody tr:hover > td:last-child {
+      border-radius: 0 .3rem .3rem 0; }
+  }
+  /* The action column never wraps its two controls onto two lines, which is
+     what used to decide when the table had to stack on a tablet. Written for
+     the results rows by name: the disclosure row is also a last child, and a
+     panel is prose, so the no-wrap reached the fare sentence and the feed
+     record and pushed the whole panel 70px past a 390px page. */
+  #rows > tr[data-crs] > td:last-child, thead th:last-child { white-space: nowrap; }
+  /* The action column is as wide as its own controls and no wider. Measured on
+     the real Grantham page at 1280px, the table is 1176px and that column
+     took 268px of it, 108px more than its widest cell needs; the slack went
+     nowhere in particular and left the ticket action floating in an empty
+     column. A one-pixel width is the way to say "take what your content
+     needs" to an auto-width table: the surplus moves to the station name,
+     which is the column the recorded finding above says should carry it.
+     Written for the cells and not only the header, because the same finding
+     is that a header setting a column's width is what made PRICE wrap and a
+     price read as a different number. */
+  #rows > tr[data-crs] > td:last-child, thead th:last-child { width: 1px; }
+  /* The two halves of one fact, stacked, never side by side: a change count
+     with a station after it on the same line reads as two columns. */
+  td.num .was { display: block; }
+  .restriction { font-size: .78rem; color: var(--muted); }
+  /* C14: this was a hard-coded #9a6700, which the dark palette never
+     redefined -- so the one piece of text a reader must not misread measured
+     3.66:1 in dark, below AA. It is a token now, beside the palette's other
+     tokens, and each scheme sets it. */
+  .restriction[data-status="restricted"] { color: var(--warn); }
+  /* C08: the validity the feed states, in the same voice as the condition it
+     belongs to, and separated from it so the two are not read as one run-on
+     sentence. */
+  .validity { display: block; margin-top: .15rem; }
+  .restriction[data-status="unrestricted"] { color: var(--muted); }
+  .site-proof { display: block; margin-top: .15rem; font-size: .75rem; font-weight: 400; color: var(--muted); }
+  .site-proof a { color: inherit; text-underline-offset: .15em; }
+  .site-proof a:hover, .site-proof a:focus-visible { color: var(--accent); }
+  /* A chip's count is part of its label, so it sits inside the chip and is
+     never the only thing carrying the type's name. */
+  .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em;
+               margin-left: .35rem; }
+  #typeRule { display: block; margin: .35rem 0 0; }
+  #clearTypes { margin-top: .35rem; }
+  /* S19: the condition is the sentence; the record is folded under it. */
+  .feed-record { margin-top: .2rem; font-size: .72rem; }
+  .feed-record summary { display: inline-flex; align-items: center; min-height: 24px;
+                         cursor: pointer; color: var(--muted); }
+  .feed-record dl { margin: .2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 .4rem; }
+  .feed-record dt { color: var(--muted); }
+  .feed-record dd { margin: 0; font-variant-numeric: tabular-nums; }
+  /* S23: an absence the feed can name is not the same as a zero. */
+  td.missing { color: var(--muted); font-style: italic; }
+  .empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  /* S26: the shortlist is a strip, not a section. It is a handful of places to
+     compare rather than a result set to scan, and it sits directly above the
+     table so that the place a reader just added appears in the same view as
+     the control they added it with. */
+  .shortlist-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+                     color: var(--muted); font-weight: 700; }
+  /* The hold column is one narrow cell at the left of the row, and it is
+     deliberately not the last, so the rule that keeps the ticket action on one
+     line still has a last column to hold. The box is the platform's own: a
+     tick drawn in CSS is a mark the browser's focus ring and the reader's own
+     settings do not know how to sit around. The label around it is what makes
+     the target 44px -- the mark stays the size a checkbox is meant to be and
+     the thing a finger aims at is a cell-sized square. */
+  /* Centred, because the column holds one mark and a centred mark is a mark
+     rather than a left-hand gutter with a box in it. */
+  th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; text-align: center; }
+  .hold-target { display: inline-flex; align-items: center; justify-content: center;
+                 min-width: 2.75rem; min-height: 2.75rem; cursor: pointer; }
+  .hold-box { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); }
+  /* The cross is drawn rather than typed: the page has no icon set, and a
+     letter x at this size reads as a multiplication sign. */
+  .shortlist-drop { display: inline-flex; align-items: center; justify-content: center;
+                    width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%;
+                    background: transparent; color: var(--muted); cursor: pointer; }
+  .shortlist-drop:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  .shortlist-share summary { min-height: 44px; display: inline-flex; align-items: center;
+                             color: var(--accent); cursor: pointer; }
+  /* The dock: the shortlist held at the foot of the screen, so a reader who has
+     scrolled a hundred rows down can still see what they are comparing and take
+     one place off it without scrolling back. The strip above the table (S26)
+     owns the controls and the share link; this owns the rows. Both read the one
+     shortlist state, so neither can call a place shortlisted when the other calls
+     it dropped.
+
+     The journey facts were cut from the chips above for making every chip three
+     lines tall. They are here because this is a fixed strip with room for a row of
+     four numbers, not a chip in a flow competing with the fold. The height is
+     capped and scrolls: eight shortlisted places must not take the screen. */
+  .shortlist-dock { position: fixed; inset: auto 0 0 0; z-index: 3; max-height: 42vh;
+                    overflow: auto; background: var(--bg); border-top: 1px solid var(--line);
+                    box-shadow: 0 -.25rem .7rem rgba(0, 0, 0, .14);
+                    /* A rem of its own rather than the page's own gutter: the dock
+                       spans the whole viewport where the page is a centred column,
+                       and the gutter token belongs to the shared stylesheet, which
+                       a route is not allowed to restate. */
+                    padding: .45rem 1rem .55rem; }
+  .shortlist-dock-head { display: flex; flex-wrap: wrap; align-items: center;
+                          gap: .6rem; margin-bottom: .25rem; }
+  .shortlist-dock-head .toggle { min-height: 2.75rem; }
+  /* The count is the reader's own words about their own list, so it is what
+     the controls are pushed away from rather than the first control itself:
+     three buttons in a row read as one group however wide the gap is. */
+  #shortlistDock #shortlistLimit { margin: 0; }
+  .shortlist-dock-head #shortlistCopy { margin-left: auto; }
+  .shortlist-dock-head #shortlistDockClear { margin-left: 0; }
+  /* The share text and the copy-by-hand box stand above the dock rather than
+     inside it. The dock is fixed to the foot of the screen and its height sets
+     the page's bottom padding, so a panel that opened in the flow would move
+     the dock under the last result row while the padding still described the
+     shorter one. */
+  #shortlistDock .shortlist-share { position: relative; }
+  #shortlistDock .shortlist-share > p,
+  #shortlistDock .shortlist-share > textarea { position: absolute; bottom: 100%; right: 0;
+          z-index: 1; width: min(28rem, 90vw); margin: 0 0 .4rem; padding: .5rem .6rem;
+          border: 1px solid var(--line); border-radius: .4rem; background: var(--bg);
+          box-shadow: 0 -.4rem 1rem rgba(0, 0, 0, .16); }
+  #shortlistDock .shortlist-share > textarea { right: auto; left: 0; }
+  /* Scoped by id: the results-table rules above would give the dock's four
+     numbers the station column's width and leave the columns ragged. */
+  #shortlistDock table { width: 100%; max-width: 46rem; margin: 0 auto; }
+  /* A heading stands over its own column. It had less padding than the row
+     cells and a forced left alignment, so PRICE, TIME and CHANGES sat to
+     the left of the figures underneath them. The shared rules already
+     align a heading and a cell the same way, so the dock states neither. */
+  #shortlistDock th { font-size: .72rem; }
+  #shortlistDock th, #shortlistDock td { padding: .28rem .4rem; }
+  #shortlistDock td { border-bottom: 1px solid var(--line); }
+  #shortlistDock td.num { text-align: right; }
+  #shortlistDock .shortlist-dock-name { padding: 0; border: 0; background: transparent;
+        color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+  #shortlistDock .shortlist-dock-name:hover { text-decoration: underline; }
+  #shortlistDock td.dock-drop-cell { width: 1px; }
+  .empty-actions .toggle { min-height: 44px; }
+  /* The railcard, said in the row's own words, in the row's own disclosure. It
+     was a dialog with a Close button and a definition list of three numbers
+     the row above it already carried; it is now one paragraph, and the only
+     part of it that is ever urgent -- a card that cannot be used on this fare
+     -- is the part that is coloured. */
+  .card-note { margin: .5rem 0 0; padding: .5rem .6rem; border: 1px solid var(--line);
+               border-radius: .4rem; background: var(--bg); }
+  .card-note[data-state=blocked], .card-note[data-state=unavailable] { border-color: var(--warn); }
+  .card-note[data-state=available] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  #empty { color: var(--muted); }
+  #more { color: var(--muted); font-size: .9rem; }
+  nav#pagination { margin-top: 1.5rem; }
+  .copybox { width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: var(--field);
+             border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
+  /* The two actions a row keeps beside buying, inside the row's own panel: the
+     railcard eligibility and the handoff text. They sat on the row itself until
+     the distill pass measured five controls on every row and a hundred targets
+     on page one (finding 4, 29 September 2026). The ticket link and the
+     expander stay on the row, because buying is the action and the expander is
+     the way in; everything a reader asks for after deciding waits one click in,
+     beside the condition it explains. */
+  .row-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .6rem; }
+  .row-actions .toggle { margin-left: 0; }
+  /* The list, opened directly under the heading it replaces. It is as wide as
+     the heading's own measure and no wider: it is a list of names and codes,
+     and a column of links 24rem wide in a 78rem page reads as a sidebar. */
+  #originPicker { margin: .4rem 0 1rem; max-width: 34rem; }
+  .origin-picker-label { margin: 0 0 .3rem; font-size: .72rem;
+                         text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  #originPicks { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto;
+                 border-top: 1px solid var(--line); }
+  #originPicks a { display: flex; justify-content: space-between; gap: .75rem; min-height: 44px;
+                   padding: .55rem .4rem; align-items: baseline;
+                   color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
+  #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  #originPicks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #originNomatch { color: var(--muted); margin: .5rem 0 0; }
+  /* The unpriced-origin message replaces the intro, so it is page-size text in
+     the normal foreground colour: a finding, not a footnote. */
+  .unpriced { margin: 0 0 1.25rem; }
+  #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
+  .method { margin-top: 1rem; }
+  .method summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); cursor: pointer; }
+  /* What the ticket link does, and how this page was built, are one fold above
+     the table. The line a reader sees says what is inside it; only the wording
+     waits. Those two paragraphs plus the build line were 57px of the 205px
+     between the count and the table on the real Grantham page, which is what
+     put the first fare below the fold on a laptop (finding, 29 September
+     2026). */
+  .link-terms { margin: 0; }
+  .link-terms summary { min-height: 24px; display: inline-flex; align-items: center;
+                        color: var(--muted); cursor: pointer; }
+  .link-terms summary:hover, .link-terms summary:focus-visible { color: var(--accent); }
+  .link-terms p { margin: .35rem 0 0; }
+  code { font-size: .95em; }
+  /* On a phone the table reflows into stacked rows, because a six-column table
+     pushes the ticket action off-screen (ADR-0019). The markup stays a real
+     table for desktop and assistive technology; only the display changes, and
+     flex wrapping means no cell can sit outside the viewport however long a
+     station name or fare code is. */
+  /* 44rem, not 40: measured, the six-column table needs ~700px before its three
+     row actions stop wrapping onto a second line, so the stacked layout keeps
+     the band between 640 and 704px that the table cannot hold. */
+  @media (max-width: 44rem) {
+    body { padding: 0 .75rem; }
+    /* Two controls side by side need 700px, which is the same measurement
+       that keeps the results table above this breakpoint. Below it they
+       stack, as everything else on the page does. */
+    .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: 1fr; }
+    #originSearch { max-width: min(15ch, 90vw); }
+    table, tbody { display: block; }
+    #shortlistDock table { display: table; }
+    #shortlistDock tbody { display: table-row-group; }
+    #shortlistDock tr { display: table-row; padding: 0; }
+    #shortlistDock td { display: table-cell; }
+    thead { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+             clip-path: inset(50%); white-space:nowrap; border:0; }
+    /* One rule per row, and the row is what draws it. Every cell kept the
+       border the table gave it and drew a line at its own height, so a stacked
+       row carried up to six horizontal lines at six different heights, none of
+       them reaching the row's own. The cells are the row's contents now and
+       draw nothing, which is the only arrangement in which the lines line up.
+       `th, td` rather than `td`, because the base rule this cancels is a
+       `th, td` pair and a media query adds no specificity of its own. */
+    th, td { border-bottom: 0; }
+    thead th { position: static; }
+    /* One cell per line, the full width, rather than a flex line that wrapped
+       wherever it happened to fit. The wrap is what made a row's cells
+       different heights from each other. */
+    tr { display: block; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+    /* Two columns of the same width in every cell: the label, then the value.
+       A fixed track rather than `max-content`, so "CHANGES" and "PRICE" do not
+       each size a column of their own and leave the values ragged. */
+    td { display: grid; grid-template-columns: 5rem minmax(0, 1fr); column-gap: .55rem;
+         align-items: baseline; border: 0; padding: 0; }
+    td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .78rem;
+                             text-transform: uppercase; letter-spacing: .04em; }
+    /* Every element inside a cell is part of its value, so it belongs in the
+       value track and takes its own line there when there is more than one.
+       This is what keeps the standard fare under a discounted price, and the
+       change station under the count, off the same line as the number beside
+       it -- the reason both are `display: block` on a wide screen. */
+    td > * { grid-column: 2; }
+    /* The destination and the row's actions carry no label, so they take the
+       whole width rather than the value track. */
+    td:first-child, td:last-child { display: block; }
+    td.num { text-align: left; }
+    /* The panel a row opens belongs to the row above it. It had a rule under it
+       of its own, so opening one destination drew a second line across the page
+       and read as another destination. The actions stay inline in the cell
+       rather than pushed to the right edge, which is where the thumb is and
+       where a stray tap buys a ticket. */
+    tr.detail { padding: 0; border-bottom: 0; }
+    /* `border-bottom` is named here and not left to the `th, td` rule above,
+       because the base `tr.detail td` rule that this cancels is one selector
+       deeper and wins on specificity whatever order the two are written in. */
+    tr.detail td { padding: .5rem 0 .55rem; border-bottom: 0; }
+  }
