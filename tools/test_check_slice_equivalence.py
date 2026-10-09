@@ -16,6 +16,8 @@ import contextlib
 import copy
 import io
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import date
@@ -26,6 +28,8 @@ from atoc_timetable import TimetableDb
 from make_synthetic_feed import build_synthetic_timetable
 from tools.check_slice_equivalence import (
     DEFAULT_MAX_LEGS,
+    MAX_AUTO_SHARDS,
+    _stream,
     compare_origin,
     compared_counts,
     coverage,
@@ -35,9 +39,12 @@ from tools.check_slice_equivalence import (
     parse_shard,
     sampled_legs,
     save_progress,
+    shard_budget,
+    shard_count,
     shard_origins,
     shard_progress_path,
     week_days,
+    without_flag,
 )
 
 MONDAY = date(2026, 10, 7)
@@ -364,6 +371,51 @@ class ParseShardTest(unittest.TestCase):
                     parse_shard(text)
 
 
+class ShardBudgetTest(unittest.TestCase):
+    GB = 1_000_000_000
+
+    def test_the_count_is_free_memory_divided_by_what_one_shard_holds(self) -> None:
+        # 1,870 MB of index each, 512 MB of headroom, and 2,000 MB off the top
+        # for the machine the snapshot was taken on.
+        self.assertEqual(shard_budget(cores=8, free_bytes=8 * self.GB), 2)
+        self.assertEqual(shard_budget(cores=3, free_bytes=20 * self.GB), 3)
+
+    def test_two_shards_worth_of_index_and_no_room_for_the_machine_is_one(self) -> None:
+        # Measured on this machine: 3.9 GB free, a two-shard plan, and 0.3 GB
+        # left when the children allocated. The division was right and the
+        # answer was wrong, which is what the reserve is for. After the reserve
+        # and the headroom there is not even one shard's worth left.
+        self.assertEqual(shard_budget(cores=8, free_bytes=3_900_000_000), 1)
+
+    def test_a_machine_that_holds_one_shard_gets_one_rather_than_zero(self) -> None:
+        # Paging through a sweep is slow; refusing to sweep is not an option.
+        self.assertEqual(shard_budget(cores=16, free_bytes=2 * self.GB), 1)
+        self.assertEqual(shard_budget(cores=16, free_bytes=2_582_000_000), 1)
+
+    def test_a_platform_that_will_not_say_falls_back_to_the_cores_capped(self) -> None:
+        self.assertEqual(shard_budget(cores=4, free_bytes=None), 4)
+        self.assertEqual(shard_budget(cores=64, free_bytes=None), MAX_AUTO_SHARDS)
+        self.assertEqual(shard_budget(cores=2, free_bytes=None), 2)
+        self.assertEqual(shard_budget(cores=1, free_bytes=None), 1)
+
+    def test_auto_is_that_count_and_a_number_is_that_number(self) -> None:
+        self.assertEqual(shard_count("auto", cores=8, free_bytes=9 * self.GB), 3)
+        self.assertEqual(shard_count("auto", cores=8, free_bytes=4 * self.GB), 1)
+        self.assertEqual(shard_count("4"), 4)
+        for text in ("0", "-1", "many", ""):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    shard_count(text, cores=8, free_bytes=8 * self.GB)
+
+    def test_the_flag_is_stripped_from_what_the_children_are_given(self) -> None:
+        # A child is one share of the run, so it must not see the launcher's own
+        # flag -- either way it can be written.
+        rest = ["--timetable", "feeds/timetable", "--days", "7"]
+        self.assertEqual(without_flag([*rest, "--shards", "auto"], "--shards"), rest)
+        self.assertEqual(without_flag([*rest, "--shards=4"], "--shards"), rest)
+        self.assertEqual(without_flag(rest, "--shards"), rest)
+
+
 class ShardOriginsTest(unittest.TestCase):
     def test_the_shares_are_disjoint_and_together_the_request(self) -> None:
         origins = [f"S{index:03d}" for index in range(10)]
@@ -585,6 +637,229 @@ class MergeTest(Fixture):
             code, output = self._run(self._argv(base, "--merge", "1"))
             self.assertEqual(code, 2, output)
             self.assertIn("are in a shard and not in this request", output)
+
+    def test_one_invocation_runs_the_shards_and_merges_them(self) -> None:
+        # The launcher is the point of all of this: one command, M children, one
+        # verdict. It is exercised on the synthetic feed because the shape a
+        # child runs is the same shape tested above.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shards", "2"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("2 shard(s):", output)
+            self.assertIn("[shard 1] ", output, "each child's progress is streamed")
+            self.assertIn("[shard 2] ", output)
+            self.assertIn("merged shard checkpoint(s)", output)
+            self.assertIn("every origin-day asked for agreed", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertEqual(len(merged["pairs"]), len(feed_origins(self.db)))
+            self.assertEqual(len(merged["merged_from"]), 2)
+
+    def test_no_child_stalls_on_a_pipe_another_ones_output_is_using(self) -> None:
+        # An OS pipe holds about 4 KB (measured: a writer with no reader blocks
+        # after three writes), and a shard writes more than that before it
+        # finishes. Drained one child after another, a child the launcher has
+        # not reached blocks in write() and stops comparing -- so the talker
+        # here must finish while the hold is still running, and the hold says
+        # so out loud if it did not. Only draining every child at once passes.
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "talker-finished"
+            hold = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys, time\n"
+                    "from pathlib import Path\n"
+                    "marker = Path(sys.argv[1])\n"
+                    "deadline = time.monotonic() + 5\n"
+                    "while time.monotonic() < deadline and not marker.exists():\n"
+                    "    time.sleep(0.05)\n"
+                    "if not marker.exists():\n"
+                    "    print('TALKER STALLED BEHIND AN UNREAD PIPE', flush=True)\n",
+                    str(marker),
+                ],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            talker = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys\n"
+                    "from pathlib import Path\n"
+                    "for _ in range(200):\n"
+                    "    sys.stdout.write('x' * 1024 + chr(10))\n"
+                    "    sys.stdout.flush()\n"
+                    "Path(sys.argv[1]).touch()\n",
+                    str(marker),
+                ],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            stream = io.StringIO()
+            with contextlib.redirect_stdout(stream):
+                _stream([(1, hold), (2, talker)], 2)
+            output = stream.getvalue()
+            self.assertEqual(hold.returncode, 0, output)
+            self.assertEqual(talker.returncode, 0, output)
+            self.assertNotIn("TALKER STALLED", output, "the talker did not finish while the hold ran")
+            self.assertTrue(marker.exists(), "the talker finished, so it was being read")
+            self.assertIn("[shard 2] ", output, "a child's lines carry its shard number")
+
+    def test_auto_asks_this_machine_for_a_count_it_can_hold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shards", "auto", "--limit", "2"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("shard(s)", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertEqual(len(merged["pairs"]), 2)
+
+    def test_a_merge_needs_no_feed(self) -> None:
+        # The request a merge is about is the one the shards recorded, so a merge
+        # does not parse a feed to relearn it: no --timetable at all here.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shard", "1/1"))
+            self.assertEqual(code, 0, output)
+            code, output = self._run(
+                ["--progress", str(base), "--merge", "1", "--days", "1"]
+            )
+            self.assertEqual(code, 0, output)
+            self.assertNotIn("Loading timetable", output)
+
+    def test_a_sweep_without_a_feed_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, output = self._run(["--progress", str(self._base(tmp)), "--days", "1"])
+            self.assertEqual(code, 2)
+            self.assertIn("no --timetable given", output)
+
+    def test_a_shard_with_no_origins_is_a_share_of_nothing_rather_than_a_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            # Two origins asked for, four shares: the fourth holds nothing.
+            code, output = self._run(
+                self._argv(base, "--origins", "GRN,NOT", "--shard", "4/4")
+            )
+            self.assertEqual(code, 0, output)
+            self.assertIn("nothing to compare", output)
+            written = json.loads(shard_progress_path(base, 4, 4).read_text(encoding="utf-8"))
+            self.assertEqual(written["origins"], [])
+            self.assertEqual(written["request_origins"], ["GRN", "NOT"])
+
+    def test_auto_asks_for_headroom_not_just_the_measured_figure(self) -> None:
+        # The divisor is the measurement; what decides is the measurement plus a
+        # safety margin, plus the machine reserve, so a free memory figure that
+        # almost fits two measured indexes still answers one.
+        self.assertEqual(shard_budget(cores=8, free_bytes=3_700_000_000 + 1), 1)
+
+    def test_a_launcher_with_no_free_memory_falls_back(self) -> None:
+        # A platform that will not report free memory still launches the count
+        # it can hold, capped to the safe maximum rather than unbounded.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            with mock.patch("tools.check_slice_equivalence.free_memory_bytes", return_value=None):
+                code, output = self._run(self._argv(base, "--shards", "auto"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("this platform will not report free memory, so the count is capped by", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertEqual(len(merged["pairs"]), len(feed_origins(self.db))) 
+
+    def test_launcher_flags_together_are_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            for extra in (("--shards", "2", "--merge", "2"), ("--shards", "2", "--shard", "1/2"), ("--shards", "2", "--probe", "1")):
+                with self.subTest(extra=extra):
+                    code, output = self._run(self._argv(base, *extra))
+                    self.assertEqual(code, 2, output)
+                    self.assertIn("give one", output)
+
+    def test_a_shard_inherits_the_base_checkpoint_answers_for_its_own_share(self) -> None:
+        # An unsharded sweep's checkpoint holds hundreds of origin-days. A sharded
+        # run of the same request must not compare them again, and must not take
+        # a pair that belongs to another shard either.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            origins = feed_origins(self.db)
+            code, output = self._run(self._argv(base, "--shard", "1/2"))
+            self.assertEqual(code, 0, output)
+            # The base checkpoint becomes an unsharded run's own file for the
+            # whole request -- what earlier sweeps left behind.
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "timetable": str(self.feed),
+                        "days": [MONDAY.isoformat()],
+                        "max_legs": 2,
+                        "pairs": {f"{origin}|{MONDAY.isoformat()}": "ok" for origin in origins},
+                        "differences": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            path = shard_progress_path(base, 2, 2)
+            self.assertFalse(path.exists(), "the shard has not run yet")
+            code, output = self._run(self._argv(base, "--shard", "2/2"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("are already in", output)
+            written = json.loads(path.read_text(encoding="utf-8"))
+            own = shard_origins(origins, 2, 2)
+            self.assertEqual(sorted(written["pairs"]), sorted(f"{o}|{MONDAY.isoformat()}" for o in own))
+
+    def test_a_base_checkpoint_asked_a_weaker_question_is_not_inherited(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            origins = feed_origins(self.db)
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "timetable": str(self.feed),
+                        "days": [MONDAY.isoformat()],
+                        "max_legs": 1,
+                        "pairs": {f"{origin}|{MONDAY.isoformat()}": "ok" for origin in origins},
+                        "differences": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, output = self._run(self._argv(base, "--shard", "1/2"))
+            self.assertEqual(code, 0, output)
+            self.assertNotIn("are already in", output)
+
+    def test_a_merge_keeps_pairs_the_request_was_not_about(self) -> None:
+        # The checkpoint is where work lands. Merging a sample over the file a
+        # wider sweep is using must not throw that sweep's answers away, and the
+        # verdict must still count only what it was asked about.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(
+                self._argv(base, "--origins", "GRN,NOT", "--shard", "1/1")
+            )
+            self.assertEqual(code, 0, output)
+            self.assertFalse(base.exists(), "a shard writes its own file, not the base one")
+            # What the wider sweep's own checkpoint holds, beside this sample's
+            # shard file: an origin-day this request never asked about.
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "timetable": str(self.feed),
+                        "days": [MONDAY.isoformat()],
+                        "max_legs": 2,
+                        "pairs": {"ZZZ|2020-01-01": "ok"},
+                        "differences": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, output = self._run(self._argv(base, "--origins", "GRN,NOT", "--merge", "1"))
+            self.assertEqual(code, 0, output)
+            self.assertIn("keeping 1 pair(s)", output)
+            self.assertIn("(2 from 1 shard checkpoint(s): 2)", output)
+            merged = json.loads(base.read_text(encoding="utf-8"))
+            self.assertEqual(merged["pairs"]["ZZZ|2020-01-01"], "ok")
 
     def test_a_shard_and_a_merge_together_are_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
