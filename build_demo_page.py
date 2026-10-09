@@ -2523,6 +2523,9 @@ def origin_control(payload: dict) -> str:
 
 NRE_LOGO = Path(__file__).resolve().parent / "assets" / "powered-by-national-rail.svg"
 NRE_WEBSITE = "https://www.nationalrail.co.uk/developers/"
+# The enquiries site itself, as distinct from the developer page the logo
+# links to. The brand guidelines ask for a link to the NRE website.
+NRE_ENQUIRIES = "https://www.nationalrail.co.uk/"
 
 
 def wants_nre_credit(attribution: str | list[str] | None) -> bool:
@@ -2583,6 +2586,23 @@ def nre_attribution() -> str:
         # reader gets is the words the guidelines require it to carry.
         '<span class="nre-logo" role="img" aria-label="Powered by National Rail '
         f'Enquiries">{svg}</span></a></div>'
+    )
+
+
+def nre_source_line() -> str:
+    """The footer credit: the notice this repo already uses, plus the link.
+
+    The sentence is ``NOTICES["nre"]``, which is the acknowledgement in the
+    portal terms' own words. The link is the enquiries site. The last sentence
+    is the terms' own bar on implying that NRE endorses the product, stated
+    rather than left for a reader to infer from a logo.
+    """
+
+    return (
+        '<p class="nre-source">Information from '
+        f'<a href="{NRE_ENQUIRIES}" rel="external">National Rail Enquiries</a>. '
+        f"{html.escape(NOTICES['nre'])} "
+        "National Rail Enquiries does not endorse this site.</p>"
     )
 
 
@@ -2777,6 +2797,7 @@ def render_page(
         .replace("__FIRST_USE__", first_use_sentence(payload))
         .replace("__FIRST_USE_FALLBACK__", json.dumps(ONE_STATION_FIRST_USE, ensure_ascii=False))
         .replace("__NRE_CREDIT__", nre_attribution() if nre_credit else "")
+        .replace("__NRE_SOURCE__", nre_source_line() if nre_credit else "")
         .replace("__MAXPOUNDS__", str(ceiling))
         # S17: the control's stop is a build fact, so the page states it
         # before any script runs. The script keeps it true afterwards.

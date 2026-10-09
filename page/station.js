@@ -1889,10 +1889,17 @@ function provenance() {
       (DATA.sourceFingerprint ? " · source " + DATA.sourceFingerprint : "") + ".";
     line.hidden = false;
   }
-  if (DATA.tracked) {
+  if (DATA.tracked && DATA.disclosure) {
     const disclosure = document.getElementById("disclosure");
     disclosure.textContent = DATA.disclosure;
     disclosure.hidden = false;
+    // The same sentence in the footer. The condition is the payment: a
+    // commission line on a page that earns none would invent one.
+    const commission = document.getElementById("commissionDisclosure");
+    if (commission) {
+      commission.textContent = DATA.disclosure;
+      commission.hidden = false;
+    }
   }
   // ADR-0040: the fold above the first ticket action has to say what it holds,
   // and one of the facts in it must not be a click away -- when the links are

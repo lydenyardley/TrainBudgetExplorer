@@ -273,6 +273,8 @@ __THEME_TOGGLE__
 
 <footer>
   __NRE_CREDIT__
+  __NRE_SOURCE__
+  <p id="commissionDisclosure" hidden></p>
   <div id="attribution" hidden></div>
   <p>__NOTE__</p>
   <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type, and on the list this page opens in the cheapest fare of any ticket type for each destination. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
