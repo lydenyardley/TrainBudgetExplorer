@@ -470,6 +470,39 @@ shard count, the index does not, and **4.7 GB** was free on this machine while t
 memory before it starts, which is the same warning shape `build_workers` prints
 before a build.
 
+**The four-shard proof, 9 October 2026 (ADR-0066).** One invocation,
+`--shards 4`, carried the request to the end and merged to **26,369 of 26,369
+origin-days compared, 3,767 of 3,767 origins complete, 0 differing, exit 0**;
+`--merge 4` reproduces that verdict from the four shard checkpoints without
+reading the feed. Nothing compared has ever differed, and no origin-day of the
+request is left uncompared.
+
+The conditions were not the conditions the projection assumed, so they are part
+of the figure. An overnight single process had compared **19,525** origin-days
+at **26.5 pairs/min** (2.26 s each, 22:02 8 October to 10:17 9 October) before it
+was retired and its checkpoint handed to the shards as the base, so the shards
+inherited rather than re-compared. The machine had **4.1 GB** free against the
+**9.5 GB** four shards want and was run anyway: free memory sat at **0.1-0.2 GB**
+through the sweep, each shard holding its 1.87 GB index against the page file
+rather than against RAM. The successful invocation compared the **6,119**
+origin-days the base did not hold in **2 h 28 m** (10:23 to 12:51) -- **41
+pairs/min, 1.6x the single process, not 4x**: under four-way contention and
+paging each shard ran at 5.8 s per origin-day where one process ran at 2.26, so
+paging priced the parallelism rather than erasing it. The invocation before it
+(10:02 to 10:17, 725 pairs) was stopped for the defect below; those pairs
+stayed in the shard checkpoints and count toward the verdict, which is the
+no-work-lost half of ADR-0066's item 6 witnessed at scale.
+
+**The launcher's own pipe, measured 9 October 2026.** That first invocation
+streamed its children one at a time, and an OS pipe holds about **4 KB** -- a
+writer with no reader blocked after three 1 KB writes -- while a shard writes
+about 9 KB of progress long before it finishes: every child not yet reached
+would block in `write()` and stop comparing, and M parallel shares would have
+become their sum. The launcher now drains every child at once, one prefixed
+line at a time (`_stream`), and `test_no_child_stalls_on_a_pipe_another_ones_output_is_using`
+holds the regression. The 4 KB is why the drain cannot be sequential; the
+table above is why the shards must run at all.
+
 ## The whole network, measured
 
 The whole-network figures, kept here rather than in `README.md` so that measured
@@ -587,11 +620,11 @@ when done with it.
   assumed from the older table.
 - A network-wide re-measurement of the focused-index fix. The 5.1 s figure is
   one page on one feed; the shape transfers, the per-origin spread does not.
-- The whole equivalence sweep. Nothing compared has differed, and the sweep's own
-  rate puts the rest of the request at about 17-18 hours in one process, or about
-  4.5 hours over 4 shards (ADR-0066). The seven-day sample is complete and the
-  first day is a third done; the other 24,000-odd origin-days have not been
-  compared, and this document does not claim they have.
+- The undated build. The seven-day request itself is complete as of 9 October
+  2026 -- **26,369 of 26,369 origin-days, every one agreed** ("The four-shard
+  proof" above) -- but the sweep asks the dated service week: `day=None`, the
+  undated question, is still unasked, and so are stations the feed itself
+  cannot be asked about.
 - A whole-network build from an index, and an index for a whole network. The first
   is unmeasured and the second is refused without a byte budget, because it is
   3,767 files of a quarter of the feed each.
