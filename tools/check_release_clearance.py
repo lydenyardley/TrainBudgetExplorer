@@ -85,11 +85,11 @@ DTD = "dtd"
 # The privacy contact is not a licence, and it is on this list for the same
 # reason the DTD route is: it is a question only a person can answer before
 # anything is published, and the build cannot answer it. Every generated route
-# promises its reader that somebody is at the end of the address, so a contact
-# nobody has confirmed is a promise this project has not made good on. The build
-# already refuses a real-feed page with no contact at all; this refuses to
-# publish one whose contact nobody has vouched for, and says which address the
-# answer is about.
+# promises its reader that somebody reads the contact route (the public issue
+# tracker, ADR-0068), so a route nobody has confirmed they monitor is a promise
+# this project has not made good on. The build already refuses a page with no
+# contact at all; this refuses to publish one whose route nobody has vouched
+# for.
 PRIVACY = "privacy contact"
 
 # The build shapes `--release` accepts. Naming the shape rather than a free list
@@ -121,9 +121,10 @@ def products_needed(releasing: list[str], folder: Path = LICENCES) -> tuple[list
     # The empty shape is the report-only mode: it says what the record does and
     # does not clear, and requires nothing.
     #
-    # The privacy contact is needed by every release that publishes anything,
-    # not by a shape in particular: a published page with an unconfirmed contact
-    # is the same defect whichever feeds it is built from.
+    # A monitored contact route is needed by every release that publishes
+    # anything, not by a shape in particular: a published page whose route
+    # nobody has confirmed they read is the same defect whichever feeds it is
+    # built from.
     needed = [DTD, PRIVACY] if shape else []
     if "timetable" in shape:
         found = [p for p, path in products(folder).items() if path and path.match(TIMETABLE_GLOB)]

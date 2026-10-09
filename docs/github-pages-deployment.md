@@ -80,7 +80,7 @@ The workflow passes this value to the page builder so internal links work under 
 
 ### The privacy contact
 
-The build carries a project default privacy address so a real-feed build works locally without an operator supplying one. That default has not been confirmed as monitored, so set a repository variable named `PRIVACY_CONTACT` to the address the publish checklist has confirmed, and the workflow passes it to the build.
+The build names the public issue tracker as the contact route and prints no email address (ADR-0068). Publication still waits on confirmation that issue notifications are monitored (`docs/publish-checklist.md`). A repository variable named `PRIVACY_CONTACT` overrides that route when the checklist records a different one, and the workflow passes it to the build.
 
 ## What gets published
 

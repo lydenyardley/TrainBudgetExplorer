@@ -981,26 +981,23 @@ class DemoPageTest(unittest.TestCase):
                 )
             self.assertEqual(code, 0)
             privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
-            self.assertIn(build_demo_page.PROJECT_PRIVACY_CONTACT, privacy)
+            self.assertIn(build_demo_page.ISSUE_TRACKER, privacy)
+            contact = privacy.split("<h2>Contact</h2>", 1)[1].split("</p>", 1)[0]
+            self.assertNotRegex(contact, r"[\w.+-]+@[\w.-]+")
 
     def test_the_project_contact_is_flagged_for_review_before_publication(self) -> None:
-        # An address chosen for a local build is not the same thing as an
-        # address confirmed for a public service. The review has to be written
-        # down where the person who publishes will read it, or it is not a
-        # review -- it is a comment.
-        self.assertIn("@", build_demo_page.PROJECT_PRIVACY_CONTACT)
+        # Naming the issue tracker is not the same thing as somebody reading it.
+        # The review has to stay an open box until that confirmation is written
+        # down where the person who publishes will read it.
+        self.assertNotIn("@", build_demo_page.DEFAULT_PRIVACY_CONTACT)
+        self.assertIn(build_demo_page.ISSUE_TRACKER, build_demo_page.DEFAULT_PRIVACY_CONTACT)
         root_dir = Path(__file__).parent.parent
-        source = (root_dir / "build_demo_page.py").read_text(encoding="utf-8")
-        self.assertIn("REVIEW BEFORE GOING LIVE", source)
         checklist = (root_dir / "docs" / "publish-checklist.md").read_text(encoding="utf-8")
-        self.assertIn(build_demo_page.PROJECT_PRIVACY_CONTACT, checklist)
-        # And it is an open box, not a ticked one: the point is that it has not
-        # been confirmed yet. Matched on the box's own line, because a wrapped
-        # list item puts the address on the next one.
+        self.assertIn(build_demo_page.ISSUE_TRACKER, checklist)
         box = [
             line
             for line in checklist.splitlines()
-            if "privacy contact is confirmed" in line
+            if "monitored contact route exists" in line
         ]
         self.assertEqual(len(box), 1, f"expected one review box, found {box}")
         self.assertTrue(box[0].startswith("- [ ] "), box[0])

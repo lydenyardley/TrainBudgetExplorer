@@ -21,7 +21,7 @@ Other useful forms:
 
 A build from the real fares feed is a public build, so it carries the licence
 notices and somebody to contact, and the runner passes both without being asked:
-a real feed gets every notice the builder knows and the project's own contact,
+a real feed gets every notice the builder knows, and the builder names the public issue tracker as the contact,
 and --notices is there to *narrow* that, not to grant it. A page you previewed
 without the notices is not the page that ships, and the builder refuses to build
 one anyway, so `python run.py` used to fail outright once the feeds were
@@ -133,8 +133,8 @@ def build(args: argparse.Namespace) -> int:
         cmd += ["--base-path", args.base_path]
     # A real feed is a public build, and the builder refuses one that carries no
     # licence notice and no way to be told about a problem with the page. The
-    # contact now defaults in the builder, so --privacy-contact is for pointing
-    # the page somewhere other than the project's own address.
+    # contact now defaults in the builder to the public issue tracker, so
+    # --privacy-contact is for pointing the page somewhere else.
     #
     # The notices used to have to be passed by hand, and that was a lie about
     # the entry point: main() swaps the default feed for the downloaded one the
@@ -333,7 +333,7 @@ def main() -> int:
                              "build takes all of them by default, and this narrows the set")
     parser.add_argument("--privacy-contact", default=None,
                         help="who to contact about a problem with the page; overrides "
-                             "the project's own contact in build_demo_page.py")
+                             "the issue-tracker route in build_demo_page.py")
     parser.add_argument("--rebuild", action="store_true",
                         help="build _site/ again before serving it (the default builds only when there is nothing to serve)")
     parser.add_argument("--no-build", action="store_true",
