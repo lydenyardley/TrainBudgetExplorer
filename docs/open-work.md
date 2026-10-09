@@ -18,6 +18,23 @@ fix. Nothing leaves on the strength of having been discussed.
 
 ---
 
+## Day-out decisions, as shipped
+
+ADR-0063, the hybrid closest-station prune, is done. The facet reference entry
+below is the evidence: heritage dropped BDI, BDQ, BUX, CTR and RMD, which is
+the prune removing a station the coordinates put too far from the site.
+
+ADR-0064, the seaside chip implying a named coastal proof, is done. ONS stays
+the primary tag, the reviewed CRS supplement is what moved seaside from 142 to
+150, and a seaside chip on a row is backed by a named proof.
+
+ADR-0062 named RSPB reserves, National Trust visitor properties, and National
+Park / National Landscape gateways as a backlog. That backlog is closed by
+ADR-0065: the three are registry facets with one reviewed list each, and the
+reference file carries them (rspb 9, national_trust 9, national_park 19). They
+are not open work. ADR-0062's non-goals (no VisitBritain dump, no full NHLE
+sweep, no raw OSM tourism tags, no polygon-wide landscape tagging) still hold.
+
 ## The open findings
 
 ### C27 — the chooser requires a known station name or a code prefix
