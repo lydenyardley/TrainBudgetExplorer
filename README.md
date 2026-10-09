@@ -384,7 +384,7 @@ checked:
 | `tests/test_damaged_feed.py` | Damaged-input tests |
 | `tests/test_sanity_report.py` | Count-report tests |
 | `tests/test_retailer.py` | Ticket-link tests |
-| `tools/test_check_links.py` | Fourteen tests for the link checker's verdicts |
+| `tools/test_check_links.py` | Seventeen tests for the link checker's verdicts |
 | `tests/test_fuzzed_feed.py` | Accounting and fuzzer tests |
 | `tools/test_commit_message.py` | Commit-message checker tests |
 | `tools/check_release_clearance.py` | The gate that refuses a public release no licence clearance covers |

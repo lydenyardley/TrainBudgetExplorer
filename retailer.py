@@ -76,9 +76,17 @@ class Provider:
 # the live check on 22 September 2026 found that neither link can currently be
 # relied on to land on a search the reader can use:
 #
-# - **national_rail**: the results page renders, then reports "No matching
-#   journeys found" for every query tried, including King's Cross to Edinburgh,
-#   so the query parameters do not drive this planner's search at all.
+# - **national_rail**: in a browser the results page renders, then reports "No
+#   matching journeys found" for every query tried on 22 September 2026,
+#   including King's Cross to Edinburgh -- all of them `leavingType=departAfter`
+#   variants. Corrected 9 October 2026: a browser accepts `leavingType=departing`
+#   with the date as DDMMYY, a time and adults (journeys render -- Grantham to
+#   Nottingham, 16 October 2026, from £24.00), while the bare request was never
+#   answering at all: its "No matching journeys" is this planner's own error
+#   dictionary inside script elements, in a shell that does not vary with the
+#   query. `check_links.py` now ignores markers inside scripts. The shape that
+#   searches is recorded here but not sent, because sending a time picks a
+#   departure and that is a link-payload decision, not a parameter one.
 # - **trainline**: the site served a bot check and refused the search request,
 #   so nothing about this link is confirmed either way.
 #
@@ -97,7 +105,7 @@ PROVIDERS: dict[str, Provider] = {
             ("leavingDate", "date_compact"),
         ),
         note="The industry's own journey planner. It takes station codes in the URL, but its live search does not return journeys through them.",
-        verified="checked 2026-09-22: results page loads, every query reports no journeys",
+        verified="checked 2026-09-22: results page loads, every query reports no journeys; 2026-10-09: the bare request proves nothing either way, the error text was the app's own",
         fallback_url="https://www.nationalrail.co.uk/journey-planner/",
     ),
     "trainline": Provider(
