@@ -51,41 +51,41 @@ whose licence and provenance are recorded alongside the station index. That is a
 decision with a data question inside it, which is why it is here and not in the
 code.
 
-### The slice equivalence sweep is a third done, in shards now (open)
+### The slice equivalence sweep is a third done, in shards now (closed 9 October 2026)
 
 **Severity:** P2, because it is the one claim about the published page that is
 argued rather than witnessed. **Route:** `tools/check_slice_equivalence.py`.
 **Raised:** 8 October 2026 with the slice work; re-measured the same day.
+**Closed:** 9 October 2026 by the merge named below.
 
-**What is proven.** The seven-day sample -- every 30th code of the feed's own
-sorted origin list, 126 origins, **882 of 882 origin-days, every one agreed** --
-and the first day's exhaustive sweep, a third of its origins. Nothing compared
-has ever differed: a slice is the whole feed's answers, so far as anyone has
-asked. The measurements, the rates and the residue are in
+**Closed by.** `--shards 4` in one invocation over the whole request: **26,369
+of 26,369 origin-days compared, 3,767 of 3,767 origins complete, 0 differing,
+exit 0**, merged from the four shard checkpoints' own record of the request; an
+independent `--merge 4` reproduces the verdict in a second, reading no feed.
+The residue this entry existed for is gone -- no origin-day of the request is
+left uncompared -- and nothing compared since the first sample has ever
+differed: a slice is the whole feed's answers, and now the whole request has
+been asked. The measured shape of the run, including what an oversubscribed
+machine did to its rate and the launcher's own 4 KB pipe, is in
 `docs/build-performance-findings.md`.
 
-**What is not.** The other 24,000-odd origin-days of the request are uncompared.
-One process needs the better part of a day for the whole request, which is why it
-was argued rather than finished.
-
-**What sharding changes.** `--shard N/M` compares a disjoint share of the request
+**What sharding carried.** `--shard N/M` compares a disjoint share of the request
 and checkpoints to a file of its own; `--merge M` reads them back into one
-verdict and refuses a union that is not the request (ADR-0066). At the rate
-re-measured on 8 October 2026 -- **2.45 s per origin-day** -- that is **about 4.5
-hours over 4 shards**, against 1.87 GB of index per shard, so the count that fits
-is a memory question first: 4 shards want 7.5 GB and this machine had 4.7 GB free.
+verdict and refuses a union that is not the request; `--shards M` (or `auto`,
+for what the machine holds) launches the children, streams each one's output
+prefixed by its shard number, and merges -- one command for a whole sweep
+(ADR-0066). The overnight single process handed 19,525 compared origin-days to
+the shards as the base, so they inherited rather than re-compared; the final
+6,844 were done four ways.
 
-**What would close it.** One `--merge` whose output says every origin-day asked
-for agreed, from a partition that covered the request. Until then the residue is
-this entry, and a page that ships on a slice is shipping on the strength of a
-sample, a third of a day, and the argument that an origin-day's answers do not
-depend on another's.
+**What remains outside this entry.** `day=None`, the undated build, is not one
+of the request's days and was never asked; that is the tool's own documented
+limit rather than an open sweep, recorded under "What this does not cover" in
+`docs/build-performance-findings.md`.
 
 ```
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
-    --days 7 --progress _cache/slice-equivalence.json --shard 1/4
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
-    --days 7 --progress _cache/slice-equivalence.json --merge 4
+python tools/check_slice_equivalence.py --timetable feeds/timetable --shards 4
+python tools/check_slice_equivalence.py --merge 4   # the verdict again, reading no feed
 ```
 
 ### The checked-in facet reference data lags the registry (closed 7 October 2026)
