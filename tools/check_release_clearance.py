@@ -20,19 +20,24 @@ person's decision binding, dated, scoped, and tied to the exact licence file it
 was made from. So it checks the *record*, and the record is the only thing that
 can clear a product:
 
-- Every licensed product has a section. A product list is read from the licence
-  PDFs filed in ``licences/`` plus the DTD portal route, which is a subscription
-  rather than a marketplace licence and so has no PDF. A PDF dropped into that
-  folder therefore cannot be filed and forgotten: it needs a decision before it
-  can be published, which is the same failure ``tests/test_licences.py`` exists
-  to prevent on the register side.
+- Every licensed product has a section. The product list is read from
+  ``licences/licence-manifest.json`` (filename, SHA-256, product id) plus the
+  DTD portal route, which is a subscription rather than a marketplace licence
+  and so has no PDF. The PDFs themselves are not in git (ADR-0067). When a PDF
+  is on disk its bytes must match the manifest, and a PDF the manifest does
+  not name fails the gate. A missing PDF is judged against the manifest, which
+  is what CI has. A file dropped into ``licences/`` therefore cannot be filed
+  and forgotten: it needs a manifest row and a decision before it can be
+  published, which is the same failure ``tests/test_licences.py`` exists to
+  prevent on the register side.
 - A product is either **cleared** or **excluded**. Exclusion needs a stated
   reason and nothing else -- it is the safe direction, and refusing to publish
   a product should not require an approval to do so.
 - Clearing one requires an explicit ``answer: yes``, a date the terms were read,
   a named approver, an approval date, an expiry, and the SHA-256 of the licence
-  file the decision was made from. A licence replaced under a standing clearance
-  does not inherit it.
+  the decision was made from. That digest is checked against the manifest, and
+  against the PDF when the PDF is present. A licence replaced under a standing
+  clearance does not inherit it.
 - The clearance is **scoped**. A release declares which products it publishes
   (``--release fares``) and the tool fails if any of them is not cleared. This is
   the part that stops a narrow decision from quietly authorising a wide release:
@@ -56,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import sys
 from datetime import date
@@ -63,6 +69,10 @@ from pathlib import Path
 
 RECORD = Path("licences/release-clearance.md")
 LICENCES = Path("licences")
+# The PDFs stay on the machine that holds the licence. Git tracks this
+# manifest instead, so a publish job that has no PDFs still knows each
+# file's name, product id and SHA-256 (ADR-0067).
+MANIFEST_NAME = "licence-manifest.json"
 
 # The product id the marketplace puts in the licence filename, in Schedule 1 §3.
 PRODUCT_ID = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -142,18 +152,61 @@ ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 FIELD = re.compile(r"^-\s+([a-z ]+?):\s*(.*)$")
 
 
+def load_manifest(folder: Path = LICENCES) -> list[dict]:
+    """The committed shelf: one row per licence file, whether or not the PDF is here."""
+    path = folder / MANIFEST_NAME
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    rows = data.get("files", [])
+    return rows if isinstance(rows, list) else []
+
+
+def manifest_sha(filename: str, folder: Path = LICENCES) -> str:
+    for row in load_manifest(folder):
+        if row.get("filename") == filename:
+            return str(row.get("sha256", "")).strip().lower()
+    return ""
+
+
 def product_digests(folder: Path = LICENCES) -> dict[str, Path]:
-    """The filed licence PDFs, by the product id the marketplace issued."""
+    """Marketplace products, by the product id in the committed manifest.
+
+    The path is the PDF's name beside the manifest. The file may be absent:
+    CI does not have the PDFs, and the product still has to be decided.
+    """
     found: dict[str, Path] = {}
-    for pdf in sorted(folder.glob("*.pdf")):
-        found_match = PRODUCT_ID.search(pdf.name)
-        if found_match:
-            found[found_match.group(0)] = pdf
+    for row in load_manifest(folder):
+        product_id = row.get("product_id") or ""
+        filename = row.get("filename") or ""
+        if product_id and filename:
+            found[str(product_id)] = folder / str(filename)
     return found
 
 
-def digest(path: Path) -> str:
+def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def digest(path: Path) -> str:
+    """The licence's identity: the file when it is here, otherwise the manifest.
+
+    A present file wins, so a replaced PDF cannot keep the old hash. A missing
+    file falls back to the manifest, which is all a publish job has.
+    """
+    if path.is_file():
+        return file_sha256(path)
+    return manifest_sha(path.name, path.parent)
+
+
+def unexpected_pdfs(folder: Path = LICENCES) -> list[str]:
+    """PDFs on disk that the manifest does not name.
+
+    A file dropped into ``licences/`` and left out of the manifest is the
+    filed-and-forgotten case, and it has to fail wherever the PDF is present.
+    """
+    named = {row.get("filename") for row in load_manifest(folder)}
+    return sorted(pdf.name for pdf in folder.glob("*.pdf") if pdf.name not in named)
 
 
 def products(folder: Path = LICENCES) -> dict[str, Path | None]:
@@ -222,6 +275,16 @@ def clearance_problems(
     reading a red run should be able to fix it without reading this file.
     """
     problems: list[str] = []
+    if not load_manifest(folder):
+        problems.append(
+            f"no {MANIFEST_NAME} in {folder}; the licence shelf is the manifest, "
+            "and a release with no shelf is not a release with no licences"
+        )
+    for name in unexpected_pdfs(folder):
+        problems.append(
+            f"{name} is in {folder} and not in {MANIFEST_NAME}; add it to the "
+            "manifest and give it a clearance section before anything is published"
+        )
     known = products(folder)
     sections = parse_sections(text)
     needed, shape_problems = products_needed(releasing, folder)
@@ -296,15 +359,30 @@ def clearance_problems(
             )
         if pdf is not None:
             recorded = fields.get("licence digest", "").strip().lower()
+            committed = manifest_sha(pdf.name, folder)
+            if not committed:
+                problems.append(
+                    f"{where}: {pdf.name} has no row in {MANIFEST_NAME}, so this "
+                    "clearance is not tied to a licence"
+                )
+            elif pdf.is_file() and file_sha256(pdf) != committed:
+                # The bytes on disk and the bytes git vouches for disagree.
+                # Publishing either of them would be publishing a licence this
+                # clearance was not made from.
+                actual = file_sha256(pdf)
+                problems.append(
+                    f"{where}: the licence file has changed since this clearance was made "
+                    f"({pdf.name} is now {actual[:12]}, the record says {committed[:12]})"
+                )
             if not recorded:
                 problems.append(
                     f"{where}: 'licence digest' is missing; run --print for the value of "
                     f"{pdf.name}, so this clearance cannot outlive the file it was made from"
                 )
-            elif recorded != digest(pdf):
+            elif committed and recorded != committed:
                 problems.append(
-                    f"{where}: the licence file has changed since this clearance was made "
-                    f"({pdf.name} is now {digest(pdf)[:12]}, the record says {recorded[:12]})"
+                    f"{where}: 'licence digest' does not match {MANIFEST_NAME} "
+                    f"({recorded[:12]} against {committed[:12]} for {pdf.name})"
                 )
     return problems
 

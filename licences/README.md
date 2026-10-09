@@ -2,9 +2,12 @@
 
 One row per Rail Data Marketplace product this project has taken a licence for.
 Each licence was downloaded from the product's licence tab while signed in, which is
-the only way to reach it (ADR-0005), and each PDF is kept here, untouched, exactly as
-it downloaded: the filename carries the product id the licence refers to in Schedule 1
-§3 `LICENCED DATA`, so the file and the entry can always be matched up.
+the only way to reach it (ADR-0005). The PDFs are kept in this folder on a machine
+that holds them, and they are not in git (ADR-0067). `licence-manifest.json` is the
+tracked shelf: filename, SHA-256, and the product id the filename carries from
+Schedule 1 §3 `LICENCED DATA`, so the file and the entry can always be matched up.
+A local copy that does not match the manifest fails `tests/test_licences.py` and
+the release gate.
 
 **Read date for every licence below: 22 September 2026.**
 
@@ -64,8 +67,9 @@ Differences worth knowing:
 - `publish-checklist.md` §1 — the four licence questions per product.
 - ADR-0020 — the Darwin reading, and the conflict inside it.
 - ADR-0021 — the finding that §5 varies by product, and what that means for the page.
-- `tests/test_licences.py` — asserts every PDF in this folder has a row above and every row
-  names a file that exists, so a licence can never be downloaded, filed, and forgotten.
+- `tests/test_licences.py` — asserts every product on `licence-manifest.json` has a row
+  above and every row names a product on the manifest. When the PDFs are on disk, each
+  hash has to match. A licence can never be downloaded, filed, and forgotten.
 
 ## DTD access (preferred zero-cost route)
 

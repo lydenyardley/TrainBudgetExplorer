@@ -285,9 +285,11 @@ on an assumption is worse than no checklist at all.
    `licences/release-clearance.md`, with `state: cleared`, `answer: yes`, the
    date the terms were read, who approved it, when, and when it expires.
 2. `python tools/check_release_clearance.py --print` prints the blocks with each
-   licence PDF's SHA-256 already filled in. The digest is what stops a clearance
-   outliving the licence file it was made from: replace the PDF and the standing
-   clearance is void until it is made again.
+   licence's SHA-256 already filled in, from the PDF when it is on disk and
+   from `licences/licence-manifest.json` otherwise (ADR-0067). The digest is
+   what stops a clearance outliving the licence it was made from: change the
+   manifest, or the local PDF so it no longer matches the manifest, and the
+   standing clearance is void until it is made again.
 3. Open a pull request. **That review is the approval.** There is nowhere else for
    approval to happen, which is the point.
 4. Merge. The next push builds, tests, and passes the clearance gate.
