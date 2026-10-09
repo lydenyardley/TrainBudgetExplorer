@@ -10,7 +10,8 @@ seen a working seller page, so it does not know what one looks like, and a marke
 invented for one would make the tool lie in the direction that matters. It reports
 what a response *proves*:
 
-- ``no_journeys``  the page loaded and said there are no journeys. Proven bad.
+- ``no_journeys``  the page loaded and said there are no journeys, outside any
+                   script element. Proven bad.
 - ``http_error``   the seller answered with an error, or did not answer. Proven bad.
 - ``blocked``      the seller refused an automated visitor. Proven nothing; a
                    person has to open it.
@@ -32,6 +33,7 @@ and it must not grow into something that does.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -68,6 +70,25 @@ BLOCK_MARKERS = (
 # The page ran a search and found nothing. This is the failure this project keeps
 # trying to make impossible: a reader cannot tell it apart from "there are no
 # trains", and neither can the reader's trust afterwards.
+#
+# Script elements are dropped before these are looked for. An app ships its own
+# error vocabulary: National Rail's shell carries "No matching journeys found" in
+# a journeyPlannerErrorsMicrocopy dictionary on every response -- measured 9
+# October 2026, three different queries answered byte-for-byte by the same shell,
+# the query never echoed. Matching that reads the programme's strings, not the
+# search's answer, and a failure proved that way is a false one. Markup outside
+# scripts is still read, so a server that renders the error into the page is
+# still caught. An open script with no close runs to the end of what was read:
+# the `__NEXT_DATA__` block that holds the dictionary opens at byte 82,334 and
+# the body ends inside it, so a pattern that needs `</script>` stops stripping
+# exactly where the strings are. The cost of reading an open script to the end
+# is the other direction: markup below one is not read either, so a server that
+# renders the error under an unclosed script would be missed. Unverified rather
+# than condemned -- the one direction this tool is allowed to be wrong in.
+SCRIPT_ELEMENT = re.compile(
+    r"<script\b[^>]*>.*?(?:</script>|$)", re.IGNORECASE | re.DOTALL
+)
+
 NO_RESULT_MARKERS = ("no matching journeys",)
 
 # What each verdict means for a person, and what to do about it.
@@ -95,7 +116,7 @@ def classify(status: int, body: str) -> str:
         return BLOCKED
     if status == 0 or status >= 400:
         return HTTP_ERROR
-    if any(marker in lowered for marker in NO_RESULT_MARKERS):
+    if any(marker in SCRIPT_ELEMENT.sub("", lowered) for marker in NO_RESULT_MARKERS):
         return NO_JOURNEYS
     return INCONCLUSIVE
 

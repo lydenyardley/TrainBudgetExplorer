@@ -51,6 +51,40 @@ class ClassifyTest(unittest.TestCase):
     def test_an_error_status_outranks_a_page_that_says_there_are_no_journeys(self) -> None:
         self.assertEqual(classify(403, "No matching journeys found"), HTTP_ERROR)
 
+    def test_an_error_string_in_the_app_is_not_a_result(self) -> None:
+        # National Rail's shell carries its own "No matching journeys found" in
+        # a microcopy dictionary on every response -- measured 9 October 2026:
+        # the same shell for every query. Inside a script it is the app's
+        # vocabulary, not the search's answer.
+        body = (
+            "<h1>Search results</h1>"
+            '<script type="application/json">{"noResultsOnOutwardMessage":'
+            '"No matching journeys on date requested"}</script>'
+        )
+        self.assertEqual(classify(200, body), INCONCLUSIVE)
+
+    def test_the_error_rendered_into_the_page_is_still_a_result(self) -> None:
+        # The other direction of the same fix: a server that renders the error
+        # into markup is answering the query, and dropping scripts must not
+        # drop that.
+        body = (
+            '<script>{"m":"No matching journeys found"}</script>'
+            '<p role="alert">Error: No matching journeys found. Please re-plan your journey below.</p>'
+        )
+        self.assertEqual(classify(200, body), NO_JOURNEYS)
+
+    def test_the_unclosed_script_a_truncated_page_leaves_is_not_a_result(self) -> None:
+        # The shape the live check actually receives: National Rail's
+        # __NEXT_DATA__ script opens at byte 82,334 and the body ends inside it,
+        # mid-JSON, so a strip that needs </script> stops right where the error
+        # strings are (measured 9 October 2026).
+        body = (
+            "<h1>Search results</h1>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"m":"No matching journeys found. Please re-plan your journey below."}'
+        )
+        self.assertEqual(classify(200, body), INCONCLUSIVE)
+
     def test_a_healthy_looking_page_is_inconclusive(self) -> None:
         body = "<h1>Search results</h1><p>Standard from &pound;14.50, departs 09:15, 0 changes</p>"
         self.assertEqual(classify(200, body), INCONCLUSIVE)
