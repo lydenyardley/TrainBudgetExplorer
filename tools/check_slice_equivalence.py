@@ -46,10 +46,13 @@ records, or two shards that overlap are refused rather than counted as coverage.
 their output prefixed with their shard number, and merges them. `--shards auto`
 asks the machine instead -- cores, narrowed by free memory divided by what one
 shard holds (1,870 MB of index) -- and never answers less than one, because a
-machine that cannot hold two still sweeps, one share at a time. A shard starts
-from the answers the base checkpoint already holds about its own share, so a
-sharded run of a request an unsharded sweep has partly asked does not ask it
-again, and a merge keeps the base's pairs that its request was not about.
+machine that cannot hold two still sweeps, one share at a time. A child that
+falls silent for `--shard-timeout` seconds (default 1,800) is killed rather than
+hung on, and the merge that follows reports its share as still to compare. A
+shard starts from the answers the base checkpoint already holds about its own
+share, so a sharded run of a request an unsharded sweep has partly asked does
+not ask it again, and a merge keeps the base's pairs that its request was not
+about.
 
 **What a shard costs to hold.** Each shard parses the feed and holds its own
 index -- 1.87 GB on the national download -- so how many fit beside each other
@@ -111,6 +114,17 @@ SHARD_INDEX_MB = 1_870
 #: measurement, and this is the buffer that keeps a plan that fits on paper from
 #: paging on the machine.
 SHARD_SAFETY_MARGIN_MB = 512
+
+#: Seconds a launcher waits for one line from a child before killing it. A
+#: shard's own progress line comes every 25 origin-days, and the slowest
+#: origin-day ever measured on this request (9.32 s, against 2.45 s on average
+#: -- 8 October 2026, the figures in `docs/build-performance-findings.md`)
+#: puts that gap at about four minutes, with the feed's 58.0 s load before the
+#: first line of all. Silence for half an hour is a hung child, not a slow
+#: one, and a hung child would otherwise hold the launcher for ever while the
+#: merge that would report it never runs. Zero disables the wait for a run
+#: that would rather hang than lose a child.
+SHARD_TIMEOUT_SECONDS = 1800
 
 #: Told apart from `None`: leaving `free_bytes` out means "read it here", and
 #: `None` means "this platform would not say", which are different answers from
@@ -538,7 +552,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--shard", default=None, metavar="N/M", help="compare only share N of M disjoint origin sets, checkpointing to a file of its own")
     parser.add_argument("--merge", type=int, default=None, metavar="M", help="merge M shard checkpoints into one verdict, reading no feed")
     parser.add_argument("--shards", default=None, metavar="M|auto", help="run M shards as children and merge them: one invocation for a whole sweep, or 'auto' for what this machine holds")
+    parser.add_argument(
+        "--shard-timeout",
+        type=int,
+        default=SHARD_TIMEOUT_SECONDS,
+        help="seconds without a line from one child before the launcher kills it and the merge reports its share; 0 waits for ever",
+    )
     args = parser.parse_args(argv)
+    if args.shard_timeout < 0:
+        # A negative number would take the timeout's `> 0` branch the same way
+        # zero does -- silently waiting for ever, which the help does not
+        # offer and a hung sweep would not be told about.
+        print("--shard-timeout must be at least 0 seconds (0 waits for ever)", flush=True)
+        return 2
     raw = list(argv) if argv is not None else sys.argv[1:]
 
     # One of the four shapes of a run, and no pair of them means anything: a
@@ -845,11 +871,15 @@ def _shards(args, run_argv: list[str], count: int, free: int | None) -> int:
                 ),
             )
         )
-    _stream(children, count)
+    _stream(children, count, args.shard_timeout)
     return _merge(args.progress, count)
 
 
-def _stream(children: list[tuple[int, subprocess.Popen]], count: int) -> None:
+def _stream(
+    children: list[tuple[int, subprocess.Popen]],
+    count: int,
+    timeout: int = SHARD_TIMEOUT_SECONDS,
+) -> None:
     """Every child's output at once, each line prefixed with its shard number.
 
     Not one child after another. An OS pipe holds about 4 KB -- measured on
@@ -859,8 +889,18 @@ def _stream(children: list[tuple[int, subprocess.Popen]], count: int) -> None:
     children in sequence would turn M parallel shares into their sum, decided
     by the order they were started in. The prefix is what makes the interleaved
     lines readable, and one lock around each line keeps a line whole.
+
+    A child that stops producing lines for `timeout` seconds is killed (0 waits
+    for ever). Silence is the shape a hung child has: it holds its index, it
+    compares nothing, and without this the launcher would wait on it for ever
+    and the merge that would report its share as still to compare would never
+    run. What the killed child did write survives in its checkpoint.
     """
     lock = threading.Lock()
+    spoken_at: dict[int, float | None] = {
+        index: time.monotonic() for index, _ in children
+    }
+    by_index = dict(children)
 
     def drain(index: int, child: subprocess.Popen) -> None:
         # wait() in a finally, or a read that raises kills this thread and the
@@ -872,6 +912,7 @@ def _stream(children: list[tuple[int, subprocess.Popen]], count: int) -> None:
                 with child.stdout:
                     for line in child.stdout:
                         with lock:
+                            spoken_at[index] = time.monotonic()
                             sys.stdout.write(f"[shard {index}] {line.rstrip()}\n")
                             sys.stdout.flush()
         finally:
@@ -886,6 +927,26 @@ def _stream(children: list[tuple[int, subprocess.Popen]], count: int) -> None:
     ]
     for reader in readers:
         reader.start()
+    if timeout > 0:
+        while any(reader.is_alive() for reader in readers):
+            time.sleep(1)
+            now = time.monotonic()
+            with lock:
+                for index, spoken in list(spoken_at.items()):
+                    child = by_index[index]
+                    # A child that has exited needs no killing, and one already
+                    # killed is left alone until its reader sees the end.
+                    if (
+                        spoken is not None
+                        and now - spoken > timeout
+                        and child.poll() is None
+                    ):
+                        print(
+                            f"[shard {index}] no line for {timeout}s, killing it",
+                            flush=True,
+                        )
+                        child.kill()
+                        spoken_at[index] = None
     for reader in readers:
         reader.join()
 
