@@ -48,9 +48,9 @@ condition that a flag cannot bypass.
 
 - Turning measurement on is now a deliberate act with a written record: the
   flag, the plan name, and a privacy page that says what the snippet does.
-- A public build stops if `PRIVACY_CONTACT` is unset. That is intended: a
-  published fares page with nobody to ask about it is a gap, and the refusal
-  message names the variable to set.
+- A public build stops if the privacy contact is blank. The default route is
+  the public issue tracker (ADR-0068). A blank `PRIVACY_CONTACT` is still a
+  refusal, and the message names the variable to set.
 - The plans list is deliberately short. Adding an entry is cheap to do and
   expensive to regret, which is the right asymmetry for a decision about
   somebody else's data.

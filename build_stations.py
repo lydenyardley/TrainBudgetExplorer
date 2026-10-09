@@ -7,7 +7,7 @@
 
 "Fully" means the same thing the published release is: the downloaded fares
 feed, the national timetable, the ticket-restrictions reference feed, every
-licence notice and the project's own contact. The pages carry prices and journey
+licence notice and the public issue tracker as the contact. The pages carry prices and journey
 times, or the build says why they are missing. Nothing is dropped to make the
 build quick.
 

@@ -154,19 +154,17 @@ Turn it into one by adding it to `products_needed()` in
 ## privacy contact
 
 - state: excluded
-- reason: the address the build uses by default has not been confirmed as monitored, so the promise every route makes to its reader is unbacked
+- reason: a monitored contact route exists only once somebody confirms they read the issue tracker, and that confirmation has not been given
 
 Every generated route carries a contact, and the privacy page tells a reader
-that somebody is at the end of it. `PROJECT_PRIVACY_CONTACT` in
-`build_demo_page.py` holds the project's own address so that a real-feed build
-works locally without an operator having to supply one, and it was chosen for a
-local build. Nothing has confirmed that anybody reads it, that it is an address
-appropriate to publish, or that it will outlast the project.
+that somebody is at the end of it. The build names the public issue tracker
+(`https://github.com/lydenyardley/TrainBudgetExplorer/issues`, ADR-0068) and
+prints no email address. Nothing has confirmed that issue notifications are
+read.
 
-Clearing this means: the address to publish, the date it was confirmed, and who
-confirmed it. An operator who has a monitored address should override it on the
-build — `PRIVACY_CONTACT`, or `--privacy-contact` — rather than publish the
-default, and record that override here.
+Clearing this means: the date it was confirmed that those notifications are
+monitored, and who confirmed it. `PRIVACY_CONTACT` or `--privacy-contact` can
+still name a different route; record that override here if one is published.
 
 The register records a documented zero-cost working conclusion from the public
 charging material, not a signed entitlement, and the letter to RDG is drafted at

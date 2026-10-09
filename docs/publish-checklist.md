@@ -138,17 +138,15 @@ answered, and answered as nil.
       page computes them from a static schedule. The Developer Pack is evidence
       that the static feed carries no live movements and that Darwin's forecasts
       are something it computes, which is an argument rather than an answer
-- [ ] **The privacy contact is confirmed for a public service.** The build now
-      carries a real address so a real-feed build works locally without an
-      operator having to supply one: `lydenyardley+trainbudgetexplorer@example.net`,
-      held as `PROJECT_PRIVACY_CONTACT` in `build_demo_page.py`. It was chosen
-      for a local build and has **not** been confirmed as monitored, as
-      appropriate to publish, or as durable. Read it before the site is public:
-      someone has to read it, and the page promises a reader that there is
-      somebody. Replace it here and in the build, or set `PRIVACY_CONTACT` or
-      `--privacy-contact` to override it. `tools/check_release_clearance.py`
-      now names it as an outstanding question of its own, because a page can
-      clear every licence and still publish an address nobody answers.
+- [ ] **A monitored contact route exists.** The privacy page names the public
+      issue tracker (`https://github.com/lydenyardley/TrainBudgetExplorer/issues`,
+      `DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py`, ADR-0068) and prints no
+      email address. Lyden has **not** confirmed that he monitors issue
+      notifications. Confirm that before the site is public: the page promises
+      a reader that somebody is at the end of the route. `PRIVACY_CONTACT` or
+      `--privacy-contact` can name a different route. `tools/check_release_clearance.py`
+      still treats this as its own outstanding question, because a page can
+      clear every licence and still publish a route nobody reads.
 - [ ] If RDG quotes a non-zero fee, the project rejects it and keeps the zero-cost
       route rather than silently adding a cost
 
