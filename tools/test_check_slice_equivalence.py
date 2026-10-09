@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import date
 from pathlib import Path
@@ -706,6 +707,26 @@ class MergeTest(Fixture):
             self.assertTrue(marker.exists(), "the talker finished, so it was being read")
             self.assertIn("[shard 2] ", output, "a child's lines carry its shard number")
 
+    def test_a_child_that_stops_talking_is_killed_so_the_launcher_can_finish(self) -> None:
+        # Silence is the shape a hung child has. Without the timeout the
+        # launcher waits on it for ever, and the merge that would report its
+        # share as still to compare never runs; with it, the child is killed
+        # and the launcher gets to the merge.
+        stubborn = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        stream = io.StringIO()
+        started = time.monotonic()
+        with contextlib.redirect_stdout(stream):
+            _stream([(1, stubborn)], 1, timeout=1)
+        elapsed = time.monotonic() - started
+        output = stream.getvalue()
+        self.assertLess(elapsed, 30, "the silent child was not killed")
+        self.assertIsNotNone(stubborn.returncode, "the child was never waited for")
+        self.assertIn("no line for 1s, killing it", output)
+
     def test_auto_asks_this_machine_for_a_count_it_can_hold(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = self._base(tmp)
@@ -773,6 +794,18 @@ class MergeTest(Fixture):
                     code, output = self._run(self._argv(base, *extra))
                     self.assertEqual(code, 2, output)
                     self.assertIn("give one", output)
+
+    def test_a_negative_shard_timeout_is_refused_before_anything_is_launched(self) -> None:
+        # A negative count takes the timeout's "greater than zero" branch and
+        # waits for ever -- the very thing the flag exists to stop, and the
+        # help offers 0 for. Silently accepting it would let a mistyped timeout
+        # hang a sweep without saying so.
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._base(tmp)
+            code, output = self._run(self._argv(base, "--shards", "2", "--shard-timeout=-1"))
+            self.assertEqual(code, 2, output)
+            self.assertIn("--shard-timeout must be at least 0", output)
+            self.assertFalse(base.exists(), "nothing was launched, so nothing was written")
 
     def test_a_shard_inherits_the_base_checkpoint_answers_for_its_own_share(self) -> None:
         # An unsharded sweep's checkpoint holds hundreds of origin-days. A sharded

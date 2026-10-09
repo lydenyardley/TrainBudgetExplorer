@@ -100,6 +100,18 @@ sharding does not do: it does not make a shard's rate faster, it does not reduce
 the memory the sweep needs, and an incomplete set of shards is not a verdict but
 the count of what is left.
 
+## Addendum, 9 October 2026
+
+**Decision 6 now kills a child that stops talking.** The launcher waits
+`--shard-timeout` seconds (default 1,800, 0 waits for ever) for one line from a
+child, kills one that goes silent, and runs the merge anyway: a hung shard holds
+its index and compares nothing, and without this the launcher waits with it while
+the merge that would report its share never runs. Silence is a hung child rather
+than a slow one because a shard prints every 25 origin-days -- about four minutes
+at the slowest origin-day measured above -- and the feed's 58.0 s load is its
+longest silence before that. What the killed child had already written survives
+in its checkpoint; the merge reports what is left to compare.
+
 Read by running:
 
 ```bash
