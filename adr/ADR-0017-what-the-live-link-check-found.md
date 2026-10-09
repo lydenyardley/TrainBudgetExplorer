@@ -135,3 +135,24 @@ synthetic feed is where `GRN` lives.
   down so the next session tests it instead of rediscovering the 403.
 - A real feed now has a documented code for its origin station, so the first run
   after the account clears does not spend an afternoon on a station code.
+
+## Correction, 9 October 2026
+
+**The confirmation "without a browser" above was measuring the wrong thing.**
+Three different queries were answered byte-for-byte by the same 199,972-byte
+shell, the query never echoed, and every "No matching journeys" in that shell
+sits inside a script element -- the planner's own `journeyPlannerErrorsMicrocopy`
+dictionary, shipped to every visitor. A bare request therefore never proved this
+link broken; the browser half of the finding above stands, and was re-reproduced
+on the day of this correction (`leavingType=departAfter` still errors).
+`check_links.py` now ignores markers inside script elements, so its `no_journeys`
+verdict can only come from markup that answers the query.
+
+**And the closing condition -- "someone finds the URL shape that does drive the
+search" -- was met the same day, in a browser:** `leavingType=departing`,
+`leavingDate` as DDMMYY, with `leavingHour`/`leavingMin` and `adults` renders
+real journeys (Grantham to Nottingham, Friday 16 October 2026, from £24.00,
+platform and all); the same URL without a time fails exactly as the variants in
+the table above did. The shape is recorded in `retailer.py` but **not sent**:
+sending a time picks a departure, which is the link-payload decision this ADR
+left to the seller decision rather than to a parameter edit.
