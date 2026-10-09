@@ -15,7 +15,9 @@ product nobody answered, and a release asking for a shape that does not exist.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
+import json
 import re
 import tempfile
 import unittest
@@ -24,10 +26,13 @@ from pathlib import Path
 
 from tools.check_release_clearance import (
     DTD,
+    MANIFEST_NAME,
     PRIVACY,
     clearance_problems,
     digest,
+    file_sha256,
     main,
+    manifest_sha,
     parse_sections,
     product_digests,
     products,
@@ -227,6 +232,7 @@ class DigestTest(unittest.TestCase):
             folder = Path(tmp)
             for pdf_path in product_digests().values():
                 (folder / pdf_path.name).write_bytes(pdf_path.read_bytes())
+            _write_manifest(folder)
             (folder / "Darwin-timetable-license-P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8.pdf").write_bytes(
                 b"%PDF-1.4 a different licence entirely"
             )
@@ -234,6 +240,42 @@ class DigestTest(unittest.TestCase):
                 text, releasing=["fares", "timetable"], today=TODAY, folder=folder
             )
         self.assertTrue(any("licence file has changed" in p for p in problems))
+
+    def test_a_missing_pdf_is_judged_against_the_manifest(self) -> None:
+        # CI has the manifest and not the PDFs. A clearance whose digest does
+        # not match that manifest still fails, and one that matches can pass
+        # without the file being in the checkout.
+        pdf = product_digests()[DARWIN]
+        committed = manifest_sha(pdf.name)
+        self.assertEqual(committed, file_sha256(pdf))
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / MANIFEST_NAME).write_text(
+                (ROOT / "licences" / MANIFEST_NAME).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            self.assertFalse((folder / pdf.name).exists())
+            text = (
+                f"## {DARWIN}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
+                "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n"
+                f"- licence digest: {'0' * 64}\n"
+            )
+            for product, path in products(folder).items():
+                if product != DARWIN:
+                    text += f"\n## {product}\n\n- state: excluded\n- reason: not used\n"
+            problems = clearance_problems(
+                text, releasing=["fares", "timetable"], today=TODAY, folder=folder
+            )
+            self.assertTrue(any("does not match" in p for p in problems))
+            text = text.replace("0" * 64, committed)
+            # DTD and the privacy contact are still excluded, and this release
+            # publishes both, so the digest match is not by itself a pass.
+            # What it must not do is complain about a PDF that is not in the checkout.
+            problems = clearance_problems(
+                text, releasing=["fares", "timetable"], today=TODAY, folder=folder
+            )
+        self.assertFalse(any(pdf.name in p and "changed" in p for p in problems))
+        self.assertTrue(any("excluded from publication" in p for p in problems))
 
 
 class ScopeTest(unittest.TestCase):
@@ -404,6 +446,24 @@ class WorkflowTest(unittest.TestCase):
             "the build step and the --release the gate is given disagree about the "
             "national timetable; the clearance would clear a release it does not describe",
         )
+
+
+def _write_manifest(folder: Path) -> None:
+    """A manifest of whatever PDFs are in ``folder``, as the gate will read it."""
+    product_id = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+    files = []
+    for pdf in sorted(folder.glob("*.pdf")):
+        found = product_id.search(pdf.name)
+        files.append(
+            {
+                "filename": pdf.name,
+                "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+                "product_id": found.group(0) if found else None,
+            }
+        )
+    (folder / MANIFEST_NAME).write_text(
+        json.dumps({"files": files}, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":

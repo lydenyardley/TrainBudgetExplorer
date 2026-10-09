@@ -1,19 +1,24 @@
-"""The licence register must stay true to the shelf of PDFs beside it.
+"""The licence register must stay true to the committed shelf.
 
 A licence that is downloaded, filed and forgotten is the failure this test exists to
-prevent. Every product licence PDF in `licences/` must have a row in
-`licences/README.md`, and every row must point at a file that is really there, so
-the two cannot drift apart as more products are subscribed to (ADR-0021).
+prevent. Every marketplace product in `licences/licence-manifest.json` must have a
+row in `licences/README.md`, and every row must name a product the manifest
+carries (ADR-0021, ADR-0067). The PDFs are not in git. When they are on disk,
+each one must match the manifest's SHA-256, and a PDF the manifest does not
+name fails the same way a forgotten file always has.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unittest
 from pathlib import Path
 
 LICENCES = Path(__file__).parent.parent / "licences"
 REGISTER = LICENCES / "README.md"
+MANIFEST = LICENCES / "licence-manifest.json"
 
 # The product id the marketplace puts in the licence filename and in Schedule 1 §3.
 PRODUCT_ID = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -43,7 +48,9 @@ SUPPORTING = (
 class LicenceRegisterTest(unittest.TestCase):
     def setUp(self) -> None:
         self.register = REGISTER.read_text(encoding="utf-8")
-        self.pdfs = sorted(p for p in LICENCES.glob("*.pdf") if p.name not in SUPPORTING)
+        self.manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))["files"]
+        self.product_rows = [row for row in self.manifest if row.get("product_id")]
+        self.pdfs = [LICENCES / row["filename"] for row in self.product_rows]
         # Rows of the register's product table, which are the ones carrying a product id.
         self.rows = [
             line
@@ -52,20 +59,24 @@ class LicenceRegisterTest(unittest.TestCase):
         ]
 
     def test_there_is_a_licence_to_read(self) -> None:
-        self.assertTrue(self.pdfs, f"no licence PDFs in {LICENCES}")
+        self.assertTrue(self.product_rows, f"no product licences in {MANIFEST}")
 
-    def test_every_filed_pdf_is_named_for_a_registered_product(self) -> None:
+    def test_every_manifest_product_is_registered(self) -> None:
         # The register maps id to row and the filename carries that id, which is the
         # pair the marketplace issues ("<product name>-...-P-<id>.pdf"), so a filed
         # licence is traceable to its row even though the filename is never quoted.
-        for pdf in self.pdfs:
-            with self.subTest(pdf=pdf.name):
-                found = PRODUCT_ID.search(pdf.name)
-                self.assertIsNotNone(found, f"{pdf.name} carries no product id")
-                self.assertIn(found.group(0), self.register, f"{pdf.name} is filed but not registered")
+        for row in self.product_rows:
+            with self.subTest(pdf=row["filename"]):
+                self.assertIsNotNone(PRODUCT_ID.fullmatch(row["product_id"]))
+                self.assertIn(row["product_id"], row["filename"])
+                self.assertIn(
+                    row["product_id"],
+                    self.register,
+                    f"{row['filename']} is on the manifest but not registered",
+                )
 
-    def test_every_product_id_is_registered_and_present(self) -> None:
-        ids = {PRODUCT_ID.search(pdf.name).group(0) for pdf in self.pdfs}
+    def test_every_product_id_is_registered_and_on_the_manifest(self) -> None:
+        ids = {row["product_id"] for row in self.product_rows}
         for product_id in ids:
             with self.subTest(product=product_id):
                 self.assertIn(product_id, self.register)
@@ -75,11 +86,29 @@ class LicenceRegisterTest(unittest.TestCase):
                     self.assertIn(
                         product_id,
                         ids,
-                        f"{product_id} is registered but no licence PDF is filed for it",
+                        f"{product_id} is registered but the manifest has no licence for it",
                     )
 
+    def test_a_pdf_on_disk_matches_the_manifest_or_is_named_by_it(self) -> None:
+        # Local copies are the evidence. CI has none, and that is allowed.
+        # A copy that is here and does not match, or a copy the manifest does
+        # not name, is a licence the gate has not been told about.
+        by_name = {row["filename"]: row["sha256"] for row in self.manifest}
+        for filename, sha in by_name.items():
+            path = LICENCES / filename
+            if not path.is_file():
+                continue
+            with self.subTest(pdf=filename):
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                self.assertEqual(actual, sha, f"{filename} does not match the manifest")
+        for path in sorted(LICENCES.glob("*.pdf")):
+            with self.subTest(pdf=path.name):
+                self.assertIn(path.name, by_name, f"{path.name} is not in the manifest")
+                if path.name not in SUPPORTING:
+                    self.assertIsNotNone(PRODUCT_ID.search(path.name))
+
     def test_every_row_records_the_verdict_that_decides_publication(self) -> None:
-        self.assertEqual(len(self.rows), len(self.pdfs), "one row per product, no orphans")
+        self.assertEqual(len(self.rows), len(self.product_rows), "one row per product, no orphans")
         for row in self.rows:
             with self.subTest(row=row[:60]):
                 self.assertTrue(

@@ -13,11 +13,14 @@ release publishes is `cleared` below. Local builds do not read this file at all:
 and open a real-feed page with no licence clearance in sight. The gate applies to
 publication, and only to publication.
 
-The product list is read from the licence PDFs filed in this folder, plus the two
-questions that are not a filed PDF — the DTD portal route and the privacy
-contact — so a PDF dropped in here cannot be filed and forgotten: it needs a
-decision before it can be published. That is the same failure
-`tests/test_licences.py` prevents on the register side.
+The product list is read from `licence-manifest.json` in this folder (each
+file's name, SHA-256 and product id), plus the two questions that are not a
+filed PDF — the DTD portal route and the privacy contact. The PDFs are kept
+locally and are not in git (ADR-0067). A PDF on disk that the manifest does
+not name, or whose bytes no longer match it, cannot be filed and forgotten:
+it needs a decision before it can be published. That is the same failure
+`tests/test_licences.py` prevents on the register side. CI has no PDFs, so it
+checks the clearance digest against the manifest.
 
 ## How to clear a product
 
@@ -56,8 +59,8 @@ either:
   still be a page nobody has cleared. Crediting a publisher is a different
   question from being permitted to publish.
 - **Not permanent.** `expires` is enforced, and `licence digest` is checked
-  against the file in this folder, so a licence replaced under a standing
-  clearance does not inherit it.
+  against `licence-manifest.json` (and against the PDF when you have it), so a
+  licence replaced under a standing clearance does not inherit it.
 
 ## dtd
 

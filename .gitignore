@@ -8,6 +8,12 @@ _bench_feed/
 # reads. Output of `make_synthetic_feed.py --knowledgebase`, never input.
 _demo_kb/
 
+# Licence PDFs. The text is the publisher's, and this repository is public.
+# `licences/licence-manifest.json` is the tracked identity (filename, SHA-256,
+# product id). A local copy is what `tools/check_release_clearance.py` hashes
+# when it is here (ADR-0067).
+licences/*.pdf
+
 # Credentials. The marketplace issues a consumer key and secret per API product,
 # and a secret in a tracked file is a secret that has to be rotated. Keep them in
 # the environment, or in .env, which is ignored here on purpose.

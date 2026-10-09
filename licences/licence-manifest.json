@@ -1,0 +1,49 @@
+{
+  "files": [
+    {
+      "filename": "BR Fares RDM Pricing.pdf",
+      "sha256": "de2c9e31e2d1d31655e4efa8e00dbc45403382bce9b1efe7ed22f3770baf7375",
+      "product_id": null
+    },
+    {
+      "filename": "Darwin-timetable-license-P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8.pdf",
+      "sha256": "cbb5b23c84db9c2ba187e3dc91d671201af88fa8368b733da9c2b1c5a0397ad6",
+      "product_id": "P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8"
+    },
+    {
+      "filename": "Easy-fares-API-demo-P-37faed36-518a-4870-b1bd-b675461fb72e.pdf",
+      "sha256": "5c13bc48092f94080407a973b5787d8d4e7251855f85f8ef82227a500c60af2d",
+      "product_id": "P-37faed36-518a-4870-b1bd-b675461fb72e"
+    },
+    {
+      "filename": "Fare-Locations-Reference-Data-P-4f4a90ff-d4e2-442e-93b3-07121430f303.pdf",
+      "sha256": "48a9589085d527892df516e10db6629a0ab15e7b20021f79e35cd94aeb98e46e",
+      "product_id": "P-4f4a90ff-d4e2-442e-93b3-07121430f303"
+    },
+    {
+      "filename": "National Rail Data Portal Terms-and-conditions.pdf",
+      "sha256": "e3c8496bc55eecaff6ce2bba711641abde8813ce1c5d53f73d0ad019522236ff",
+      "product_id": null
+    },
+    {
+      "filename": "NRE Developer Brand Guidelines September 2026.pdf",
+      "sha256": "958034a612b6b1e527c5d99aec552857d656834bd63b6e195c371a51b87dca90",
+      "product_id": null
+    },
+    {
+      "filename": "NRE Feeds Developer Pack v.01-05.pdf",
+      "sha256": "683c2eba84e9b7cb0365fbbcff0a7fd2aae7a830e595f9822724263ef9f8cf7d",
+      "product_id": null
+    },
+    {
+      "filename": "Ticket-Restrictions-data-feed-P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e.pdf",
+      "sha256": "ea0f4989dc335c6966e6e0bf810069a4d23a3a7ed0c80f81a4b0ccdb58e0a6b8",
+      "product_id": "P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e"
+    },
+    {
+      "filename": "Ticket-types-data-feed-P-51e17973-7327-4735-a7ca-d2a484a56065.pdf",
+      "sha256": "9f834161bd353610e3f349fc7995656af3d55c351596f08f9de001dde9b47415",
+      "product_id": "P-51e17973-7327-4735-a7ca-d2a484a56065"
+    }
+  ]
+}
