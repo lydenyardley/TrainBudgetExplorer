@@ -2311,6 +2311,37 @@ class DemoPageTest(unittest.TestCase):
         with_credit = render_page(self.payload, budget_pounds=20, nre_credit=True)
         self.assertIn('class="nre-credit"', with_credit)
         self.assertNotIn('class="nre-credit"', render_page(self.payload, budget_pounds=20))
+        # The footer credit is the notice the build already uses, linked to the
+        # enquiries site, and it says NRE does not endorse the page. A build
+        # that did not ask for the NRE notice does not invent the credit.
+        self.assertIn(NOTICES["nre"], with_credit)
+        self.assertIn('href="https://www.nationalrail.co.uk/"', with_credit)
+        self.assertIn("does not endorse this site", with_credit)
+        self.assertNotIn("nre-source", render_page(self.payload, budget_pounds=20))
+
+    def test_the_footer_states_a_commission_only_when_one_is_paid(self) -> None:
+        # publish-checklist: the affiliate disclosure is present if commission
+        # is enabled, and absent otherwise. The sentence is the one retailer.py
+        # already uses, and the footer is where a reader who never opens the
+        # ticket-link fold still meets it.
+        self.assertIn('id="commissionDisclosure" hidden', self.html)
+        self.assertIn("commissionDisclosure", self.html)
+        self.assertIn("DATA.tracked && DATA.disclosure", self.html)
+        plain = render_page(self.payload, budget_pounds=20)
+        self.assertNotIn(DISCLOSURE, plain)
+        tracked = build_payload(
+            self.fares,
+            self.timetable,
+            "GRN",
+            network="partnerize",
+            advertiser_id="123456",
+        )
+        tracked_html = render_page(tracked, budget_pounds=20, nre_credit=True)
+        self.assertIn(DISCLOSURE, tracked_html)
+        self.assertLess(
+            tracked_html.index('id="commissionDisclosure"'),
+            tracked_html.index("</footer>"),
+        )
 
     def test_a_missing_nre_mark_is_a_build_failure_not_a_page_without_one(self) -> None:
         # This is the one thing in the footer the licence names, so a build that
