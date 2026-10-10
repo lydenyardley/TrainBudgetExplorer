@@ -16,6 +16,13 @@ const capMessage = document.getElementById("capMessage");
 // directory of every one. Once there is a name in the field the list is a
 // search result, and forty matches is more than anybody reads.
 const CHOOSER_LIMIT = 40;
+// What the reader typed, and the station a completion is offering for it,
+// kept apart from the completed name the field shows: the list is the stations
+// matching the typed text, with the completion first, so a suggestion never
+// hides the alternatives it was chosen over (audit items 1 and 2, 9 October
+// 2026).
+let typedQuery = "";
+let completing = null;
 function matches(station, needle) {
   if (!needle) return true;
   return station.name.toLowerCase().includes(needle) ||
@@ -57,11 +64,14 @@ function render() {
   }
   // A one-station release has no field, so there is nothing to filter by
   // and the whole list is what it offers.
-  const needle = pick ? pick.value.trim().toLowerCase() : "";
+  const needle = typedQuery.trim().toLowerCase();
   const wanted = STATIONS.filter((station) => matches(station, needle));
   const cap = needle ? CHOOSER_LIMIT : wanted.length;
+  const ordered = completing
+    ? [completing, ...wanted.filter((station) => station !== completing)]
+    : wanted;
   picks.replaceChildren();
-  for (const station of wanted.slice(0, cap)) {
+  for (const station of ordered.slice(0, cap)) {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = station.href;
@@ -93,7 +103,7 @@ function render() {
   if (wanted.length) {
     nomatch.hidden = true;
   } else if (needle) {
-    nomatch.textContent = "We don't have prices from '" + pick.value.trim() +
+    nomatch.textContent = "We don't have prices from '" + typedQuery.trim() +
       "'. Try the station's name or its three-letter code.";
     nomatch.hidden = false;
   } else {
@@ -120,7 +130,11 @@ attachStationField({
   stations: STATIONS,
   dropdown: picks,
   inside: [picks],
-  onChange: () => render(),
+  onChange: (_value, query, completion) => {
+    typedQuery = query;
+    completing = completion;
+    render();
+  },
   onChoose: (station) => {
     const url = new URL(station.href, window.location.href);
     if (budgetNumber) url.searchParams.set("budget", resolvedBudget());

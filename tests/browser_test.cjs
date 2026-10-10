@@ -305,6 +305,47 @@ function daysSince(iso) {
 // any wider than what is in it.
 const cellsAreContentWide = (column) => column.width <= column.content + 1.5;
 
+// The probe a completion check should type, and the name it should then
+// produce, read from the page's own station list rather than from the
+// fixture: the shorter name wins over the one earlier in list order, which is
+// the audit's trap (audit item 1, 9 October 2026). The probe prefers a prefix
+// whose first station in list order is not the shortest candidate; a release
+// with no such pair falls back to the first three letters of a name long
+// enough to have them.
+function completionProbe(stations) {
+  const candidatesFor = (letters) =>
+    stations.filter(
+      (station) => station.name.toLowerCase().indexOf(letters.toLowerCase()) === 0
+    );
+  for (const station of stations) {
+    for (let take = 1; take < station.name.length; take += 1) {
+      const letters = station.name.slice(0, take);
+      const matches = candidatesFor(letters);
+      if (matches.length > 1 && matches.some((other) => other.name.length < station.name.length)) {
+        return { letters, matches };
+      }
+    }
+  }
+  const first = stations.find((station) => station.name.length > 4);
+  if (!first) return null;
+  const letters = first.name.slice(0, 3);
+  return { letters, matches: candidatesFor(letters) };
+}
+
+// The completion the probe should produce: an exact name wins, otherwise the
+// shortest name that starts with the typed text, with destination count
+// breaking a tie.
+function expectedCompletion(probe) {
+  const exact = probe.matches.find(
+    (station) => station.name.toLowerCase() === probe.letters.toLowerCase()
+  );
+  if (exact) return exact.name;
+  const ranked = probe.matches
+    .slice()
+    .sort((a, b) => a.name.length - b.name.length || (b.destinations || 0) - (a.destinations || 0));
+  return ranked.length ? ranked[0].name : null;
+}
+
 async function checkChooser(page, url, check) {
   const listed = await page.evaluate(() => STATIONS.map((s) => ({ name: s.name, crs: s.crs, href: s.href })));
   const budget = await page.inputValue("#budgetNumber");
@@ -365,8 +406,13 @@ async function checkChooser(page, url, check) {
     wholeList.total > 0 && wholeList.shown === wholeList.total,
     JSON.stringify({ shown: wholeList.shown, total: wholeList.total })
   );
-  if (wholeList.first && wholeList.first.name.length > 4) {
-    const letters = wholeList.first.name.slice(0, 3);
+  const probeData = await page.evaluate(() =>
+    STATIONS.map((station) => ({ name: station.name, destinations: station.destinations || 0 }))
+  );
+  const probe = completionProbe(probeData);
+  if (probe && probe.matches.length) {
+    const letters = probe.letters;
+    const expected = expectedCompletion(probe);
     await page.fill("#originSearch", "");
     await page.type("#originSearch", letters, { delay: 10 });
     await page.waitForTimeout(80);
@@ -387,21 +433,21 @@ async function checkChooser(page, url, check) {
       };
     });
     check(
-      `typing ${letters} in the chooser's field completes the station's name, and the list is drawn under the field`,
-      completed.value === wholeList.first.name &&
+      `typing ${letters} in the chooser's field completes ${expected}, with the alternatives still listed`,
+      completed.value === expected &&
         completed.start === letters.length &&
-        completed.end === wholeList.first.name.length &&
+        completed.end === expected.length &&
         completed.position === "fixed" &&
         completed.gap >= 0 &&
         completed.gap < 40 &&
-        completed.options > 0 &&
+        completed.options >= Math.min(probe.matches.length, 40) &&
         completed.sideScroll <= 0,
-      JSON.stringify({ letters, station: wholeList.first.name, completed })
+      JSON.stringify({ letters, expected, matches: probe.matches.map((station) => station.name), completed })
     );
     await page.fill("#originSearch", "");
   } else {
     check(
-      "typing in the chooser's field completes the station's name, and the list is drawn under the field",
+      "typing in the chooser's field completes the shortest matching station, with the alternatives still listed",
       notExercised("this release lists no station a reader could type")
     );
   }
@@ -461,18 +507,72 @@ async function checkChooser(page, url, check) {
     JSON.stringify(slotState)
   );
   const options = await page.locator("#picks a").count();
-  // A published site prices thousands of stations and the page caps the list,
-  // so the cap is the fact to check rather than the total.
+  // With the field empty the list is the directory, so the whole station list
+  // is what the page has to be showing; the cap belongs to a typed search,
+  // which is the state the item-9 fix made reachable (audit item 9, 9 October
+  // 2026). These two used to be asserted the other way round, which only holds
+  // on a release with fewer stations than the cap and fails on a published one.
   const capped = await page.evaluate(() => CHOOSER_LIMIT);
-  const expected = Math.min(listed.length, capped);
-  check("the list opens showing stations without typing", options === expected, `${options} of ${expected}`);
   check(
-    "the cap says so rather than looking like the whole list",
-    listed.length > capped
-      ? (await page.locator("#capMessage").isVisible()) && /Showing \d+ of \d+/.test(await page.textContent("#capMessage"))
-      : (await page.locator("#capMessage").isHidden()),
+    "the list opens showing every station without typing",
+    options === listed.length,
+    `${options} of ${listed.length}`
+  );
+  check(
+    "and the cap message waits for the search it is about",
+    await page.locator("#capMessage").isHidden(),
     `${listed.length} stations, cap ${capped}`
   );
+  if (listed.length > capped) {
+    // The state the cap exists for: a typed search matching more than it. The
+    // letter is read from this release's own list (the one most of its names
+    // share) and only the route's typed query is set, so this is about the
+    // list the page draws rather than about the completion.
+    const busiest = await page.evaluate(() => {
+      const counts = new Map();
+      for (const station of STATIONS) {
+        for (const letter of new Set(station.name.toLowerCase())) {
+          counts.set(letter, (counts.get(letter) || 0) + 1);
+        }
+      }
+      let best = null;
+      for (const [letter, count] of counts) if (!best || count > best[1]) best = [letter, count];
+      return best ? best[0] : "";
+    });
+    const cappedState = await page.evaluate((letter) => {
+      typedQuery = letter;
+      render();
+      const message = document.getElementById("capMessage");
+      return {
+        letter,
+        rows: document.querySelectorAll("#picks a").length,
+        hidden: message.hidden,
+        text: message.textContent,
+        matches: STATIONS.filter((station) => matches(station, letter)).length,
+      };
+    }, busiest);
+    const said = cappedState.matches > capped
+      ? cappedState.rows === capped &&
+        !cappedState.hidden &&
+        /Showing \d+ of \d+/.test(cappedState.text)
+      : notExercised(
+          `no letter in this release's names matches more than the cap of ${capped} (the best is ${cappedState.matches})`
+        );
+    check(
+      "a search matching more than the cap shows the cap and says how many it is hiding",
+      said,
+      JSON.stringify(cappedState)
+    );
+    await page.evaluate(() => {
+      typedQuery = "";
+      render();
+    });
+  } else {
+    check(
+      "a search matching more than the cap shows the cap and says how many it is hiding",
+      notExercised(`this release lists ${listed.length} station(s), no more than the cap of ${capped}`)
+    );
+  }
 
   const rows = await page.evaluate(() =>
     Array.from(document.querySelectorAll("#picks a")).map((a) => ({
@@ -5843,9 +5943,16 @@ function saysMoreThan(condition, code) {
       // The completion, driven from a station this page actually lists rather
       // than from a name a fixture happens to carry, so the check is a test of
       // the field and not of the feed.
-      const firstStation = await page.evaluate(() => (DATA.stations || [])[0] || null);
-      if (firstStation && firstStation.name.length > 4) {
-        const letters = firstStation.name.slice(0, 3);
+      const pickerStations = await page.evaluate(() =>
+        (DATA.stations || []).map((station) => ({
+          name: station.name,
+          destinations: station.destinations || 0,
+        }))
+      );
+      const pickerProbe = completionProbe(pickerStations);
+      if (pickerProbe && pickerProbe.matches.length) {
+        const letters = pickerProbe.letters;
+        const expected = expectedCompletion(pickerProbe);
         await page.click("#changeOrigin");
         await page.fill("#originSearch", "");
         await page.type("#originSearch", letters, { delay: 10 });
@@ -5859,11 +5966,11 @@ function saysMoreThan(condition, code) {
           };
         });
         check(
-          `typing ${letters} completes the station's name in the field, with the rest of it selected`,
-          typed.value === firstStation.name &&
+          `typing ${letters} completes ${expected} in the field, with the rest of it selected`,
+          typed.value === expected &&
             typed.start === letters.length &&
-            typed.end === firstStation.name.length,
-          JSON.stringify({ letters, station: firstStation.name, typed })
+            typed.end === expected.length,
+          JSON.stringify({ letters, expected, typed })
         );
         // Where the list is drawn, measured against the field it belongs to.
         const placed = await page.evaluate(() => {
