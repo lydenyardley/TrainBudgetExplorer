@@ -386,7 +386,11 @@ async function checkChooser(page, url, check) {
   });
   check(
     "the heading is the sentence a station page carries, with a field where its name goes",
-    new RegExp("^Train fares\\s*\\u00b7\\s*up to £" + heading.field + "\\s*\\u00b7\\s*from$").test(heading.text),
+    // Audit item 7, 9 October 2026: the chooser kept two middot separators the
+    // station page had already retired, so the sentence is now the station
+    // page's own -- "Train fares up to £X" then "from", with the field at the
+    // end of the second line holding the station the reader has not typed yet.
+    new RegExp("^Train fares\\s+up to £" + heading.field + "\\s*from$").test(heading.text),
     JSON.stringify(heading)
   );
   check(

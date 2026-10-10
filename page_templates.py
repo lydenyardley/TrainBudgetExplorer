@@ -80,8 +80,8 @@ __PRACTICES__</ul>
 <p class="muted">__CONTACT__</p>
 </main>
 <footer>
-<p class="muted">__NOTE__</p>
-<nav class="footnav"><a href="__BASE__/">All stations</a></nav>
+__NOTE__
+<nav class="footnav"><a href="__BASE__/">Station list</a></nav>
 </footer>
 </body>
 </html>
@@ -324,14 +324,14 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span> <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span>&#8288;<span class="heading-sep" aria-hidden="true">&middot;</span></span><br>__ORIGIN_CLAUSE__</h1>
+<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br>__ORIGIN_CLAUSE__</h1>
 __CHOOSER_INTRO__
 __ORDERING_NOTE__
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
 <p id="capMessage" hidden></p>
 <span id="pickStatus" class="sr-only" role="status"></span>
-<p class="tag">__NOTE__</p>
+__NOTE__
 </main>
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
 <script>

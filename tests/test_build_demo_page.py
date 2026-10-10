@@ -2750,6 +2750,52 @@ class DemoPageTest(unittest.TestCase):
         self.assertNotIn("Synthetic demo data", html)
         self.assertIn("Synthetic demo data", render_chooser([], budget_pounds=20))
 
+    def test_a_route_without_a_note_ships_no_empty_paragraph(self) -> None:
+        # Audit item 8, 9 October 2026: a real build passes "" for the note,
+        # and every route used to write the note's paragraph anyway -- 2rem of
+        # dead space on the chooser, an empty block in the privacy footer, and
+        # a blank line in the station page's footer. The note travels as the
+        # whole element now, the shape the synthetic banner already had.
+        chooser = render_chooser([], budget_pounds=20, note="")
+        privacy = render_privacy("", "", "a@b.test")
+        station = render_page(dict(self.payload, note=""), budget_pounds=20)
+        # Each route's note paragraph is gone rather than emptied: the chooser's
+        # `p.tag`, the privacy footer's `p.muted` (where the contact is still a
+        # real sentence), and the station page's attribute-less paragraph.
+        self.assertNotIn('<p class="tag"></p>', chooser)
+        self.assertNotIn('<p class="muted"></p>', privacy)
+        self.assertNotIn("<p></p>", station)
+        for name, page in (("chooser", chooser), ("privacy", privacy), ("station", station)):
+            self.assertNotIn(build_demo_page.DEFAULT_NOTE, page, f"the {name} claimed a note it was not given")
+        # A note the build was given still reaches every route as a paragraph.
+        self.assertIn(
+            '<p class="tag">the RSP fares feed</p>',
+            render_chooser([], budget_pounds=20, note="the RSP fares feed"),
+        )
+        self.assertIn(
+            '<p class="muted">the RSP fares feed</p>',
+            render_privacy("the RSP fares feed", "", "a@b.test"),
+        )
+        self.assertIn(
+            "<p>the RSP fares feed</p>",
+            render_page(dict(self.payload, note="the RSP fares feed"), budget_pounds=20),
+        )
+
+    def test_the_chooser_heading_is_the_station_pages_sentence(self) -> None:
+        # Audit item 7, 9 October 2026: the station page retired its two middot
+        # separators when the "from" line arrived, and the chooser kept them --
+        # the second one ending the first line at display size. One heading
+        # shape on both routes now, and the "from" wears the shared lead.
+        field = [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}]
+        for chooser in (
+            render_chooser(field, budget_pounds=20),
+            render_chooser([], budget_pounds=20),
+        ):
+            self.assertNotIn("heading-sep", chooser)
+            self.assertIn('<span class="heading-slot">Train fares up to ', chooser)
+            self.assertIn('<span class="heading-lead">from</span>', chooser)
+            self.assertNotIn("originClause\"> from <", chooser)
+
     def test_every_route_says_when_its_data_is_invented(self) -> None:
         # S45: an invented station or fare must not be mistakable for a real
         # one in a review, a demo or a shared screenshot, so every route states
