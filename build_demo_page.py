@@ -2269,7 +2269,7 @@ def build_payload(
     }
 
     return {
-        "origin": {"crs": origin_row.crs, "name": origin_row.name},
+        "origin": {"crs": origin_row.crs, "name": display_station_name(origin_row.crs, origin_row.name)},
         "sourceFingerprint": source_fingerprint(),
         "builtAt": built_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "destinations": destinations,
@@ -2441,6 +2441,60 @@ def _priced_destinations(
     return len(rows)
 
 
+# The feed names a station with the CIF short form, and a few entries are
+# compressed past what a reader can read as a place: "WARRINGTON BK QY",
+# "HEATHROW UNDERGD", "XC ORIGIN". This is the reviewed list of the ones a
+# reader-facing list was showing raw, keyed by CRS because the code is the
+# feed's identity for a station -- a rename would otherwise surface as an
+# entry that quietly stops matching, the same rule as the facet registry
+# (audit item 5, 9 October 2026). A value is the station's ordinary name: the
+# National Rail name where it has one, and the label its operator uses where
+# the entry is a rail-air bus link or a fares origin rather than a station.
+#
+# Some of these are the names a cold chooser shows first, because a compressed
+# name is most visible on the busiest stations: the real 24-station build listed
+# "LONDON ST PANCRS", "MANCHESTER PIC", "LIVERPOOL L ST", "BIRMINGHAM N ST",
+# "BRISTOL TEMPLE M" and "NEWPORT S.WALES" above every name it got right.
+# `python build_demo_page.py --feed feeds/fares --all-origins` writes the list
+# those six came from.
+REVIEWED_STATION_NAMES: dict[str, str] = {
+    "AFK": "Ashford International",
+    "APN": "Newcastle Airport",
+    "BHI": "Birmingham International",
+    "BHM": "Birmingham New Street",
+    "BRI": "Bristol Temple Meads",
+    "EFF": "Effingham Junction",
+    "EXG": "Exhibition Centre (Glasgow)",
+    "HPQ": "Harwich International",
+    "IVA": "Inverness Airport",
+    "KGX": "London Kings Cross",
+    "LIV": "Liverpool Lime Street",
+    "LJL": "Liverpool Airport Bus",
+    "LNE": "London International (CIV)",
+    "LPY": "Liverpool South Parkway",
+    "MAN": "Manchester Piccadilly",
+    "MCO": "Manchester Oxford Road",
+    "MIA": "Manchester Airport",
+    "NWP": "Newport (South Wales)",
+    "PRA": "Prestwick International Airport",
+    "QEO": "East Midlands Railway (origin)",
+    "QGA": "Glasgow Airport Bus",
+    "QNO": "Northern (origin)",
+    "QSO": "South Western Railway (origin)",
+    "QTO": "TransPennine Express (origin)",
+    "QXO": "CrossCountry (origin)",
+    "SFA": "Stratford International",
+    "STP": "London St Pancras International",
+    "WBQ": "Warrington Bank Quay",
+    "ZHJ": "Heathrow Underground",
+}
+
+
+def display_station_name(crs: str, name: str) -> str:
+    """The name a reader sees for a station, reviewed where the feed compresses it."""
+    return REVIEWED_STATION_NAMES.get(crs.upper(), name)
+
+
 def build_station_index(
     priced_by_origin: dict[str, int], all_locations: dict[str, object]
 ) -> list[dict[str, str]]:
@@ -2466,7 +2520,7 @@ def build_station_index(
         index.append(
             {
                 "crs": crs,
-                "name": location.name,
+                "name": display_station_name(crs, location.name),
                 "slug": slugs[crs],
                 "destinations": count,
             }

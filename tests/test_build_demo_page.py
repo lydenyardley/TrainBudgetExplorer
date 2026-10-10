@@ -2696,6 +2696,27 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual([entry["crs"] for entry in index], ["GRN", "NOT"])
         self.assertTrue(all(entry["destinations"] > 0 for entry in index))
 
+    def test_a_compressed_feed_name_is_shown_as_the_stations_own_name(self) -> None:
+        # Audit item 5, 9 October 2026: the picker and the chooser ask a reader
+        # to choose between places, and the feed's short form -- "LONDON
+        # KINGS X", "HEATHROW UNDERGD", "XC ORIGIN" -- is not a name. The
+        # registry is keyed by CRS, so a rename can never move a station's
+        # address: slugs stay the feed's own spelling.
+        locations = self.fares.locations_by_crs
+        index = build_station_index({"KGX": 2, "GRN": 1}, locations)
+        names = {entry["crs"]: entry["name"] for entry in index}
+        slugs = {entry["crs"]: entry["slug"] for entry in index}
+        self.assertEqual(names["KGX"], "London Kings Cross")
+        self.assertEqual(names["GRN"], "GRANTHAM")
+        self.assertEqual(names["KGX"], build_demo_page.display_station_name("KGX", "LONDON KINGS X"))
+        self.assertEqual(slugs["KGX"], "london-kings-x")
+        # The reviewed registry stays reviewable: three-letter codes, a real
+        # name per entry, and nothing that merely repeats the short form.
+        for crs, name in build_demo_page.REVIEWED_STATION_NAMES.items():
+            self.assertRegex(crs, r"^[A-Z]{3}$")
+            self.assertTrue(name.strip(), crs)
+            self.assertNotEqual(name, name.upper(), crs)
+
     def test_the_chooser_is_the_index_and_carries_no_fares(self) -> None:
         index = [
             {"crs": "KGX", "name": "LONDON KINGS X", "slug": "london-kings-x", "destinations": 6},
