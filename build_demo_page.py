@@ -2849,7 +2849,7 @@ def render_page(
         # before any script runs. The script keeps it true afterwards.
         .replace("__CEILING_NOTE__", "&pound;" + str(ceiling) + ".00 for one adult")
         .replace("__BUDGET__", str(initial_budget))
-        .replace("__NOTE__", payload["note"])
+        .replace("__NOTE__", note_markup(payload["note"]))
         .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
         .replace("__ANALYTICS__", analytics)
         .replace("__SYNTHETIC__", "true" if payload.get("synthetic", True) else "false")
@@ -2865,6 +2865,19 @@ def render_page(
     if "__STATION_STYLE__" in page or '<link rel="stylesheet"' not in page:
         raise ValueError("the station page shipped without a stylesheet link")
     return page
+
+
+def note_markup(note: str, css_class: str = "") -> str:
+    """A route's provenance note as its own paragraph, or nothing at all.
+
+    A real build passes ``""`` for the note, and the template used to ship an
+    empty ``<p>`` wherever the note would have been -- a block of dead space
+    saying nothing (audit item 8, 9 October 2026). ``synthetic_markup`` beside
+    this is the same shape of fix for the same reason.
+    """
+    if not note:
+        return ""
+    return f'<p class="{css_class}">{note}</p>' if css_class else f"<p>{note}</p>"
 
 
 def synthetic_markup(synthetic: bool) -> str:
@@ -3020,7 +3033,7 @@ def render_privacy(
         )
     return (
         PRIVACY.replace("__BASE__", base_path)
-        .replace("__NOTE__", note)
+        .replace("__NOTE__", note_markup(note, "muted"))
         .replace("__CONTACT__", contact)
         .replace("__PRACTICES__", "".join(f"  <li>{item}</li>\n" for item in practices))
         .replace("__SYNTHETIC__", "true" if synthetic else "false")
@@ -3204,7 +3217,8 @@ def render_chooser(
     if len(index) == 1:
         only = index[0]
         origin_clause = (
-            '<span id="originClause"> from <span class="origin-name">'
+            '<span id="originClause"><span class="heading-lead">from</span> '
+            '<span class="origin-name">'
             f'{html.escape(only["name"])}</span></span>'
         )
         intro = (
@@ -3217,7 +3231,8 @@ def render_chooser(
         title_suffix = only["name"]
     else:
         origin_clause = (
-            '<span id="originClause"> from <span class="origin-slot-wrap" id="originField">'
+            '<span id="originClause"><span class="heading-lead">from</span> '
+            '<span class="origin-slot-wrap" id="originField">'
             '<input id="originSearch" type="search" placeholder="station" autocomplete="off" '
             'aria-label="The station you are starting from" aria-describedby="pickStatus" '
             'aria-controls="picks"></span></span>'
@@ -3240,7 +3255,7 @@ def render_chooser(
         .replace("__TITLE_SUFFIX_HTML__", html.escape(title_suffix))
         .replace("__TITLE_SUFFIX_JS__", json.dumps(title_suffix, ensure_ascii=False))
         .replace("__BUDGET__", str(budget_pounds))
-        .replace("__NOTE__", note)
+        .replace("__NOTE__", note_markup(note, "tag"))
         .replace("__BASE__", base_path.rstrip("/"))
         .replace("__ANALYTICS__", analytics)
         .replace("__SYNTHETIC__", "true" if synthetic else "false")
