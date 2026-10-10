@@ -793,6 +793,12 @@ class DemoPageTest(unittest.TestCase):
         quiet = build_demo_page.render_privacy("note", "/base", "a@b.test", plain)
         self.assertIn("No analytics run", quiet)
         self.assertNotIn("__PRACTICES__", quiet)
+        # One sentence per bullet, pointing at its own section rather than
+        # restating it (audit item 17, 9 October 2026): the paragraph and the
+        # two bullets below that list entry make the same point with room to
+        # explain it, and the entry is read first and learned last.
+        self.assertIn("what stays in the address bar, below, explains it in full", quiet)
+        self.assertNotIn("so a refresh or a shared link returns the same results", quiet)
         self.assertIn("injects an analytics snippet", build_demo_page.render_privacy("note", "", "a@b.test", measured))
         self.assertIn(
             "affiliate network",
@@ -2616,6 +2622,12 @@ class DemoPageTest(unittest.TestCase):
         html = render_privacy("note", contact="privacy@example.test")
         self.assertIn("privacy@example.test", html)
         self.assertNotIn("goes here before the site is published", html)
+        # The root a release serves is a station list whatever the build
+        # priced, so the way back does not call a one-station release a
+        # chooser, and the footer link says the same thing (audit item 19,
+        # 9 October 2026).
+        self.assertIn(">Back to the station list</a>", html)
+        self.assertIn('footnav"><a href="/">Station list</a>', html)
 
     def test_the_chooser_budget_is_carried_into_station_links(self) -> None:
         # Two stations, because a root that offers a choice is the chooser. A
