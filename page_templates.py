@@ -57,7 +57,7 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
-<nav class="back-link"><a href="__BASE__/">Back to the station chooser</a></nav>
+<nav class="back-link"><a href="__BASE__/">Back to the station list</a></nav>
 __THEME_TOGGLE__
 <main>
 <h1>Privacy</h1>
@@ -301,7 +301,7 @@ __THEME_TOGGLE__
     <p class="tag" id="buildMetadata" hidden></p>
     <p class="tag" id="provenance"></p>
   </details>
-  <nav class="footnav"><a href="__BASE__/">All stations</a> <a href="__BASE__/privacy/">Privacy</a></nav>
+  <nav class="footnav"><a href="__BASE__/">Station list</a> <a href="__BASE__/privacy/">Privacy</a></nav>
   <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 

@@ -3006,12 +3006,14 @@ def render_privacy(
         # full explanation is its own section on the page; this is the list
         # entry, so it states the fact and points there rather than saying the
         # same paragraph twice.
+        # One sentence, not the section it points at (audit item 17, 9 October
+        # 2026): the paragraph and the two bullets below make the same point
+        # with more room, and a list entry that repeats them is read first and
+        # learned last.
         (
-            "Your search is kept in the page's web address, so a refresh or a "
-            "shared link returns the same results. It is never sent to this "
-            "site, which has no server, but the host serving these files sees "
-            "it in its request logs. What stays in the address bar, below, "
-            "explains this in full."
+            "Your search is kept in the page's web address, so the host "
+            "serving these files sees it in its request logs; what stays in "
+            "the address bar, below, explains it in full."
         ),
         (
             "This build injects an analytics snippet, so visits are measured by "
