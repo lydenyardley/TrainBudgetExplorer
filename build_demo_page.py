@@ -1178,10 +1178,12 @@ def with_base(base_path: str, path: str) -> str:
 # to do, and what does not change, because a fallback the reader only discovers on
 # the seller's site is worse than one they were told about.
 LINK_NOTE_FALLBACK = (
-    "The ticket link opens the seller's own search page, so the journey is not filled in for "
-    "you: enter the origin, the destination, the date, and how many of you are travelling. "
-    "The price above is the railway's own walk-up fare, so it is the same whichever seller "
-    "you buy it from."
+    # "In a new tab" is the second half of what the link does, and the link's
+    # own accessible name says it too (audit item 11, 9 October 2026).
+    "The ticket link opens the seller's own search page in a new tab, so the journey is not "
+    "filled in for you: enter the origin, the destination, the date, and how many of you are "
+    "travelling. The price above is the railway's own walk-up fare, so it is the same "
+    "whichever seller you buy it from."
 )
 
 

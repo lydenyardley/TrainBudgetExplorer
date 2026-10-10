@@ -1096,8 +1096,13 @@ function render() {
   renderEmpty(available, wanted, cap, basis);
   more.hidden = true;
   pagination.hidden = pageCount <= 1;
-  pageStatus.textContent = "Page " + currentPage + " of " + pageCount + " of " + wanted.length +
-    (wanted.length === 1 ? " result" : " results");
+  // "Page 1 of 2 of 30 results" was two facts sharing one "of" twice over
+  // (audit item 12, 9 October 2026). The page and the count keep one each:
+  // "1 of 2 pages · 30 destinations". The singular is spelled rather than
+  // left to read "1 pages" on a page whose list happens to fit one.
+  pageStatus.textContent = currentPage + " of " + pageCount +
+    (pageCount === 1 ? " page · " : " pages · ") + wanted.length +
+    (wanted.length === 1 ? " destination" : " destinations");
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
   renderShortlist();
@@ -1116,7 +1121,9 @@ function render() {
 function holdCell(destination) {
   const cell = document.createElement("td");
   cell.className = "hold";
-  cell.dataset.label = "Hold";
+  // One word for the shortlist, in the stacked layout too: the column head
+  // and this label are the same cell (audit item 13, 9 October 2026).
+  cell.dataset.label = "Shortlist";
   const box = document.createElement("input");
   box.type = "checkbox";
   box.className = "hold-box";
@@ -1520,9 +1527,12 @@ function cellWithLinks(row, destination, wanted) {
   // but a screen reader's links list used to be a column of identical "Tickets"
   // entries with no way to tell them apart. The name carries the destination,
   // and the same word is in the title so a sighted reader's tooltip agrees.
-  link.setAttribute("aria-label", "Tickets for " + destination.name);
+  // The link opens a new tab and nothing on the row said so (audit item 11,
+  // 9 October 2026). The fact travels in the accessible name, where a reader
+  // is told what the control does before following it, and in the tooltip.
+  link.setAttribute("aria-label", "Tickets for " + destination.name + ", opens in a new tab");
   link.title = "Tickets for " + destination.name + " — " +
-    destination.link.label + " search for " + destination.crs;
+    destination.link.label + " search for " + destination.crs + ", opens in a new tab";
   cell.append(link);
   // One disclosure per row, on every row. It used to exist only where the
   // build had times, which left a fare's condition unreachable on a
