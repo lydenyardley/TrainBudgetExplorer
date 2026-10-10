@@ -483,7 +483,14 @@ class RouteManifestTest(unittest.TestCase):
             self.build_site(root, "--all-origins")
             chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
             self.assertIn("attachStationField({", chooser)
-            self.assertIn("onChange: () => render(),", chooser)
+            # The route is handed what was typed and the station being offered,
+            # so its list can show the matches a completion would otherwise
+            # hide (audit items 1 and 2, 9 October 2026), and it re-renders on
+            # every keystroke as it did before.
+            self.assertIn("onChange: (_value, query, completion) => {", chooser)
+            self.assertIn("typedQuery = query;", chooser)
+            self.assertIn("completing = completion;", chooser)
+            self.assertIn("typedQuery = query;\n    completing = completion;\n    render();", chooser)
 
     def test_the_chooser_links_to_the_privacy_page(self) -> None:
         # The root page is where a reader starts, so the thing that says what

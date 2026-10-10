@@ -426,6 +426,33 @@ STATION_FIELD_JS = """function attachStationField(options) {
     proposal = null;
     if (selected()) field.setSelectionRange(field.value.length, field.value.length);
   }
+  // The station a completion offers for what has been typed. An exact match
+  // wins, so the field settles on the name's own spelling and Tab can go there;
+  // otherwise the shortest name that starts with the text, with destination
+  // count breaking a tie. The rule used to be the first station in list order,
+  // and list order is destination count, so typing "gran" completed GRANGETOWN
+  // CRDIF over GRANTHAM (audit item 1, 9 October 2026).
+  function completionFor(typed) {
+    const wanted = typed.trim().toLowerCase();
+    if (!wanted) return null;
+    let best = null;
+    for (const station of stations) {
+      const name = station.name.toLowerCase();
+      if (name.indexOf(wanted) !== 0) continue;
+      if (name === wanted) return station;
+      if (!best || name.length < best.name.length ||
+          (name.length === best.name.length && (station.destinations || 0) > (best.destinations || 0))) {
+        best = station;
+      }
+    }
+    return best;
+  }
+  // The text the reader typed, kept while a completion is written over it: a
+  // route lists the stations matching this text, so the field can show a
+  // completed name while the list still offers the alternatives that name
+  // would hide (audit item 2, 9 October 2026).
+  let query = "";
+
   // The rest of the name, inside the field, selected so it reads as a suggestion
   // rather than as what was typed. Only a prefix is completed this way, and only
   // with the caret at the end of the text, so a reader editing the middle of a
@@ -441,26 +468,37 @@ STATION_FIELD_JS = """function attachStationField(options) {
   function complete(event) {
     if (event && event.inputType && event.inputType.indexOf("delete") === 0) {
       proposal = null;
+      query = field.value;
       return;
     }
     const typed = field.value;
-    if (!typed) return;
-    if (field.selectionStart !== typed.length || field.selectionEnd !== typed.length) return;
-    const wanted = typed.trim().toLowerCase();
-    if (!wanted) return;
-    for (const station of stations) {
-      if (station.name.toLowerCase().indexOf(wanted) !== 0) continue;
-      if (station.name.length <= typed.length) return;
-      field.value = station.name;
-      field.setSelectionRange(typed.length, field.value.length);
-      if (field.scrollWidth > field.clientWidth) {
-        field.value = typed;
-        field.setSelectionRange(typed.length, typed.length);
-        return;
-      }
-      proposal = station;
+    if (!typed) {
+      proposal = null;
+      query = "";
       return;
     }
+    if (field.selectionStart !== typed.length || field.selectionEnd !== typed.length) {
+      proposal = null;
+      query = typed;
+      return;
+    }
+    const station = completionFor(typed);
+    if (!station) {
+      proposal = null;
+      query = typed;
+      return;
+    }
+    field.value = station.name;
+    field.setSelectionRange(typed.length, field.value.length);
+    if (field.scrollWidth > field.clientWidth) {
+      field.value = typed;
+      field.setSelectionRange(typed.length, typed.length);
+      proposal = null;
+      query = typed;
+      return;
+    }
+    proposal = station;
+    query = typed;
   }
   const inUse = () => document.activeElement === field || field.value.trim() !== "";
   // The list is drawn under the field from the field's own rectangle. Nothing
@@ -512,7 +550,7 @@ STATION_FIELD_JS = """function attachStationField(options) {
   };
   field.addEventListener("input", (event) => {
     complete(event);
-    onChange(field.value);
+    onChange(field.value, query, offered());
     // The completion widens the field, and a heading with balanced lines
     // rebalances around a wider word, which moves the field the list was
     // placed against. Placed again on the next frame, once it has settled.
@@ -535,7 +573,7 @@ STATION_FIELD_JS = """function attachStationField(options) {
       if (!selected()) return;
       event.preventDefault();
       commit();
-      onChange(field.value);
+      onChange(field.value, query, offered());
       return;
     }
     if (event.key === "Escape") {

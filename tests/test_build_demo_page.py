@@ -2633,12 +2633,19 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('"destinations":5', chooser.replace(" ", ""))
         # A chooser's field is optional now, so the script cannot assume it. It
         # is wired through the shared field block, which owns the typing and
-        # hands the route back the value.
+        # hands the route back the text, the field's value and the completion.
         self.assertIn("attachStationField({", chooser)
-        self.assertIn("onChange: () => render(),", chooser)
         self.assertIn("field: pick,", chooser)
-        self.assertIn('const needle = pick ? pick.value.trim().toLowerCase() : "";', chooser)
+        self.assertIn('const needle = typedQuery.trim().toLowerCase();', chooser)
         self.assertIn("if (pick) pick.focus();", chooser)
+        # The completion is ranked by relevance before destination count, and
+        # the list offers the alternatives a one-row dropdown used to hide
+        # (audit items 1 and 2, 9 October 2026).
+        self.assertIn("function completionFor(typed) {", chooser)
+        self.assertIn("onChange: (_value, query, completion) => {", chooser)
+        self.assertIn("typedQuery = query;", chooser)
+        self.assertIn("const ordered = completing", chooser)
+        self.assertIn("[completing, ...wanted.filter((station) => station !== completing)]", chooser)
         # The list is the whole page's answer, so it is still built and counted.
         self.assertIn('const TITLE_SUFFIX', chooser)
         self.assertIn('status.textContent = wanted.length + " station"', chooser)
