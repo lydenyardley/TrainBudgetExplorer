@@ -226,7 +226,7 @@ __THEME_TOGGLE__
      provenance paragraphs between them (finding, 29 September 2026). -->
 <p id="summary" role="status" aria-live="polite"></p>
 <table>
-  <thead><tr><th scope="col" class="hold">List</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col" class="hold">Shortlist</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="empty" hidden></div>
@@ -276,8 +276,12 @@ __THEME_TOGGLE__
   __NRE_SOURCE__
   <p id="commissionDisclosure" hidden></p>
   <div id="attribution" hidden></div>
-  <p>__NOTE__</p>
-  <p>Cheapest displayable standard-class fare found in the feed for the selected ticket type, and on the list this page opens in the cheapest fare of any ticket type for each destination. ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
+  __NOTE__
+  <!-- This paragraph opened by restating what the count line above the table
+       and #modeNote already say -- which fare the price is, and what the list
+       mixes (audit item 14, 9 October 2026). What is left is what only a
+       limitation can say, and the standard-class fact is in the method note. -->
+  <p>ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
   <p>The times on this page are options in the timetable, not a booking. Unrestricted fares are valid on the services listed; an Advance single is valid only on a qualifying train, so no train is picked for you.</p>
   <!-- Everything the page knows about where its numbers came from, in the one
        place a reader goes to check them. These four lines stood between the

@@ -643,7 +643,9 @@ class DemoPageTest(unittest.TestCase):
         ):
             self.assertIn(control, self.html)
         self.assertIn("currentPage = 1; render(); writeUrl();", self.html)
-        self.assertIn('"Page " + currentPage + " of " + pageCount + " of " + wanted.length', self.html)
+        # Audit item 12, 9 October 2026: the page and the count each keep one
+        # "of", and the singular is spelled rather than left to read "1 pages".
+        self.assertIn('currentPage + " of " + pageCount +\n    (pageCount === 1 ? " page · " : " pages · ") + wanted.length +\n    (wanted.length === 1 ? " destination" : " destinations")', self.html)
 
     def test_the_page_states_how_old_its_numbers_are(self) -> None:
         # S33: the age of the prices and the window of the times, beside the
@@ -1021,8 +1023,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('box.type = "checkbox"', self.html)
         self.assertIn('box.setAttribute("aria-label", "List "', self.html)
         # The column the boxes live in is a column of the header too, or the
-        # table has a cell with no heading above it.
-        self.assertIn('<th scope="col" class="hold">List</th>', self.html)
+        # table has a cell with no heading above it. It says the word the dock,
+        # its count and its clear button say, and the stacked layout labels the
+        # same cell with the same word (audit item 13, 9 October 2026).
+        self.assertIn('<th scope="col" class="hold">Shortlist</th>', self.html)
+        self.assertIn('cell.dataset.label = "Shortlist"', self.html)
+        self.assertNotIn('cell.dataset.label = "Hold"', self.html)
         from page_templates import STATION_STYLESHEET
 
         self.assertIn(
@@ -2526,6 +2532,34 @@ class DemoPageTest(unittest.TestCase):
         # assertion exists to catch, now pointing at the wrong table.
         results_header = self.html.split("<table>")[1].split("</thead>")[0]
         self.assertEqual(results_header.count('<th scope="col"'), 7)
+
+    def test_the_ticket_mix_is_stated_once(self) -> None:
+        # Audit item 14, 9 October 2026: the count line, #modeNote and the
+        # footer paragraph made the same point three times. The count line
+        # names the mix (it belongs to the table), the note names what the
+        # open mode means, and the footer keeps only the limitations.
+        self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', self.html)
+        self.assertIn('const MODE_NOTE = {', self.html)
+        self.assertIn('Each row is the cheapest fare of any ticket type', self.html)
+        self.assertIn("ITX placeholder fares are excluded", self.html)
+        # The sentence that repeated the mix is gone, and the standard-class
+        # fact it carried is still in the method note where it belongs.
+        self.assertNotIn("and on the list this page opens in", self.html)
+        self.assertIn("cheapest displayable standard-class fare found in the feed", self.html)
+
+    def test_the_ticket_link_says_where_it_opens(self) -> None:
+        # Audit item 11, 9 October 2026: the row's link opens a new tab and
+        # nothing on the row said so. The accessible name carries the fact
+        # where the reader is told what the control does, the tooltip repeats
+        # it beside the seller it names, and the handoff sentence says it where
+        # the reader is told what the link cannot fill in for them.
+        self.assertIn('link.target = "_blank"', self.html)
+        self.assertIn(
+            'link.setAttribute("aria-label", "Tickets for " + destination.name + ", opens in a new tab")',
+            self.html,
+        )
+        self.assertIn('", opens in a new tab"', self.html)
+        self.assertIn("opens the seller's own search page in a new tab", self.html)
 
     def test_no_numeric_column_can_wrap(self) -> None:
         # Measured on the real Grantham page: the Price column was 56px wide

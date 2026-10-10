@@ -3978,7 +3978,9 @@ function saysMoreThan(condition, code) {
     );
     check(
       "and the status re-announces the page and the count",
-      /Page 1 of \d+ of \d+ results?/.test(reset.status),
+      // Audit item 12, 9 October 2026: "Page 1 of 2 of 30 results" was two
+      // facts sharing one "of" twice, so the page and the count keep one each.
+      /^1 of \d+ pages? · \d+ destinations?$/.test(reset.status.trim()),
       reset.status
     );
 
@@ -5065,8 +5067,10 @@ function saysMoreThan(condition, code) {
       };
     });
     check(
-      "the first column is named List, and centred",
-      firstColumn.head === "List" && firstColumn.headAlign === "center" && firstColumn.cellAlign === "center",
+      // Audit item 13, 9 October 2026: the dock, its count and its clear button
+      // already say Shortlist, and the column head now says it too.
+      "the first column is named Shortlist, and centred",
+      firstColumn.head === "Shortlist" && firstColumn.headAlign === "center" && firstColumn.cellAlign === "center",
       JSON.stringify(firstColumn)
     );
     const dock = await page.evaluate(() => {
