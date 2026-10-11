@@ -83,6 +83,20 @@ def serialised_callback_lines(source: str) -> list[str]:
     return lines
 
 
+def browser_suite_text() -> str:
+    """Every file of the browser suite, read as one string.
+
+    The suite is split by route and by section under tests/browser/, and the
+    entry point that verify.py and CI invoke holds none of the checks itself.
+    A Python test that reads the suite as text -- the doubled escape inside a
+    page callback, the labels the accessibility matrix is wired with -- has to
+    read all of it rather than the file that holds the command line.
+    """
+    folder = Path(__file__).resolve().parent
+    files = [folder / "browser_test.cjs", *sorted((folder / "browser").glob("*.cjs"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+
 def station_page(out: Path) -> Path:
     """The station page a single-origin build wrote beside its chooser.
 
@@ -131,6 +145,32 @@ def page_script(html: str) -> str:
     is the last one, and this says so in one place instead of at fourteen.
     """
     return html.split("<script>")[-1].split("</script>")[0]
+
+
+def js_function(source: str, name: str) -> str:
+    """One of the page's own functions, braces matched, source and all.
+
+    A test that runs a helper the page ships is testing behaviour rather than
+    a string, which is why it is allowed to reach into the script at all --
+    what it must not do is assert on a statement, and this returns the text to
+    run rather than to match. Locating a function by its name and pairing the
+    braces keeps the search from being a quote of the signature.
+    """
+    match = re.search(r"function\s+" + re.escape(name) + r"\s*\(", source)
+    if match is None:
+        raise AssertionError(name + " is not in this script")
+    depth = 0
+    start = source.index("{", match.end())
+    index = start
+    while index < len(source):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[match.start() : index + 1]
+        index += 1
+    raise AssertionError(name + " did not close")
 
 
 def page_markup(html: str) -> str:

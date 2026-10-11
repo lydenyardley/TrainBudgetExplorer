@@ -1,4 +1,5 @@
 __LIST_KEYS__
+__STATION_MATCH__
 __STATION_FIELD__
 const STATIONS = __STATIONS__;
 // What the tab and every retitle say after the budget. A release that
@@ -13,9 +14,12 @@ const originClause = document.getElementById("originClause");
 const capMessage = document.getElementById("capMessage");
 // Every station is listed while the field is empty, because that is what a
 // chooser is for: a reader who has not chosen a station is reading a
-// directory of every one. Once there is a name in the field the list is a
-// search result, and forty matches is more than anybody reads.
-const CHOOSER_LIMIT = 40;
+// directory of every one. The directory is capped and says so -- a stated
+// top forty with the true count beats a 51,770px page nobody asked for, and
+// the field stays the primary path (four-dimension audit R2, route audit
+// item 4). Once there is a name in the field the list is a search result,
+// and forty matches is more than anybody reads.
+const CHOOSER_LIMIT = STATION_LIST_CAP;
 // What the reader typed, and the station a completion is offering for it,
 // kept apart from the completed name the field shows: the list is the stations
 // matching the typed text, with the completion first, so a suggestion never
@@ -23,11 +27,6 @@ const CHOOSER_LIMIT = 40;
 // 2026).
 let typedQuery = "";
 let completing = null;
-function matches(station, needle) {
-  if (!needle) return true;
-  return station.name.toLowerCase().includes(needle) ||
-    station.crs.toLowerCase().startsWith(needle);
-}
 if (budgetNumber) {
   const storedBudget = new URLSearchParams(window.location.search).get("budget");
   if (storedBudget !== null && storedBudget !== "" && Number(storedBudget) >= 0) {
@@ -65,8 +64,11 @@ function render() {
   // A one-station release has no field, so there is nothing to filter by
   // and the whole list is what it offers.
   const needle = typedQuery.trim().toLowerCase();
-  const wanted = STATIONS.filter((station) => matches(station, needle));
-  const cap = needle ? CHOOSER_LIMIT : wanted.length;
+  const wanted = STATIONS.filter((station) => stationMatches(station, needle));
+  // One cap, whether the reader has typed or not: a directory of forty
+  // named rows with the true count under it is honest, and the alternative
+  // is a first paint taller than any screen (route audit item 4).
+  const cap = CHOOSER_LIMIT;
   const ordered = completing
     ? [completing, ...wanted.filter((station) => station !== completing)]
     : wanted;
@@ -93,8 +95,11 @@ function render() {
     picks.append(item);
   }
   if (capMessage) {
+    // One sentence about the cap wherever a reader types a station name: the
+    // picker on a station page says the same thing in the same words (route
+    // audit item 22).
     capMessage.textContent = wanted.length > cap
-      ? "Showing " + cap + " of " + wanted.length + " matching stations. Refine the search to see the rest."
+      ? "Showing " + cap + " of " + wanted.length + " stations. Type to narrow the list."
       : "";
     capMessage.hidden = wanted.length <= cap;
   }
@@ -120,7 +125,9 @@ if (budgetNumber) {
 }
 // The field the whole page exists for, and the one a reader arrives at. It is
 // focused rather than merely present: the caret in the heading is what says the
-// page is waiting for a station, without a label above it saying so.
+// page is waiting for a station, without a label above it saying so. Focusing
+// it no longer opens the list over the page's own explanation: the panel waits
+// for the first keystroke (four-dimension audit R1).
 //
 // Its three behaviours -- completing the name in the field, Tab and Enter to
 // accept it, and the list moving under it while it is in use -- are the
@@ -130,6 +137,13 @@ attachStationField({
   stations: STATIONS,
   dropdown: picks,
   inside: [picks],
+  // The list opens on typing rather than on focus, and it is drawn over the
+  // list's own place in the page rather than over the field: the intro and
+  // the ordering note between the two stay readable, and a click aimed at
+  // them is a click on prose rather than on this page's first option
+  // (four-dimension audit R1, route audit item 3).
+  anchor: "list",
+  openOn: "text",
   onChange: (_value, query, completion) => {
     typedQuery = query;
     completing = completion;

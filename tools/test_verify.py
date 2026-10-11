@@ -54,8 +54,11 @@ class StepReportTest(unittest.TestCase):
     def test_the_page_javascript_is_where_the_javascript_check_looks(self) -> None:
         # F1 moved the blocks into files; this is the pattern that proves the
         # move happened and keeps the check pointed at them rather than at an
-        # empty set that would pass.
-        self.assertEqual(verify.JAVASCRIPT, "page/*.js")
+        # empty set that would pass. It reaches below the first level, because
+        # the station route's script is one file per panel under a
+        # subdirectory and a pattern that stopped there would check none of
+        # them.
+        self.assertEqual(verify.JAVASCRIPT, "page/**/*.js")
 
 
 def _flatten(suite: unittest.TestSuite) -> list[unittest.TestCase]:

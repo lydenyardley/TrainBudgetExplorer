@@ -29,6 +29,37 @@ def _page_file(name: str) -> str:
 
 SHARED_CSS = _page_file("shared.css")
 
+# The station route's script, one file per panel under page/station/, in the
+# order they are concatenated below.
+#
+# The order is the one thing a split can get wrong, because the page ships one
+# script rather than several modules: a top-level statement that reads a const
+# declared in another file only runs if that file has already been
+# concatenated. So the payload leads, the panel that owns a control a later
+# statement registers a listener on comes before the file holding that
+# statement, and the file with the statements themselves -- the wiring -- is
+# last. The panels whose declarations a statement reads are named first for
+# that reason, not for any order of their own.
+STATION_SCRIPT_PARTS = (
+    "station/payload.js",
+    "station/railcards.js",
+    "station/budget.js",
+    "station/service-day.js",
+    "station/filters.js",
+    "station/ticket-modes.js",
+    "station/format.js",
+    "station/table.js",
+    "station/row-cells.js",
+    "station/fare-panel.js",
+    "station/row-actions.js",
+    "station/provenance.js",
+    "station/picker.js",
+    "station/shortlist.js",
+    "station/url-state.js",
+    "station/wiring.js",
+)
+STATION_SCRIPT = "".join(_page_file(part) for part in STATION_SCRIPT_PARTS)
+
 # The station route's own stylesheet, which used to sit in its <style>
 # block beside the shared one. The two are still one string, because a
 # station page's CSS is byte-identical on every station page -- measured,
@@ -62,6 +93,10 @@ __THEME_TOGGLE__
 <main>
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
+__BUILT_LINE__
+<h2>What this site does</h2>
+<ul>
+__PRACTICES__</ul>
 <h2>What stays in the address bar</h2>
 <p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the day the times are for, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
 <ul>
@@ -69,9 +104,6 @@ __THEME_TOGGLE__
 <li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
 </ul>
 <p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
-<h2>What this site does</h2>
-<ul>
-__PRACTICES__</ul>
 <h2>Ticket links</h2>
 <p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
 <h2>Hosting</h2>
@@ -124,6 +156,7 @@ __THEME_TOGGLE__
 <div id="originPicker" hidden>
   <p class="origin-picker-label" id="originPicksLabel">Every station on this site</p>
   <ul id="originPicks" aria-labelledby="originPicksLabel"></ul>
+  <p id="originCap" hidden></p>
   <p id="originNomatch" hidden></p>
   <span id="originStatus" class="sr-only" role="status"></span>
 </div>
@@ -306,7 +339,7 @@ __THEME_TOGGLE__
 </footer>
 
 __STATIONS_SRC__<script>
-""" + _page_file("station.js") + """</script>
+""" + STATION_SCRIPT + """</script>
 __ANALYTICS__
 </body>
 </html>
@@ -330,6 +363,7 @@ __THEME_TOGGLE__
 <main>
 <h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br>__ORIGIN_CLAUSE__</h1>
 __CHOOSER_INTRO__
+<p class="sub" id="provenanceLine">__PROVENANCE__</p>
 __ORDERING_NOTE__
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
@@ -394,6 +428,20 @@ LIST_KEYS_JS = """function wireListKeys(field, list) {
 }"""
 
 
+# One matcher and one cap, wherever a reader types a station name. The
+# chooser's field and a station page's picker ask the same question in two
+# headings, so they cannot answer it differently: a name substring or a
+# three-letter code prefix, and a stated cap on how many rows either list
+# draws. Two routes used to hold the same matcher each, and the picker capped
+# silently where the chooser said so (audit item 22, 9 October 2026).
+STATION_MATCH_JS = """const STATION_LIST_CAP = 40;
+function stationMatches(station, needle) {
+  if (!needle) return true;
+  return station.name.toLowerCase().includes(needle) ||
+    station.crs.toLowerCase().startsWith(needle);
+}"""
+
+
 # One station field. A station page's heading and the chooser's heading ask a
 # reader to do the same three things -- narrow the list under it as they type,
 # see the rest of the name they are typing in the field, and walk away without
@@ -411,6 +459,17 @@ STATION_FIELD_JS = """function attachStationField(options) {
   const dropdown = options.dropdown || null;
   const onChoose = options.onChoose || null;
   const CAP = options.cap || 544;
+  // Where the panel is drawn from, and what makes it appear. A route whose
+  // field sits above the page's own explanation anchors the panel to the
+  // list's place in the document, so the prose between them stays readable and
+  // clickable (four-dimension audit R1); the station page's picker has no
+  // prose under its field and is drawn from the field itself. A chooser also
+  // opens on typing rather than on focus: a panel over prose the reader has
+  // not asked to replace is the defect that anchor answers.
+  const LIST_ANCHORED = options.anchor === "list";
+  const OPEN_ON_TEXT = options.openOn === "text";
+  // The list's place in the document, read once before it leaves the flow.
+  let listTop = 0;
   // The station a completion is offering, held so Tab and Enter can go to it
   // rather than merely accept the text. A field that can complete a name can
   // then act on one.
@@ -504,7 +563,8 @@ STATION_FIELD_JS = """function attachStationField(options) {
     proposal = station;
     query = typed;
   }
-  const inUse = () => document.activeElement === field || field.value.trim() !== "";
+  const inUse = () =>
+    field.value.trim() !== "" || (!OPEN_ON_TEXT && document.activeElement === field);
   // The list is drawn under the field from the field's own rectangle. Nothing
   // on the page is made into its ancestor for that, and nothing moves in the
   // document to make it possible: the field is a word in the middle of a
@@ -515,12 +575,19 @@ STATION_FIELD_JS = """function attachStationField(options) {
     const width = Math.min(CAP, Math.max(box.width, window.innerWidth * 0.9));
     const left = Math.max(0, Math.min(box.left, window.innerWidth - width - 8));
     dropdown.style.left = left + "px";
-    dropdown.style.top = box.bottom + 4 + "px";
     dropdown.style.width = width + "px";
+    // The list's own place in the document for the anchored routes, so the
+    // panel covers the list and nothing written above it.
+    dropdown.style.top = LIST_ANCHORED
+      ? listTop - window.scrollY + "px"
+      : box.bottom + 4 + "px";
   }
   const follow = () => place();
   function enterUse() {
     if (dropdown && !dropdown.classList.contains("under-field")) {
+      if (LIST_ANCHORED) {
+        listTop = dropdown.getBoundingClientRect().top + window.scrollY;
+      }
       dropdown.classList.add("under-field");
       window.addEventListener("scroll", follow, { passive: true });
       window.addEventListener("resize", follow);
@@ -555,6 +622,10 @@ STATION_FIELD_JS = """function attachStationField(options) {
   field.addEventListener("input", (event) => {
     complete(event);
     onChange(field.value, query, offered());
+    // The keystroke is what opens the panel on a route that waits for one:
+    // the list is not drawn over the page until the reader has typed into the
+    // field (four-dimension audit R1).
+    reportUse();
     // The completion widens the field, and a heading with balanced lines
     // rebalances around a wider word, which moves the field the list was
     // placed against. Placed again on the next frame, once it has settled.
@@ -652,6 +723,7 @@ def with_shared(template: str) -> str:
         ("__CHEVRON__", CHEVRON, "disclosure mark"),
         ("__CHEVRON_JS__", json.dumps(CHEVRON), "disclosure mark for the script"),
         ("__LIST_KEYS__", LIST_KEYS_JS, "list keyboard block"),
+        ("__STATION_MATCH__", STATION_MATCH_JS, "station matcher block"),
         ("__STATION_FIELD__", STATION_FIELD_JS, "station field block"),
     ):
         filled = filled.replace(placeholder, block)

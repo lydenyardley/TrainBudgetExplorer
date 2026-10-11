@@ -49,8 +49,10 @@ FEED_SCALE = (
     "test_atoc_fares.FaresParserTest.test_real_gra_to_not_keeps_two_together_r9_price",
 )
 
-#: The page's own JavaScript, which no Python check can parse (audit C2).
-JAVASCRIPT = "page/*.js"
+#: The page's own JavaScript, which no Python check can parse (audit C2). The
+#: station route is one file per panel under a subdirectory, so the pattern has
+#: to reach below the first level or the panels stop being checked.
+JAVASCRIPT = "page/**/*.js"
 
 DEMO_FEED = "_demo_feed"
 DEMO_KB = "_demo_kb"
@@ -180,7 +182,17 @@ def browser() -> Step:
             pages.append(Path(ROOT, SITE, "from"))
             sweep = ["--sweep", "--max", "24"]
 
-    command = ["npx", "--yes", "--package", "playwright", "node", "tests/browser_test.cjs"]
+    # `shutil.which` rather than the bare name: on Windows the launcher is
+    # npx.cmd, and CreateProcess does not resolve a batch file, so the
+    # documented `--browser` command died on WinError 2 before it ran a check.
+    command = [
+        shutil.which("npx") or "npx",
+        "--yes",
+        "--package",
+        "playwright",
+        "node",
+        "tests/browser_test.cjs",
+    ]
     command += [str(page.relative_to(ROOT)).replace("\\", "/") for page in pages]
     command += sweep
     if not _run(command, "the browser suite"):

@@ -1,0 +1,193 @@
+// The refinements: the fold that holds them, the destination-type chips,
+// their counts, and the line that says what is narrowed.
+
+const more = document.getElementById("more");
+const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
+const destinationType = document.getElementById("destinationTypes");
+const PAGE_SIZE = 20;
+let currentPage = 1;
+const pagination = document.getElementById("pagination");
+const previousPage = document.getElementById("previousPage");
+const nextPage = document.getElementById("nextPage");
+const pageStatus = document.getElementById("pageStatus");
+const clearTypes = document.getElementById("clearTypes");
+const moreFilters = document.getElementById("moreFilters");
+const moreFiltersToggle = document.getElementById("moreFiltersToggle");
+const filterState = document.getElementById("filterState");  // The refinements are folded at every width, and the reader is the only thing
+  // that opens them. The control is a button carrying aria-expanded, so the
+  // state is announced without any of this: the markup opens folded and this
+  // only flips that. There used to be a second road in -- a media query and a
+  // resize listener that opened the panel above the phone breakpoint and closed
+  // it below -- which meant the state a reader had chosen could be overwritten
+  // by rotating a device, and meant the fold was a different thing at each
+  // width. Both are gone: one control, one state, one place it changes.
+  function setFiltersOpen(open) {
+    if (!moreFilters) return;
+    moreFilters.dataset.open = open ? "true" : "false";
+    if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
+    setFiltersOpen(moreFilters.dataset.open !== "true");
+  });
+
+// What is narrowed, said in the summary, so a reader who has collapsed the
+// refinements on a phone can still see that a filter is on.
+function filterStateText() {
+  // selectedDestinationTypes() is a Set, and the chip's own label is the only
+  // wording a reader has seen for it.
+  const types = Array.from(selectedDestinationTypes());
+  const party = unit() === "party" ? "Two adults" : "One adult";
+  // How many cards rather than whether there is one. A reader who has chosen a
+  // card is reading the price beside it, and the fold hides the panel that
+  // offered it, so "no card selected" and "no railcard" were both a fact this
+  // line could not state without reading the panel again.
+  const card = noCard() || !railcards[railcardSelect.value]
+    ? "0 railcard"
+    : "1 railcard (" + railcards[railcardSelect.value].label + ")";
+  const labelOf = (value) => {
+    const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
+    const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
+    return span ? span.textContent : value;
+  };
+  const typeText = types.length ? types.map(labelOf).join(", ") : "All";
+  return "Ticket: " + modeLabels()[ticketMode()] + " · Travellers: " + party + ", " + card +
+    " · Destination: " + typeText;
+}
+function renderFilterState() {
+  if (filterState) filterState.textContent = filterStateText();
+}
+function selectedDestinationTypes() {
+  return new Set(destinationTypeInputs
+    .filter((input) => input.value !== "all" && input.checked)
+    .map((input) => input.value));
+}
+function matchesType(destination, wantedTypes) {
+  if (wantedTypes.size === 0) return true;
+  const types = destination.destinationTypes || [destination.destinationType];
+  return types.some((type) => wantedTypes.has(type));
+}
+function typeLabel() {
+  const labels = destinationTypeInputs
+    .filter((input) => input.value !== "all" && input.checked)
+    .map((input) => input.parentElement.textContent.trim().toLowerCase());
+  // "or", not "and": two selected types show the union, and a message that
+  // said "and" would describe a filter the page does not apply.
+  return labels.length > 1 ? " in " + labels.join(" or ") : labels.length ? " in " + labels[0] : "";
+}
+
+// S20: how many of the destinations in the list the reader is looking at are
+// inside the budget and carry this type. A chip that can only ever return
+// nothing is a broken control; a chip that says it would return nothing is a
+// decision the reader gets to make.
+function updateChipCounts(available, cap) {
+  for (const input of destinationTypeInputs) {
+    if (input.value === "all") continue;
+    const slot = document.querySelector(`.chipcount[data-count-for="${input.value}"]`);
+    if (!slot) continue;
+    const count = available.filter(
+      (destination) => priceOf(destination) <= cap &&
+        (destination.destinationTypes || [destination.destinationType]).includes(input.value)
+    ).length;
+    slot.textContent = count === 1 ? "(1)" : "(" + count + ")";
+  }
+  const clear = document.getElementById("clearTypes");
+  if (clear) clear.hidden = selectedDestinationTypes().size === 0;
+}
+function clearDestinationTypes() {
+  for (const input of destinationTypeInputs) input.checked = input.value === "all";
+  currentPage = 1;
+  render();
+  writeUrl();
+}
+// A chip is offered when a destination in the list the reader is looking at
+// carries it. The build offers one from the union of the three ticket modes,
+// because it cannot know which a reader will pick, and a chip that can only
+// ever return nothing reads as a broken control: on the real Grantham page every
+// heritage destination was an outbound single, so return mode offered a
+// heritage chip that filtered to no rows at all. So the chips are narrowed to
+// the active list, and a chip that disappears takes its selection with it --
+// a hidden chip left checked keeps filtering with nothing to show for it.
+function syncDestinationTypeChips() {
+  const offered = new Set();
+  for (const destination of activeDestinations()) {
+    for (const type of destination.destinationTypes || [destination.destinationType || "other"]) {
+      offered.add(type);
+    }
+  }
+  // C20: a facet present in only one ticket mode used to be silently unchecked
+  // when the mode changed, so switching back to the mode the reader had chosen
+  // it in showed "All" and no explanation. Each mode now keeps its own
+  // selection, and switching restores it, so intent survives the round trip.
+  const mode = ticketMode();
+  // syncDestinationTypeChips() runs on every render, not only on a mode
+  // change, so "the mode changed" is decided once here and the announcement
+  // below is tied to it. Without this the same message would be re-announced
+  // on every budget drag.
+  const modeChanged = lastSyncedMode !== null && lastSyncedMode !== mode;
+  if (modeChanged) {
+    typeSelectionsByMode[lastSyncedMode] = Array.from(selectedDestinationTypes());
+  }
+  const all = destinationTypeInputs.find((input) => input.value === "all");
+  const dropped = [];
+  for (const input of destinationTypeInputs) {
+    if (input.value === "all") continue;
+    const present = offered.has(input.value);
+    const chip = input.closest("label");
+    if (chip) chip.hidden = !present;
+    if (!present && input.checked) {
+      input.checked = false;
+      dropped.push(chipLabel(input.value));
+    }
+  }
+  // Restore what the reader chose the last time they were in this mode, minus
+  // anything this mode cannot offer. A mode reached for the first time keeps
+  // whatever the reader has selected now, which is what the previous behaviour
+  // did too.
+  const remembered = typeSelectionsByMode[mode];
+  const restored = [];
+  if (modeChanged && remembered && remembered.length) {
+    let anyRestored = false;
+    for (const input of destinationTypeInputs) {
+      if (input.value === "all") continue;
+      const wanted = remembered.includes(input.value) && offered.has(input.value);
+      if (wanted) { input.checked = true; anyRestored = true; restored.push(chipLabel(input.value)); }
+    }
+    if (anyRestored && all) all.checked = false;
+  }
+  if (!all || !all.checked) {
+    const selected = destinationTypeInputs.some(
+      (input) => input.value !== "all" && input.checked);
+    if (!selected && all) all.checked = true;
+  }
+  lastSyncedMode = mode;
+  if (modeChanged) announceFacetChange(dropped, restored, mode);
+}
+const typeSelectionsByMode = Object.create(null);
+let lastSyncedMode = null;
+function chipLabel(value) {
+  const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
+  const chip = input ? input.closest("label") : null;
+  return chip ? chip.textContent.replace(/\(\d+\)/, "").trim() : value;
+}
+// A filter that changed the result set without saying so is indistinguishable
+// from a broken one, so what happened is stated next to the chips and pushed to
+// assistive technology through the live region it is already in.
+function announceFacetChange(dropped, restored, mode) {
+  const notice = document.getElementById("facetNotice");
+  if (!notice) return;
+  const modeName = modeLabels()[mode] || "this ticket type";
+  const parts = [];
+  if (dropped.length) {
+    parts.push("Cleared " + listWords(dropped) + " — " + modeName +
+      " has no destination of " + (dropped.length === 1 ? "that type" : "those types") +
+      " from this station.");
+  }
+  if (restored.length) {
+    parts.push("Restored your " + listWords(restored) + " filter from " + modeName + ".");
+  }
+  notice.textContent = parts.join(" ");
+  notice.hidden = !parts.length;
+}
+function listWords(items) {
+  return items.length > 1 ? items.join(", ") : items[0] || "";
+}

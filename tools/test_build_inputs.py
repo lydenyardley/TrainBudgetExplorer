@@ -35,20 +35,22 @@ class CoveredModulesTest(unittest.TestCase):
     def test_the_page_and_the_reference_data_are_inputs(self) -> None:
         # Neither is imported, so neither would be caught by the test above: the
         # page's CSS and JS are inlined by page_templates, and the reference data
-        # is read as data.
+        # is read as data. Every file under page/ is an input, because the
+        # station route's script is one file per panel there.
         names = {path.relative_to(build_inputs.ROOT).as_posix() for path in build_inputs.build_inputs()}
-        self.assertIn("page/station.js", names)
+        page = {path.relative_to(build_inputs.ROOT).as_posix() for path in build_inputs.ROOT.glob("page/**/*") if path.is_file()}
         self.assertIn("reference-data/destination-facets.json", names)
+        self.assertEqual(page - names, set(), "a file the page ships is not a build input")
 
 
 class FingerprintTest(unittest.TestCase):
     def _tree(self, folder: Path) -> None:
-        (folder / "page").mkdir()
+        (folder / "page" / "station").mkdir(parents=True)
         (folder / "reference-data").mkdir()
         (folder / "tests").mkdir()
         (folder / "tools").mkdir()
         (folder / "build_demo_page.py").write_text("DATA = 1\n", encoding="utf-8")
-        (folder / "page" / "station.js").write_text("const a = 1;\n", encoding="utf-8")
+        (folder / "page" / "station" / "payload.js").write_text("const a = 1;\n", encoding="utf-8")
         (folder / "reference-data" / "destination-facets.json").write_text("{}\n", encoding="utf-8")
         (folder / "tests" / "test_build_demo_page.py").write_text("x = 1\n", encoding="utf-8")
         (folder / "tools" / "page_bytes.py").write_text("x = 1\n", encoding="utf-8")
@@ -62,7 +64,7 @@ class FingerprintTest(unittest.TestCase):
             (root / "tests" / "test_build_demo_page.py").write_text("x = 2\n", encoding="utf-8")
             (root / "tools" / "page_bytes.py").write_text("x = 2\n", encoding="utf-8")
             self.assertEqual(before, build_inputs.fingerprint(root), "a test is not a build input")
-            (root / "page" / "station.js").write_text("const a = 2;\n", encoding="utf-8")
+            (root / "page" / "station" / "payload.js").write_text("const a = 2;\n", encoding="utf-8")
             self.assertNotEqual(before, build_inputs.fingerprint(root), "the page is a build input")
 
     def test_touching_a_file_without_changing_it_is_not_a_change(self) -> None:
