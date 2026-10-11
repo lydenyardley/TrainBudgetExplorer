@@ -75,12 +75,6 @@ class KnowledgebaseRestriction:
     return_text: str
 
 
-def _normalise(text: str) -> str:
-    """Fold the differences that are not differences in meaning."""
-
-    return " ".join((text or "").split()).upper()
-
-
 # The four answers a check can give. Kept as constants so a caller cannot
 # invent a fifth by misspelling a string, and so the page's wording for each
 # is written in one place.

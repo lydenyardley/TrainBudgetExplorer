@@ -31,7 +31,6 @@ from dtd_download import (
     _backoff_seconds,
     authenticate,
     download_one,
-    download_specs,
     feed_fingerprint,
     previous_records,
     write_manifest,
@@ -686,69 +685,6 @@ class FingerprintTest(unittest.TestCase):
             self.assertEqual(printed.getvalue().strip(), self._fingerprint(tmp))
 
 
-class DownloadSpecsTest(unittest.TestCase):
-    """The path the real command takes: several feeds, one manifest.
-
-    ``download_one`` is the unit; this is what ``download_dtd`` and
-    ``download_knowledgebase`` call, and it is where the previous records are
-    read and handed to each feed. A wiring mistake here would only ever show up
-    as a full re-download every day, which is invisible rather than wrong --
-    so it is tested rather than assumed.
-    """
-
-    def test_each_feed_is_offered_its_own_previous_record(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            fares_destination = Path(tmp) / "fares" / "dtd-fares.zip"
-            fares_destination.parent.mkdir(parents=True)
-            fares_body = zip_bytes("RJFAF.FFL")
-            fares_destination.write_bytes(fares_body)
-            # Only fares has been downloaded before. The timetable feed must not
-            # be sent fares' validators, which would be a question about the
-            # wrong object and could earn a 304 that leaves it missing.
-            write_manifest(
-                [
-                    _previous_record(
-                        fares_destination, fares_body, etag='"fares-v1"'
-                    )
-                ],
-                tmp,
-            )
-            seen: list[str] = []
-
-            def opener(request, timeout):
-                seen.append(request.get_header("If-none-match") or "-")
-                body = (
-                    zip_bytes("RJFAF.FFL")
-                    if "fares" in request.full_url
-                    else zip_bytes("RJTTF.MCA", "RJTTF.MSN")
-                )
-                response = FakeResponse(body, content_type="application/zip")
-                response.url = request.full_url
-                return response
-
-            results = download_specs(DTD_FEEDS, tmp, "token", opener=opener)
-            self.assertEqual([result.name for result in results], ["fares", "timetable"])
-            self.assertEqual(seen, ['"fares-v1"', "-"])
-            # And the manifest now describes both, for the next run to read.
-            self.assertEqual(set(previous_records(tmp)), {"fares", "timetable"})
-
-    def test_a_second_run_revalidates_from_the_manifest_the_first_run_wrote(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            headers = {"ETag": '"v1"'}
-            for run in range(2):
-                results = download_specs(
-                    [DTD_FEEDS[0]],
-                    tmp,
-                    "token",
-                    opener=lambda request, timeout: _response(request, headers),
-                )
-                self.assertEqual(results[0].name, "fares")
-            # The second run offered the validator the first run recorded.
-            self.assertEqual(results[0].etag, '"v1"')
-            self.assertEqual(previous_records(tmp)["fares"]["etag"], '"v1"')
-            self.assertTrue((Path(tmp) / "fares" / "dtd-fares.zip").is_file())
-
-
 class CommandLineTest(unittest.TestCase):
     """The flags an unattended job is driven with."""
 
@@ -828,6 +764,61 @@ class CommandLineTest(unittest.TestCase):
             output = printed.getvalue()
             self.assertIn("fares: unchanged since 2026-09-20T00:00:00Z", output)
             self.assertNotIn("downloaded", output)
+
+    def test_a_second_run_revalidates_from_the_manifest_the_first_run_wrote(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            headers = {"ETag": '"v1"'}
+            for run in range(2):
+                with self._patched_auth(), mock.patch(
+                    "dtd_download.urlopen",
+                    side_effect=lambda request, timeout: _response(request, headers),
+                ), contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "fares")), 0)
+            # The second run offered the validator the first run recorded.
+            self.assertEqual(previous_records(tmp)["fares"]["etag"], '"v1"')
+            self.assertTrue((Path(tmp) / "fares" / "dtd-fares.zip").is_file())
+
+    def test_each_feed_is_offered_its_own_previous_record(self) -> None:
+        # The daily job takes `--dtd all`, so the multi-feed wiring is proved
+        # against the command rather than against a function nothing calls. A
+        # wiring mistake here shows up as a full re-download every day, which
+        # is invisible rather than wrong.
+        with tempfile.TemporaryDirectory() as tmp:
+            fares_destination = Path(tmp) / "fares" / "dtd-fares.zip"
+            fares_destination.parent.mkdir(parents=True)
+            fares_body = zip_bytes("RJFAF.FFL")
+            fares_destination.write_bytes(fares_body)
+            # Only fares has been downloaded before. The timetable feed must not
+            # be sent fares' validators, which would be a question about the
+            # wrong object and could earn a 304 that leaves it missing.
+            write_manifest(
+                [
+                    _previous_record(
+                        fares_destination, fares_body, etag='"fares-v1"'
+                    )
+                ],
+                tmp,
+            )
+            offered: list[str] = []
+
+            def opener(request, timeout):
+                offered.append(request.get_header("If-none-match") or "-")
+                body = (
+                    zip_bytes("RJFAF.FFL")
+                    if "fares" in request.full_url
+                    else zip_bytes("RJTTF.MCA", "RJTTF.MSN")
+                )
+                response = FakeResponse(body, content_type="application/zip")
+                response.url = request.full_url
+                return response
+
+            with self._patched_auth(), mock.patch(
+                "dtd_download.urlopen", side_effect=opener
+            ), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "all")), 0)
+            self.assertEqual(offered, ['"fares-v1"', "-"])
+            # And the manifest now describes both, for the next run to read.
+            self.assertEqual(set(previous_records(tmp)), {"fares", "timetable"})
 
     def test_a_failed_feed_is_reported_and_the_run_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
