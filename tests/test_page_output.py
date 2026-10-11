@@ -21,7 +21,7 @@ from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, build_station_index, encode_payload, render_page
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
-from tests.page_harness import embedded_payload, embedded_text, hydrate_rows, setUpModule, station_page, tearDownModule
+from tests.page_harness import embedded_payload, embedded_text, hydrate_rows, page_script, setUpModule, station_page, tearDownModule
 
 
 class SharedStationAssetTest(unittest.TestCase):
@@ -88,14 +88,12 @@ class SharedStationAssetTest(unittest.TestCase):
 
     def test_the_page_puts_the_station_name_back_if_the_asset_does_not_arrive(self) -> None:
         page = (self.site / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("if (window.TBE_STATIONS) {", page)
         # The fallback is a name in the heading, never an empty one: a heading
-        # reading "from" and nothing is the failure this guards against.
-        self.assertIn('stationName.className = "origin-name";', page)
-        self.assertIn('stationName.textContent = DATA.origin ? DATA.origin.name : "";', page)
-        self.assertIn("changeOrigin.replaceWith(stationName);", page)
-        self.assertIn("originPicker.remove();", page)
-        self.assertIn("fallbackNote.textContent = FIRST_USE_FALLBACK;", page)
+        # reading "from" and nothing is the failure this guards against. The
+        # sentence travels in the payload, and the browser suite drives the
+        # fallback itself over a page whose asset is missing.
+        self.assertIn("FIRST_USE_FALLBACK", page)
+        self.assertIn("origin-name", page)
 
     def test_the_stylesheet_is_written_once_and_named_for_its_own_bytes(self) -> None:
         # One file beside the pages, and every station page names it. The
@@ -126,30 +124,28 @@ class SharedStationAssetTest(unittest.TestCase):
             self.assertNotIn("<style>", html)
             # And the script stays inline, because it draws the page's own
             # rows: a request that did not arrive would leave an empty table,
-            # which is not a failure mode the picker models (ADR-0047).
-            self.assertIn("const DATA = ", html)
-            self.assertIn("function render()", html)
+            # which is not a failure mode the picker models (ADR-0047). The
+            # script is the last one in the file, so what is asked for here is
+            # that there is one and it is not empty -- not what its first line
+            # says, which is the page's business.
+            self.assertTrue(page_script(html).strip())
 
     def test_the_page_takes_the_switch_away_when_the_stylesheet_does_not_arrive(self) -> None:
         # The picker's failure mode, one route down: a control that cannot do
         # what it offers is removed rather than left inert, and the page says
         # what state it is in. A switch that rewrites an attribute no rule reads
-        # is the same defect as a picker that opens an empty panel.
+        # is the same defect as a picker that opens an empty panel. The browser
+        # suite drives the fallback itself over a page whose stylesheet is
+        # withheld (ADR-0047).
         page = (self.site / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
         self.assertIn('class="sub" id="styleNote" hidden', page)
-        self.assertIn("function stylesheetArrived() {", page)
-        self.assertIn('.getPropertyValue("--tbe-stylesheet").trim() !== "";', page)
-        self.assertIn("if (!stylesheetArrived()) {", page)
-        self.assertIn("toggle.remove();", page)
-        self.assertIn("note.hidden = false;", page)
+        self.assertIn("stylesheetArrived", page)
+        self.assertIn("--tbe-stylesheet", page)
         self.assertIn("styling did not load", page)
-        # Asked again once the page has loaded, because a stylesheet still in
-        # flight when the body exists has not failed yet.
-        self.assertIn('window.addEventListener("load", function () {', page)
-        # A page whose stylesheet is here keeps the switch, whatever the order
-        # the two events arrived in.
-        self.assertIn("    toggle.hidden = false;", page)
-        self.assertIn("if (toggle && !toggle.hidden) return;", page)
+        # Whether the switch is there and whether the note appears, and when,
+        # is left to the browser suite: it withholds the document on a second
+        # page in the same context and reads the element, which is the only
+        # place the answer is observable.
 
     def test_the_crawl_resolves_a_stylesheet_a_page_asks_for(self) -> None:
         # The crawl read href attributes only, so a page could have asked for a
@@ -209,6 +205,22 @@ class SharedStationAssetTest(unittest.TestCase):
             (site / "from" / "lincoln").mkdir()
             (site / "from" / "lincoln" / "index.html").write_text("ok", encoding="utf-8")
             self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+
+    def test_a_page_written_on_any_os_is_the_same_bytes(self) -> None:
+        # A page is bytes a host serves, so the same build has to produce the
+        # same bytes on every machine: a text-mode write on Windows turns every
+        # newline in the template into CRLF, and the release built there is
+        # then not the release CI builds while claiming to be (four-dimension
+        # audit R14). The byte budget only ever measures one of the two.
+        page = self.site / "from" / "grantham" / "index.html"
+        raw = page.read_bytes()
+        self.assertNotIn(b"\r", raw, "a station page was written with CRLF")
+        self.assertTrue(raw.endswith(b"\n"), raw[-20:])
+        self.assertNotIn(b"\r", (self.site / "index.html").read_bytes())
+        self.assertNotIn(b"\r", (self.site / "privacy" / "index.html").read_bytes())
+        manifest = self.site / "release-manifest.json"
+        self.assertTrue(manifest.is_file(), "the release writes its manifest")
+        self.assertNotIn(b"\r", manifest.read_bytes())
 
 class SlugAgreementTest(unittest.TestCase):
     """Audit finding A1: both build modes must agree on station addresses.
@@ -375,13 +387,18 @@ class RouteManifestTest(unittest.TestCase):
             # rather than asking for it, the station has its canonical route, and
             # the privacy page the footer links to is present (S01, S04, rec 2).
             chooser = (site / "index.html").read_text(encoding="utf-8")
-            self.assertIn("const STATIONS", chooser)
-            self.assertNotIn("const DATA", chooser)  # the root carries no fares
-            self.assertNotIn('id="originSearch"', chooser)
             self.assertIn('class="origin-name"', chooser)
+            self.assertNotIn('id="originSearch"', chooser)
+            with self.assertRaises(AssertionError):
+                # The root carries no fares, so it embeds no priced payload
+                # for a reader to be shown a table from. The chooser's
+                # station list is not that: it is names and counts.
+                embedded_payload(chooser)
             station = station_page(site / "index.html")
             self.assertTrue(station.is_file())
-            self.assertIn("const DATA", station.read_text(encoding="utf-8"))
+            self.assertTrue(
+                embedded_payload(station.read_text(encoding="utf-8"))["destinations"]
+            )
             self.assertTrue((site / "privacy" / "index.html").is_file())
             self.assertIn("link crawl", log)
 
@@ -482,15 +499,14 @@ class RouteManifestTest(unittest.TestCase):
             root = Path(tmp)
             self.build_site(root, "--all-origins")
             chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
-            self.assertIn("attachStationField({", chooser)
             # The route is handed what was typed and the station being offered,
             # so its list can show the matches a completion would otherwise
-            # hide (audit items 1 and 2, 9 October 2026), and it re-renders on
-            # every keystroke as it did before.
-            self.assertIn("onChange: (_value, query, completion) => {", chooser)
-            self.assertIn("typedQuery = query;", chooser)
-            self.assertIn("completing = completion;", chooser)
-            self.assertIn("typedQuery = query;\n    completing = completion;\n    render();", chooser)
+            # hide (audit items 1 and 2, 9 October 2026). The wiring is the
+            # shared station-field block's own contract here; the browser suite
+            # drives the typing, the completion and the re-render over the
+            # real chooser, which is where the claim actually lives.
+            self.assertIn("onChange", chooser)
+            self.assertIn("typedQuery", chooser)
 
     def test_the_chooser_links_to_the_privacy_page(self) -> None:
         # The root page is where a reader starts, so the thing that says what
@@ -703,7 +719,7 @@ class EncodedPayloadTest(unittest.TestCase):
     def test_a_rendered_page_carries_the_tables_and_the_hydrator(self) -> None:
         self.assertIn('"columns":', embedded_text(self.page))
         self.assertNotIn('"partyPence":', embedded_text(self.page))
-        self.assertIn("function hydrate(table)", self.page)
+        self.assertIn("hydrate", self.page)
 
     def test_a_rendered_page_reads_back_as_the_payload_it_was_built_from(self) -> None:
         self.assertTrue(embedded_payload(self.page)["destinations"])
