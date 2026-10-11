@@ -400,6 +400,7 @@
                    color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #originPicks a:hover, #originPicks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #originPicks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #originCap { color: var(--muted); margin: .5rem 0 0; font-size: .85rem; }
   #originNomatch { color: var(--muted); margin: .5rem 0 0; }
   /* The unpriced-origin message replaces the intro, so it is page-size text in
      the normal foreground colour: a finding, not a footnote. */

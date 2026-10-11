@@ -24,7 +24,10 @@ class AgentsMapTest(unittest.TestCase):
                 self.assertTrue(mapped(path), f"{path.name} is not named in AGENTS.md")
 
     def test_every_page_asset_is_on_the_map(self) -> None:
-        for path in sorted((ROOT / "page").iterdir()):
+        # A route's script is one file per panel under a subdirectory, so the
+        # walk goes below the first level: a check that read only the files
+        # beside it would not notice a panel the map forgot.
+        for path in sorted(p for p in (ROOT / "page").rglob("*") if p.is_file()):
             with self.subTest(asset=path.name):
                 self.assertTrue(mapped(path), f"page/{path.name} is not named in AGENTS.md")
 

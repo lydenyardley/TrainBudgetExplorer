@@ -17,11 +17,28 @@ import page_templates
 
 #: Each file under page/, and the string the page ships it in. A file that is
 #: not in its holder is a block that stopped being read, which leaves the page
-#: unstyled or unwired rather than failing anywhere near the edit.
+#: unstyled or unwired rather than failing anywhere near the edit. The station
+#: route's script is one file per panel under page/station/, concatenated into
+#: the one `_TEMPLATE` in the order page_templates.py names.
 ASSETS = {
     "shared.css": "SHARED_CSS",
     "station.css": "STATION_CSS",
-    "station.js": "_TEMPLATE",
+    "station/payload.js": "_TEMPLATE",
+    "station/railcards.js": "_TEMPLATE",
+    "station/budget.js": "_TEMPLATE",
+    "station/service-day.js": "_TEMPLATE",
+    "station/filters.js": "_TEMPLATE",
+    "station/ticket-modes.js": "_TEMPLATE",
+    "station/format.js": "_TEMPLATE",
+    "station/table.js": "_TEMPLATE",
+    "station/row-cells.js": "_TEMPLATE",
+    "station/fare-panel.js": "_TEMPLATE",
+    "station/row-actions.js": "_TEMPLATE",
+    "station/provenance.js": "_TEMPLATE",
+    "station/picker.js": "_TEMPLATE",
+    "station/shortlist.js": "_TEMPLATE",
+    "station/url-state.js": "_TEMPLATE",
+    "station/wiring.js": "_TEMPLATE",
     "chooser.js": "_CHOOSER_TEMPLATE",
     "chooser.css": "_CHOOSER_TEMPLATE",
     "privacy.css": "_PRIVACY_TEMPLATE",
@@ -48,7 +65,14 @@ class PageAssetTest(unittest.TestCase):
     def test_the_module_reads_every_asset_it_holds(self) -> None:
         # A file nobody reads is a block that was moved and then edited to no
         # effect, so the directory holds the module's assets and nothing else.
-        on_disk = {path.name for path in Path(page_templates._PAGE_ASSETS).iterdir()}
+        # The station route's script is one file per panel under a
+        # subdirectory, so the walk goes below the first level: a check that
+        # read only the files beside it would miss every panel added there.
+        on_disk = {
+            path.relative_to(page_templates._PAGE_ASSETS).as_posix()
+            for path in page_templates._PAGE_ASSETS.rglob("*")
+            if path.is_file()
+        }
         self.assertEqual(on_disk, set(ASSETS))
 
     def test_no_asset_carries_a_carriage_return(self) -> None:
