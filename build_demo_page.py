@@ -29,15 +29,19 @@ import shutil
 import sys
 import time
 import zipfile
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from collections.abc import Iterable
 from typing import NamedTuple
 
 from atoc_fares import (
     DESTINATION_TYPE_FILTERS,
     FaresDb,
+    Location,
     PLACEHOLDER_TICKET_CODES,
+    RailcardFamily,
+    Reachable,
     TwoPartFare,
     format_pence,
     is_pseudo_station,
@@ -65,6 +69,7 @@ from retailer import (
     AFFILIATE_NETWORKS,
     DEFAULT_PROVIDER,
     DISCLOSURE,
+    TicketLink,
     pairing_warning,
     ticket_link,
 )
@@ -325,15 +330,23 @@ def write_resume_state(path: Path, signature: str, completed: set[str]) -> None:
             sort_keys=True,
         ) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     replace_published(temporary, path)
 
 
 def write_page_atomic(path: Path, html: str) -> None:
-    """Publish one complete page, never a half-written file after interruption."""
+    """Publish one complete page, never a half-written file after interruption.
+
+    A page is bytes a host serves, and the same build must produce the same
+    bytes on every machine: on Windows a text-mode write turns every "\n" in
+    the template into CRLF, so a release built there differs from the one CI
+    builds while claiming to be the same site (four-dimension audit R14).
+    ``newline`` says so, and the read side normalises for the same reason.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(html, encoding="utf-8")
+    temporary.write_text(html, encoding="utf-8", newline="\n")
     replace_published(temporary, path)
 
 
@@ -471,6 +484,86 @@ def write_release_manifest(
     path = out_dir / RELEASE_MANIFEST_NAME
     write_page_atomic(path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
     return path
+
+
+def write_release(
+    out_dir: Path,
+    *,
+    index: list[dict],
+    routes: list[str],
+    budget_pounds: int,
+    note: str,
+    price_source: str,
+    feed_date: str | None,
+    analytics: str,
+    synthetic: bool,
+    privacy_contact: str,
+    features: dict,
+    built_at: str,
+    base_path: str = "",
+) -> Path:
+    """Write the release's own routes: the chooser, the notice, the manifest.
+
+    One function for both build shapes, because the all-origins path and the
+    single-origin path used to hold a copy of this block each -- two writers
+    (a plain ``write_text`` against ``write_page_atomic``), two clocks for the
+    release's ``builtAt``, and two places for the shapes to drift apart
+    (four-dimension audit R8). The chooser carries the build's provenance and
+    the notice is dated from the stamp the pages themselves were built with,
+    so every route of a release names one build (R3, R6).
+
+    Returns the manifest path, because the caller reports what it wrote.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_page_atomic(
+        out_dir / "index.html",
+        render_chooser(
+            index,
+            budget_pounds=budget_pounds,
+            analytics=analytics,
+            base_path=base_path,
+            note=note,
+            synthetic=synthetic,
+            price_source=price_source,
+            feed_date=feed_date,
+        ),
+    )
+    print(f"wrote {out_dir / 'index.html'} (the chooser) offering {len(index)} station(s)")
+    privacy = out_dir / "privacy" / "index.html"
+    write_page_atomic(
+        privacy,
+        render_privacy(
+            note,
+            base_path,
+            privacy_contact,
+            features,
+            synthetic,
+            built_at=built_at,
+        ),
+    )
+    print(f"wrote {privacy}")
+
+    broken = crawl_internal_links(out_dir, base_path)
+    if broken:
+        link_crawl_failed(broken, out_dir)
+    print(f"link crawl: every internal link in {out_dir} resolves to a written page")
+
+    manifest_path = write_release_manifest(
+        out_dir,
+        [with_base(base_path, "/"), with_base(base_path, "/privacy/")] + list(routes),
+        price_source=price_source,
+        built_at=built_at,
+        base_path=base_path,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    missing = manifest_problems(out_dir, manifest, base_path)
+    if missing:
+        raise SystemExit(
+            "error: the release manifest names routes this build did not write:\n"
+            + "\n".join(f"  {problem}" for problem in missing)
+        )
+    print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
+    return manifest_path
 
 
 def manifest_problems(out_dir: Path, manifest: dict, base_path: str = "") -> list[str]:
@@ -1131,6 +1224,26 @@ def cif_date_to_iso(stamp: str) -> str | None:
     return "20" + stamp[:2] + "-" + stamp[2:4] + "-" + stamp[4:]
 
 
+def human_date(iso: str) -> str:
+    """An ISO date as the words a reader reads: "20 September 2026".
+
+    The page's own script formats dates this way rather than through
+    ``new Date(iso)``, which reads an ISO date as UTC midnight and prints the
+    day before it for any reader behind UTC. The build writes the provenance
+    and privacy dates in the same words, so the two routes cannot disagree
+    about what a date is.
+    """
+    months = (
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    )
+    try:
+        year, month, day = (int(part) for part in iso[:10].split("-"))
+        return f"{day} {months[month - 1]} {year}"
+    except (ValueError, IndexError):
+        return iso
+
+
 def feed_date_from(metadata: dict | None, manifest: dict | None = None) -> str | None:
     """The fares download's own date, as YYYY-MM-DD, or None.
 
@@ -1189,24 +1302,6 @@ LINK_NOTE_FALLBACK = (
 
 def _slug_text(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "station"
-
-
-def station_slug(name: str, crs: str, taken: set[str]) -> str:
-    """A readable address for one station, unique within ``taken``.
-
-    Single-station primitive. The build uses station_slugs_for instead, which
-    is the rule the written folders and every picker obey.
-    """
-    slug = _slug_text(name)
-    if slug in taken:
-        slug = _slug_text(f"{name} {crs}")
-    if slug in taken:  # pathological: same name AND code seen twice
-        counter = 2
-        while f"{slug}-{counter}" in taken:
-            counter += 1
-        slug = f"{slug}-{counter}"
-    taken.add(slug)
-    return slug
 
 
 def station_slugs_for(locations: dict[str, object]) -> dict[str, str]:
@@ -1531,6 +1626,460 @@ def explain_unpriced(
     return f"The feed holds flows from this origin, but none prices a publishable fare: {parts}."
 
 
+class PageContext(NamedTuple):
+    """Everything one page's rows are built against, fixed for the whole page.
+
+    ``origin`` and ``timetable`` are the resolved ones the page builds against:
+    the station the page is about and the slice of the timetable it can use,
+    after the fallback to the origin's own slice and the focus of that slice are
+    done. ``day`` is the day the page reports, which is the day every fare and
+    every journey search on it is asked about.
+    """
+
+    fares: FaresDb
+    origin: Location
+    timetable: TimetableDb | None
+    day: date | None
+    max_changes: int
+    departure_limit: int
+    provider: str
+    adults: int
+    network: str | None
+    advertiser_id: str | None
+    publisher_id: str
+    mode: str
+    railcard_families: list[RailcardFamily]
+
+
+@dataclass
+class RulePool:
+    """The railcard rule records a page shares, keyed once each (audit B3).
+
+    The full rule record repeats on nearly every row: on the heaviest real page
+    one record served all 1,678 rows and the block was 388KB (measured). Rows
+    keep a key into one payload map; only the drawer reads the record, and the
+    table reads the price straight off the row.
+
+    The pool owns the numbering, so an id is handed out the first time a record
+    is asked for and no builder can renumber a page by being called in a
+    different order.
+    """
+
+    rule_ids: dict[str, str] = field(default_factory=dict)
+    railcard_rules: dict[str, dict] = field(default_factory=dict)
+
+    def share(self, rule: dict | None) -> str | None:
+        if rule is None:
+            return None
+        marker = json.dumps(rule, sort_keys=True)
+        rule_id = self.rule_ids.get(marker)
+        if rule_id is None:
+            rule_id = str(len(self.railcard_rules))
+            self.rule_ids[marker] = rule_id
+            self.railcard_rules[rule_id] = rule
+        return rule_id
+
+    def rule_for(self, rule_id: str | None) -> dict | None:
+        """The record a row's key names, for a builder reading back its own rule."""
+        return self.railcard_rules.get(rule_id) if rule_id else None
+
+
+def two_part_query(
+    query: Callable[..., list[Reachable]], day: date | None
+) -> Callable[[str], list[Reachable]]:
+    """One ticket mode's selector, asked of any station's own page.
+
+    ADR-0061: a place the feed prices in two parts is one row, and each ticket
+    of it comes through the same selector as the list it joins, so the reader is
+    quoted the journey they are shown rather than the cheapest fare on each leg
+    found separately. Priced on the build's day, like every other row: the day
+    control changes the times and neither price (ADR-0060).
+    """
+    return functools.partial(query, budget_pence=EVERYTHING_PENCE, adults=1, day=day)
+
+
+def railcard_details(context: PageContext, pool: RulePool, one: Reachable) -> dict:
+    """Each reviewed railcard's exact DTD decision for one destination.
+
+    The reader holds one card at a time, so the payload carries a row per
+    card rather than one card's answer repeated six times over the page.
+    Each entry is the discounted price and a key into the shared rule map;
+    the drawer resolves the rest, because the prose would otherwise be six
+    sentences a row and the measured cost of one is already 433 bytes.
+    """
+    return {
+        family.key: railcard_detail_for(context, pool, family, one)
+        for family in context.railcard_families
+    }
+
+
+def railcard_pair_details(
+    context: PageContext, pool: RulePool, two_part: TwoPartFare
+) -> dict:
+    """Each reviewed railcard's decision for a two-ticket row (ADR-0061).
+
+    A two-ticket row is two published fares, so a card is decided on each
+    ticket and the row's card price is the two card prices added -- the same
+    sum the standard price is. A card the feed bans on either ticket cannot
+    price the pair as a pair, so it is not offered; the row says so rather
+    than quoting half a journey.
+    """
+    return {
+        family.key: railcard_pair_detail_for(context, pool, family, two_part)
+        for family in context.railcard_families
+    }
+
+
+def railcard_pair_detail_for(
+    context: PageContext,
+    pool: RulePool,
+    family: RailcardFamily,
+    two_part: TwoPartFare,
+) -> dict:
+    """One card's decision for a two-ticket row: both tickets, added together."""
+    origin = context.origin
+    legs = (
+        railcard_detail_for(
+            context, pool, family, two_part.first, leg_origin_crs=origin.crs
+        ),
+        railcard_detail_for(
+            context, pool, family, two_part.second, leg_origin_crs=two_part.change_crs
+        ),
+    )
+    blocking = next((leg for leg in legs if leg["pricePence"] is None), None)
+    if blocking is not None:
+        price = None
+        minimum = None
+        state = "blocked"
+        total_ban = True
+    else:
+        price = sum(leg["pricePence"] for leg in legs)
+        minimums = [leg["minimumFarePence"] for leg in legs]
+        minimum = None if any(value is None for value in minimums) else sum(minimums)
+        state = "eligible"
+        total_ban = False
+    restrictions = [
+        (pool.rule_for(leg["rule"]) or {}).get("restrictionCode") for leg in legs
+    ]
+    restrictions = [code for code in restrictions if code and code != "none"]
+    texts = [(pool.rule_for(leg["rule"]) or {}).get("text") for leg in legs]
+    rule = {
+        "sequence": "two",
+        "status": "current",
+        "ticketCode": two_part.first.ticket_code + " + " + two_part.second.ticket_code,
+        "routeCode": two_part.first.route_code + " + " + two_part.second.route_code,
+        "location": (
+            f"{origin.crs}/{two_part.change_crs} + "
+            f"{two_part.change_crs}/{two_part.crs}"
+        ),
+        "restrictionCode": " + ".join(restrictions) or "none",
+        "totalBan": total_ban,
+        "text": (
+            f"Two tickets, both checked for {family.label}: "
+            + " ".join(text for text in texts if text)
+        ),
+    }
+    return {
+        "state": state,
+        "pricePence": price,
+        "minimumFarePence": minimum,
+        "rule": pool.share(rule),
+    }
+
+
+def railcard_detail_for(
+    context: PageContext,
+    pool: RulePool,
+    family: RailcardFamily,
+    one: Reachable,
+    *,
+    leg_origin_crs: str | None = None,
+) -> dict:
+    """One card's decision for one fare: its price and its rule key.
+
+    ``leg_origin_crs`` names where the fare starts when that is not the page's
+    own station: the second leg of a two-ticket row (ADR-0061) begins at the
+    pricing split, and an RR rule matches the endpoints of the journey the
+    fare is sold for.
+    """
+    fares = context.fares
+    origin = context.origin
+    railcard_code = family.key
+    rules = fares.railcard_rules(
+        railcard_code,
+        ticket_code=one.ticket_code,
+        route_code=one.route_code,
+        origin_crs=leg_origin_crs or origin.crs,
+        destination_crs=one.crs,
+        origin_nlc=one.origin_nlc,
+        destination_nlc=one.destination_nlc,
+    )
+    ban = next((rule for rule in rules if rule.total_ban), None)
+    condition = next((rule for rule in rules if rule.restriction_code), None)
+    shown_rule = ban or condition
+    minimum = fares.minimum_fare(railcard_code, one.ticket_code, context.day)
+    rule = None
+    if shown_rule is not None:
+        rule = {
+            "sequence": shown_rule.sequence_no,
+            "status": (
+                "current"
+                if shown_rule.current_or_future.upper() == "C"
+                else shown_rule.current_or_future
+            ),
+            "ticketCode": shown_rule.ticket_code or "any",
+            "routeCode": shown_rule.route_code or "any",
+            "location": shown_rule.location or "any",
+            "restrictionCode": shown_rule.restriction_code or "none",
+            "totalBan": shown_rule.total_ban,
+        }
+    if ban is not None:
+        price = None
+        state = "blocked"
+    else:
+        price = fares.railcard_price(
+            railcard_code, one.ticket_code, one.standard_pence, day=context.day
+        )
+        state = "eligible"
+    if rule is not None:
+        rule["text"] = (
+            f"Current RR {rule['sequence']} for {family.label}: "
+            f"ticket {rule['ticketCode']}, route {rule['routeCode']}, "
+            f"location {rule['location']}; total ban "
+            f"{'yes' if rule['totalBan'] else 'no'}; restriction "
+            f"{rule['restrictionCode']}."
+        )
+    return {
+        "state": state,
+        "pricePence": price,
+        "minimumFarePence": minimum,
+        "rule": pool.share(
+            rule
+            or {
+                "sequence": "none",
+                "status": "current",
+                "ticketCode": one.ticket_code,
+                "routeCode": one.route_code,
+                "location": f"{origin.crs}/{one.crs}",
+                "restrictionCode": "none",
+                "totalBan": False,
+                "text": (
+                    f"No matching current RR rule for {family.label}: ticket "
+                    f"{one.ticket_code}, route {one.route_code}, endpoints "
+                    f"{origin.crs}/{one.crs}."
+                ),
+            }
+        ),
+    }
+
+
+def describe_restriction(context: PageContext, code: str) -> str:
+    headers = context.fares.restrictions.headers
+    if code in headers:
+        return headers[code].description
+    if code:
+        return (
+            "This fare carries restriction "
+            + code
+            + ", which this feed does not describe, so the condition has to be read "
+            "from the seller's own terms"
+        )
+    return ""
+
+
+def destination_row(
+    context: PageContext,
+    pool: RulePool,
+    crs: str,
+    one: Reachable | TwoPartFare,
+    *,
+    quality: str,
+    journey_db: TimetableDb | None,
+    with_departures: bool = True,
+) -> tuple[dict, TicketLink]:
+    # The journey belongs to the origin and the destination, not to the
+    # ticket type, so it is read once per destination from the first
+    # timetable this build holds that has one: the row's own, then the
+    # page's. It used to be read from the row's own timetable only, so a
+    # destination three fare lists reach carried three different answers,
+    # and the cheapest list kept the one belonging to the fare that won.
+    # Where the cheapest fare is an advance single, that is the list built
+    # without a timetable, so the row said no service about a destination
+    # the same payload prices a 45-minute direct journey to.
+    fares = context.fares
+    origin = context.origin
+    max_changes = context.max_changes
+    departure_limit = context.departure_limit
+    day = context.day
+    searched = (
+        (journey_db,) if journey_db is context.timetable else (journey_db, context.timetable)
+    )
+    journey = None
+    # Which database this row's week belongs to. The first one consulted is
+    # the default, and a database that answered keeps it: a build with
+    # --with-single-timetable holds a second timetable over the same feed
+    # with a different focus, so the week for a row is the week of the
+    # database that read that row, not of the page's first one.
+    journey_source = None
+    for db in searched:
+        if db is None:
+            continue
+        if journey_source is None:
+            journey_source = db
+        found = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
+        if found:
+            journey, journey_source = found, db
+            break
+    # The departures do not fall back. They are the times this fare is good
+    # on, and an advance single's are only knowable from the separate
+    # outbound-single timetable; a return-set train listed under an advance
+    # single would be a time the reader cannot travel on that ticket.
+    options = (
+        journey_db.departures(origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit)
+        if journey_db and with_departures
+        else []
+    )
+    # Q2 (ADR-0045): a journey with a change is where a split ticket
+    # can undercut the through fare, and the station it would change at is
+    # one fact the build already holds. The page names it and claims no
+    # price: the feed prices flows, not itineraries, so which two tickets
+    # are cheaper is not in this data.
+    change_stations = [
+        {
+            "crs": leg.destination_crs,
+            "name": (
+                fares.locations_by_crs[leg.destination_crs].name
+                if leg.destination_crs in fares.locations_by_crs
+                else leg.destination_crs
+            ),
+        }
+        for leg in (journey.legs[:-1] if journey else ())
+    ]
+    link = ticket_link(
+        origin.crs,
+        crs,
+        provider=context.provider,
+        when=day,
+        adults=context.adults,
+        network=context.network,
+        advertiser_id=context.advertiser_id,
+        publisher_id=context.publisher_id,
+        mode=context.mode,
+    )
+    # ADR-0061: a two-part row is two tickets, and every fact the row
+    # states about its fare is a fact about both of them.
+    two_part = one if isinstance(one, TwoPartFare) else None
+    parts = two_part.legs if two_part else (one,)
+    restriction_code = next(
+        (part.restriction_code for part in parts if part.restriction_code), ""
+    )
+    row = {
+        "crs": crs,
+        "name": one.station,
+        "adultPence": one.best_pence,
+        "partyPence": one.best_pence * 2,
+        # One entry per reviewed railcard the feed carries. The reader holds
+        # one at a time, so the page picks the key rather than offering six
+        # prices per row in the table. A two-ticket row (ADR-0061) is a card
+        # decision per ticket, and the row's card price is the two card
+        # prices added together, so the card still prices the row.
+        "railcards": (
+            railcard_pair_details(context, pool, two_part)
+            if two_part
+            else railcard_details(context, pool, one)
+        ),
+        "destinationType": fares.destination_type(crs),
+        "destinationTypes": fares.destination_types(crs),
+        "heritageSites": fares.heritage_sites(crs),
+        "natureSites": fares.nature_sites(crs),
+        "coastalSites": fares.coastal_sites(crs),
+        # ADR-0062: RSPB, National Trust and National Park / Landscape
+        # gateways, each with its own reviewed list and named proof.
+        "rspbSites": fares.rspb_sites(crs),
+        "nationalTrustSites": fares.national_trust_sites(crs),
+        "nationalParkSites": fares.national_park_sites(crs),
+        "ticket": " + ".join(part.ticket_code for part in parts),
+        "isAdvance": any(
+            fares.is_advance_fare(part.ticket_name, part.restriction_code)
+            for part in parts
+        ),
+        "quality": quality,
+        "offPeak": any(part.off_peak for part in parts),
+        "restrictionCode": restriction_code,
+        "routeCode": " + ".join(part.route_code for part in parts),
+        # C08: a code says which condition, not what it permits. The
+        # description is the feed's own wording for the code, and the
+        # fallback says plainly that the feed has none, so a reader is
+        # never told to "check the seller" as if that were a decoded rule.
+        "restrictionDescription": describe_restriction(context, restriction_code),
+        "minutes": journey.duration if journey else None,
+        "changes": journey.changes if journey else None,
+        # One entry per leg boundary, so a one-change journey carries the
+        # one interchange and a longer one carries every change station.
+        "changeStations": change_stations,
+        # S23: why there is no time, so a reader can tell "the feed has no
+        # service" from "this build priced fares only" instead of reading
+        # a bare dash for both. A key rather than a sentence: the page words
+        # it, in one place, from this and the day.
+        "journeyState": (
+            JOURNEY_FOUND
+            if journey
+            # The build has no timetable to read, rather than this row's
+            # list not having one: the search above is what decides it, and
+            # it is the same search that decided `journey`.
+            else JOURNEY_NO_TIMETABLE
+            if all(db is None for db in searched)
+            else JOURNEY_NO_SERVICE
+        ),
+        "legs": [leg.train_uid for leg in journey.legs] if journey else [],
+        # Which database read this row, for the week walk below. Carried on
+        # the row and popped off it again before the payload is encoded, so
+        # the build can carry it and the page never sees it.
+        "_journeySource": journey_source,
+        "link": {"url": link.url, "label": link.label, "rel": link.rel},
+        "departures": [
+            {"depart": option.departure, "arrive": option.arrival, "changes": option.changes}
+            for option in options
+        ],
+    }
+    if two_part:
+        # Both tickets, each with its own price and its own restriction,
+        # because two tickets are two purchases with two sets of conditions
+        # and a row naming one of them would be silent about the other.
+        ends = (
+            (origin.crs, origin.name, two_part.change_crs, two_part.change_station),
+            (two_part.change_crs, two_part.change_station, crs, one.station),
+        )
+        row["tickets"] = [
+            {
+                "ticket": part.ticket_code,
+                "fromCrs": start_crs,
+                "fromName": start_name,
+                "toCrs": end_crs,
+                "toName": end_name,
+                "adultPence": part.best_pence,
+                "restrictionCode": part.restriction_code,
+                "restrictionDescription": describe_restriction(context, part.restriction_code),
+                "routeCode": part.route_code,
+            }
+            for part, (start_crs, start_name, end_crs, end_name) in zip(parts, ends)
+        ]
+    # The link comes back with the row: the payload's two disclosure facts are
+    # every row's link folded into one, and a row alone cannot say them, so a
+    # caller that took only the row would have to build the link again.
+    return row, link
+
+
+def day_answer(row: dict, offset: int, service_week: list[list[dict]]) -> list[int] | None:
+    # What this row's station is on the day at this offset, or nothing.
+    # The row names its own database by index, so a row read by the second
+    # timetable is looked up in the second timetable's week.
+    index = row.get("serviceWeekIndex")
+    if index is None or index < 0 or not service_week:
+        return None
+    return service_week[index][offset].get(row["crs"])
+
+
 def build_payload(
     fares: FaresDb,
     timetable: TimetableDb | None,
@@ -1662,7 +2211,7 @@ def build_payload(
             for two_part in fares.two_part_fares(
                 origin.crs,
                 split_at,
-                lambda crs, query=query: query(crs, EVERYTHING_PENCE, adults=1, day=day),
+                two_part_query(query, day),
             ):
                 priced[two_part.crs] = two_part
     # Two Together is evaluated against the current DTD RR records below. A
@@ -1679,379 +2228,75 @@ def build_payload(
     # it, per card.
     railcard_families = fares.reviewed_railcard_families()
 
+    # The page's own configuration, held once: the row and railcard builders
+    # read a dozen of these facts between them, and one object keeps the list
+    # in one place and lets a builder be called on its own terms.
+    context = PageContext(
+        fares=fares,
+        origin=origin,
+        timetable=timetable,
+        day=day,
+        max_changes=max_changes,
+        departure_limit=departure_limit,
+        provider=provider,
+        adults=adults,
+        network=network,
+        advertiser_id=advertiser_id,
+        publisher_id=publisher_id,
+        mode=mode,
+        railcard_families=railcard_families,
+    )
     # The full rule record repeats on nearly every row: on the heaviest real
     # page one record served all 1,678 rows and the block was 388KB (audit B3,
     # measured). Rows keep a key into one payload map; only the drawer reads
-    # the record, and the table reads the price straight off the row.
-    rule_ids: dict[str, str] = {}
-    railcard_rules: dict[str, dict] = {}
+    # the record, and the table reads the price straight off the row. The pool
+    # owns the map, so a builder asks it for a key rather than threading the
+    # two dicts that hold the records and their numbering.
+    pool = RulePool()
 
-    def share_rule(rule: dict | None) -> str | None:
-        if rule is None:
-            return None
-        marker = json.dumps(rule, sort_keys=True)
-        rule_id = rule_ids.get(marker)
-        if rule_id is None:
-            rule_id = str(len(railcard_rules))
-            rule_ids[marker] = rule_id
-            railcard_rules[rule_id] = rule
-        return rule_id
-
-    def railcard_details(one) -> dict:
-        """Each reviewed railcard's exact DTD decision for one destination.
-
-        The reader holds one card at a time, so the payload carries a row per
-        card rather than one card's answer repeated six times over the page.
-        Each entry is the discounted price and a key into the shared rule map;
-        the drawer resolves the rest, because the prose would otherwise be six
-        sentences a row and the measured cost of one is already 433 bytes.
-        """
-        return {
-            family.key: railcard_detail_for(family, one) for family in railcard_families
-        }
-
-    def railcard_pair_details(two_part) -> dict:
-        """Each reviewed railcard's decision for a two-ticket row (ADR-0061).
-
-        A two-ticket row is two published fares, so a card is decided on each
-        ticket and the row's card price is the two card prices added -- the same
-        sum the standard price is. A card the feed bans on either ticket cannot
-        price the pair as a pair, so it is not offered; the row says so rather
-        than quoting half a journey.
-        """
-        return {
-            family.key: railcard_pair_detail_for(family, two_part)
-            for family in railcard_families
-        }
-
-    def railcard_pair_detail_for(family, two_part) -> dict:
-        """One card's decision for a two-ticket row: both tickets, added together."""
-        legs = (
-            railcard_detail_for(family, two_part.first, leg_origin_crs=origin.crs),
-            railcard_detail_for(
-                family, two_part.second, leg_origin_crs=two_part.change_crs
-            ),
-        )
-        leg_rule = lambda leg: railcard_rules.get(leg["rule"]) if leg["rule"] else None  # noqa: E731
-        blocking = next((leg for leg in legs if leg["pricePence"] is None), None)
-        if blocking is not None:
-            price = None
-            minimum = None
-            state = "blocked"
-            total_ban = True
-        else:
-            price = sum(leg["pricePence"] for leg in legs)
-            minimums = [leg["minimumFarePence"] for leg in legs]
-            minimum = None if any(value is None for value in minimums) else sum(minimums)
-            state = "eligible"
-            total_ban = False
-        restrictions = [
-            (leg_rule(leg) or {}).get("restrictionCode") for leg in legs
-        ]
-        restrictions = [code for code in restrictions if code and code != "none"]
-        texts = [
-            (leg_rule(leg) or {}).get("text") for leg in legs
-        ]
-        rule = {
-            "sequence": "two",
-            "status": "current",
-            "ticketCode": two_part.first.ticket_code + " + " + two_part.second.ticket_code,
-            "routeCode": two_part.first.route_code + " + " + two_part.second.route_code,
-            "location": (
-                f"{origin.crs}/{two_part.change_crs} + "
-                f"{two_part.change_crs}/{two_part.crs}"
-            ),
-            "restrictionCode": " + ".join(restrictions) or "none",
-            "totalBan": total_ban,
-            "text": (
-                f"Two tickets, both checked for {family.label}: "
-                + " ".join(text for text in texts if text)
-            ),
-        }
-        return {
-            "state": state,
-            "pricePence": price,
-            "minimumFarePence": minimum,
-            "rule": share_rule(rule),
-        }
-
-    def railcard_detail_for(family, one, *, leg_origin_crs: str | None = None) -> dict:
-        """One card's decision for one fare: its price and its rule key.
-
-        ``leg_origin_crs`` names where the fare starts when that is not the page's
-        own station: the second leg of a two-ticket row (ADR-0061) begins at the
-        pricing split, and an RR rule matches the endpoints of the journey the
-        fare is sold for.
-        """
-        railcard_code = family.key
-        rules = fares.railcard_rules(
-            railcard_code,
-            ticket_code=one.ticket_code,
-            route_code=one.route_code,
-            origin_crs=leg_origin_crs or origin.crs,
-            destination_crs=one.crs,
-            origin_nlc=one.origin_nlc,
-            destination_nlc=one.destination_nlc,
-        )
-        ban = next((rule for rule in rules if rule.total_ban), None)
-        condition = next((rule for rule in rules if rule.restriction_code), None)
-        shown_rule = ban or condition
-        minimum = fares.minimum_fare(railcard_code, one.ticket_code, day)
-        rule = None
-        if shown_rule is not None:
-            rule = {
-                "sequence": shown_rule.sequence_no,
-                "status": (
-                    "current"
-                    if shown_rule.current_or_future.upper() == "C"
-                    else shown_rule.current_or_future
-                ),
-                "ticketCode": shown_rule.ticket_code or "any",
-                "routeCode": shown_rule.route_code or "any",
-                "location": shown_rule.location or "any",
-                "restrictionCode": shown_rule.restriction_code or "none",
-                "totalBan": shown_rule.total_ban,
-            }
-        if ban is not None:
-            price = None
-            state = "blocked"
-        else:
-            price = fares.railcard_price(
-                railcard_code, one.ticket_code, one.standard_pence, day=day
-            )
-            state = "eligible"
-        if rule is not None:
-            rule["text"] = (
-                f"Current RR {rule['sequence']} for {family.label}: "
-                f"ticket {rule['ticketCode']}, route {rule['routeCode']}, "
-                f"location {rule['location']}; total ban "
-                f"{'yes' if rule['totalBan'] else 'no'}; restriction "
-                f"{rule['restrictionCode']}."
-            )
-        return {
-            "state": state,
-            "pricePence": price,
-            "minimumFarePence": minimum,
-            "rule": share_rule(
-                rule
-                or {
-                    "sequence": "none",
-                    "status": "current",
-                    "ticketCode": one.ticket_code,
-                    "routeCode": one.route_code,
-                    "location": f"{origin.crs}/{one.crs}",
-                    "restrictionCode": "none",
-                    "totalBan": False,
-                    "text": (
-                        f"No matching current RR rule for {family.label}: ticket "
-                        f"{one.ticket_code}, route {one.route_code}, endpoints "
-                        f"{origin.crs}/{one.crs}."
-                    ),
-                }
-            ),
-        }
-
-    def describe_restriction(code: str) -> str:
-        if code in fares.restrictions.headers:
-            return fares.restrictions.headers[code].description
-        if code:
-            return (
-                "This fare carries restriction "
-                + code
-                + ", which this feed does not describe, so the condition has to be read "
-                "from the seller's own terms"
-            )
-        return ""
-
-    def destination_row(
-        crs: str,
-        one,
-        *,
-        with_departures: bool = True,
-        quality: str,
-        journey_db: TimetableDb | None = timetable,
-    ) -> dict:
-        # The journey belongs to the origin and the destination, not to the
-        # ticket type, so it is read once per destination from the first
-        # timetable this build holds that has one: the row's own, then the
-        # page's. It used to be read from the row's own timetable only, so a
-        # destination three fare lists reach carried three different answers,
-        # and the cheapest list kept the one belonging to the fare that won.
-        # Where the cheapest fare is an advance single, that is the list built
-        # without a timetable, so the row said no service about a destination
-        # the same payload prices a 45-minute direct journey to.
-        searched = (journey_db,) if journey_db is timetable else (journey_db, timetable)
-        journey = None
-        # Which database this row's week belongs to. The first one consulted is
-        # the default, and a database that answered keeps it: a build with
-        # --with-single-timetable holds a second timetable over the same feed
-        # with a different focus, so the week for a row is the week of the
-        # database that read that row, not of the page's first one.
-        journey_source = None
-        for db in searched:
-            if db is None:
-                continue
-            if journey_source is None:
-                journey_source = db
-            found = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
-            if found:
-                journey, journey_source = found, db
-                break
-        # The departures do not fall back. They are the times this fare is good
-        # on, and an advance single's are only knowable from the separate
-        # outbound-single timetable; a return-set train listed under an advance
-        # single would be a time the reader cannot travel on that ticket.
-        options = (
-            journey_db.departures(origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit)
-            if journey_db and with_departures
-            else []
-        )
-        # Q2 (ADR-0045): a journey with a change is where a split ticket
-        # can undercut the through fare, and the station it would change at is
-        # one fact the build already holds. The page names it and claims no
-        # price: the feed prices flows, not itineraries, so which two tickets
-        # are cheaper is not in this data.
-        change_stations = [
-            {
-                "crs": leg.destination_crs,
-                "name": (
-                    fares.locations_by_crs[leg.destination_crs].name
-                    if leg.destination_crs in fares.locations_by_crs
-                    else leg.destination_crs
-                ),
-            }
-            for leg in (journey.legs[:-1] if journey else ())
-        ]
-        link = ticket_link(
-            origin.crs,
+    destinations: list[dict] = []
+    single_destinations: list[dict] = []
+    anytime_destinations: list[dict] = []
+    # The row and its link come back together, because the page's two
+    # disclosure facts are every row's link folded into one: the payload says
+    # once whether this page's links are tracked and what it discloses.
+    for crs, one in sorted(single.items(), key=lambda item: item[1].best_pence):
+        row, link = destination_row(
+            context,
+            pool,
             crs,
-            provider=provider,
-            when=day,
-            adults=adults,
-            network=network,
-            advertiser_id=advertiser_id,
-            publisher_id=publisher_id,
-            mode=mode,
+            one,
+            quality="standard return",
+            journey_db=timetable,
         )
-        nonlocal tracked, disclosure
+        destinations.append(row)
         tracked = tracked or link.tracked
         disclosure = disclosure or link.disclosure
-        # ADR-0061: a two-part row is two tickets, and every fact the row
-        # states about its fare is a fact about both of them.
-        two_part = one if isinstance(one, TwoPartFare) else None
-        parts = two_part.legs if two_part else (one,)
-        restriction_code = next(
-            (part.restriction_code for part in parts if part.restriction_code), ""
-        )
-        row = {
-            "crs": crs,
-            "name": one.station,
-            "adultPence": one.best_pence,
-            "partyPence": one.best_pence * 2,
-            # One entry per reviewed railcard the feed carries. The reader holds
-            # one at a time, so the page picks the key rather than offering six
-            # prices per row in the table. A two-ticket row (ADR-0061) is a card
-            # decision per ticket, and the row's card price is the two card
-            # prices added together, so the card still prices the row.
-            "railcards": (
-                railcard_pair_details(two_part) if two_part else railcard_details(one)
-            ),
-            "destinationType": fares.destination_type(crs),
-            "destinationTypes": fares.destination_types(crs),
-            "heritageSites": fares.heritage_sites(crs),
-            "natureSites": fares.nature_sites(crs),
-            "coastalSites": fares.coastal_sites(crs),
-            # ADR-0062: RSPB, National Trust and National Park / Landscape
-            # gateways, each with its own reviewed list and named proof.
-            "rspbSites": fares.rspb_sites(crs),
-            "nationalTrustSites": fares.national_trust_sites(crs),
-            "nationalParkSites": fares.national_park_sites(crs),
-            "ticket": " + ".join(part.ticket_code for part in parts),
-            "isAdvance": any(
-                fares.is_advance_fare(part.ticket_name, part.restriction_code)
-                for part in parts
-            ),
-            "quality": quality,
-            "offPeak": any(part.off_peak for part in parts),
-            "restrictionCode": restriction_code,
-            "routeCode": " + ".join(part.route_code for part in parts),
-            # C08: a code says which condition, not what it permits. The
-            # description is the feed's own wording for the code, and the
-            # fallback says plainly that the feed has none, so a reader is
-            # never told to "check the seller" as if that were a decoded rule.
-            "restrictionDescription": describe_restriction(restriction_code),
-            "minutes": journey.duration if journey else None,
-            "changes": journey.changes if journey else None,
-            # One entry per leg boundary, so a one-change journey carries the
-            # one interchange and a longer one carries every change station.
-            "changeStations": change_stations,
-            # S23: why there is no time, so a reader can tell "the feed has no
-            # service" from "this build priced fares only" instead of reading a
-            # bare dash for both. A key rather than a sentence: the page words
-            # it, in one place, from this and the day.
-            "journeyState": (
-                JOURNEY_FOUND
-                if journey
-                # The build has no timetable to read, rather than this row's
-                # list not having one: the search above is what decides it, and
-                # it is the same search that decided `journey`.
-                else JOURNEY_NO_TIMETABLE
-                if all(db is None for db in searched)
-                else JOURNEY_NO_SERVICE
-            ),
-            "legs": [leg.train_uid for leg in journey.legs] if journey else [],
-            # Which database read this row, for the week walk below. Carried on
-            # the row and popped off it again before the payload is encoded, so
-            # the build can carry it and the page never sees it.
-            "_journeySource": journey_source,
-            "link": {"url": link.url, "label": link.label, "rel": link.rel},
-            "departures": [
-                {"depart": option.departure, "arrive": option.arrival, "changes": option.changes}
-                for option in options
-            ],
-        }
-        if two_part:
-            # Both tickets, each with its own price and its own restriction,
-            # because two tickets are two purchases with two sets of conditions
-            # and a row naming one of them would be silent about the other.
-            ends = (
-                (origin.crs, origin.name, two_part.change_crs, two_part.change_station),
-                (two_part.change_crs, two_part.change_station, crs, one.station),
-            )
-            row["tickets"] = [
-                {
-                    "ticket": part.ticket_code,
-                    "fromCrs": start_crs,
-                    "fromName": start_name,
-                    "toCrs": end_crs,
-                    "toName": end_name,
-                    "adultPence": part.best_pence,
-                    "restrictionCode": part.restriction_code,
-                    "restrictionDescription": describe_restriction(part.restriction_code),
-                    "routeCode": part.route_code,
-                }
-                for part, (start_crs, start_name, end_crs, end_name) in zip(parts, ends)
-            ]
-        return row
-
-    destinations = [
-        destination_row(crs, one, quality="standard return")
-        for crs, one in sorted(single.items(), key=lambda item: item[1].best_pence)
-    ]
-    single_destinations = [
-        destination_row(
+    for crs, one in sorted(single_tickets.items(), key=lambda item: item[1].best_pence):
+        row, link = destination_row(
+            context,
+            pool,
             crs,
             one,
             with_departures=single_timetable is not None,
             quality="outbound single",
             journey_db=single_timetable,
         )
-        for crs, one in sorted(single_tickets.items(), key=lambda item: item[1].best_pence)
-    ]
-    anytime_destinations = [
-        destination_row(crs, one, quality="unrestricted Anytime Day Return")
-        for crs, one in sorted(anytime_tickets.items(), key=lambda item: item[1].best_pence)
-    ]
+        single_destinations.append(row)
+        tracked = tracked or link.tracked
+        disclosure = disclosure or link.disclosure
+    for crs, one in sorted(anytime_tickets.items(), key=lambda item: item[1].best_pence):
+        row, link = destination_row(
+            context,
+            pool,
+            crs,
+            one,
+            quality="unrestricted Anytime Day Return",
+            journey_db=timetable,
+        )
+        anytime_destinations.append(row)
+        tracked = tracked or link.tracked
+        disclosure = disclosure or link.disclosure
 
     # S23, one step further. "No service" is a statement about the day this
     # build asked about, not about the station: measured from Nottingham on
@@ -2122,15 +2367,6 @@ def build_payload(
                 )
             service_week.append(per_day)
 
-    def day_answer(row: dict, offset: int) -> list[int] | None:
-        # What this row's station is on the day at this offset, or nothing.
-        # The row names its own database by index, so a row read by the second
-        # timetable is looked up in the second timetable's week.
-        index = row.get("serviceWeekIndex")
-        if index is None or index < 0 or not service_week:
-            return None
-        return service_week[index][offset].get(row["crs"])
-
     # Read out of the table by the day, not copied into the row. The index
     # is what the page needs: which of the page's tables this row belongs to,
     # because a row read by the second timetable is not in the first one's.
@@ -2159,7 +2395,7 @@ def build_payload(
             # and the state itself does not change: it is the same absence, and
             # only what is known about the week around it has moved.
             for offset in range(1, SERVICE_WEEK_HORIZON + 1):
-                if day_answer(row, offset) is not None:
+                if day_answer(row, offset, service_week) is not None:
                     row["nextService"] = service_days[offset]
                     break
 
@@ -2329,7 +2565,7 @@ def build_payload(
         # selected: the reader names the card they hold, or reads standard
         # fares, and the browser remembers which they chose.
         "railcards": railcards,
-        "railcardRules": railcard_rules,
+        "railcardRules": pool.railcard_rules,
         # C08: the reader-facing validity behind a restriction code, once per
         # code. The page resolves a row's code against this rather than each
         # row repeating the same strings.
@@ -2988,6 +3224,7 @@ def render_privacy(
     contact: str = "",
     features: dict | None = None,
     synthetic: bool = True,
+    built_at: str | None = None,
 ) -> str:
     if not contact.strip():
         raise ValueError("a privacy contact is required before publishing the privacy page")
@@ -3009,7 +3246,10 @@ def render_privacy(
         # One sentence, not the section it points at (audit item 17, 9 October
         # 2026): the paragraph and the two bullets below make the same point
         # with more room, and a list entry that repeats them is read first and
-        # learned last.
+        # learned last. The word stays true because the summary now comes
+        # before the deep dive: "What this site does" is the first section and
+        # "What stays in the address bar" the one it points down to (route
+        # audit item 18, 9 October 2026).
         (
             "Your search is kept in the page's web address, so the host "
             "serving these files sees it in its request logs; what stays in "
@@ -3035,8 +3275,19 @@ def render_privacy(
             "Ticket buttons pass through the " + features["affiliate"] +
             " affiliate network, which may record the click and the fare shown."
         )
+    # The date this notice's build-dependent sentences were true of: "no
+    # analytics run" is a promise about a build, and the build knows when it
+    # was made (route audit item 16, 9 October 2026).
+    built_line = (
+        '<p class="muted" id="builtLine">This notice describes the build published on '
+        + html.escape(human_date(built_at[:10]))
+        + ".</p>"
+        if built_at
+        else ""
+    )
     return (
         PRIVACY.replace("__BASE__", base_path)
+        .replace("__BUILT_LINE__", built_line)
         .replace("__NOTE__", note_markup(note, "muted"))
         .replace("__CONTACT__", contact)
         .replace("__PRACTICES__", "".join(f"  <li>{item}</li>\n" for item in practices))
@@ -3192,6 +3443,8 @@ def render_chooser(
     base_path: str = "",
     note: str = DEFAULT_NOTE,
     synthetic: bool = True,
+    price_source: str = DEFAULT_PRICE_SOURCE,
+    feed_date: str | None = None,
 ) -> str:
     """The root page: the station chooser itself, with no fares on it.
 
@@ -3209,7 +3462,17 @@ def render_chooser(
     ``note`` is the same provenance note the station pages carry, so a real-feed
     site does not have a chooser claiming synthetic data above pages that name
     the real feed.
+
+    ``price_source`` and ``feed_date`` are the station page's own provenance:
+    the entry route is the one every community link points at, and it used to
+    say what the ordering was while saying nothing about what the site was,
+    whose feed its prices came from, or how old that feed was
+    (four-dimension audit R3, route audit item 6).
     """
+    provenance_parts = [f"Prices from {price_source}"]
+    if feed_date:
+        provenance_parts.append(f"downloaded {human_date(feed_date)}")
+    provenance = " ".join(provenance_parts) + "."
     stations = json.dumps(
         [
             {"name": e["name"], "crs": e["crs"], "href": with_base(base_path, f"/from/{e['slug']}/"), "destinations": e["destinations"]}
@@ -3255,6 +3518,7 @@ def render_chooser(
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
         .replace("__ORIGIN_CLAUSE__", origin_clause)
         .replace("__CHOOSER_INTRO__", intro)
+        .replace("__PROVENANCE__", html.escape(provenance))
         .replace("__ORDERING_NOTE__", ordering)
         .replace("__TITLE_SUFFIX_HTML__", html.escape(title_suffix))
         .replace("__TITLE_SUFFIX_JS__", json.dumps(title_suffix, ensure_ascii=False))
@@ -3267,86 +3531,125 @@ def render_chooser(
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    args = parse_args(argv)
-    if args.fast_all_origins:
-        args.all_origins = True
-        if args.timetable:
-            print("--fast-all-origins is prices-only; ignoring --timetable", file=sys.stderr)
-        args.timetable = None
-        args.with_single_timetable = False
-        if args.workers == 1:
-            args.workers = min(8, os.cpu_count() or 1)
+@dataclass
+class BuildContext:
+    """Everything one build resolved before it wrote a page.
 
-    # Checked here rather than left to be ignored, because the two flags mean
-    # different builds and a subset asked for without the set it is a subset of
-    # would otherwise build the one origin --origin names and say nothing about
-    # the codes that were named.
-    if args.only_stations and not args.all_origins:
-        print(
-            "error: --only-stations names a subset of a whole-network build, so it "
-            "needs --all-origins. Without it this build writes only --origin.",
-            file=sys.stderr,
-        )
-        return 2
+    ``main`` used to hold all of this in locals, which is why it was 1,001
+    lines: a reader could not see which values the two build shapes shared and
+    which belonged to only one of them, and the shared prologue had to be read
+    twice. A build is now a sequence of named phases, and this is what they
+    pass between them (four-dimension audit R9). Each field is written by the
+    phase named in its comment and read by everything after it.
+    """
 
-    day: date | None = None
-    if args.date:
-        try:
-            day = date.fromisoformat(args.date)
-        except ValueError:
-            print(f"date {args.date!r} is not YYYY-MM-DD", file=sys.stderr)
-            return 2
+    args: argparse.Namespace
+    day: date | None
+    # -- after load_inputs (fares, timetable) ----------------------------
+    fares: FaresDb = None  # type: ignore[assignment]
+    fare_note: str = ""
+    timetable: "TimetableDb | None" = None
+    worker_timetable: str | None = None
+    timetable_index: "SliceIndex | None" = None
+    cache_path: Path | None = None
+    planned: list[str] = field(default_factory=list)
+    # -- after read_provenance ------------------------------------------
+    price_source: str = DEFAULT_PRICE_SOURCE
+    feed_date: str | None = None
+    note: str = DEFAULT_NOTE
+    base_path: str = ""
+    metadata_folders: list[Path] = field(default_factory=list)
+    reference: "Knowledgebase | None" = None
+    reference_published: str = ""
+    reference_checked: str = ""
+    single_timetable: "TimetableDb | None" = None
+    # -- after price_one_payload ---------------------------------------
+    payload_origin: str = ""
+    sampled_index: "SliceIndex | None" = None
+    payload: dict = field(default_factory=dict)
+    # -- after release_gates --------------------------------------------
+    analytics: str = ""
+    features: dict = field(default_factory=dict)
+    synthetic: bool = True
+    privacy_contact: str = ""
+    out: Path = field(default_factory=lambda: Path("_site/index.html"))
 
+    def release_feeds(self) -> None:
+        """Drop the parent's names for the fares and the timetables.
+
+        A render that fans out no longer reads these, but a context outlives
+        every phase, so a field left holding a 2.1 GB feed keeps it resident
+        beside the workers that are meant to hold the memory instead. The
+        callers still `del` their own aliases; this clears the other name.
+        """
+        self.fares = None
+        self.timetable = None
+        self.single_timetable = None
+
+
+def load_inputs(ctx: BuildContext) -> int:
+    """Load the feeds, and refuse on what cannot be published with them.
+
+    Returns 0 to continue, or the exit code to stop at. The fares and timetable
+    loading, the classification and reviewed-code gates, and the provenance read
+    are all here because they are all refusals that must happen before any page
+    is written.
+    """
+    args = ctx.args
     print(f"Loading fares feed from {args.feed} ...", flush=True)
     if args.all_origins:
         # A whole-network build needs every origin's flows at once, so there is
         # no single slice to restore; it writes the indexes the workers read
         # below, once the station list is known.
-        fares = FaresDb().load_feed(args.feed)
-        fare_note = ""
+        ctx.fares = FaresDb().load_feed(args.feed)
+        ctx.fare_note = ""
     else:
         page_fares = load_page_fares(args.feed, args.origin)
-        fares = page_fares.fares
-        fare_note = (
+        ctx.fares = page_fares.fares
+        ctx.fare_note = (
             f" (restored from {page_fares.index.name})"
             if page_fares.restored
             else f" (parsed; wrote {page_fares.index.name})"
         )
     print(
-        f"Loaded fares: {fares.stats()['flows']:,} flows, "
-        f"{fares.stats()['fares']:,} fares{fare_note}",
+        f"Loaded fares: {ctx.fares.stats()['flows']:,} flows, "
+        f"{ctx.fares.stats()['fares']:,} fares{ctx.fare_note}",
         flush=True,
     )
     if not args.all_origins:
         # Every revision of the feed writes a new pair of cache names, and the
         # old pair can never be read again, so the digests before this build's
         # own are tidied here rather than left for the next one to overwrite.
-        stale_fares = prune_fare_index_caches(
-            page_fares.common, page_fares.index.parent
-        )
+        stale_fares = prune_fare_index_caches(page_fares.common, page_fares.index.parent)
         if stale_fares:
-            print(
-                f"Removed {stale_fares} file(s) from the fares caches of older feeds.",
-                flush=True,
-            )
-    timetable_index: SliceIndex | None = None
+            print(f"Removed {stale_fares} file(s) from the fares caches of older feeds.", flush=True)
+    return 0
+
+
+def _load_timetable(ctx: BuildContext) -> int:
+    """Open the timetable this build prices against: a feed, an index, or none.
+
+    A whole-network build reads no timetable feed at all when the slice index
+    holds every page's own reach, which is what makes the whole-network build
+    affordable (ADR-0022, docs/build-performance-findings.md). The three
+    outcomes are printed, because on the real feed they are 56.7s and a restore
+    is 2.6s, and an operator reading a build log needs to know which they paid.
+    """
+    args = ctx.args
     if args.timetable_index is not None:
-        timetable_index = open_timetable_index(args.timetable_index, args.timetable)
-        if timetable_index is None:
+        ctx.timetable_index = open_timetable_index(args.timetable_index, args.timetable)
+        if ctx.timetable_index is None:
             print(
                 f"no usable timetable index under {args.timetable_index}; "
                 "tools/build_timetable_index.py writes one",
                 file=sys.stderr,
             )
             return 2
-        print(f"Timetable index: {timetable_index.describe()}", flush=True)
+        print(f"Timetable index: {ctx.timetable_index.describe()}", flush=True)
     # The codes a named station subset build writes, known before anything is
     # priced: an index that holds all of them means the timetable feed is not
     # read at all. Empty means this build is not a named subset.
-    planned = [
+    ctx.planned = [
         code.strip().upper()
         for code in (args.only_stations or "").split(",")
         if code.strip()
@@ -3354,8 +3657,8 @@ def main(argv: list[str] | None = None) -> int:
     # What the pool workers are handed to parse. A build that skipped the feed
     # has no timetable to give them: passing the path would have every worker
     # parse the national index the parent has just decided not to read.
-    worker_timetable: str | None = args.timetable
-    cache_path: Path | None = None
+    ctx.worker_timetable = args.timetable
+    ctx.cache_path = None
     if args.timetable:
         # Every station the page can show, not only the ones a return reaches.
         # It was the returns alone, and the outbound-single list reaches
@@ -3366,80 +3669,89 @@ def main(argv: list[str] | None = None) -> int:
         # about which stations this build asked the timetable about.
         # The three lists the page composes are the three the index must cover.
         focus_destinations: set[str] = set()
-        if not args.all_origins and args.origin in fares.locations_by_crs:
+        if not args.all_origins and args.origin in ctx.fares.locations_by_crs:
             for rows in (
-                fares.page_destinations_within(
-                    args.origin, EVERYTHING_PENCE, adults=1, day=day
+                ctx.fares.page_destinations_within(
+                    args.origin, EVERYTHING_PENCE, adults=1, day=ctx.day
                 ),
-                fares.page_single_destinations_within(
-                    args.origin, EVERYTHING_PENCE, adults=1, day=day
+                ctx.fares.page_single_destinations_within(
+                    args.origin, EVERYTHING_PENCE, adults=1, day=ctx.day
                 ),
-                fares.publishable_destinations_within(
-                    args.origin, EVERYTHING_PENCE, adults=1, day=day
+                ctx.fares.publishable_destinations_within(
+                    args.origin, EVERYTHING_PENCE, adults=1, day=ctx.day
                 ),
             ):
                 focus_destinations.update(row.crs for row in rows)
-        cache_path = (
+        ctx.cache_path = (
             timetable_cache_path(args.timetable, args.origin, focus_destinations)
             if not args.all_origins
             else None
         )
         # Whether the cache was there before this build asked for it, which is
         # what distinguishes a restore from a parse that also happened to write.
-        cache_was_there = cache_path is not None and cache_path.is_file()
+        cache_was_there = ctx.cache_path is not None and ctx.cache_path.is_file()
         # A named station subset whose slices are all in the index needs no feed
         # at all, and every code is known before anything is priced, so the 56.7s
         # and 1.87 GB can be skipped rather than paid and then ignored. Not with
         # `--with-single-timetable`: that focus is a second cut of the feed, and
         # this index holds each page's own reach rather than it.
         if (
-            timetable_index is not None
-            and planned
+            ctx.timetable_index is not None
+            and ctx.planned
             and not args.with_single_timetable
-            and timetable_index.covers(planned)
+            and ctx.timetable_index.covers(ctx.planned)
         ):
             print(
-                f"The index holds all {len(planned)} station(s) this build will write; "
+                f"The index holds all {len(ctx.planned)} station(s) this build will write; "
                 "the timetable feed is not read.",
                 flush=True,
             )
-            timetable = None
-            worker_timetable = None
+            ctx.timetable = None
+            ctx.worker_timetable = None
         else:
             print(f"Loading timetable feed from {args.timetable} ...", flush=True)
-            timetable = TimetableDb().load_feed(
+            ctx.timetable = TimetableDb().load_feed(
                 args.timetable,
                 focus_origin=None if args.all_origins else args.origin,
                 focus_destinations=focus_destinations,
-                cache_path=cache_path,
+                cache_path=ctx.cache_path,
             )
             # The cache note says which of the two happened, because on the real
             # feed they are 2.6s and 55.6s and an operator reading a build log is
             # exactly the person who needs to know which one they paid.
             print(
-                f"Loaded timetable: {timetable.stats()['schedules']:,} schedules, "
-                f"{timetable.stats()['calling_points']:,} calling points"
+                f"Loaded timetable: {ctx.timetable.stats()['schedules']:,} schedules, "
+                f"{ctx.timetable.stats()['calling_points']:,} calling points"
                 + (
                     ""
-                    if cache_path is None
-                    else f" (restored from {cache_path.name})"
+                    if ctx.cache_path is None
+                    else f" (restored from {ctx.cache_path.name})"
                     if cache_was_there
-                    else f" (parsed; wrote {cache_path.name})"
+                    else f" (parsed; wrote {ctx.cache_path.name})"
                 ),
                 flush=True,
             )
-    elif timetable_index is not None:
+    elif ctx.timetable_index is not None:
         # The point of the index: no feed on the machine, and no national index
         # in memory. Each page reads its own slice from disk instead.
-        print(
-            "No timetable feed: every page is built from its slice in the index.",
-            flush=True,
-        )
-        timetable = None
+        print("No timetable feed: every page is built from its slice in the index.", flush=True)
+        ctx.timetable = None
     else:
         print("No timetable supplied; building a prices-only page.", flush=True)
-        timetable = None
+        ctx.timetable = None
+    return 0
 
+
+def read_provenance(ctx: BuildContext) -> int:
+    """Refuse a build whose prices cannot say where they came from.
+
+    The metadata, the download manifest, the restriction gate, the classification
+    failures and the reviewed-code staleness are all refusals or provenance notes
+    that must be resolved before a page exists, so they are one phase: a reader
+    who is shown a price is shown a build whose provenance was settled.
+    """
+    args = ctx.args
+    fares = ctx.fares
     # A public price needs the reviewed selector, and the selector needs the
     # .RST restriction file to have parsed cleanly. Refuse before rendering
     # rather than shipping a page whose prices came from the broad query.
@@ -3452,7 +3764,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-
     # A classification source that could not be read leaves the page with
     # fewer filter chips and a fallback-only source label. Say which source
     # failed alongside the rest of the provenance lines, and let the flag
@@ -3524,18 +3835,19 @@ def main(argv: list[str] | None = None) -> int:
         metadata_folders.append(Path(args.timetable))
     if args.feed_metadata:
         metadata_folders.append(Path(args.feed_metadata))
+    ctx.metadata_folders = metadata_folders
     metadata = read_feed_metadata(metadata_folders)
-    price_source = args.price_source or price_source_from_metadata(metadata or {})
-    feed_date = feed_date_from(metadata)
-    if not price_source and metadata is None:
+    ctx.price_source = args.price_source or price_source_from_metadata(metadata or {})
+    ctx.feed_date = feed_date_from(metadata)
+    if not ctx.price_source and metadata is None:
         # No metadata file at all: the downloader's own manifest is the next
         # honest source. It only runs when metadata is genuinely absent -- when
         # a metadata.json exists but is unfinished, the loud refusal below
         # stands, because the operator clearly meant to write one.
         manifest = read_feed_manifest(metadata_folders)
         if manifest is not None:
-            price_source = price_source_from_manifest(manifest)
-            if not price_source:
+            ctx.price_source = price_source_from_manifest(manifest)
+            if not ctx.price_source:
                 print(
                     f"error: a download manifest was found beside "
                     f"{metadata_folders[0]} but names no usable DTD fares or "
@@ -3545,10 +3857,10 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            print(f"price line read from the download manifest: {price_source}")
-        feed_date = feed_date_from(metadata, manifest)
-    base_path = "/" + args.base_path.strip("/") if args.base_path.strip("/") else ""
-    if not price_source:
+            print(f"price line read from the download manifest: {ctx.price_source}")
+        ctx.feed_date = feed_date_from(metadata, manifest)
+    ctx.base_path = "/" + args.base_path.strip("/") if args.base_path.strip("/") else ""
+    if not ctx.price_source:
         if metadata is not None:
             # A metadata file that exists but names no source is a real feed
             # whose provenance note is unfinished. Falling back here would
@@ -3581,22 +3893,22 @@ def main(argv: list[str] | None = None) -> int:
             "synthetic feed",
             file=sys.stderr,
         )
-        price_source = DEFAULT_PRICE_SOURCE
+        ctx.price_source = DEFAULT_PRICE_SOURCE
     # The footer note follows the provenance: the synthetic note is the
     # default only for a build whose prices say they are synthetic. A real
     # feed -- metadata.json or the downloader's manifest -- must never wear
     # it, so its footer note is empty unless --note writes one.
     if args.note is not None:
-        note = args.note
+        ctx.note = args.note
     else:
-        note = DEFAULT_NOTE if price_source == DEFAULT_PRICE_SOURCE else ""
+        ctx.note = DEFAULT_NOTE if ctx.price_source == DEFAULT_PRICE_SOURCE else ""
 
     # The reference feed, read once for the whole run. What is *asked* of it is
     # decided per page, because the claim is about the conditions that page
     # shows: one parse for the build, one answer from each page's own rows.
     manifest_for_reference = read_feed_manifest(metadata_folders) or {}
-    reference = reference_feed(args.knowledgebase)
-    reference_published, reference_checked = knowledgebase_dates(manifest_for_reference)
+    ctx.reference = reference_feed(args.knowledgebase)
+    ctx.reference_published, ctx.reference_checked = knowledgebase_dates(manifest_for_reference)
     if args.knowledgebase and args.all_origins:
         # A single-origin build prints the answer itself, below, once the page's
         # own rows have decided the question. A multi-origin release answers it
@@ -3609,8 +3921,6 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
 
-    single_timetable = None
-    single_cache: Path | None = None
     if args.with_single_timetable:
         if not args.timetable:
             print(
@@ -3619,53 +3929,62 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-
         single_focus = {
             row.crs
             for row in fares.page_single_destinations_within(
-                args.origin, EVERYTHING_PENCE, adults=1, day=day
+                args.origin, EVERYTHING_PENCE, adults=1, day=ctx.day
             )
         }
         single_cache = timetable_cache_path(args.timetable, args.origin, single_focus)
         print("Loading separate outbound-single timetable cache ...", flush=True)
-        single_timetable = TimetableDb().load_feed(
+        ctx.single_timetable = TimetableDb().load_feed(
             args.timetable,
             focus_origin=args.origin,
             focus_destinations=single_focus,
             cache_path=single_cache,
         )
         print(
-            f"Loaded single timetable: {single_timetable.stats()['schedules']:,} schedules, "
-            f"{single_timetable.stats()['calling_points']:,} calling points "
+            f"Loaded single timetable: {ctx.single_timetable.stats()['schedules']:,} schedules, "
+            f"{ctx.single_timetable.stats()['calling_points']:,} calling points "
             f"(cache: {single_cache.name})",
             flush=True,
         )
-    used_caches = [path for path in (cache_path, single_cache) if path is not None]
+    used_caches = [path for path in (ctx.cache_path, single_cache if args.with_single_timetable else None) if path is not None]
     if used_caches:
         pruned = prune_timetable_caches(*used_caches)
         if pruned:
-            print(
-                f"pruned {pruned} stale timetable cache file(s) from {CACHE_DIR}",
-                flush=True,
-            )
+            print(f"pruned {pruned} stale timetable cache file(s) from {CACHE_DIR}", flush=True)
+    return 0
+
+
+def price_one_payload(ctx: BuildContext) -> int:
+    """Price one page before the build decides what it can publish.
+
+    The tripwire fires here, on the first origin, where it is cheap to learn
+    that the full build would take days (ADR-0024). Every build pays for one
+    origin before it writes any page: a whole-network build does not publish
+    this payload, but a single-origin build is it.
+    """
+    args = ctx.args
+    fares = ctx.fares
     # An all-origins build cannot depend on the single-origin default (GRN is
     # synthetic and absent from the real feed). Sample the requested code when
     # it exists, otherwise the first real station, so the per-origin tripwire
     # still fires before a long full-network batch.
-    payload_origin = args.origin
-    if args.all_origins and payload_origin not in fares.locations_by_crs:
-        payload_origin = sorted(fares.locations_by_crs)[0]
+    ctx.payload_origin = args.origin
+    if args.all_origins and ctx.payload_origin not in fares.locations_by_crs:
+        ctx.payload_origin = sorted(fares.locations_by_crs)[0]
     # A single-origin build writes this payload, so it is a page like any other
     # and its slice has to be here too, or the page would be assembled without
     # times and say the station has no services.
-    sampled_index: SliceIndex | None = timetable_index
+    ctx.sampled_index = ctx.timetable_index
     if (
-        timetable is None
-        and timetable_index is not None
-        and not timetable_index.has(payload_origin)
+        ctx.timetable is None
+        and ctx.timetable_index is not None
+        and not ctx.timetable_index.has(ctx.payload_origin)
     ):
         if not args.all_origins:
-            print(missing_slice_message(timetable_index, [payload_origin]), file=sys.stderr)
+            print(missing_slice_message(ctx.timetable_index, [ctx.payload_origin]), file=sys.stderr)
             return 2
         # An all-origins build does not write this payload: it is the first
         # origin built, to prove one can be and to time it before a long batch.
@@ -3676,7 +3995,7 @@ def main(argv: list[str] | None = None) -> int:
         # measures the fares half of a page, and every page the build does write
         # is checked against the index before the pool starts.
         print(
-            f"the index holds no slice for {payload_origin}, the origin this build "
+            f"the index holds no slice for {ctx.payload_origin}, the origin this build "
             "samples first; the sample is built from the fares feed alone, so "
             "--max-origin-seconds measures the fares half of a page here rather than "
             "a whole one. Every page this build writes is checked against the index "
@@ -3686,21 +4005,21 @@ def main(argv: list[str] | None = None) -> int:
         # Not a page, so no slice is owed for it and the index is not handed
         # over: `build_payload` raises on an index that cannot answer, and this
         # is the one payload that is legitimately built without a timetable.
-        sampled_index = None
+        ctx.sampled_index = None
     started = time.perf_counter()
     try:
-        payload = build_payload(
+        ctx.payload = build_payload(
             fares,
-            timetable,
-            payload_origin,
-            single_timetable=single_timetable,
+            ctx.timetable,
+            ctx.payload_origin,
+            single_timetable=ctx.single_timetable,
             max_changes=args.max_changes,
-            day=day,
-            note=note,
+            day=ctx.day,
+            note=ctx.note,
             attribution=notices_or_attribution(args),
-            price_source=price_source,
-            feed_date=feed_date,
-            base_path=base_path,
+            price_source=ctx.price_source,
+            feed_date=ctx.feed_date,
+            base_path=ctx.base_path,
             provider=args.provider,
             mode=args.link_mode,
             adults=args.adults,
@@ -3709,44 +4028,51 @@ def main(argv: list[str] | None = None) -> int:
             publisher_id=args.publisher_id,
             departure_limit=args.departures,
             built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            reference=reference,
-            reference_published=reference_published,
-            reference_checked=reference_checked,
-            timetable_index=sampled_index,
+            reference=ctx.reference,
+            reference_published=ctx.reference_published,
+            reference_checked=ctx.reference_checked,
+            timetable_index=ctx.sampled_index,
         )
     except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
         return 2
-    if reference is not None and not args.all_origins:
+    if ctx.reference is not None and not args.all_origins:
         # Printed from the page's own note rather than from a second check, so
         # the line an operator reads and the sentence a reader reads are the
         # same answer about the same conditions.
-        print(
-            "restriction reference: "
-            + describe_restriction_note(payload["restrictionReference"]),
-            flush=True,
-        )
+        print("restriction reference: " + describe_restriction_note(ctx.payload["restrictionReference"]), flush=True)
     origin_seconds = time.perf_counter() - started
     if args.max_origin_seconds and origin_seconds > args.max_origin_seconds:
         # The tripwire fires on the FIRST origin, where it is cheap to learn
         # that the full build would take days (ADR-0024).
         print(
-            f"stopping: building one origin ({payload['origin']['name']}) took "
+            f"stopping: building one origin ({ctx.payload['origin']['name']}) took "
             f"{origin_seconds:.0f}s, over the {args.max_origin_seconds:.0f}s tripwire "
             "(--max-origin-seconds). At this per-origin cost the full-network build "
             "would run for days; see ADR-0024 before raising the limit.",
             file=sys.stderr,
         )
         return 3
+    return 0
 
-    analytics = ""
+
+def release_gates(ctx: BuildContext) -> int:
+    """What this build ships, described once, and the conditions to publish it.
+
+    S36, S37: what this build ships, described once, and the conditions a
+    release has to meet before it can be published. A synthetic demo site is
+    exempt from the licence notice because it publishes no real fares; every
+    other condition applies to both, because a reader reads both.
+    """
+    args = ctx.args
+    ctx.analytics = ""
     if args.analytics_snippet:
         try:
-            analytics = Path(args.analytics_snippet).read_text(encoding="utf-8")
+            ctx.analytics = Path(args.analytics_snippet).read_text(encoding="utf-8")
         except OSError as error:
             print(f"could not read {args.analytics_snippet!r}: {error}", file=sys.stderr)
             return 2
-    if analytics and not args.measurement_plan:
+    if ctx.analytics and not args.measurement_plan:
         print(
             "error: an analytics snippet was given without --measurement-plan, so the "
             "build would ship measurement nobody has decided what it measures or how "
@@ -3755,35 +4081,28 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    # S36, S37: what this build ships, described once, and the conditions a
-    # release has to meet before it can be published. A synthetic demo site is
-    # exempt from the licence notice because it publishes no real fares; every
-    # other condition applies to both, because a reader reads both.
     # The affiliate facts come from the same pair of flags retailer.ticket_link
     # needs before it wraps a link, so the notice cannot say a link is tracked
     # when the build would not wrap it, or the reverse (S36).
-    affiliate = (
-        args.affiliate_network if (args.affiliate_network and args.advertiser_id) else None
-    )
-    features = site_features(
-        analytics=bool(analytics),
+    affiliate = args.affiliate_network if (args.affiliate_network and args.advertiser_id) else None
+    ctx.features = site_features(
+        analytics=bool(ctx.analytics),
         link_mode=args.link_mode,
         network=affiliate,
         disclosure=DISCLOSURE if affiliate else None,
         measurement=args.measurement_plan,
     )
-    public = price_source != DEFAULT_PRICE_SOURCE
-    synthetic = not public
-    privacy_contact = args.privacy_contact or os.environ.get("PRIVACY_CONTACT", "")
-    if not privacy_contact:
+    ctx.synthetic = ctx.price_source == DEFAULT_PRICE_SOURCE
+    ctx.privacy_contact = args.privacy_contact or os.environ.get("PRIVACY_CONTACT", "")
+    if not ctx.privacy_contact:
         # Same route for a synthetic demo and a real-feed build: the public
         # issue tracker, so the page is never blank and never prints an address.
-        privacy_contact = DEFAULT_PRIVACY_CONTACT
+        ctx.privacy_contact = DEFAULT_PRIVACY_CONTACT
     problems = release_gate_problems(
-        features,
-        public=public,
+        ctx.features,
+        public=not ctx.synthetic,
         notices=notices_or_attribution(args),
-        contact=privacy_contact,
+        contact=ctx.privacy_contact,
     )
     if problems:
         print(
@@ -3792,347 +4111,425 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    ctx.out = Path(args.out)
+    return 0
 
-    out = Path(args.out)
-    # The picker's station list is the written outputs, so it is attached after
-    # the payload is built and before the page is rendered. A single-origin
-    # build writes only itself; --all-origins writes the whole set (ADR-0019).
-    if args.all_origins:
-        out_dir = out.parent
-        # Zone and coach pseudo-stations are priceable in the feed but are not
-        # places a reader departs from, so they leave here -- with the chooser,
-        # the write set and the coverage report's origin list all following
-        # (audit A6).
-        origins = [
-            crs
-            for crs in sorted(fares.locations_by_crs)
-            if not is_pseudo_station(crs)
-        ]
-        # A handful of stations is still one site, not several builds: one
-        # chooser, one station list beside it, one release manifest, and nothing
-        # linking to a page that was not written. That is what makes a two-station
-        # build reviewable in minutes rather than a whole-network build's hours.
-        #
-        # A code this feed does not price as a departure point is refused rather
-        # than dropped, including a zone or coach pseudo-station: a typo that
-        # quietly builds one station instead of two is a build that lies about
-        # what it wrote, and the chooser would go on offering what it did write.
-        if args.only_stations:
-            wanted = {
-                code.strip().upper()
-                for code in args.only_stations.split(",")
-                if code.strip()
-            }
-            missing = sorted(wanted - set(origins))
-            if missing:
-                print(
-                    "error: --only-stations names code(s) this feed does not price "
-                    f"as an origin: {', '.join(missing)}",
-                    file=sys.stderr,
-                )
-                return 2
-            if not wanted:
-                print(
-                    "error: --only-stations named no code, which would build no "
-                    "station page at all.",
-                    file=sys.stderr,
-                )
-                return 2
-            chosen = len(origins)
-            origins = [crs for crs in origins if crs in wanted]
-            print(
-                f"Building {len(origins)} of the feed's {chosen:,} priceable "
-                f"station(s): {', '.join(origins)}",
-                flush=True,
-            )
-        if args.fast_all_origins:
-            print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
-        priced_counts: dict[str, int] = {}
-        # One report for the whole build: a station met from fifty origins is
-        # named once, and the build can refuse on a total rather than per page.
-        coverage = UnsourcedReport()
-        for number, crs in enumerate(origins, 1):
-            priced_counts[crs] = _priced_destinations(fares, timetable, crs, day, coverage)
-            if args.fast_all_origins and (number == len(origins) or number % 100 == 0):
-                print(f"  priced {number:,}/{len(origins):,} stations", flush=True)
-        # Refuse before writing 2,500 pages rather than after: a refused build
-        # must leave no half-published site behind, and the check costs nothing
-        # here because the origins have already been queried.
-        if args.fail_on_unsourced and coverage:
-            return coverage.exit_code(True)
-        index = build_station_index(priced_counts, fares.locations_by_crs)
-        # The picker's options, written once for the whole site rather than into
-        # every page. The same list on 2,712 pages was 295 MB of the network in
-        # the wire encoding -- 168 KB a page as these objects -- and identical on
-        # every page but the one row each page filters out (audit, 30 September
-        # 2026, measured from this build's own output).
-        write_station_style(out_dir)
-        station_rows = station_asset_rows(index, base_path)
-        write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+
+def main(argv: list[str] | None = None) -> int:
+    """Run one build: the phases both shapes share, then the shape itself.
+
+    A build is a sequence of phases, and each refuses before the next runs
+    (four-dimension audit R9). Nothing here writes a page: the phases resolve
+    the feeds and the provenance, one payload is priced so the tripwire fires on
+    the first origin, and the release gates decide what may be published. The
+    two shapes below write the pages, and both of them end by handing their
+    routes to the same ``write_release``.
+    """
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    args = parse_args(argv)
+    if args.fast_all_origins:
+        args.all_origins = True
+        if args.timetable:
+            print("--fast-all-origins is prices-only; ignoring --timetable", file=sys.stderr)
+        args.timetable = None
+        args.with_single_timetable = False
+        if args.workers == 1:
+            args.workers = min(8, os.cpu_count() or 1)
+    if args.only_stations and not args.all_origins:
         print(
-            f"wrote {out_dir / STATION_ASSET_NAME} with {len(station_rows):,} station(s) "
-            "for every page's picker",
-            flush=True,
+            "error: --only-stations names a subset of a whole-network build, so it "
+            "needs --all-origins. Without it this build writes only --origin.",
+            file=sys.stderr,
         )
-        by_crs = {entry["crs"]: entry for entry in index}
-        # One shared config for every page, handed to workers once through the
-        # pool initialiser; each job then carries only its own origin (audit
-        # B3: pickling a per-job copy of the whole station index across the
-        # process boundary 2,500 times is minutes of waste at network scale).
-        shared = {
-            "max_changes": args.max_changes,
-            "day": day,
-            "note": note,
-            "attribution": notices_or_attribution(args),
-            "price_source": price_source,
-            "feed_date": feed_date,
-            "base_path": base_path,
-            "provider": args.provider,
-            "link_mode": args.link_mode,
-            "adults": args.adults,
-            "network": args.affiliate_network,
-            "advertiser_id": args.advertiser_id,
-            "publisher_id": args.publisher_id,
-            "departures": args.departures,
-            "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "analytics": analytics,
-            "index": index,
-            "feed": args.feed,
-            "timetable": args.timetable,
-            "timetable_index": (
-                None
-                if timetable_index is None
-                else {"directory": str(timetable_index.directory), "identity": timetable_index.identity}
-            ),
-            # The reference feed's identity, for the resume signature. The
-            # feed itself travels as its own initialiser argument below, and
-            # not in here: this dict is serialised into the signature, and a
-            # parsed feed's repr carries an address, so putting it here would
-            # give every run a different signature and resume nothing.
-            "reference_fingerprint": reference_fingerprint(
-                reference, reference_published, reference_checked
-            ),
-            # The dates the pages will quote, and the only part of the answer
-            # that does not come from a feed this dict already fingerprints.
-            "reference_published": reference_published,
-            "reference_checked": reference_checked,
+        return 2
+    day: date | None = None
+    if args.date:
+        try:
+            day = date.fromisoformat(args.date)
+        except ValueError:
+            print(f"date {args.date!r} is not YYYY-MM-DD", file=sys.stderr)
+            return 2
+    ctx = BuildContext(args=args, day=day)
+    for phase in (load_inputs, _load_timetable, read_provenance, price_one_payload, release_gates):
+        code = phase(ctx)
+        if code:
+            return code
+    return _build_all_origins(ctx) if args.all_origins else _build_single_origin(ctx)
+
+
+def _build_all_origins(ctx: BuildContext) -> int:
+    """Write a station page for every origin this feed prices.
+
+    One build, one site: the chooser, the shared station list and the release
+    manifest are written once beside the pages, and the pages are built either
+    in this process or across a pool that is handed one origin each. The phases
+    before this one are the same ones a single-origin build runs.
+    """
+    args = ctx.args
+    day = ctx.day
+    fares = ctx.fares
+    fare_note = ctx.fare_note
+    timetable = ctx.timetable
+    worker_timetable = ctx.worker_timetable
+    timetable_index = ctx.timetable_index
+    cache_path = ctx.cache_path
+    planned = ctx.planned
+    price_source = ctx.price_source
+    feed_date = ctx.feed_date
+    note = ctx.note
+    base_path = ctx.base_path
+    metadata_folders = ctx.metadata_folders
+    reference = ctx.reference
+    reference_published = ctx.reference_published
+    reference_checked = ctx.reference_checked
+    single_timetable = ctx.single_timetable
+    payload_origin = ctx.payload_origin
+    sampled_index = ctx.sampled_index
+    payload = ctx.payload
+    analytics = ctx.analytics
+    features = ctx.features
+    synthetic = ctx.synthetic
+    privacy_contact = ctx.privacy_contact
+    out = ctx.out
+    out_dir = out.parent
+    # Zone and coach pseudo-stations are priceable in the feed but are not
+    # places a reader departs from, so they leave here -- with the chooser,
+    # the write set and the coverage report's origin list all following
+    # (audit A6).
+    origins = [
+        crs
+        for crs in sorted(fares.locations_by_crs)
+        if not is_pseudo_station(crs)
+    ]
+    # A handful of stations is still one site, not several builds: one
+    # chooser, one station list beside it, one release manifest, and nothing
+    # linking to a page that was not written. That is what makes a two-station
+    # build reviewable in minutes rather than a whole-network build's hours.
+    #
+    # A code this feed does not price as a departure point is refused rather
+    # than dropped, including a zone or coach pseudo-station: a typo that
+    # quietly builds one station instead of two is a build that lies about
+    # what it wrote, and the chooser would go on offering what it did write.
+    if args.only_stations:
+        wanted = {
+            code.strip().upper()
+            for code in args.only_stations.split(",")
+            if code.strip()
         }
-        jobs = []
-        for crs in origins:
-            if crs not in by_crs:
-                continue
-            jobs.append(
-                {
-                    "crs": crs,
-                    "slug": by_crs[crs]["slug"],
-                    "origin_name": by_crs[crs]["name"],
-                }
-            )
-        state_path = out_dir / BUILD_STATE_NAME
-        signature = resumable_signature(shared, index) if args.fast_all_origins else ""
-        completed = read_resume_state(state_path, signature) if args.fast_all_origins else set()
-        if completed:
-            jobs = [job for job in jobs if job["slug"] not in completed or not (out_dir / "from" / job["slug"] / "index.html").is_file()]
-            print(f"resume: {len(completed):,} recorded page(s) already complete", flush=True)
-        if args.fast_all_origins:
+        missing = sorted(wanted - set(origins))
+        if missing:
             print(
-                f"Building {len(jobs):,} station page(s) with {max(1, args.workers)} worker(s); "
-                f"progress is saved after every page",
-                flush=True,
+                "error: --only-stations names code(s) this feed does not price "
+                f"as an origin: {', '.join(missing)}",
+                file=sys.stderr,
             )
-
-        # Every page this build is about to write has to have a slice when
-        # there is no feed to fall back on. Checked on the jobs that survived
-        # the resume, so a build that already wrote a page is not refused for
-        # it, and before the fares work rather than one page at a time.
-        if timetable is None and timetable_index is not None:
-            missing = [job["crs"] for job in jobs if not timetable_index.has(job["crs"])]
-            if missing:
-                print(missing_slice_message(timetable_index, missing), file=sys.stderr)
-                return 2
-
-        workers = max(1, args.workers)
-        built_now = 0
-        # Audit B1: without this, every pool worker re-parsed all 8.5M flow
-        # lines on top of the parent's parse -- nine parses for eight workers.
-        # Every build writes the shared metadata and one small index per origin
-        # first, single-worker builds included, because the write is what lets a
-        # page be built from its own slice rather than the national feed. It was
-        # pool-only, so the one-worker build -- the one `build_stations.py` and
-        # the double-click runner use on a small machine -- was the one holding
-        # 2.1 GB of fares through every page it rendered.
-        common_cache, index_dir = fares_index_cache_paths(args.feed)
-        fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
-        shared["fare_common_cache"] = str(common_cache)
-        shared["fare_index_dir"] = str(index_dir)
+            return 2
+        if not wanted:
+            print(
+                "error: --only-stations named no code, which would build no "
+                "station page at all.",
+                file=sys.stderr,
+            )
+            return 2
+        chosen = len(origins)
+        origins = [crs for crs in origins if crs in wanted]
         print(
-            f"Persisted {len(jobs):,} per-origin fare indexes; a page loads one "
-            "slice and the shared metadata once.",
+            f"Building {len(origins)} of the feed's {chosen:,} priceable "
+            f"station(s): {', '.join(origins)}",
             flush=True,
         )
-        prune_fare_index_caches(common_cache, index_dir)
-
-        def publish_result(result: tuple[str, str, str]) -> None:
-            nonlocal built_now
-            slug, origin_name, html = result
-            page = out_dir / "from" / slug / "index.html"
-            write_page_atomic(page, html)
-            built_now += 1
-            completed.add(slug)
-            if args.fast_all_origins:
-                write_resume_state(state_path, signature, completed)
-                print(
-                    f"[{built_now}/{len(jobs)}] "
-                    f"wrote {slug} from {origin_name}",
-                    flush=True,
-                )
-            else:
-                print(f"wrote {page} from {origin_name}", flush=True)
-
-        if workers == 1:
-            # The in-process path builds through the same job function the
-            # pool uses, and takes its fares the same way a worker does: the
-            # per-origin slice off disk, with the shared metadata loaded once.
-            # It used to keep the parent's whole feed, and that is what paged:
-            # 2.1 GB of fares held beside the national timetable through every
-            # page of the render, on a machine whose own floor is 6.4 GB free.
-            from build_workers import (
-                _WORKER,
-                build_page_job,
-                configure_worker,
-                restore_worker_fares,
-            )
-
-            # Through the same state assembly the pool initialiser uses, so the
-            # two paths cannot disagree about what a worker was given.
-            configure_worker(shared, reference)
-            restore_worker_fares(args.feed, shared, loaded=fares)
-            _WORKER["timetable"] = timetable
-            # A page reads its own slice now, and the no-cache fallback has
-            # already handed this same object to the worker, so the parent's
-            # own name for the feed is finished with. `gc.collect` because the
-            # fares are millions of small objects and CPython returns their
-            # arenas when they are freed, not when the reference count reaches
-            # zero.
-            del fares
-            gc.collect()
-            for job in jobs:
-                publish_result(build_page_job(job))
-        else:
-            # ProcessPoolExecutor rather than multiprocessing.Pool: a worker
-            # that dies before answering turns into a BrokenProcessPool error
-            # here, instead of an imap that waits forever on a dead queue.
-            # Completion is consumed as each page finishes, not in submission
-            # order, so a slow early station cannot hide progress on the rest.
-            from build_workers import build_page_job, init_worker
-            from concurrent.futures import ProcessPoolExecutor, as_completed
-
-            # The parent is finished with every database it loaded. The fare
-            # indexes the workers restore are on disk by now, and each worker
-            # parses the national timetable itself in `init_worker`, so nothing
-            # below hands either object across the process boundary. Holding
-            # 4.1 GB here while four workers hold 8.7 GB is the peak that
-            # decides how many workers this machine can run at all -- and it is
-            # a peak the build pays for nothing.
-            #
-            # Pool-only, and that is not tidiness. The `workers == 1` branch
-            # above puts both names into `_WORKER` and renders in this process,
-            # so releasing them there would delete the databases the build is
-            # about to use. From here the all-origins branch returns without
-            # naming either again.
-            #
-            # `gc.collect` because the fares are millions of small objects and
-            # CPython returns their arenas when they are freed, not when the
-            # reference count happens to reach zero.
-            del fares, timetable, single_timetable
-            gc.collect()
-
-            with ProcessPoolExecutor(
-                workers,
-                initializer=init_worker,
-                initargs=(args.feed, worker_timetable, shared, reference),
-            ) as executor:
-                futures = [executor.submit(build_page_job, job) for job in jobs]
-                for future in as_completed(futures):
-                    publish_result(future.result())
-        if args.fast_all_origins:
-            print(f"station pages complete: {len(completed):,}/{len(index):,}", flush=True)
-        chooser = render_chooser(
-            index,
-            budget_pounds=20,
-            analytics=analytics,
-            base_path=base_path,
-            note=note,
-            synthetic=synthetic,
+    if args.fast_all_origins:
+        print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
+    priced_counts: dict[str, int] = {}
+    # One report for the whole build: a station met from fifty origins is
+    # named once, and the build can refuse on a total rather than per page.
+    coverage = UnsourcedReport()
+    for number, crs in enumerate(origins, 1):
+        priced_counts[crs] = _priced_destinations(fares, timetable, crs, day, coverage)
+        if args.fast_all_origins and (number == len(origins) or number % 100 == 0):
+            print(f"  priced {number:,}/{len(origins):,} stations", flush=True)
+    # Refuse before writing 2,500 pages rather than after: a refused build
+    # must leave no half-published site behind, and the check costs nothing
+    # here because the origins have already been queried.
+    if args.fail_on_unsourced and coverage:
+        return coverage.exit_code(True)
+    index = build_station_index(priced_counts, fares.locations_by_crs)
+    # The picker's options, written once for the whole site rather than into
+    # every page. The same list on 2,712 pages was 295 MB of the network in
+    # the wire encoding -- 168 KB a page as these objects -- and identical on
+    # every page but the one row each page filters out (audit, 30 September
+    # 2026, measured from this build's own output).
+    write_station_style(out_dir)
+    station_rows = station_asset_rows(index, base_path)
+    write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+    print(
+        f"wrote {out_dir / STATION_ASSET_NAME} with {len(station_rows):,} station(s) "
+        "for every page's picker",
+        flush=True,
+    )
+    by_crs = {entry["crs"]: entry for entry in index}
+    # One shared config for every page, handed to workers once through the
+    # pool initialiser; each job then carries only its own origin (audit
+    # B3: pickling a per-job copy of the whole station index across the
+    # process boundary 2,500 times is minutes of waste at network scale).
+    shared = {
+        "max_changes": args.max_changes,
+        "day": day,
+        "note": note,
+        "attribution": notices_or_attribution(args),
+        "price_source": price_source,
+        "feed_date": feed_date,
+        "base_path": base_path,
+        "provider": args.provider,
+        "link_mode": args.link_mode,
+        "adults": args.adults,
+        "network": args.affiliate_network,
+        "advertiser_id": args.advertiser_id,
+        "publisher_id": args.publisher_id,
+        "departures": args.departures,
+        "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "analytics": analytics,
+        "index": index,
+        "feed": args.feed,
+        "timetable": args.timetable,
+        "timetable_index": (
+            None
+            if timetable_index is None
+            else {"directory": str(timetable_index.directory), "identity": timetable_index.identity}
+        ),
+        # The reference feed's identity, for the resume signature. The
+        # feed itself travels as its own initialiser argument below, and
+        # not in here: this dict is serialised into the signature, and a
+        # parsed feed's repr carries an address, so putting it here would
+        # give every run a different signature and resume nothing.
+        "reference_fingerprint": reference_fingerprint(
+            reference, reference_published, reference_checked
+        ),
+        # The dates the pages will quote, and the only part of the answer
+        # that does not come from a feed this dict already fingerprints.
+        "reference_published": reference_published,
+        "reference_checked": reference_checked,
+    }
+    jobs = []
+    for crs in origins:
+        if crs not in by_crs:
+            continue
+        jobs.append(
+            {
+                "crs": crs,
+                "slug": by_crs[crs]["slug"],
+                "origin_name": by_crs[crs]["name"],
+            }
         )
-        root = out_dir / "index.html"
-        # A feed with no reviewed price for any origin writes no station pages,
-        # so the chooser's own folder has to exist before the chooser does.
-        out_dir.mkdir(parents=True, exist_ok=True)
-        root.write_text(chooser, encoding="utf-8")
-        print(f"wrote {root} (the chooser) with {len(index)} priced stations")
-        # Pages from an earlier build are not deleted -- that is destructive
-        # without asking -- but they are named, because a stale page in the
-        # output folder is exactly what makes a local preview look wrong.
-        written = {by_crs[crs]["slug"] for crs in by_crs}
-        stale = sorted(
-            child.name
-            for child in (out_dir / "from").iterdir()
-            if child.is_dir() and child.name not in written
-        ) if (out_dir / "from").is_dir() else []
-        if stale:
-            print(
-                f"note: {len(stale)} page folder(s) in {out_dir / 'from'} are from an earlier build and were not "
-                f"rewritten: {', '.join(stale)}. Delete them yourself if you want the folder to match this build."
-            )
-        # The privacy page is written once per site, at the base path the
-        # station links use, so it resolves wherever the site is served from.
-        privacy = out_dir / "privacy" / "index.html"
-        privacy.parent.mkdir(parents=True, exist_ok=True)
-        privacy.write_text(
-            render_privacy(note, base_path, privacy_contact, features, synthetic),
-            encoding="utf-8",
-        )
-        print(f"wrote {privacy}")
-        # Route integrity (S03): every internal link in the finished site is
-        # resolved against the files that were actually written, so a chooser
-        # or picker option that names a page this build did not produce fails
-        # here rather than reaching a reader as a 404.
-        broken = crawl_internal_links(out_dir, base_path)
-        if broken:
-            link_crawl_failed(broken, out_dir)
-        print(f"link crawl: every internal link in {out_dir} resolves to a written page")
-        # The release manifest, then proved against the files on disk (S07). A
-        # manifest that was written and not checked is a claim, so it is
-        # checked, and a release that names a station it did not write stops
-        # here rather than at a reader's 404.
-        manifest_path = write_release_manifest(
-            out_dir,
-            [with_base(base_path, "/"), with_base(base_path, "/privacy/")]
-            + [with_base(base_path, f"/from/{slug}/") for slug in sorted(written)],
-            price_source=price_source,
-            built_at=shared["built_at"],
-            base_path=base_path,
-        )
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        missing = manifest_problems(out_dir, manifest, base_path)
-        if missing:
-            raise SystemExit(
-                "error: the release manifest names routes this build did not write:\n"
-                + "".join(f"  - {entry}\n" for entry in missing)
-            )
-        print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
-        # Say how to open it, because the pages are not in the repository (they
-        # are build output) and their station links are root-absolute, so
-        # double-clicking the file does not work while a local server does.
+    state_path = out_dir / BUILD_STATE_NAME
+    signature = resumable_signature(shared, index) if args.fast_all_origins else ""
+    completed = read_resume_state(state_path, signature) if args.fast_all_origins else set()
+    if completed:
+        jobs = [job for job in jobs if job["slug"] not in completed or not (out_dir / "from" / job["slug"] / "index.html").is_file()]
+        print(f"resume: {len(completed):,} recorded page(s) already complete", flush=True)
+    if args.fast_all_origins:
         print(
-            f"open it through a local server, not by double-clicking: "
-            f"python -m http.server --directory {out_dir} 8000, then http://localhost:8000/ "
-            f"(station links start at /from/, so the file system cannot resolve them)"
+            f"Building {len(jobs):,} station page(s) with {max(1, args.workers)} worker(s); "
+            f"progress is saved after every page",
+            flush=True,
         )
-        coverage.report()
-        return coverage.exit_code(args.fail_on_unsourced)
 
+    # Every page this build is about to write has to have a slice when
+    # there is no feed to fall back on. Checked on the jobs that survived
+    # the resume, so a build that already wrote a page is not refused for
+    # it, and before the fares work rather than one page at a time.
+    if timetable is None and timetable_index is not None:
+        missing = [job["crs"] for job in jobs if not timetable_index.has(job["crs"])]
+        if missing:
+            print(missing_slice_message(timetable_index, missing), file=sys.stderr)
+            return 2
+
+    workers = max(1, args.workers)
+    built_now = 0
+    # Audit B1: without this, every pool worker re-parsed all 8.5M flow
+    # lines on top of the parent's parse -- nine parses for eight workers.
+    # Every build writes the shared metadata and one small index per origin
+    # first, single-worker builds included, because the write is what lets a
+    # page be built from its own slice rather than the national feed. It was
+    # pool-only, so the one-worker build -- the one `build_stations.py` and
+    # the double-click runner use on a small machine -- was the one holding
+    # 2.1 GB of fares through every page it rendered.
+    common_cache, index_dir = fares_index_cache_paths(args.feed)
+    fares.write_fare_indexes(common_cache, index_dir, [job["crs"] for job in jobs])
+    shared["fare_common_cache"] = str(common_cache)
+    shared["fare_index_dir"] = str(index_dir)
+    print(
+        f"Persisted {len(jobs):,} per-origin fare indexes; a page loads one "
+        "slice and the shared metadata once.",
+        flush=True,
+    )
+    prune_fare_index_caches(common_cache, index_dir)
+
+    def publish_result(result: tuple[str, str, str]) -> None:
+        nonlocal built_now
+        slug, origin_name, html = result
+        page = out_dir / "from" / slug / "index.html"
+        write_page_atomic(page, html)
+        built_now += 1
+        completed.add(slug)
+        if args.fast_all_origins:
+            write_resume_state(state_path, signature, completed)
+            print(
+                f"[{built_now}/{len(jobs)}] "
+                f"wrote {slug} from {origin_name}",
+                flush=True,
+            )
+        else:
+            print(f"wrote {page} from {origin_name}", flush=True)
+
+    if workers == 1:
+        # The in-process path builds through the same job function the
+        # pool uses, and takes its fares the same way a worker does: the
+        # per-origin slice off disk, with the shared metadata loaded once.
+        # It used to keep the parent's whole feed, and that is what paged:
+        # 2.1 GB of fares held beside the national timetable through every
+        # page of the render, on a machine whose own floor is 6.4 GB free.
+        from build_workers import (
+            _WORKER,
+            build_page_job,
+            configure_worker,
+            restore_worker_fares,
+        )
+
+        # Through the same state assembly the pool initialiser uses, so the
+        # two paths cannot disagree about what a worker was given.
+        configure_worker(shared, reference)
+        restore_worker_fares(args.feed, shared, loaded=fares)
+        _WORKER["timetable"] = timetable
+        # A page reads its own slice now, and the no-cache fallback has
+        # already handed this same object to the worker, so the parent's
+        # own name for the feed is finished with. `gc.collect` because the
+        # fares are millions of small objects and CPython returns their
+        # arenas when they are freed, not when the reference count reaches
+        # zero.
+        ctx.release_feeds()
+        del fares
+        gc.collect()
+        for job in jobs:
+            publish_result(build_page_job(job))
+    else:
+        # ProcessPoolExecutor rather than multiprocessing.Pool: a worker
+        # that dies before answering turns into a BrokenProcessPool error
+        # here, instead of an imap that waits forever on a dead queue.
+        # Completion is consumed as each page finishes, not in submission
+        # order, so a slow early station cannot hide progress on the rest.
+        from build_workers import build_page_job, init_worker
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        # The parent is finished with every database it loaded. The fare
+        # indexes the workers restore are on disk by now, and each worker
+        # parses the national timetable itself in `init_worker`, so nothing
+        # below hands either object across the process boundary. Holding
+        # 4.1 GB here while four workers hold 8.7 GB is the peak that
+        # decides how many workers this machine can run at all -- and it is
+        # a peak the build pays for nothing.
+        #
+        # Pool-only, and that is not tidiness. The `workers == 1` branch
+        # above puts both names into `_WORKER` and renders in this process,
+        # so releasing them there would delete the databases the build is
+        # about to use. From here the all-origins branch returns without
+        # naming either again.
+        #
+        # `gc.collect` because the fares are millions of small objects and
+        # CPython returns their arenas when they are freed, not when the
+        # reference count happens to reach zero.
+        ctx.release_feeds()
+        del fares, timetable, single_timetable
+        gc.collect()
+
+        with ProcessPoolExecutor(
+            workers,
+            initializer=init_worker,
+            initargs=(args.feed, worker_timetable, shared, reference),
+        ) as executor:
+            futures = [executor.submit(build_page_job, job) for job in jobs]
+            for future in as_completed(futures):
+                publish_result(future.result())
+    if args.fast_all_origins:
+        print(f"station pages complete: {len(completed):,}/{len(index):,}", flush=True)
+    # Pages from an earlier build are not deleted -- that is destructive
+    # without asking -- but they are named, because a stale page in the
+    # output folder is exactly what makes a local preview look wrong.
+    written = {by_crs[crs]["slug"] for crs in by_crs}
+    stale = sorted(
+        child.name
+        for child in (out_dir / "from").iterdir()
+        if child.is_dir() and child.name not in written
+    ) if (out_dir / "from").is_dir() else []
+    if stale:
+        print(
+            f"note: {len(stale)} page folder(s) in {out_dir / 'from'} are from an earlier build and were not "
+            f"rewritten: {', '.join(stale)}. Delete them yourself if you want the folder to match this build."
+        )
+    # The release's own routes, through the one writer both build shapes
+    # share: the chooser with this build's provenance, the notice dated
+    # from the stamp the pages carry, the crawl and the manifest.
+    write_release(
+        out_dir,
+        index=index,
+        routes=[with_base(base_path, f"/from/{slug}/") for slug in sorted(written)],
+        budget_pounds=20,
+        note=note,
+        price_source=price_source,
+        feed_date=feed_date,
+        analytics=analytics,
+        synthetic=synthetic,
+        privacy_contact=privacy_contact,
+        features=features,
+        built_at=shared["built_at"],
+        base_path=base_path,
+    )
+    # Say how to open it, because the pages are not in the repository (they
+    # are build output) and their station links are root-absolute, so
+    # double-clicking the file does not work while a local server does.
+    print(
+        f"open it through a local server, not by double-clicking: "
+        f"python -m http.server --directory {out_dir} 8000, then http://localhost:8000/ "
+        f"(station links start at /from/, so the file system cannot resolve them)"
+    )
+    coverage.report()
+    return coverage.exit_code(args.fail_on_unsourced)
+
+
+def _build_single_origin(ctx: BuildContext) -> int:
+    """Write one station page, and the site that page needs to be a site.
+
+    A single-origin build is a release of one: the chooser names that station,
+    the notice and the manifest are written beside it, and the page's picker is
+    built from the same one-entry manifest, so every internal link resolves.
+    """
+    args = ctx.args
+    day = ctx.day
+    fares = ctx.fares
+    fare_note = ctx.fare_note
+    timetable = ctx.timetable
+    worker_timetable = ctx.worker_timetable
+    timetable_index = ctx.timetable_index
+    cache_path = ctx.cache_path
+    planned = ctx.planned
+    price_source = ctx.price_source
+    feed_date = ctx.feed_date
+    note = ctx.note
+    base_path = ctx.base_path
+    metadata_folders = ctx.metadata_folders
+    reference = ctx.reference
+    reference_published = ctx.reference_published
+    reference_checked = ctx.reference_checked
+    single_timetable = ctx.single_timetable
+    payload_origin = ctx.payload_origin
+    sampled_index = ctx.sampled_index
+    payload = ctx.payload
+    analytics = ctx.analytics
+    features = ctx.features
+    synthetic = ctx.synthetic
+    privacy_contact = ctx.privacy_contact
+    out = ctx.out
     if not payload["destinations"]:
         print(
             f"note: nothing is priced from {payload['origin']['name']} ({payload['origin']['crs']}) in this feed; "
@@ -4190,50 +4587,24 @@ def main(argv: list[str] | None = None) -> int:
             f"note: {payload['origin']['name']} priced no destination, so this build "
             "writes only the chooser; there is no station page to serve."
         )
-    # The root is the chooser, offering exactly the stations this build wrote.
-    write_page_atomic(
-        out_dir / "index.html",
-        render_chooser(
-        index,
-        budget_pounds=20,
-        analytics=analytics,
-        base_path=base_path,
-        note=note,
-        synthetic=synthetic,
-    ),
-    )
-    print(f"wrote {out_dir / 'index.html'} (the chooser) with {len(index)} station(s)")
-    # The footer links to the privacy page, so a build writes it beside the
-    # pages rather than shipping a link to nowhere.
-    privacy = out_dir / "privacy" / "index.html"
-    write_page_atomic(
-        privacy, render_privacy(note, base_path, privacy_contact, features, synthetic)
-    )
-    print(f"wrote {privacy}")
-    # Route integrity (S03), same rule as the full build.
-    broken = crawl_internal_links(out_dir, base_path)
-    if broken:
-        link_crawl_failed(broken, out_dir)
-    print(f"link crawl: every internal link in {out_dir} resolves to a written page")
-    # The release manifest, proved against the files on disk (S07). Same rule
-    # as the full build: the release is the routes it names, and every one of
-    # them has to be a file before the build calls itself finished.
-    manifest_path = write_release_manifest(
+    # The release's own routes, through the one writer both build shapes
+    # share. The manifest is dated from the page's own stamp rather than from
+    # a second clock read a moment later (four-dimension audit R8).
+    write_release(
         out_dir,
-        [with_base(base_path, "/"), with_base(base_path, "/privacy/")]
-        + [entry["href"] for entry in routes],
+        index=index,
+        routes=[entry["href"] for entry in routes],
+        budget_pounds=20,
+        note=note,
         price_source=price_source,
-        built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        feed_date=feed_date,
+        analytics=analytics,
+        synthetic=synthetic,
+        privacy_contact=privacy_contact,
+        features=features,
+        built_at=payload["builtAt"],
         base_path=base_path,
     )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    missing = manifest_problems(out_dir, manifest, base_path)
-    if missing:
-        raise SystemExit(
-            "error: the release manifest names routes this build did not write:\n"
-            + "".join(f"  - {entry}\n" for entry in missing)
-        )
-    print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
     print(f"ticket links to {args.provider}, {args.adults} adult(s), link mode {args.link_mode}")
     if args.link_mode == "fallback":
         print("fallback links: readers get the seller's own search page, not their search")

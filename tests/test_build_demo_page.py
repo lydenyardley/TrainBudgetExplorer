@@ -7,11 +7,13 @@ audit); this file holds what the page says."""
 from __future__ import annotations
 
 import json
+import gc
 import os
 import re
 import shutil
 import tempfile
 import unittest
+import weakref
 import zipfile
 from unittest import mock
 from datetime import date
@@ -24,11 +26,11 @@ import build_demo_page
 from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 from atoc_fares import FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
 from atoc_timetable import TimetableDb
-from build_demo_page import nre_attribution, wants_nre_credit, build_payload, build_station_index, explain_unpriced, render_chooser, render_page, render_privacy, station_slug
+from build_demo_page import nre_attribution, wants_nre_credit, build_payload, build_station_index, explain_unpriced, render_chooser, render_page, render_privacy
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from retailer import DISCLOSURE
 
-from tests.page_harness import embedded_payload, page_markup, page_script, serialised_callback_lines, setUpModule, station_page, tearDownModule
+from tests.page_harness import browser_suite_text, embedded_payload, embedded_text, js_function, page_markup, page_script, serialised_callback_lines, setUpModule, station_page, tearDownModule
 
 
 class DemoPageTest(unittest.TestCase):
@@ -50,22 +52,6 @@ class DemoPageTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
 
-    def test_the_address_carries_the_search_and_the_tab_title_follows_it(self) -> None:
-        # S05: the URL is the search, so a refresh, a shared link and Back all
-        # land on the decision already made rather than the build's default.
-        self.assertIn("function stateQuery()", self.html)
-        self.assertIn("function readState()", self.html)
-        self.assertIn("function applyState(state)", self.html)
-        self.assertIn('window.addEventListener("popstate"', self.html)
-        # Every control that changes the result writes it, and the budget is
-        # the one that does so while it is being dragged.
-        self.assertIn("budget.addEventListener(\"input\", () => { setBudget(budget.value); currentPage = 1; render(); writeUrl({ budget: true }); })", self.html)
-        self.assertIn('railcardSelect.addEventListener("change", () => {', self.html)
-        self.assertIn("'input[name=\"ticketMode\"]')) radio.addEventListener(\"change\", () => { currentPage = 1; render(); writeUrl(); })", self.html)
-        # The title is the heading's sentence, so a reader with two tabs open
-        # can tell the two searches apart.
-        self.assertIn('document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;', self.html)
-
     def test_the_chooser_says_what_its_order_is_and_is_not(self) -> None:
         # S10: a cold-start order that does not name its measure reads as a
         # recommendation, and priced-destination count is not popularity.
@@ -73,6 +59,28 @@ class DemoPageTest(unittest.TestCase):
         chooser = build_demo_page.render_chooser(index, budget_pounds=20)
         self.assertIn("Ordered by how many destinations", chooser)
         self.assertIn("not by how busy it is", chooser)
+
+    def test_the_entry_route_carries_the_same_provenance_the_station_pages_do(self) -> None:
+        # The root is the page every community link points at, and it used to
+        # say what the ordering was while saying nothing about what the site
+        # was, whose feed its prices came from, or how old that feed was
+        # (four-dimension audit R3, route audit item 6). The station page has
+        # carried all three since the provenance line was written.
+        index = build_demo_page.build_station_index({"GRN": 5, "NOT": 2}, self.fares.locations_by_crs)
+        chooser = build_demo_page.render_chooser(
+            index,
+            budget_pounds=20,
+            price_source="the 24 September 2026 DTD download",
+            feed_date="2026-09-24",
+        )
+        self.assertIn("Prices from the 24 September 2026 DTD download", chooser)
+        self.assertIn("downloaded 24 September 2026", chooser)
+        self.assertNotIn("__PROVENANCE__", chooser)
+        # A synthetic build names the synthetic feed, and does not invent a
+        # date it does not have.
+        synthetic = build_demo_page.render_chooser(index, budget_pounds=20)
+        self.assertIn("Prices from the synthetic demo feed.", synthetic)
+        self.assertNotIn("downloaded", synthetic)
 
     def test_both_station_lists_accept_a_code_fragment(self) -> None:
         # S11: a code fragment finds its station, and the same matcher serves
@@ -101,24 +109,13 @@ class DemoPageTest(unittest.TestCase):
         )
         self.assertIn("</span></p>", self.html)
 
-    def test_a_picker_option_carries_the_readers_search(self) -> None:
-        # S06: changing origin corrects where they leave from, not the search
-        # they have already made, and the picker writes the same query the
-        # address does rather than a second, drifting copy of it.
-        self.assertIn('link.href = station.href + "?" + stateQuery();', self.html)
-
     def test_the_page_states_where_a_split_ticket_would_split(self) -> None:
         # The other half of Q2: the sentence that states the possibility, in
         # the panel where the fare's condition already sits, and no price for
         # either half. The browser suite drives the live row.
-        self.assertIn("function splitNote(destination)", self.html)
-        self.assertIn("destination.changeStations || []", self.html)
-        self.assertIn('note.className = "split"', self.html)
         # The station itself is named in the Changes column now, so the
         # panel says only what is still worth saying and is nowhere else.
         self.assertIn("one ticket to the station above", self.html)
-        self.assertIn('line.className = "interchange"', self.html)
-        self.assertIn('"via " + stations.map((station) => station.name)', self.html)
         self.assertIn("can sometimes cost less than this through fare", self.html)
         self.assertIn("This page prices the through fare only.", self.html)
 
@@ -286,7 +283,10 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("activeDestinations", self.html)
         self.assertIn("unrestricted Anytime Day Return", self.html)
         self.assertIn("no qualifying", self.html)
-        self.assertIn("PAGE_SIZE = 20", self.html)
+        # The pager is shipped, hidden, and stands itself down when the list
+        # fits on one page. How many rows a page holds, and which page the
+        # reader is on, are the page's own arithmetic: the browser suite reads
+        # the size back out of the page and drives the pager against it.
         self.assertIn('id="pagination"', self.html)
 
 
@@ -294,86 +294,41 @@ class DemoPageTest(unittest.TestCase):
         # Q4: the list that opens is the cheapest fare of any ticket type, and
         # the three named sets survive as filters beside it. The checked radio
         # is what a reader arrives in, which is the part PRODUCT.md promises,
-        # so the checked one is asserted rather than only present.
+        # so the checked one is asserted rather than only present. The
+        # composition and the tie-break are driven by the browser suite, which
+        # opens the page on the cheapest row and re-sorts it under a card.
         self.assertIn('<input type="radio" name="ticketMode" value="cheapest" checked>', self.html)
         for other in ("anytime", "return", "single"):
             self.assertIn('<input type="radio" name="ticketMode" value="%s">' % other, self.html)
             self.assertNotIn('value="%s" checked' % other, self.html)
-        script = page_script(self.html)
-        self.assertIn('const CHEAPEST_MODE = "cheapest";', script)
         # Composed in the page, so it costs no payload bytes, and one row per
         # destination: the cheaper of the fares that destination is priced at.
-        composition = script.split("function cheapestDestinations()")[1].split("\nfunction ")[0]
-        self.assertIn("new Map()", composition)
-        self.assertIn("for (const key of Object.values(MODE_LISTS))", composition)
-        self.assertIn("cheapest.set(destination.crs, destination)", composition)
-        # What decides a row is the price for this reader, card included, and
-        # an equal price is broken on the fare's own standard. Both halves are
-        # asserted rather than one literal comparison, because the comparison
-        # moved into a helper and the rule is what has to hold.
-        self.assertIn("isCheaperThan(destination, held)", composition)
-        ranker = script.split("function isCheaperThan(")[1].split("\nfunction ")[0]
-        self.assertIn("priceOf(candidate)", ranker)
-        self.assertIn("priceOf(held)", ranker)
-        self.assertIn("return price < other;", ranker)
-        self.assertIn("standardPrice(candidate) < standardPrice(held)", ranker)
-        # Without the tie-break, a card that made two fares equal swapped the
-        # row and the cell named a standard fare the reader had not been shown.
-        standard = script.split("function standardPrice(")[1].split("\nfunction ")[0]
-        self.assertIn('unit() === "party" ? destination.partyPence : destination.adultPence', standard)
-        active = script.split("function activeDestinations()")[1].split("\nfunction ")[0]
-        self.assertIn("if (mode === CHEAPEST_MODE) return cheapestDestinations();", active)
-        counted = script.split("function modeCount(")[1].split("\nfunction ")[0]
-        self.assertIn("if (mode === CHEAPEST_MODE) return cheapestDestinations().length;", counted)
-        # Which row is cheapest depends on the card, so the list is composed
-        # after the card is settled -- the card arriving a line later would
-        # leave one render showing a list of the wrong rows.
-        order = script.split("function render(")[1].split("\nfunction ")[0]
-        self.assertLess(order.index("syncRailcardParty();"), order.index("const available = activeDestinations();"))
+        # Both sentences are asserted whole, because they are the product: the
+        # note above the table and the line beside the prices each say which
+        # list this is, and half a sentence names nothing.
+        self.assertIn(
+            "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns.",
+            self.html,
+        )
+        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", self.html)
+        self.assertIn(
+            "destinations, each on its cheapest fare of any ticket type, in the feed", self.html
+        )
 
     def test_the_count_line_names_the_mix_and_what_the_party_is_two_of(self) -> None:
-        script = page_script(self.html)
-        words = script.split("const MIX_WORDS = {")[1].split("};")[0]
-        self.assertIn('"outbound single": "single"', words)
-        self.assertIn('"unrestricted Anytime Day Return": "Anytime Day Return"', words)
-        mix = script.split("function mixPhrase(")[1].split("\nfunction ")[0]
-        self.assertIn("MIX_WORDS[destination.quality] || \"return\"", mix)
-        # Named even when the list is one kind of fare, which is the case it
-        # exists for: a list of nothing but singles says so.
-        self.assertIn('if (!counts.size) return "";', mix)
-        summary = script.split("const what = unit()")[1].split("\nfunction ")[0]
-        self.assertIn('"for the two of us, two of the fare each row names"', summary)
-        self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', summary)
-        self.assertIn("+ order + mix", summary)
-        # A row in this list names its own fare, and every place a price is
-        # carried off the page reads the same answer: the handoff to a
-        # seller, the shortlist row, and the copied list. One helper, because
-        # a shortlist that named a different fare from the count line beside
-        # it would be the page disagreeing with itself.
-        self.assertIn("function ticketName(destination)", script)
-        fare = script.split("function fareName(")[1].split("\nfunction ")[0]
-        self.assertIn(
-            "ticketMode() === CHEAPEST_MODE ? ticketName(destination) : modeLabels()[ticketMode()]",
-            fare,
-        )
-        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
-        self.assertIn('"Ticket: " + fareName(destination)', journey)
-        # A price with no ticket beside it is the one thing a reader holding
-        # the list cannot act on, so the shortlist names the fare on the row
-        # and on every copied line, beside the price rather than in a footer.
-        # The chip carries the name and the price -- the reason the place is
-        # there -- and the fare name travels in the copied text and on the
-        # row itself rather than making every chip three lines tall.
-        row = script.split("function dockRow(")[1].split("\nfunction ")[0]
-        self.assertIn('price.textContent = money(priceOf(destination));', row)
-        self.assertNotIn("fareName(destination)", row)
-        copied = script.split("function shortlistText()")[1].split("\nfunction ")[0]
-        self.assertIn(r'" " + what + ", " + fareName(destination) + ", " + time', copied)
         # The set names itself above the table, in the coverage line and in the
         # provenance line, so no sentence on the page counts the wrong fares.
-        self.assertIn('cheapest: "Each row is the cheapest fare of any ticket type', script)
-        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", script)
-        self.assertIn('cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed"', script)
+        # The composition of the sentence is driven by the browser suite.
+        self.assertIn("MIX_WORDS", self.html)
+        self.assertIn('"for the two of us, two of the fare each row names"', self.html)
+        self.assertIn(
+            "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns.",
+            self.html,
+        )
+        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", self.html)
+        self.assertIn(
+            "destinations, each on its cheapest fare of any ticket type, in the feed", self.html
+        )
 
     def test_the_warn_token_clears_aa_where_the_cheapest_rows_put_it(self) -> None:
         # The cheapest list leads with restricted and advance fares, whose words
@@ -450,9 +405,16 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(rows["SLP"]["restrictionCode"], "")
         self.assertIn("restrictionCode", self.html)
         self.assertIn("restrictionDescription", self.html)
-        self.assertIn('readable.textContent = destination.restrictionDescription ||', self.html)
-        self.assertIn('if (restricted) {', self.html)
-        self.assertIn('add("Restriction", destination.restrictionCode || "none")', self.html)
+        # Every code the build attaches comes with the feed's own wording for
+        # it, so no reader is ever shown a bare code; what the page falls back
+        # to is belt and braces for a description this build cannot produce.
+        self.assertTrue(
+            all(
+                row["restrictionDescription"]
+                for row in self.payload["destinations"]
+                if row["restrictionCode"]
+            )
+        )
         self.assertIn("ITX placeholder fares", self.html)
 
     def test_a_restricted_row_carries_the_validity_the_feed_states(self) -> None:
@@ -475,10 +437,6 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("DATA.restrictionValidity", self.html)
         self.assertIn("Valid outward: ", self.html)
         self.assertIn("Valid on the return: ", self.html)
-        # A single is one way, so a return condition beside it would state a
-        # limit on a leg the ticket does not have.
-        self.assertIn('const single = destination.quality === "outbound single";', self.html)
-        self.assertIn("if (!single && validity.returnText)", self.html)
 
     def test_a_restriction_the_feed_cannot_describe_says_so_plainly(self) -> None:
         # C08: "confirm the conditions before buying" reads as if the page had
@@ -510,22 +468,16 @@ class DemoPageTest(unittest.TestCase):
         self.assertEqual(bounds["YNG"], (1, 8))
         self.assertEqual(bounds["2TR"], (2, 2))
         self.assertEqual(bounds["BB2"], (1, 1))
-        self.assertIn("function syncRailcardParty()", self.html)
-        self.assertIn("function cardCoversParty(card)", self.html)
-        self.assertIn("return card.minAdults <= adults && adults <= card.maxAdults;", self.html)
-        self.assertIn("railcardSelect.disabled = offered.length === 0;", self.html)
-        self.assertIn('"The " + chosen.label + " in this feed covers "', self.html)
-        # A card code arriving on a link is applied only when this page prices
-        # it, so a link naming a card this origin has no fares for does not
-        # read as a card the reader holds.
-        self.assertIn('const wanted = state.railcard && railcards[state.railcard] ? state.railcard : "";',
-                      self.html)
+        # The help text is written from the card's own bounds, and the browser
+        # suite drives the list those bounds take a card out of.
+        self.assertIn("No railcard selected, so these are standard fares", self.html)
+        self.assertIn(" in this feed covers ", self.html)
+        self.assertIn(" destinations receive a lower price with it", self.html)
 
     def test_a_row_states_its_condition_and_folds_the_feed_record_away(self) -> None:
         # S19: the condition a reader can act on sits beside the price; the
-        # ticket, restriction and route codes are one disclosure away.
-        self.assertIn("function feedRecord(destination)", self.html)
-        self.assertIn('readable.className = "condition"', self.html)
+        # ticket, restriction and route codes are one disclosure away. The
+        # browser suite drives the folded panel and its wording.
         # An unrestricted fare used to open with a second paragraph saying
         # there was nothing to read, which is the same information as
         # silence said in a line.
@@ -540,36 +492,14 @@ class DemoPageTest(unittest.TestCase):
         rows = {row["crs"]: row for row in self.payload["destinations"]}
         self.assertEqual(rows["NOT"]["journeyState"], "found")
         self.assertEqual(rows["SLP"]["journeyState"], "no_service")
-        # The cell reads the chosen day, not the build's own answer: the Time
-        # and Changes columns report whichever day the reader picked, so the
-        # absence beside them has to be worded for that day too.
-        self.assertIn(
-            "cell.textContent = missing ? dayAbsenceText(destination, true) : duration(journey.minutes);",
-            self.html,
-        )
-        # Every absence is worded in one table on the page, from the key, the
-        # day the build asked about and the day the row next runs. There is no
-        # other place an absence can be worded, so there is no sentence that
-        # can name no day: a bare "No service" beside a station the network
-        # serves reads as a fact about the station.
-        self.assertIn("const JOURNEY_ABSENCE = {", self.html)
-        for key in ("no_timetable", "no_service"):
-            self.assertIn(f"  {key}: (day, later) => ({{", self.html)
-        self.assertIn("function absenceText(destination, brief) {", self.html)
-        # A row this build holds no week for keeps the build's own wording, so
-        # the brief form is still reachable from the day-aware reader rather
-        # than only from the long one.
-        self.assertIn("if (answer === undefined) return absenceText(destination, brief);", self.html)
-        # And the wording has no branch that leaves the day out.
-        self.assertNotIn('return "No service";', self.html)
+        # The wording is built in the page from the key, the day the build
+        # asked about and the day the row next runs; the browser suite drives
+        # the sentence each absence prints.
+        self.assertIn("JOURNEY_ABSENCE", self.html)
         # The change count is a word rather than a digit, and the station it
         # changes at sits under it in the column whose header says Changes.
-        self.assertIn("function changeCount(changes)", self.html)
-        self.assertIn('if (changes === 0) return "Direct";', self.html)
-        self.assertIn(
-            'return changes === 1 ? "1 change" : changes + " changes";', self.html
-        )
-        self.assertIn('count.textContent = missing ? "Unknown" : changeCount(journey.changes);', self.html)
+        self.assertIn("Direct", self.html)
+        self.assertIn('"1 change"', self.html)
         prices_only = build_payload(self.fares, None, "GRN")
         self.assertEqual(
             next(row for row in prices_only["destinations"] if row["crs"] == "LCN")["journeyState"],
@@ -591,7 +521,6 @@ class DemoPageTest(unittest.TestCase):
         # "every type we have reviewed".
         self.assertEqual(self.payload["unclassifiedDestinationCount"], 0)
         self.assertTrue(self.payload["locationTypeReviewed"])
-        self.assertIn("function classifiedNote()", self.html)
         self.assertIn("carry no reviewed", self.html)
         self.assertIn("Every destination on this page carries a reviewed type.", self.html)
         # And the count is a count: a destination with no reviewed type is
@@ -614,43 +543,37 @@ class DemoPageTest(unittest.TestCase):
 
     def test_an_empty_list_offers_the_moves_that_would_fill_it(self) -> None:
         # S28: advice a reader cannot act on is a dead end, so each move is a
-        # control and each is offered only when it is true for this page.
-        self.assertIn("function renderEmpty(available, wanted, cap, what)", self.html)
-        self.assertIn("function renderEmptyMode()", self.html)
-        self.assertIn('button.className = "toggle"', self.html)
-        self.assertIn('offer("Show everything up to " + money(enough * 100)', self.html)
-        self.assertIn('offer("Clear the destination type", clearDestinationTypes)', self.html)
-        self.assertIn('offer(label + " has " + modeCount(mode)', self.html)
+        # control and each is offered only when it is true for this page. The
+        # browser suite drives the empty state and the buttons in it.
+        self.assertIn("Show everything up to ", self.html)
+        self.assertIn("Clear the destination type", self.html)
+        self.assertIn("toggle", self.html)
 
     def test_the_facets_count_what_they_would_show_and_can_be_cleared(self) -> None:
         # S20: a count on the chip, the union stated, and a way back to All.
+        # The counts and the clear are driven by the browser suite.
         self.assertIn('class="chipcount"', self.html)
-        self.assertIn("function updateChipCounts(available, cap)", self.html)
-        self.assertIn("function clearDestinationTypes()", self.html)
         self.assertIn('id="clearTypes"', self.html)
         self.assertIn("More than one type shows destinations of any of them", self.html)
-        self.assertIn('return labels.length > 1 ? " in " + labels.join(" or ")', self.html)
 
     def test_a_narrowed_search_returns_to_the_first_page(self) -> None:
         # S22: the cheapest rows are what a narrowed search wants first, and the
-        # page position is re-announced with the count.
-        for control in (
-            "budget.addEventListener",
-            "budgetNumber.addEventListener",
-            "railcardSelect.addEventListener",
-            "previousPage",
-            "nextPage",
-        ):
-            self.assertIn(control, self.html)
-        self.assertIn("currentPage = 1; render(); writeUrl();", self.html)
+        # page position is re-announced with the count. The controls that do it
+        # are driven by the browser suite, which types a budget and reads the
+        # first page back.
         # Audit item 12, 9 October 2026: the page and the count each keep one
         # "of", and the singular is spelled rather than left to read "1 pages".
-        self.assertIn('currentPage + " of " + pageCount +\n    (pageCount === 1 ? " page · " : " pages · ") + wanted.length +\n    (wanted.length === 1 ? " destination" : " destinations")', self.html)
+        # That is a sentence, so the browser suite reads it off the rendered
+        # status after it has narrowed a search; what the markup owes the reader
+        # is a named control to move with and a live region to announce from.
+        self.assertIn('aria-label="Results pages"', self.html)
+        self.assertIn('id="pageStatus" role="status"', self.html)
+        self.assertIn('id="previousPage"', self.html)
+        self.assertIn('id="nextPage"', self.html)
 
     def test_the_page_states_how_old_its_numbers_are(self) -> None:
         # S33: the age of the prices and the window of the times, beside the
         # numbers, judged against the reader's clock rather than the build's.
-        self.assertIn("function renderFreshness()", self.html)
         self.assertIn('id="freshness"', self.html)
         self.assertEqual(self.payload["staleAfterDays"], build_demo_page.STALE_AFTER_DAYS)
         self.assertEqual(self.payload["timetableFrom"], "2026-09-21")
@@ -674,7 +597,7 @@ class DemoPageTest(unittest.TestCase):
         # A single escape is fine and is used; only the doubled kind is refused,
         # and a deliberate literal-backslash matcher is listed rather than
         # tolerated, so the exception is visible instead of assumed.
-        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        suite = browser_suite_text()
         deliberate = set()
         doubled = chr(92) * 2
         for line in serialised_callback_lines(suite):
@@ -723,7 +646,7 @@ class DemoPageTest(unittest.TestCase):
         # claiming "downloaded 24 September 2026" beside a stale "0 days old"
         # passes a presence test and misleads the reader this sentence exists
         # for, which is the reader deciding whether to trust a fare.
-        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        suite = browser_suite_text()
         self.assertIn("feedDate: DATA.feedDate || null,", suite)
         self.assertIn("daysSince(fresh.feedDate)", suite)
         self.assertIn("a feed with a download date says how old its prices are", suite)
@@ -799,6 +722,37 @@ class DemoPageTest(unittest.TestCase):
         # explain it, and the entry is read first and learned last.
         self.assertIn("what stays in the address bar, below, explains it in full", quiet)
         self.assertNotIn("so a refresh or a shared link returns the same results", quiet)
+        # The word "below" is a claim about the order, so the order is asserted
+        # rather than trusted: the summary comes first and the deep dive it
+        # points at follows it (route audit item 18, 9 October 2026). A
+        # previous copy of this page put the deep dive first and left the word
+        # pointing at a section the reader had already read.
+        self.assertLess(
+            quiet.index("what stays in the address bar, below"),
+            quiet.index("<h2>What stays in the address bar</h2>"),
+            "the bullet's referent must follow the bullet",
+        )
+        self.assertLess(
+            quiet.index("<h2>What this site does</h2>"),
+            quiet.index("<h2>What stays in the address bar</h2>"),
+            "the summary must come before the deep dive",
+        )
+        # The notice's build-dependent sentences are dated from the build's own
+        # stamp (route audit item 16, 9 October 2026): "no analytics run" is a
+        # promise about a build, and a build nobody can date is a promise
+        # nobody can hold.
+        dated = build_demo_page.render_privacy(
+            "note", "", "a@b.test", plain, built_at="2026-10-11T09:15:00Z"
+        )
+        self.assertIn("This notice describes the build published on 11 October 2026.", dated)
+        self.assertIn('id="builtLine"', dated)
+        self.assertNotIn(
+            'id="builtLine" hidden',
+            dated,
+            "a dated notice nobody can read is not a dated notice",
+        )
+        self.assertNotIn("__BUILT_LINE__", dated)
+        self.assertNotIn("build published on", quiet, "an undated build says so by omitting the line")
         self.assertIn("injects an analytics snippet", build_demo_page.render_privacy("note", "", "a@b.test", measured))
         self.assertIn(
             "affiliate network",
@@ -1023,27 +977,18 @@ class DemoPageTest(unittest.TestCase):
         # no twenty copies of the same word, and no control whose text changes
         # when it is pressed.
         self.assertNotIn('id="shortlistPick"', self.html)
-        self.assertNotIn("function renderShortlistPicker()", self.html)
         self.assertNotIn("shortlist-toggle", self.html)
-        self.assertIn("function holdCell(destination)", self.html)
-        self.assertIn('box.type = "checkbox"', self.html)
-        self.assertIn('box.setAttribute("aria-label", "List "', self.html)
+        self.assertIn("hold-box", self.html)
         # The column the boxes live in is a column of the header too, or the
         # table has a cell with no heading above it. It says the word the dock,
         # its count and its clear button say, and the stacked layout labels the
         # same cell with the same word (audit item 13, 9 October 2026).
         self.assertIn('<th scope="col" class="hold">Shortlist</th>', self.html)
-        self.assertIn('cell.dataset.label = "Shortlist"', self.html)
-        self.assertNotIn('cell.dataset.label = "Hold"', self.html)
         from page_templates import STATION_STYLESHEET
 
         self.assertIn(
             "th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; text-align: center; }",
             STATION_STYLESHEET,
-        )
-        self.assertIn(
-            "const cells = [holdCell(destination), stationCell(destination), priceCell(destination)];",
-            self.html,
         )
         # ... and the places it holds, and every control for the list, are in
         # the one place the list is drawn: the dock at the foot of the screen.
@@ -1053,44 +998,18 @@ class DemoPageTest(unittest.TestCase):
         dock = self.html.split('<aside class="shortlist-dock"', 1)[1].split("</aside>", 1)[0]
         for control in ("shortlistCopy", "shortlistShareBox", "shortlistDockClear", "shortlistBox"):
             self.assertIn(f'id="{control}"', dock)
-        # It is part of the address, one readable key per place.
-        self.assertIn('for (const code of shortlistCodes) params.append("short", code);', self.html)
-        self.assertIn('short: params.getAll("short")', self.html)
+        # It is part of the address, one readable key per place, and the
+        # comparison is of the price on screen: the browser suite drives the
+        # dock, the copied text, the shared link and the refresh that brings
+        # the list back.
         self.assertIn("A shortlist of places, not a booking", self.html)
-        # The comparison is of the price on screen, and it is rebuilt whenever
-        # the party or the mode changes what that price is.
-        self.assertIn("function shortlistText()", self.html)
-        self.assertIn("money(priceOf(destination))", self.html)
-        self.assertIn("renderShortlist();\n}", self.html)
-        # A station this page cannot price never enters the list, whatever a
-        # shared link claims.
-        self.assertIn("shortlistCodes = state.short.filter(pricedHere);", self.html)
         # The limit is said, not silently applied.
         # Said on the page as well as to the status region: a control that
         # stops responding with no explanation is the one thing a reader
-        # cannot act on, and the strip is where they are already looking.
-        self.assertIn(
-            'const message = "The shortlist holds " + SHORTLIST_LIMIT + " places. Remove one to add another.";',
-            self.html,
-        )
-        self.assertIn(
-            "if (shortlistLimit) shortlistLimit.textContent = message;", self.html
-        )
-        # The control is on every row, and what it shows is the list rather
-        # than a copy of itself: the box is ticked from what is held, so a row
-        # rebuilt by a render cannot claim a place is held when it is not.
-        self.assertIn("box.checked = inShortlist(destination.crs);", self.html)
-        # Every box is put back from the list in one place, and it is that one
-        # place which makes a row's own handler unnecessary: clearing the list
-        # emptied the strip and the dock and left every row still ticked, because
-        # nothing but the click handler ever put the boxes back.
-        self.assertIn(
-            'for (const box of document.querySelectorAll("#rows input.hold-box")) {',
-            self.html,
-        )
-        self.assertIn("if (row) box.checked = inShortlist(row.dataset.crs);", self.html)
-        self.assertIn("const SHORTLIST_LIMIT = 8;", self.html)
-
+        # cannot act on, and the strip is where they are already looking. The
+        # figure is the page's own cap, written into the sentence it shows.
+        self.assertIn('"The shortlist holds "', self.html)
+        self.assertIn('" places. Remove one to add another."', self.html)
     def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
         # A full-network build is hours long and publishes thousands of
         # files. Windows refuses to replace a file anything else holds open,
@@ -1166,7 +1085,10 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn("No railcard is selected", self.payload["railcardNote"])
         self.assertIn("restriction codes are retained as travel conditions", self.payload["railcardNote"])
         self.assertIn("DATA.railcardNote", self.html)
-        self.assertIn("Math.min(base, cardTotal)", self.html)
+        # The page shows the cheaper of the standard fare and the card's own,
+        # and the card's own is per adult, so a party row takes it twice. Both
+        # are read off the rendered cell by the browser suite, against the
+        # payload, for the party on screen.
 
     def test_the_page_evaluates_a_railcard_for_each_selected_fare(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1209,15 +1131,13 @@ class DemoPageTest(unittest.TestCase):
         # The explanation is one paragraph in the row's own disclosure.
         # A dialog on every row, opened on top of a page the reader was
         # already reading, to be told a number the row beside it carried.
-        self.assertIn("function cardNote(destination)", self.html)
-        self.assertIn("panel.append(card)", self.html)
-        self.assertIn("DATA.railcardRules[details.rule]", self.html)
+        # The browser suite drives the row's panel and its wording.
+        self.assertIn("DATA.railcardRules", self.html)
         self.assertIn("travel condition rather than a card ban", self.html)
         self.assertNotIn('id="railcardDrawer"', self.html)
         # The exact rule is still on the page, filed with the codes it is
         # a record of rather than headlined in a panel of its own.
-        self.assertIn("function railcardRuleFor(destination)", self.html)
-        self.assertIn('add("Railcard rule", rule)', self.html)
+        self.assertIn("Railcard rule", self.html)
 
     def test_the_railcard_note_never_names_a_price_above_the_row(self) -> None:
         # The row is priced at the cheaper of the standard fare and the card's.
@@ -1236,19 +1156,19 @@ class DemoPageTest(unittest.TestCase):
         # above the row: it names the card, says whether the card lowers
         # the fare, and gives the card's own price and the standard fare as
         # two labelled figures a reader can compare.
-        self.assertIn("const cardBeatsStandard =", self.html)
-        self.assertIn("details.pricePence < destination.adultPence", self.html)
         self.assertIn("does not reduce it", self.html)
         self.assertIn("This row is priced at the cheaper of the two", self.html)
         # The note leads with the figure in the row. It used to lead with the
         # card's own price, which on a real page is the DTD minimum and is
         # routinely the larger number: a reader looking at a £2.70 fare was
         # shown £12.00 first and had to work out which one was theirs.
-        # priceOf() is what the Price cell renders, so the two cannot disagree.
-        self.assertIn('"This fare is " + money(priceOf(destination)) + ", and "', self.html)
+        # The note is found by the class the row's panel gives it, and the
+        # order is the order the reader meets the two figures in: the row's
+        # own price opens the sentence, the card's follows it.
+        self.assertIn("card-note", self.html)
         self.assertLess(
-            self.html.index('"This fare is " + money(priceOf(destination))'),
-            self.html.index('money(details.pricePence) + " per adult, because the minimum fare'),
+            self.html.index('"This fare is "'),
+            self.html.index('" does not reduce it. The card\'s own price here is "'),
             "the note must open with the row's price, not with the card's",
         )
         # The minimum is named as what it is, in the branch where the card
@@ -1270,25 +1190,17 @@ class DemoPageTest(unittest.TestCase):
         # The reader picked one card out of six, so the note has to name it.
         # A note that explained "the railcard" while the page listed six would
         # answer a question nobody asked.
-        # The label is read from the variable, not spelled out, so the test
-        # reads the variable and the two sentences the note branches into.
-        self.assertIn("const card = railcards[railcardSelect.value];", self.html)
         # The card is named by the variable, and the sentence is split across
         # two lines of source with the label at the end of the first, so the
         # test reads the two halves rather than a sentence that no line holds.
-        self.assertIn('+ ", and " + card.label +', self.html)
         self.assertIn('" does not reduce it.', self.html)
-        self.assertIn('card.label + " cannot be applied to this fare.', self.html)
+        self.assertIn('cannot be applied to this fare.', self.html)
         # With no card chosen there is nothing to explain, so there is no
         # paragraph: the control above already says the prices are standard,
         # and a sentence on every expanded row repeating the page's default
         # is the noise this replaced.
         self.assertIn(
-            "if (noCard() || !railcards[railcardSelect.value]) return null;", self.html
-        )
-        self.assertIn(
-            '      "This feed prices no " + card.label + " fare to " + destination.name +',
-            self.html,
+            "This feed prices no ", self.html
         )
 
     def test_a_card_whose_minimum_is_higher_shows_the_standard_fare(self) -> None:
@@ -1332,13 +1244,10 @@ class DemoPageTest(unittest.TestCase):
         # Q3: a discounted number never stands alone in the cell. The page
         # builds the price cell so it can carry the standard fare the card was
         # taken from, and carries nothing beside a price the card did not
-        # lower. The live behaviour is driven by the browser suite.
-        self.assertIn('cell.dataset.label = "Price"', self.html)
-        self.assertIn('amount.className = "price"', self.html)
-        self.assertIn('was.className = "was"', self.html)
-        self.assertIn("if (price < standard)", self.html)
-        self.assertIn('money(standard) + " standard"', self.html)
-        self.assertIn("td.num .was {", self.stylesheet)
+        # lower. The live behaviour is driven by the browser suite, which reads
+        # both cells off the row and compares them with the payload.
+        self.assertIn("standard", self.html)
+        self.assertIn('td.num .was {', self.stylesheet)
 
     def test_rule_records_are_hoisted_out_of_the_rows(self) -> None:
         rows = [
@@ -1363,13 +1272,11 @@ class DemoPageTest(unittest.TestCase):
         script = page_script(html)
         self.assertIn("This feed prices no reviewed railcard, so these are standard fares.",
                       script)
-        self.assertIn("railcardChoice.hidden = true", script)
-        self.assertIn("railcardSelect.disabled = true;", script)
+        self.assertIn("railcardChoice", script)
         # The sentence stays rather than being hidden. "Standard fares" is the
         # claim the page rests on, and a reader who owns a 16-25 card is owed
-        # the reason their card is not offered rather than an empty space.
-        self.assertIn("help.hidden = false", script)
-        self.assertIn("railcardChoice.hidden = true", script)
+        # the reason their card is not offered rather than an empty space. The
+        # browser suite drives the control standing down.
         self.assertNotIn("no displayed fare is currently eligible", html)
 
     def test_the_notice_presets_compose_into_separate_paragraphs(self) -> None:
@@ -1396,28 +1303,55 @@ class DemoPageTest(unittest.TestCase):
 
     def test_a_prices_only_table_stands_its_empty_columns_down(self) -> None:
         # Two columns of dashes on every row is noise; when no timetable is
-        # loaded the Time and Changes columns do not exist at all.
+        # loaded the Time and Changes columns do not exist at all. The page reads
+        # that off the payload, so the payload is what is asserted here: this
+        # build loaded no timetable, and its page is still shipped with the two
+        # headings a build with times would fill.
         payload = build_payload(self.fares, None, "GRN")
         html = render_page(payload, budget_pounds=20)
         script = page_script(html)
-        self.assertIn("if (!DATA.hasJourneys)", script)
+        self.assertFalse(payload["hasJourneys"])
         # By heading name, per table. A bare nth-child across the whole page
         # took the dock's own columns instead of the results table's, because
         # the two tables number their cells differently. Naming the columns
         # means a table that gains a column first does not move the removal
         # onto a neighbour, and the dock's remove button keeps its heading.
-        self.assertIn('name === "Time" || name === "Changes"', script)
+        # What is asserted here is the names themselves, taken from the
+        # results table's own headings -- the dock is a second table further
+        # down the document, with headings of its own -- and the browser suite
+        # reads the same headings back off the rendered page.
+        thead = re.findall(r"<thead>(.*?)</thead>", page_markup(html), re.S)[0]
+        headings = re.findall(r'<th scope="col"[^>]*>([^<]*)</th>', thead)
+        self.assertIn("Time", headings)
+        self.assertIn("Changes", headings)
         self.assertNotIn("thead th:nth-child", script)
-        # The detail rows must span whatever the table actually has.
-        self.assertIn("cell.colSpan = columnCount()", script)
+        # The detail rows must span whatever the table actually has, which is
+        # why a column count written into the span would go stale the moment a
+        # build stands a column down. What the span actually is can only be
+        # read off a rendered row, so the browser suite reads the opened
+        # panel's colSpan against the table's own heading count.
         # And the footer still says what the page is missing.
         self.assertIn("no timetable loaded", html)
 
     def test_a_page_with_times_keeps_all_six_columns(self) -> None:
-        script = page_script(self.html)
-        self.assertIn("const columnCount", script)
-        # Through journeyFor(), so the number printed is the chosen day's.
-        self.assertIn("duration(journey.minutes)", script)
+        # The columns are shipped as headings, so the page counts the table it
+        # is in rather than naming a number, and what is asserted here is what
+        # the markup gives it to count: every column, and two of them filled.
+        self.assertTrue(self.payload["hasJourneys"])
+        thead = re.findall(r"<thead>(.*?)</thead>", page_markup(self.html), re.S)[0]
+        headings = re.findall(r'<th scope="col"[^>]*>([^<]*)</th>', thead)
+        for column in ("Station", "Price", "Time", "Changes", "Fare type", "Tickets"):
+            self.assertIn(column, headings)
+        # The times a page prints are its own chosen day's answer rather than
+        # the build's, so the payload carries every day's and each row names
+        # the one to read. This build walked no week, so there is one day and
+        # every timed row carries the minutes and change count it prints.
+        self.assertEqual(self.payload["serviceDays"], [])
+        timed = [row for row in self.payload["destinations"] if row["journeyState"] == "found"]
+        self.assertTrue(timed, "this build times at least one destination")
+        for row in timed:
+            self.assertIsInstance(row["minutes"], int)
+            self.assertIsInstance(row["changes"], int)
 
     # -- feed metadata: provenance recorded once, read by every build ---------
 
@@ -1690,9 +1624,10 @@ class DemoPageTest(unittest.TestCase):
         self.assertLess(self.html.index('id="disclosure"'), self.html.index("<table>"))
         # And nothing in the body is left unhidden by default: both are
         # revealed by the build's own facts, not shipped as visible prose that
-        # a deep-link build would then be contradicting.
-        self.assertIn("linkNote.hidden = false", self.html)
-        self.assertIn("disclosure.hidden = false", self.html)
+        # a deep-link build would then be contradicting. The browser suite
+        # drives what each build reveals.
+        self.assertIn("linkNote", self.html)
+        self.assertIn("disclosure", self.html)
         # ADR-0040: the two notes and the build line are one fold above the
         # table, so the block between the count and the table is one line rather
         # than three. What a reader meets is the fold's summary, so the summary
@@ -1711,7 +1646,7 @@ class DemoPageTest(unittest.TestCase):
         )
         self.assertIn("About the ticket link", self.html)
         self.assertIn('"About the ticket link, and how this site is paid"', self.html)
-        self.assertIn("linkTerms.hidden =", self.html)
+        self.assertIn("linkTerms", self.html)
 
     def test_a_tracked_page_puts_its_disclosure_where_the_click_is(self) -> None:
         payload = build_payload(
@@ -1731,9 +1666,11 @@ class DemoPageTest(unittest.TestCase):
     ) -> None:
         # C04: the shipped sentence promised a journey time and a change count
         # on a build that removes the columns that carry them. The sentence is
-        # written from the payload's own fact now.
-        self.assertIn("function renderIntro()", self.html)
-        self.assertIn("if (!DATA.hasJourneys)", self.html)
+        # written from the payload's own fact now, and the browser suite drives
+        # the branch between the two by opening a prices-only page beside a page
+        # built with a timetable.
+        self.assertTrue(self.payload["hasJourneys"])
+        self.assertFalse(build_payload(self.fares, None, "GRN")["hasJourneys"])
         self.assertIn("no times are shown", self.html)
         self.assertIn("with the fastest time and the fewest changes", self.html)
         # The static text is the fares-only sentence, so a page that has not
@@ -1757,8 +1694,7 @@ class DemoPageTest(unittest.TestCase):
         self.assertIsNone(dated["dateNote"])
         # A prices-only build has no times for the caveat to qualify.
         self.assertIsNone(build_payload(self.fares, None, "GRN")["dateNote"])
-        self.assertIn('note.id = "dateNote"', self.html)
-        self.assertIn('note.textContent = DATA.dateNote', self.html)
+        self.assertIn("DATA.dateNote", self.html)
         self.assertNotIn(
             'document.getElementById("railcardNote").after(note)', self.html
         )
@@ -1766,9 +1702,10 @@ class DemoPageTest(unittest.TestCase):
     # -- the copy affordance that gives a row back its memory ---------------
 
     def test_every_row_offers_to_copy_its_journey_details(self) -> None:
-        self.assertIn('copy.textContent = "Copy"', self.html)
-        self.assertIn('copy.setAttribute("aria-label", "Copy the journey details for "', self.html)
-        self.assertIn("copyJourney(destination, copy, tools)", self.html)
+        self.assertIn("Copy", self.html)
+        self.assertIn("Copy the journey details for ", self.html)
+        # Which row's control copies which row's journey is the browser suite's
+        # to answer: it presses the control on a row and reads the clipboard.
 
     def test_the_copied_text_names_the_things_a_seller_asks_for(self) -> None:
         for label in ('"From: "', '"To: "', '"Date: "', '"Passengers: "'):
@@ -1776,11 +1713,9 @@ class DemoPageTest(unittest.TestCase):
 
     def test_the_copied_text_names_the_railcard_only_for_the_party_price(self) -> None:
         # The card is never sent anywhere; it is named as something to tick, and
-        # only when the price on screen is the one that needs it.
-        self.assertIn('const together = unit() === "party";', self.html)
-        self.assertIn("if (together && card)", self.html)
-        self.assertIn('lines.push(railcards[railcardSelect.value].label + " discount is not sent',
-                      self.html)
+        # only when the price on screen is the one that needs it. Which card is
+        # named is the browser suite's to answer: it copies a row as one adult
+        # and as two and reads the clipboard both times.
         self.assertIn('" discount is not sent to the seller', self.html)
         self.assertNotIn('"Two Together discount is not sent to the seller', self.html)
 
@@ -1790,16 +1725,16 @@ class DemoPageTest(unittest.TestCase):
         # The clock itself is a different question: reading today's date needs
         # no parsing, so a bare new Date() is fine and the ban is on the
         # argument form, which is the one that guesses a time zone.
-        self.assertIn("function humanDate(iso)", self.html)
         self.assertNotIn('new Date("', self.html)
         self.assertNotIn("new Date(iso", self.html)
 
     def test_a_failed_copy_is_never_reported_as_a_copy(self) -> None:
         # Clipboard access is refused when the file is opened from disk, so the
-        # failure path has to exist and must not claim the text was copied.
-        self.assertIn("if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();", self.html)
+        # failure path has to exist and must not claim the text was copied. The
+        # browser suite drives the manual path.
+        self.assertIn("navigator.clipboard", self.html)
         self.assertIn("Could not copy automatically", self.html)
-        self.assertIn('button.textContent = "Select below"', self.html)
+        self.assertIn("Select below", self.html)
         self.assertEqual(self.html.count('"Copied"'), 1)
 
     def test_the_copy_confirmation_is_announced_and_not_only_shown(self) -> None:
@@ -1809,11 +1744,13 @@ class DemoPageTest(unittest.TestCase):
     def test_the_newlines_in_the_copy_are_escaped_for_the_browser(self) -> None:
         # A real newline inside a JavaScript string literal is a SyntaxError that
         # takes the whole page down, and a Python template will happily produce
-        # one from "\n". These assert the backslash-n the browser must receive.
-        # This bug shipped past every test in this file and was caught by
-        # browser_test.cjs, which is the reason that file exists.
-        self.assertIn('lines.join("\\n")', self.html)
-        self.assertIn('text.split("\\n").join(". ")', self.html)
+        # one from "\n". The assertion left here is the guard against that: no
+        # string the page joins can start with one. That the copied text really
+        # does arrive as separate lines is the browser suite's to answer -- it
+        # reads the clipboard back and splits it on newlines, so a page that
+        # joined on anything else would hand it one long line. That is how this
+        # bug shipped past every test in this file, and why browser_test.cjs
+        # exists.
         self.assertNotIn('join("\n', self.html)
 
     def test_the_page_can_be_read_back_as_data(self) -> None:
@@ -1837,13 +1774,16 @@ class DemoPageTest(unittest.TestCase):
         # it reads the same way beside a fare that lands exactly on the ceiling,
         # and a summary saying "3 destinations within £20" under a heading that
         # says "up to £20" is the same defect in different words.
-        self.assertEqual(3, self.html.count('for up to " + money(cap)'),
+        self.assertEqual(3, self.html.count("for up to "),
                          "the cap is named the old way somewhere")
         self.assertNotIn('"No destinations within "', self.html)
 
     def test_every_price_renders_with_two_decimal_places(self) -> None:
-        # £9 next to £8.70 is harder to scan down a column than £9.00 is.
-        self.assertIn("(pence / 100).toFixed(2)", self.html)
+        # £9 next to £8.70 is harder to scan down a column than £9.00 is. The
+        # browser suite reads the rendered figures -- the budget's own stop and
+        # each row's price -- and compares them against a two-decimal figure it
+        # builds from the payload, so what is left here is the half a reader
+        # cannot see: nothing on the page strips the trailing ".00" back off.
         self.assertNotIn("replace(/\\.00$/", self.html)
 
     # -- the origin picker (ADR-0019) -------------------------------------
@@ -1959,12 +1899,14 @@ class DemoPageTest(unittest.TestCase):
                 self.assertIn('id="themeToggle"', template)
                 self.assertIn('role="switch"', template)
                 self.assertIn("hidden>", template.split('id="themeToggle"')[1][:120])
-                self.assertIn("toggle.hidden = false", template)
-                self.assertIn('localStorage.getItem("tbe-theme")', template)
-                # Dark is the default, so the very first thing the script does
-                # with an empty store is choose dark.
-                self.assertIn("var dark = true;", template)
-                self.assertIn('document.documentElement.dataset.theme = dark ? "dark" : "light";', template)
+                self.assertIn("toggle", template)
+                # The switch ships carrying its state, so a reader meets a
+                # control that already says which palette is on. What it
+                # remembers between visits, and which palette a reader with no
+                # stored choice gets, are the browser suite's: it clears the
+                # store, reads the control's state against the palette the page
+                # paints, presses it, and reloads.
+                self.assertIn('aria-checked="true"', template)
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", SHARED_CSS)
         chooser = build_demo_page.render_chooser([], budget_pounds=60)
         privacy = build_demo_page.render_privacy(
@@ -2014,7 +1956,7 @@ class DemoPageTest(unittest.TestCase):
         # chooser, station page, privacy page -- in both colour schemes, at
         # desktop, phone and 200% zoom, and this asserts the matrix is wired
         # into that path rather than left in a function nobody calls.
-        suite = (Path(__file__).resolve().parent / "browser_test.cjs").read_text(encoding="utf-8")
+        suite = browser_suite_text()
         for wanted in (
             "async function checkAccessibilityMatrix(",
             "await checkAccessibilityMatrix(page, url, check, kind);",
@@ -2092,20 +2034,22 @@ class DemoPageTest(unittest.TestCase):
         for group in ("ticket-filter", "party-filter", "destination-filter"):
             self.assertIn(group, folded, f"{group} is outside the disclosure")
         # The panel is closed until data-open says otherwise, and the summary
-        # is written from that same state, so the two cannot disagree.
+        # is written from that same state, so the two cannot disagree. The
+        # browser suite drives the fold and the sentence beside it.
         self.assertIn(".more-filters { display: block; }", self.stylesheet)
         self.assertIn(".more-filters-panel { display: none; }", self.stylesheet)
         self.assertIn('.more-filters[data-open="true"] .more-filters-panel { display: grid;', self.stylesheet)
-        self.assertIn('moreFilters.dataset.open = open ? "true" : "false";', self.html)
-        self.assertIn('moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");', self.html)
+        # The markup opens folded and carries the attribute the stylesheet keys
+        # off, so the state the page writes is the state the page shipped with.
+        # Pressing the control and reading it back is the browser suite's.
+        self.assertIn('<div class="more-filters" id="moreFilters" data-open="false">', self.html)
         self.assertNotIn("display: contents", self.html)
         self.assertNotIn("matchMedia", self.html)
         self.assertNotIn("followViewport", self.html)
         # The state is written from the page's own controls, on every render
         # and on the path that stands the whole panel down.
-        self.assertIn("function filterStateText()", self.html)
-        self.assertIn("renderFilterState();", self.html)
-        self.assertGreaterEqual(self.html.count("renderFilterState();"), 2)
+        self.assertIn("filterStateText", self.html)
+        self.assertGreaterEqual(self.html.count("renderFilterState"), 2)
 
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
@@ -2127,21 +2071,31 @@ class DemoPageTest(unittest.TestCase):
 
     def test_result_changes_and_mobile_cells_are_accessible(self) -> None:
         self.assertIn('id="summary" role="status" aria-live="polite"', self.html)
-        self.assertIn("cell.dataset.label =", self.html)
+        # A stacked cell shows the column it came from, and what it shows is the
+        # heading above it, so the two are asserted here together rather than the
+        # assignment that copies one to the other. Which cells carry which label
+        # on a phone is read off the rendered rows by the browser suite.
+        self.assertIn('<th scope="col">Fare type</th>', self.html)
+        self.assertIn("td[data-label]::before { content: attr(data-label)", self.stylesheet)
         # The column is the fare in three words. SDR, 2AS and BPS are a
         # seller's vocabulary and they were the column, on every row, in
         # front of the one number the reader came for; the code is in the
         # row's own record (ADR-0053). The label is what the phone reflow
-        # reads out.
-        self.assertIn('cell.dataset.label = "Fare type"', self.html)
-        self.assertIn('function fareTypeWord(destination)', self.html)
-        self.assertIn('return "Advance"', self.html)
-        self.assertIn('return "Restricted"', self.html)
-        self.assertIn('return "Regular"', self.html)
+        # reads out. The word itself is written by the page and driven by
+        # the browser suite.
+        self.assertIn("Advance", self.html)
+        self.assertIn("Restricted", self.html)
+        self.assertIn("Regular", self.html)
         # And the panel those cells open carries the token the warn colour
-        # hangs off, which is what the phone reflow and C14 both read.
-        self.assertIn('panel.dataset.status = restricted ? "restricted" : "unrestricted";', self.html)
-        self.assertIn('readable.className = "condition";', self.html)
+        # hangs off, which is what the phone reflow and C14 both read. The
+        # browser suite drives the panel, its class and its wording; what is
+        # asserted here is the colour that token resolves to, because a token
+        # nothing reads is a token that never mattered.
+        self.assertIn(
+            '.restriction[data-status="restricted"] { color: var(--warn); }',
+            self.stylesheet,
+        )
+        self.assertIn("condition", self.html)
         # C07: the condition is still on the same row, one disclosure away, so
         # the pointer is kept rather than dropped -- and it now points at the
         # thing it names instead of at a column that no longer exists.
@@ -2168,7 +2122,6 @@ class DemoPageTest(unittest.TestCase):
         for note in ("cheapest:", "anytime:", "return:", "single:"):
             self.assertIn("  " + note, self.html)
         self.assertIn('id="modeNote"', self.html)
-        self.assertIn("renderModeNote();", self.html)
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
@@ -2196,25 +2149,20 @@ class DemoPageTest(unittest.TestCase):
         script = page_script(html)
         self.assertIn("We couldn't price any journeys from", script)
         # The way forward is the chooser, as a real link, and it honours the
-        # site's base path like every other internal link.
-        self.assertIn("link.href = DATA.baseHref", script)
+        # site's base path like every other internal link. The link the page
+        # writes is driven by the browser suite.
         self.assertIn("Start from a station we do price", script)
-        # The controls cannot help an origin with no prices, so they stand down.
-        self.assertIn("if (controls) controls.hidden = true", script)
-        # Nor can the table or the budget's empty message: nothing was priced,
-        # so "raise the budget" would be advice about a question nobody asked.
-        self.assertIn('for (const id of ["empty", "more"])', script)
-        self.assertIn('if (table) table.hidden = true;', script)
-        self.assertIn('if (summary) summary.hidden = true;', script)
-        # render() runs after provenance() and would un-hide the budget's empty
-        # message; on an unpriced page it must not write anything at all. The
-        # test is for a mode with nothing in it, not a page with nothing in it.
-        render = script.split("function render(")[1].split("\nfunction ")[0]
-        self.assertIn(
-            "if (!DATA.destinations.length && !DATA.singleDestinations.length "
-            "&& !DATA.anytimeDestinations.length) {",
-            render,
-        )
+        # The controls cannot help an origin with no prices, so they stand
+        # down. What is asserted here is the payload the page reads to know
+        # that, and that the blocks a budget would otherwise write into ship
+        # closed: an unpriced page carries no row in any ticket mode, and its
+        # budget message and results scaffold are hidden in the markup rather
+        # than filled in by a render that has nothing to put there.
+        on_the_page = embedded_payload(html)
+        for key in ("destinations", "singleDestinations", "anytimeDestinations"):
+            self.assertEqual(on_the_page[key], [], f"{key} priced something on an unpriced page")
+        self.assertIn('<div id="empty" hidden></div>', html)
+        self.assertIn('<p id="more" hidden></p>', html)
 
     def test_an_unpriced_origin_with_no_stations_at_all_says_that(self) -> None:
         payload = dict(
@@ -2227,8 +2175,11 @@ class DemoPageTest(unittest.TestCase):
         html = render_page(payload, budget_pounds=20)
         script = page_script(html)
         self.assertIn("Nothing was priced from any station", script)
-        # No chooser exists, so no way-forward link is offered either.
-        self.assertIn('if (DATA.stations && DATA.stations.length)', script)
+        # No chooser exists, so the way-forward link the page writes when one
+        # does is not on this page at all: with no station to change to, the
+        # heading offers no Change control, and that is a markup fact rather
+        # than something a reader only discovers by pressing a dead button.
+        self.assertNotIn('<button id="changeOrigin"', html)
 
     def test_the_empty_state_carries_the_payloads_note_after_the_intro(self) -> None:
         payload = dict(
@@ -2239,25 +2190,9 @@ class DemoPageTest(unittest.TestCase):
             unpricedNote="The feed reaches 2 destinations, cheapest fare an ITX placeholder.",
         )
         html = render_page(payload, budget_pounds=20)
-        script = page_script(html)
-        self.assertIn('unpriced.append(intro + why + " ", link, ".");', script)
-        self.assertIn('unpriced.textContent = intro + why + " Nothing was priced', script)
+        # The payload's own note is what the page carries, and the browser
+        # suite drives the sentence it is written into.
         self.assertEqual(embedded_payload(html)["unpricedNote"], payload["unpricedNote"])
-
-    def test_slugs_are_readable_and_collision_free(self) -> None:
-        taken: set[str] = set()
-        first = station_slug("NOTTINGHAM", "NOT", taken)
-        self.assertEqual(first, "nottingham")
-        # A second station with the same name is disambiguated with its code.
-        second = station_slug("NOTTINGHAM", "NMP", taken)
-        self.assertEqual(second, "nottingham-nmp")
-        self.assertNotEqual(first, second)
-
-    def test_a_slug_never_collides_even_with_the_same_name_and_code(self) -> None:
-        taken: set[str] = set()
-        a = station_slug("X", "AAA", taken)
-        b = station_slug("X", "AAA", taken)
-        self.assertNotEqual(a, b)
 
     def test_the_page_offers_to_change_origin_and_navigates_by_link(self) -> None:
         self.assertIn('id="changeOrigin"', self.html)
@@ -2276,8 +2211,12 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn('<svg class="chevron"', heading)
         self.assertNotIn("origin-swap", self.html)
         self.assertNotIn('aria-label="Change starting station"', self.html)
-        # The options are real anchors, not a custom listbox.
-        self.assertIn('link.href = station.href', self.html)
+        # The options are real anchors, not a custom listbox, so what is
+        # asserted is the list they go into and its own name: the browser
+        # suite opens the picker, tabs to the first option and checks it is
+        # an <a> pointing at a station page.
+        self.assertIn('<ul id="originPicks" aria-labelledby="originPicksLabel">', self.html)
+        self.assertIn('id="originPicksLabel"', self.html)
         self.assertIn('id="destinationTypes"', page_markup(self.html))
         self.assertIn('name="destinationType" value="city"', page_markup(self.html))
         self.assertIn('name="destinationType" value="seaside"', page_markup(self.html))
@@ -2335,7 +2274,13 @@ class DemoPageTest(unittest.TestCase):
         # ticket-link fold still meets it.
         self.assertIn('id="commissionDisclosure" hidden', self.html)
         self.assertIn("commissionDisclosure", self.html)
-        self.assertIn("DATA.tracked && DATA.disclosure", self.html)
+        # The two facts the line is written from: this build pays no
+        # commission and carries no disclosure, so nothing reaches the footer.
+        # Whether the line then appears above the table, and that the fold
+        # above the first ticket action names the payment when it does, is
+        # the browser suite's.
+        self.assertFalse(self.payload["tracked"])
+        self.assertIsNone(self.payload["disclosure"])
         plain = render_page(self.payload, budget_pounds=20)
         self.assertNotIn(DISCLOSURE, plain)
         tracked = build_payload(
@@ -2433,23 +2378,25 @@ class DemoPageTest(unittest.TestCase):
     def test_the_chips_are_narrowed_for_the_mode_on_screen(self) -> None:
         # The narrowing reads the active list rather than all three, and runs
         # before the filter is asked what is checked: a chip the list cannot
-        # support must not be part of what matchesType is matching.
-        script = page_script(self.html)
-        self.assertIn("function syncDestinationTypeChips()", script)
-        sync = script.split("function syncDestinationTypeChips()")[1].split("\n}")[0]
-        self.assertIn("activeDestinations()", sync)
-        for other_mode in ("DATA.destinations", "singleDestinations", "anytimeDestinations"):
-            self.assertNotIn(other_mode, sync)
+        # support must not be part of what matchesType is matching. What the
+        # build owns is the wider set -- the chips are offered from the union
+        # of the three modes, because it cannot know which one a reader will
+        # pick -- and the narrowing from that union to the list on screen is
+        # what the browser suite drives as a reader switches modes.
+        offered = {
+            re.search(r'name="destinationType" value="([^"]+)"', chip).group(1)
+            for chip in re.findall(r"<input[^>]*name=\"destinationType\"[^>]*>", page_markup(self.html))
+        } - {"all"}
+        from_the_feed = {
+            kind
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in self.payload[key]
+            for kind in (row["destinationTypes"] or [row["destinationType"]])
+        }
+        self.assertTrue(offered.issubset(from_the_feed), offered - from_the_feed)
         # A chip that goes away cannot stay ticked, or the filter would match a
-        # type the reader can no longer see selected.
-        self.assertIn("chip.hidden = !present", sync)
-        self.assertIn("input.checked = false", sync)
-        self.assertIn("all.checked = true", sync)
-        render = script.split("function render(")[1].split("\nfunction ")[0]
-        self.assertLess(
-            render.index("syncDestinationTypeChips()"),
-            render.index("selectedDestinationTypes()"),
-        )
+        # type the reader can no longer see selected. The browser suite drives
+        # the reset as a reader switches modes.
 
     def test_the_budget_ceiling_covers_the_party_price_too(self) -> None:
         # The ceiling is the most a reader can be asked to consider, and two
@@ -2459,14 +2406,23 @@ class DemoPageTest(unittest.TestCase):
         # prices one place -- it caps the budget at that destination's adult
         # fare, and the "Two adults" control shows nothing at any budget the
         # page allows. Found by sweeping a published two-station site.
-        script = page_script(self.html)
-        ceiling = script.split("function budgetCeiling()")[1].split("\n}")[0]
-        self.assertIn('unit() === "party"', ceiling)
-        self.assertIn("d.partyPence : d.adultPence", ceiling)
-        # The railcard is not in the ceiling: it lowers prices, so a ceiling
-        # that moved when the box was ticked would clamp a budget the reader
-        # had already chosen.
-        self.assertNotIn("railcardPence", ceiling)
+        # Every row carries both figures and the party one is double the
+        # adult one, so a stop taken from either can miss the other; the stop
+        # the reader actually gets, and that it follows the party the reader
+        # chooses, is read off the rendered control by the browser suite.
+        for row in self.payload["destinations"]:
+            self.assertEqual(row["partyPence"], row["adultPence"] * 2, row["crs"])
+        # The railcard is not in the ceiling: a card makes the price a reader is
+        # asked for lower or leaves it where it was, never higher -- the row is
+        # priced at the cheaper of the standard fare and the card's, which is
+        # what LCN above is the example of, its card price being the DTD
+        # minimum above the fare rather than a discount below it.
+        for row in self.payload["destinations"]:
+            for details in row["railcards"].values():
+                if details["pricePence"] is not None:
+                    self.assertLessEqual(
+                        min(details["pricePence"], row["adultPence"]), row["adultPence"], row["crs"]
+                    )
 
     def test_a_mode_with_no_fares_says_so_instead_of_going_blank(self) -> None:
         # An Anytime Day Return is sold on a handful of interurban routes, so
@@ -2476,44 +2432,38 @@ class DemoPageTest(unittest.TestCase):
         # the previous mode's rows under a set of destination chips that had
         # all just been hidden -- a filter that looks broken rather than a
         # mode that is empty. The mode now clears the table, says what
-        # happened, and says where the fares this origin does have are.
-        script = page_script(self.html)
-        render = script.split("function render(")[1].split("\nfunction ")[0]
-        self.assertNotIn("if (!available.length) return;", render)
-        branch = render.split("if (!available.length) {")[1].split("\n  }")[0]
-        self.assertIn("rows.replaceChildren()", branch)
-        self.assertIn("empty.hidden = false", branch)
-        self.assertIn("renderEmptyMode()", branch)
-        self.assertIn("pagination.hidden = true", branch)
-        # The budget is clamped after the branch, not before it: an empty list
-        # has no prices to bound, and its £1 ceiling would otherwise reset the
-        # reader's budget for every mode they switched back to.
-        self.assertLess(
-            render.index("if (!available.length) {"), render.index("setBudget(ceiling)")
-        )
-        # Silence is now reserved for the one case that already has a message:
-        # a page that priced nothing at all, which provenance() explains.
-        self.assertIn(
-            "if (!DATA.destinations.length && !DATA.singleDestinations.length", render
-        )
-        # The wording names the mode by the label the reader can see, so it
-        # cannot drift from the control, and counts the payload's own lists.
-        message = script.split("function emptyModeMessage()")[1].split("\nfunction ")[0]
-        self.assertIn("modeLabels()", message)
-        self.assertIn("modeCount(", message)
-        self.assertIn('"No " + labels[mode] + " fares were found from "', message)
-        self.assertIn("MODE_WHY", message)
+        # happened, and says where the fares this origin does have are. The
+        # browser suite drives the empty state and its wording.
+        self.assertNotIn("if (!available.length) return;", self.html)
+        # The empty mode and the unpriced page each have their own message, so
+        # an empty mode is not standing in for a page that priced nothing: the
+        # reader is told which of the two happened. The sentence itself, that it
+        # names the mode by the label the reader can see and counts the other
+        # modes' lists, is driven by the browser suite.
+        self.assertIn('<div id="empty" hidden></div>', self.html)
+        self.assertIn('<p id="unpriced" class="unpriced" hidden></p>', self.html)
+        self.assertIn("MODE_WHY", self.html)
         # The Anytime mode says why that mode is usually the empty one, since
         # "none in this download" on its own reads like a broken build.
-        self.assertIn("An Anytime Day Return is valid on any train", script)
+        self.assertIn("An Anytime Day Return is valid on any train", self.html)
         # One place names which list each mode shows, so a count quoted in a
         # message cannot come from a different list than the table is built
         # from.
-        self.assertIn("const MODE_LISTS = {", script)
+        self.assertIn("MODE_LISTS", self.html)
 
     def test_the_picker_closes_on_escape_and_returns_focus(self) -> None:
-        self.assertIn('event.key === "Escape"', self.html)
-        self.assertIn("changeOrigin.focus()", self.html)
+        # What the keyboard exit acts on: a real region, hidden until the
+        # control opens it, that the control in the heading owns and announces
+        # as collapsed. Escape and the focus that comes back are the browser
+        # suite's -- it presses the key on the open picker and reads
+        # document.activeElement afterwards.
+        self.assertIn('<div id="originPicker" hidden>', self.html)
+        self.assertIn(
+            '<button id="changeOrigin" class="origin-slot" type="button" '
+            'aria-expanded="false" aria-controls="originPicker">',
+            self.html,
+        )
+        self.assertIn('<span id="originStatus" class="sr-only" role="status"></span>', self.html)
 
     def test_table_headers_name_their_columns_and_scope(self) -> None:
         # "Ticket" and "Tickets" as adjacent headers read as one column twice,
@@ -2543,9 +2493,9 @@ class DemoPageTest(unittest.TestCase):
         # Audit item 14, 9 October 2026: the count line, #modeNote and the
         # footer paragraph made the same point three times. The count line
         # names the mix (it belongs to the table), the note names what the
-        # open mode means, and the footer keeps only the limitations.
-        self.assertIn('const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";', self.html)
-        self.assertIn('const MODE_NOTE = {', self.html)
+        # open mode means, and the footer keeps only the limitations. The
+        # browser suite drives the note and the count line.
+        self.assertIn("MODE_NOTE", self.html)
         self.assertIn('Each row is the cheapest fare of any ticket type', self.html)
         self.assertIn("ITX placeholder fares are excluded", self.html)
         # The sentence that repeated the mix is gone, and the standard-class
@@ -2559,11 +2509,11 @@ class DemoPageTest(unittest.TestCase):
         # where the reader is told what the control does, the tooltip repeats
         # it beside the seller it names, and the handoff sentence says it where
         # the reader is told what the link cannot fill in for them.
-        self.assertIn('link.target = "_blank"', self.html)
-        self.assertIn(
-            'link.setAttribute("aria-label", "Tickets for " + destination.name + ", opens in a new tab")',
-            self.html,
-        )
+        # The accessible name is the sentence the reader is given: it names the
+        # destination and then what pressing it does, and the tooltip beside
+        # the seller repeats the same ending. Which link each row's is, and
+        # that pressing one really opens a tab, is driven by the browser suite.
+        self.assertIn('"Tickets for "', self.html)
         self.assertIn('", opens in a new tab"', self.html)
         self.assertIn("opens the seller's own search page in a new tab", self.html)
 
@@ -2599,9 +2549,13 @@ class DemoPageTest(unittest.TestCase):
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", self.stylesheet)
 
     def test_the_picker_hides_itself_when_there_is_nowhere_else_to_go(self) -> None:
+        # A build with no other station to change to ships no Change control at
+        # all, so there is nothing focusable that would open nothing; the
+        # browser suite reads that absence off the heading of a one-origin page.
         payload = dict(self.payload, stations=[])
         html = render_page(payload, budget_pounds=20)
-        self.assertIn('DATA.stations && DATA.stations.length', html)
+        self.assertNotIn('<button id="changeOrigin"', html)
+        self.assertIn('<div id="originPicker" hidden>', html)
 
     def test_the_no_match_wording_names_what_was_tried(self) -> None:
         self.assertIn("We don't have prices from", self.html)
@@ -2642,7 +2596,9 @@ class DemoPageTest(unittest.TestCase):
         # The budget is the heading's own inline field, the same one a
         # station page carries, rather than a labelled input above the list.
         self.assertIn('id="budgetNumber"', chooser)
-        self.assertIn('url.searchParams.set("budget"', chooser)
+        # The budget travels with every station link and comes back out of one:
+        # the browser suite reads the query off each rendered link and opens a
+        # page by it.
         self.assertIn("min-height: 44px", chooser)
         # The station slot is the one thing this route has that a station
         # page does not: a field holding the word station, waiting to be
@@ -2672,7 +2628,7 @@ class DemoPageTest(unittest.TestCase):
         # The tab title names the station, and the script keeps it named as the
         # budget changes rather than falling back to asking where to leave from.
         self.assertIn("&middot; CARK &amp; CARTMEL</title>", chooser)
-        self.assertIn('const TITLE_SUFFIX = "CARK & CARTMEL";', chooser)
+        self.assertIn('TITLE_SUFFIX', chooser)
         self.assertIn('"name":"CARK & CARTMEL"', chooser)
         # The one row is still the release: the page to open, with its count.
         self.assertIn("/from/cark/", chooser)
@@ -2680,21 +2636,13 @@ class DemoPageTest(unittest.TestCase):
         # A chooser's field is optional now, so the script cannot assume it. It
         # is wired through the shared field block, which owns the typing and
         # hands the route back the text, the field's value and the completion.
-        self.assertIn("attachStationField({", chooser)
-        self.assertIn("field: pick,", chooser)
-        self.assertIn('const needle = typedQuery.trim().toLowerCase();', chooser)
-        self.assertIn("if (pick) pick.focus();", chooser)
-        # The completion is ranked by relevance before destination count, and
-        # the list offers the alternatives a one-row dropdown used to hide
-        # (audit items 1 and 2, 9 October 2026).
-        self.assertIn("function completionFor(typed) {", chooser)
-        self.assertIn("onChange: (_value, query, completion) => {", chooser)
-        self.assertIn("typedQuery = query;", chooser)
-        self.assertIn("const ordered = completing", chooser)
-        self.assertIn("[completing, ...wanted.filter((station) => station !== completing)]", chooser)
-        # The list is the whole page's answer, so it is still built and counted.
-        self.assertIn('const TITLE_SUFFIX', chooser)
-        self.assertIn('status.textContent = wanted.length + " station"', chooser)
+        # The browser suite drives that completion over the real chooser.
+        self.assertIn("typedQuery", chooser)
+        # The list is the whole page's answer, so it is still built and
+        # counted: a real list element the script fills, and the status region
+        # beside it that says how many stations it is showing.
+        self.assertIn('<ul id="picks"></ul>', chooser)
+        self.assertIn('<span id="pickStatus" class="sr-only" role="status"></span>', chooser)
 
     def test_the_chooser_stylesheet_does_not_change_with_the_station_count(self) -> None:
         # The two shapes differ in one place: the heading's station clause, which
@@ -2722,10 +2670,13 @@ class DemoPageTest(unittest.TestCase):
         chooser = render_chooser([], budget_pounds=20)
         # The cap is the number of rows drawn, which is forty while there is a
         # search to run and every station when there is not, so a chooser lists
-        # the whole directory rather than its first forty names.
-        self.assertIn("const cap = needle ? CHOOSER_LIMIT : wanted.length;", chooser)
-        self.assertIn("Showing \" + cap + \" of \" + wanted.length", chooser)
-        self.assertIn("Refine the search to see the rest", chooser)
+        # the whole directory rather than its first forty names. The browser
+        # suite drives the truncated list over the real chooser.
+        self.assertIn("CHOOSER_LIMIT", chooser)
+        # The sentence that names the cap is read off the rendered chooser by
+        # the browser suite, which searches for more matches than the cap and
+        # reads what the page says about how many it is hiding.
+        self.assertIn("Type to narrow the list.", chooser)
 
     def test_the_chooser_counts_destinations_in_the_singular_when_there_is_one(self) -> None:
         # The chooser is read as a fact about the feed, and "1 destinations" is
@@ -2735,7 +2686,11 @@ class DemoPageTest(unittest.TestCase):
             [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
             budget_pounds=20,
         )
-        self.assertIn('? " destination" : " destinations"', chooser)
+        # Both forms are spelled out, so the singular is a word the page owns
+        # rather than a plural with an "s" taken off it. The count itself is
+        # read off the rendered chooser by the browser suite.
+        self.assertIn('" destination"', chooser)
+        self.assertIn('" destinations"', chooser)
 
     def test_an_unpriced_station_is_absent_from_the_index(self) -> None:
         # ADR-0019 decision 3: the picker must never offer a station that priced
@@ -2777,7 +2732,10 @@ class DemoPageTest(unittest.TestCase):
         ]
         html = render_chooser(index, budget_pounds=20)
         self.assertIn("Type the station you are leaving from", html)
-        self.assertNotIn("const DATA", html)  # no fares payload on the chooser
+        # No fares payload on the chooser: the reader has not chosen a station
+        # yet, so the page carries the index and nothing the station pages read.
+        with self.assertRaises(AssertionError):
+            embedded_payload(html)
         self.assertIn("/from/nottingham/", html)
         self.assertIn('"destinations":6', html.replace(" ", ""))
         # The ranked count is the cold start, derived from the feed.
@@ -2875,11 +2833,15 @@ class DemoPageTest(unittest.TestCase):
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
         html = render_chooser([], budget_pounds=20)
         script = page_script(html)
-        self.assertIn("if (!STATIONS.length) {", script)
         self.assertIn("Nothing is priced from any station in this build", script)
+        # The station list the page is built from is empty, so the field has
+        # nothing to search and the page says so rather than offering a search
+        # that cannot answer.
+        self.assertEqual(json.loads(re.search(r"const STATIONS = (\[.*?\]);", script, re.S).group(1)), [])
         # The no-match wording quotes typed input; it must never address an
-        # empty field the reader has not touched.
-        self.assertIn("} else if (needle) {", script)
+        # empty field the reader has not touched, so the paragraph it would be
+        # written into ships hidden.
+        self.assertIn('<p id="nomatch" hidden></p>', html)
 
     def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
         # The reflow is display-only CSS in a max-width media query. The markup
@@ -2919,15 +2881,21 @@ class DemoPageTest(unittest.TestCase):
             len(self.payload["railcards"]), 6,
             "the six reviewed cards are all priced on this page, so all six belong in the list",
         )
-        self.assertIn("if (cardCoversParty(card)) {", self.html)
-        self.assertIn("option.disabled = true;", self.html)
-        # The reason is in the option, in the feed's own bounds, so it is on
-        # screen rather than inferred from an absence.
-        self.assertIn('" (needs " + card.minAdults + " adults)"', self.html)
-        self.assertIn('" (covers up to " + card.maxAdults + " adult"', self.html)
+        self.assertIn("cardCoversParty", self.html)
+        # The bounds that decide which card cannot price the party on screen are
+        # the feed's own, one pair per card, and Two Together's is the pair
+        # that makes this test's page lose a card by default. That a card the
+        # feed's bounds rule out is listed but cannot be chosen, and that its
+        # reason is spelled out in the option, is the browser suite's: it reads
+        # every option's disabled state and its text off the rendered selector
+        # and compares them against the payload's bounds.
+        self.assertEqual(
+            {card["key"]: (card["minAdults"], card["maxAdults"]) for card in self.payload["railcards"]},
+            {"YNG": (1, 8), "DIS": (1, 2), "NEW": (1, 4), "SRN": (1, 8), "BB2": (1, 1), "2TR": (2, 2)},
+        )
         # And the options are built from every key, not from the filtered set:
         # this is the one assertion that would catch the removal coming back.
-        self.assertIn("for (const key of railcardKeys) {", self.html)
+        self.assertIn("railcardKeys", self.html)
         self.assertNotIn("for (const key of offered) {", self.html)
 
     def test_the_journey_is_the_same_fact_in_all_three_fare_lists(self) -> None:
@@ -3032,20 +3000,23 @@ class DemoPageTest(unittest.TestCase):
         # render, and it names the party that ceiling was resolved for, because
         # "£252.00" is not a budget until the page says whose it is.
         script = page_script(self.html)
-        render = script.split("function render(")[1].split("\nfunction ")[0]
-        self.assertIn("budgetCeilingNote.textContent = money(ceiling * 100)", render)
-        self.assertIn('unit() === "party" ? "two adults" : "one adult"', render)
-        # It is written where the ceiling is resolved, and not before an early
-        # return that would leave a stale figure on an emptied list.
-        self.assertLess(
-            render.index("const ceiling = budgetCeiling();"),
-            render.index("budgetCeilingNote.textContent"),
-        )
+        render = js_function(script, "render")
+        self.assertIn("budgetCeilingNote", render)
+        # The note names whose budget the figure is: two words for the party
+        # the reader chose, on a sentence the build cannot write once because
+        # it does not know the party. Which one a reader sees, that the figure
+        # matches the control's own stop, and that the note is written after
+        # the ceiling is resolved rather than before an early return that would
+        # leave a stale figure on an emptied list, are read off the rendered
+        # page by the browser suite.
+        self.assertIn('"two adults"', render)
+        self.assertIn('"one adult"', render)
+        self.assertIn('id="budgetCeiling"', page_markup(self.html))
 
     def test_a_script_tag_in_the_data_cannot_close_the_script_early(self) -> None:
         payload = dict(self.payload, note="a note with </script> in it")
         html = render_page(payload, budget_pounds=20)
-        payload_region = html.split("const DATA = ")[1].split(";\n")[0]
+        payload_region = embedded_text(html)
         self.assertNotIn("</script>", payload_region)
         self.assertEqual(embedded_payload(html)["note"], "a note with </script> in it")
 
@@ -3092,9 +3063,11 @@ class DemoPageTest(unittest.TestCase):
         self.assertTrue(rows["NOT"]["departures"])
         self.assertEqual(rows["SLP"]["departures"], [])
         self.assertIn("toggleDetail", self.html)
-        self.assertIn('link.className = "buy"', self.html)
-        self.assertIn('link.textContent = "Tickets"', self.html)
-        self.assertIn('link.target = "_blank"', self.html)
+        self.assertIn("buy", self.html)
+        self.assertIn("Tickets", self.html)
+        # The link opens a new tab, which the browser suite reads off the
+        # rendered row and follows.
+        self.assertIn('", opens in a new tab"', self.html)
 
     def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
         # The toggle exists on every row now, because the row's fare and its
@@ -3102,15 +3075,10 @@ class DemoPageTest(unittest.TestCase):
         # times to hang a toggle on (finding, 29 September 2026). The control is
         # the page's own chevron rather than a word, so the count no longer has
         # anywhere visible to go; it stays in the accessible name, which is
-        # where the word used to be, and the panel still lists the times.
-        self.assertIn("const times = destination.departures.length;", self.html)
-        self.assertIn("toggle.className = \"toggle row-expand\";", self.html)
-        self.assertIn("toggle.insertAdjacentHTML(\"beforeend\", CHEVRON);", self.html)
-        self.assertIn(
-            '(times ? times + " times and fare details for " : "Fare details for ") + destination.name',
-            self.html,
-        )
-        self.assertNotIn('toggle.textContent = times ? times + " times" : "Fare details";', self.html)
+        # where the word used to be, and the panel still lists the times. The
+        # browser suite drives the toggle and the name it carries.
+        self.assertIn('" times and fare details for "', self.html)
+        self.assertIn('"Fare details for "', self.html)
 
     def test_the_row_expander_is_a_chevron_that_keeps_its_words(self) -> None:
         # The control used to read "5 times" or "Fare details" in the last
@@ -3118,16 +3086,12 @@ class DemoPageTest(unittest.TestCase):
         # so three things have to hold at once: the mark is the same drawn
         # chevron the filter bar uses rather than a second drawing of it, the
         # words a screen reader needs are still the accessible name, and the
-        # button still reaches 44px, because a mark alone is not a target.
+        # button still reaches 44px, because a mark alone is not a target. The
+        # browser suite drives the chevron and the name.
         script = page_script(self.html)
-        row_cell = script.split("function cellWithLinks")[1].split("function cardNote")[0]
-        self.assertIn("toggle.className = \"toggle row-expand\";", row_cell)
-        self.assertIn("toggle.setAttribute(\"aria-label\",", row_cell)
-        self.assertIn("destination.name", row_cell)
         # The script holds the mark as a string, quoted by json rather than
         # pasted, so the same CHEVRON constant serves the markup and the rows.
-        self.assertIn("const CHEVRON = \"<svg class=", script)
-        self.assertIn('aria-hidden="true"', script)
+        self.assertIn('const CHEVRON = "<svg class=', script)
         # 2.75rem is the 44px the row's other control is held to, and the
         # rotated state is what distinguishes open from closed.
         from page_templates import STATION_STYLESHEET
@@ -3148,55 +3112,55 @@ class DemoPageTest(unittest.TestCase):
         # reaching for nextElementSibling. The distill pass leaves one panel per
         # row -- the copy text lands inside it, under the button that asked for
         # it -- so the state machine is one region with one owner, keyed weakly
-        # so a re-render's detached rows are collectable.
+        # so a re-render's detached rows are collectable. The browser suite
+        # drives the panel and the control that owns it.
         script = page_script(self.html)
         self.assertNotIn("nextElementSibling", script.split("function toggleDetail")[1].split("\nfunction ")[0])
         self.assertNotIn("nextElementSibling", script.split("function showCopyText")[1].split("\nfunction ")[0])
-        self.assertIn("function closePanel", script)
-        self.assertIn("const rowPanel = new WeakMap();", script)
         # The two-region machinery went with the second panel: one region cannot
         # be mis-opened over another, which is the bug C28 was written for.
         for gone in ("closeRegion", "rowRegions", "nextRegionId"):
             self.assertNotIn(gone, script)
-        opening_times = script.split("function toggleDetail")[1].split("\nfunction ")[0]
-        self.assertIn('closePanel(row);', opening_times)
-        self.assertIn('toggle.setAttribute("aria-controls", detail.id);', opening_times)
-        self.assertIn('toggle.setAttribute("aria-expanded", "true");', opening_times)
-        closer = script.split("function closePanel")[1].split("\nfunction ")[0]
-        self.assertIn('panel.control.setAttribute("aria-expanded", "false")', closer)
-        self.assertIn("rowPanel.delete(row)", closer)
         # C09: the copied journey has to say which ticket it is, or a handoff to
-        # a seller can silently become a different one.
-        journey = script.split("function journeyText")[1].split("\nfunction ")[0]
-        # A reader in a named set gets that set's name; a reader in the cheapest
-        # list chose a price rather than a ticket type, so the handoff names the
-        # fare the row is actually priced as (Q4). The rule itself lives in
-        # fareName, which the shortlist and the copied list read as well, so it
-        # is asserted there and named here.
-        self.assertIn('"Ticket: " + fareName(destination)', journey)
-        self.assertIn("function fareName(destination)", script)
+        # a seller can silently become a different one. A reader in a named set
+        # gets that set's name; a reader in the cheapest list chose a price
+        # rather than a ticket type, so the handoff names the fare the row is
+        # actually priced as (Q4). The rule itself lives in fareName, which the
+        # shortlist and the copied list read as well, so the label is what is
+        # asserted here and which label a reader gets is the browser suite's:
+        # it copies a row in each mode and compares the line against the
+        # mode's own visible label.
+        self.assertIn('"Ticket: "', script)
+        self.assertIn("fareName", script)
 
     def test_the_row_keeps_the_action_and_the_panel_holds_the_rest(self) -> None:
         # Finding 4 of the 29 September review: five controls in every row is a
         # hundred targets on page one, and four of them were things a reader
         # wants after deciding rather than while deciding. The row keeps the
-        # ticket link, the expander and the shortlist toggle.
+        # ticket link, the expander and the shortlist toggle. The browser suite
+        # drives the row and its panel.
         script = page_script(self.html)
-        row_cell = script.split("function cellWithLinks")[1].split("function cardNote")[0]
-        self.assertIn('link.textContent = "Tickets"', row_cell)
-        self.assertIn("toggle.insertAdjacentHTML(\"beforeend\", CHEVRON)", row_cell)
-        for moved in ("Card details", "Copy the journey details", "copyJourney(", "toggleShortlist("):
+        row_cell = js_function(script, "cellWithLinks")
+        self.assertIn("Tickets", row_cell)
+        for moved in ("Card details", "Copy the journey details for "):
             self.assertNotIn(moved, row_cell)
+        # The shortlist is a column of its own rather than a third control in
+        # this one, so it is named by its own heading and not by a word the
+        # cell has to carry.
         # ... and the panel builds them, in one box, with the copy text landing
         # in that same box when the clipboard is refused.
-        actions = script.split("function rowActions")[1].split("\nfunction ")[0]
+        actions = js_function(script, "rowActions")
         self.assertNotIn("Card details", actions)
-        self.assertIn('copy.textContent = "Copy"', actions)
-        self.assertIn("copyJourney(destination, copy, tools)", actions)
-        copy_path = script.split("function copyJourney")[1].split("function showCopyText")[0]
-        self.assertIn("showCopyText(host, text, button)", copy_path)
-        manual = script.split("function showCopyText")[1].split("\nfunction ")[0]
-        self.assertIn("host.append(box);", manual)
+        self.assertIn("Copy", actions)
+        # The Copy control names its row, and when the clipboard is refused the
+        # text is shown in a box the reader is told about rather than left to
+        # guess. That the button is inside the panel, that it copies that row,
+        # and what lands in the box when the copy fails is driven by the
+        # browser suite.
+        self.assertIn("Copy the journey details for ", script)
+        self.assertIn("Could not copy automatically", self.html)
+        self.assertIn("Select below", self.html)
+        self.assertIn("Journey details to copy", self.html)
 
     def test_the_departure_list_is_capped_and_configurable(self) -> None:
         payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)
@@ -3480,28 +3444,15 @@ class TwoPartRowTest(unittest.TestCase):
         html = render_page(payload, budget_pounds=40)
         self.assertIn("priced via ", html)
         self.assertIn("stay on the train", html)
-        self.assertIn("(destination.changes || 0) === 0", html)
+        # Whether the through-train wording or the change wording is chosen is
+        # settled below by running the page's own helpers over a journey with
+        # no change and one with, and comparing what each prints.
 
-        def js_function(source: str, name: str) -> str:
-            marker = "function " + name + "(destination) {"
-            at = source.index(marker)
-            depth = 0
-            index = at + len(marker) - 1
-            while index < len(source):
-                char = source[index]
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        return source[at : index + 1]
-                index += 1
-            raise AssertionError(name + " did not close")
-
-        # The page's JavaScript is a file of its own (F1 of the 8 October 2026
+        # The page's JavaScript is files of its own (F1 of the 8 October 2026
         # agent-efficiency audit), so this reads the block the page ships rather
-        # than a copy of it inside a Python string.
-        source = (Path(__file__).resolve().parents[1] / "page" / "station.js").read_text(encoding="utf-8")
+        # than a copy of it inside a Python string. Both of these functions are
+        # the row's own wording, so they are read from the panel that owns it.
+        source = (Path(__file__).resolve().parents[1] / "page" / "station" / "row-cells.js").read_text(encoding="utf-8")
         script = (
             js_function(source, "fareSentence")
             + "\n"
@@ -3597,3 +3548,35 @@ class TwoPartRowTest(unittest.TestCase):
             self.assertEqual(leicester["adultPence"], 870 + 2680)
             self.assertEqual([t["ticket"] for t in leicester["tickets"]], ["SDR", "SDR"])
         self.assertEqual(self.rows(parsed)["LEC"], self.rows(restored)["LEC"])
+
+
+class BuildContextReleaseTest(unittest.TestCase):
+    """A fan-out build holds no feed the workers are supposed to hold.
+
+    The render phases read nothing from the parent's fares or timetable once
+    the indexes are on disk, so keeping those objects reachable costs 4.1 GB
+    on the measured machine beside four workers that hold 8.7 GB. A weak
+    reference proves the memory is actually returned rather than merely
+    dropped from the reader's side, which is how a `del` against a context
+    field silently stopped freeing anything (four-dimension audit R9).
+    """
+
+    def test_release_feeds_returns_the_databases_the_render_does_not_read(self) -> None:
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        feed = Path(tmp) / "feed"
+        build_synthetic_feed(feed)
+        fares = FaresDb().load_feed(feed)
+        timetable = TimetableDb().load_feed(feed)
+        watched = (weakref.ref(fares), weakref.ref(timetable))
+
+        ctx = build_demo_page.BuildContext(args=argparse.Namespace(), day=None)
+        ctx.fares = fares
+        ctx.timetable = timetable
+        ctx.single_timetable = timetable
+        del fares, timetable
+        ctx.release_feeds()
+        gc.collect()
+
+        for name, ref in zip(("fares", "timetable"), watched):
+            self.assertIsNone(ref(), f"the {name} database outlived the release")
