@@ -334,7 +334,8 @@ checked:
 
 | File | Purpose |
 |---|---|
-| `atoc_fares.py` | Fares feed parser, the budget query, and the publishable selector |
+| `atoc_fares.py` | The loaded fares database and the queries asked of it: the budget query, the publishable selector and the destination classification |
+| `atoc_fares_loader.py` | The fare feed reader and the classification sources, mixed into `FaresDb` |
 | `atoc_restrictions.py` | RSPS5045 `.RST` restriction parser and its publication gate |
 | `atoc_timetable.py` | CIF timetable parser, journey and reachability queries, and the per-origin slice a page is built from |
 | `grantham_sweep.py` | CLI: every destination in a budget, with journeys |
@@ -379,7 +380,7 @@ checked:
 | `tests/test_page_output.py` | The shared station asset, slug and route agreement, the release manifest, and the payload the page carries |
 | `tests/page_harness.py` | The page suite's shared fixture and helpers, imported by every `tests/test_page_*.py` module |
 | `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
-| `tests/browser_test.cjs` | Playwright test: drives the generated page in a real browser |
+| `tests/browser_test.cjs` | Playwright test entry point: drives the generated page in a real browser, over the modules in `tests/browser/` |
 | `tests/test_fare_shapes.py` | Route codes, shared station codes, and the skip tally |
 | `tests/test_damaged_feed.py` | Damaged-input tests |
 | `tests/test_sanity_report.py` | Count-report tests |
@@ -951,12 +952,11 @@ internal link resolves.
 **A public build carries a notice and somebody to contact.** A build whose
 prices come from a real feed (anything but the synthetic default) needs both a
 licence or attribution notice and somebody to contact, and it stops before
-writing a page if either is missing. The contact is the public issue tracker,
-held as `DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py` (ADR-0068), so a
-real-feed build works locally without an operator having to supply one and
-without printing an email address. Issue notifications have **not** been
-confirmed as monitored (see `docs/publish-checklist.md`), and either flag
-overrides the route:
+writing a page if either is missing. The contact is the project's own, held as
+`DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py`, so a real-feed build works
+locally without an operator having to supply one; it has **not** been confirmed
+as monitored or appropriate to publish (see `docs/publish-checklist.md` §1), and
+either flag overrides it:
 
 ```
 PRIVACY_CONTACT=privacy@example.org python build_demo_page.py \

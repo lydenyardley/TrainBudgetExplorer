@@ -405,9 +405,64 @@ holds each one.
 | F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
 | F4, the CI rebuild fingerprint was a hand-kept three-file list, written twice, and eight of the last 150 commits had changed only unlisted inputs | one script hashes every build input and both workflow steps call it | `tools/build_inputs.py`, held by `tools/test_build_inputs.py`, which fails on a transitively imported module that is not covered |
 | F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--fast` is the two feed-scale tests its docstring names, and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
-| F6, the two hot test files were the biggest in the repository | the Python half: the page suite's classes moved out by feature seam, unchanged, over the fixture in `tests/page_harness.py` | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; the same 32 classes and 327 tests as before the split. **Still open: `DemoPageTest` itself, 3,043 lines and 163 methods in one class, and the unsplit `tests/browser_test.cjs`** |
+| F6, the two hot test files were the biggest in the repository | the Python half moved out by feature seam over the fixture in `tests/page_harness.py`, and the JavaScript half was split on 11 October 2026 | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; and the browser suite is one module per route and section under `tests/browser/`, with `tests/browser_test.cjs` as the entry point. **Still open: `DemoPageTest` itself** (2,985 lines and 163 methods in one class) |
 | F7, fixture-versus-real-feed gaps recurred | the rule is in `AGENTS.md`: a real-feed defect fix adds the minimal synthetic record with the fixing commit named | the passing-stop record in `make_synthetic_feed.py`, held by a test in `tests/test_atoc_timetable.py` |
 | F8, measured figures lived in the README and were withdrawn rather than corrected | the README's measured section is a summary that links | `docs/build-performance-findings.md`, which holds "The whole network, measured" behind the README's link |
+
+### The 10 October 2026 test-suite audit
+
+`docs/audits/2026-10-10-test-suite-audit.md` was removed once its twelve
+recommendations landed; the commit that removed it is named at the foot of this
+file. Each finding is settled by the artifact that holds it, and the one that
+keeps the others done is named last.
+
+| Finding | Closed by | Held by |
+|---|---|---|
+| F1, the page's JavaScript was proved by quoting it: 154 statement needles over 52 methods, and a one-space edit inside a statement failed the Python suite while the browser suite passed 839/839 over the same page | the needles are gone. A statement the browser suite drives was deleted and left to that suite; one that stood for a fact no browser check drives was rewritten as the fact — an attribute, a rendered string, a payload key | the browser suite's own labels (the address, the fold, the budget, the shortlist, the ticket modes, the picker), which ran 839/839 over five pages |
+| F2, `fuzz_feed.check_timetable` had no caller and one of its two tests asserted the opposite of its name | the invariants are wired into `one_round()`, so a schedule that is not a journey fails the round that damaged it | `tests/test_fuzzed_feed.py`: the clean timetable passes, a one-stop schedule is a violation, and a round reports what the check finds |
+| F3, two tests asserted the slug rule audit finding A1 replaced, keeping a production function alive that only tests called | `station_slug` and both tests are deleted | the live rule at the boundary that owns it, `tests/test_page_output.py`'s slug-and-folder agreement |
+| F4, tests for a download path the command does not take | `download_specs`, `download_dtd` and `download_knowledgebase` are deleted; the one rule they alone carried — each feed is offered its own previous record — moved to a `--dtd all` case on the command itself | `CommandLineTest.test_each_feed_is_offered_its_own_previous_record` |
+| F5, a gate that failed on a correct checkout, because `page/*` was CRLF here and LF in CI | `.gitattributes` pins the page assets to LF and the working tree agrees with the blob | `tests/test_page_assets.py` all four, green on Windows |
+| F6, dead constants, one of them copied: `atoc_knowledgebase._normalise`, `tools/check_release_clearance.PRODUCT_ID`, `atoc_fares.DESTINATION_FACETS_BY_KEY` | `_normalise` and `BY_KEY` are deleted (the tests index the registry); `PRODUCT_ID` is now enforced by the tool that declares it | `tools/check_release_clearance.py` refuses a manifest row whose product id is not the declared format, and `tests/test_licences.py` imports that one definition |
+| F7, `test_atoc_fares.py` reached into load steps: 55 tests called a private method and 53 never loaded a feed | one coherent pass: 17 hand-built equivalents replaced by 19 feed-level cases over `load_feed()`, with the pure functions kept | `FeedBoundaryClassificationTest` in `tests/test_atoc_fares.py` |
+| F10, one JS fragment asserted in two files | the picker's shared-field wiring is asserted once, in `tests/test_page_output.py`; the completion itself is the browser suite's | the chooser's completion checks in `tests/browser/chooser.cjs` |
+| R11, encode the lesson rather than the list | the rule is a test, and it asks what a needle *is* rather than which punctuation it holds: a needle the page's script only holds inside a string, a template or a comment is copy, a bare name or dotted path is a payload key or a hook, and a needle with letters and real syntax that appears as code is the statement being quoted | `tests/test_test_suite_shape.py`'s `NoPageStatementNeedleTest`; over the committed `tests/test_build_demo_page.py` it reports 268, over the current one none |
+| R12, keep the browser suite as the owner of page behaviour and in the release gate | nothing to change: the suite is what the deploy workflow runs over five pages, and the coverage floor is the second net | `.github/workflows/deploy.yml` |
+
+The first version of R11's rule listed fourteen punctuation shapes that make a
+needle an implementation quote, and it reported 114 over that same file. The
+shape list was the defect: shortening a needle until the punctuation was gone
+was enough to pass it -- `var dark = true;` became `dark = true` -- and the
+audit's own work had already done that four times without noticing. The rule
+now reads the script's structure instead, which is what makes a hole like that
+impossible to open, and it finds 268 where the list found 114. Every one of
+the 154 the list missed was retired: replaced by a payload fact, a markup fact
+or the whole sentence a reader sees, or deleted where the browser suite already
+owns the claim, or moved into the browser suite where only a rendered page can
+answer it (`tests/browser/station-rows.cjs` reads the opened panel's `colSpan`
+against the table's own heading count).
+
+### The 10 October 2026 whole-app audit
+
+`docs/audits/2026-10-10-four-dimension-app-audit.md` is pruned to the one
+recommendation that is still open, and that one is a person's decision rather than
+work: whether the licence and attribution notices a build is given have to ride on
+the two routes that show no fares, or whether they travel with the pages that do
+(route audit items [20] and [21]). The other thirteen landed on 11 October 2026;
+each is held by the artifact named in that file's settled table, and the two
+audits agree: the route audit's items [3], [4], [6], [10], [16], [18] and [22]
+are closed by them.
+
+The structure work is worth naming here because it is what a later change lands
+in. `build_demo_page.main()` is 41 lines over five named phases
+(`load_inputs`, `_load_timetable`, `read_provenance`, `price_one_payload`,
+`release_gates`) with the two build shapes as `_build_all_origins` and
+`_build_single_origin`, and both shapes end in one `write_release()`.
+`build_payload()`'s builders are module-level functions over a `PageContext` and
+a `RulePool`. `page/station.js` became one file per panel under `page/station/`,
+and `tests/browser_test.cjs` became one module per route and section under
+`tests/browser/`. `FaresDb` keeps its state and its queries, and the loader it
+used to hold beside them is `atoc_fares_loader.FaresLoader`, mixed in.
 
 ### The measurements three ADRs lean on
 
@@ -488,3 +543,7 @@ above. `git show <commit>` reads one back.
   the gap it found was closed, and deliberately not reopened here.
 - `docs/audits/2026-09-23-poteto-mode-audit.md` — retired in `1ce8741`, before
   this file existed.
+- `docs/audits/2026-10-10-test-suite-audit.md` — the whole-suite audit. Its
+  twelve recommendations are settled in the table above; the one that keeps the
+  first one done is the statement-needle rule in
+  `tests/test_test_suite_shape.py`.
