@@ -1,0 +1,9 @@
+# Line endings this repository ships. The page's assets are inlined into every
+# page of a release, and `_page_file` reads them with their CRLF normalised,
+# so a CRLF checkout cannot change a page's bytes (tests/test_page_assets.py).
+# The eol=lf rule keeps the working tree and the blob the same file, so
+# `test_no_asset_carries_a_carriage_return` -- a claim about the bytes the
+# asset holds -- is true on a Windows checkout as it is in CI.
+/.gitattributes text eol=lf
+page/*.css text eol=lf
+page/*.js text eol=lf

@@ -12,6 +12,7 @@ import json
 import pickle
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 
 import atoc_fares
@@ -24,16 +25,17 @@ from atoc_fares import (
     SEASIDE_SUPPLEMENT_CRS,
     seaside_crs_missing_coastal_proofs,
     DESTINATION_FACET_SOURCES,
-    DESTINATION_FACETS_BY_KEY,
     DESTINATION_FACET_READERS,
     DESTINATION_TYPE_FILTERS,
     HERITAGE_PROPERTIES,
     HERITAGE_SITE_POINTS,
     NATIONAL_PARK_GATEWAYS,
     NATIONAL_TRUST_PROPERTIES,
+    ONS_BUILT_UP_AREAS_FILE_URL,
     REVIEWED_ATTRACTIONS_BY_FACET,
     RSPB_RESERVES,
     ReviewedAttraction,
+    LOCATION,
     LOCATION_BAND_TYPES,
     LOCATION_CACHE_SCHEMA,
     LOCATION_FALLBACK_SOURCE,
@@ -63,6 +65,15 @@ from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
 from atoc_restrictions import RESTRICTION_LAYOUTS
 
 
+def facet(key: str):
+    """One sourced destination facet, read out of the registry by its key.
+
+    The registry is the one place a facet is added, so a test looks a facet up
+    by scanning it rather than by holding a second index beside it.
+    """
+    return next(f for f in DESTINATION_FACET_SOURCES if f.key == key)
+
+
 def _restriction_header(code: str, description: str, outward: str) -> str:
     """One real ``RH`` record, written through the layout the parser reads."""
     return _line(
@@ -79,6 +90,80 @@ def _restriction_header(code: str, description: str, outward: str) -> str:
         },
         RESTRICTION_LAYOUTS["RH"],
     )
+
+
+def _feed_with_stations(root: Path, *stations: tuple[str, str]) -> Path:
+    """A synthetic feed that also carries stations the fixture does not name.
+
+    A reviewed list is intersected with the stations the feed contains, so a
+    fallback or a facet can only be proved at the fixture boundary if the feed
+    carries the station: the fixture's own GRN..XFD is in no reviewed list but
+    London King's Cross, and its own classification file answers that one
+    whether or not the fallback does.
+    """
+    feed = build_synthetic_feed(Path(root) / "fares", include_unserved_station=True)
+    if stations:
+        (feed / "rjfaf-extra.loc").write_text(
+            "\n".join(
+                _line(
+                    {
+                        "update_marker": "A",
+                        "record_type": "L",
+                        "nlc": f"{9000 + index}",
+                        "description": name,
+                        "crs": crs,
+                    },
+                    LOCATION,
+                )
+                for index, (crs, name) in enumerate(stations)
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return feed
+
+
+def _first_build(root: Path, *stations: tuple[str, str]) -> Path:
+    """A feed whose classification cache has not been written yet.
+
+    ``build_synthetic_feed`` writes one beside every feed it builds, and a load
+    answers from that cache before it opens a source, so a test about the
+    sources a first build reads has to take it out of the way. The manifest is
+    what makes the load treat the folder as a download and read the workbook.
+    """
+    feed = _feed_with_stations(root, *stations)
+    (Path(root) / "fares.location-types.json").unlink()
+    (Path(root) / "download-manifest.json").write_text("{}", encoding="utf-8")
+    return feed
+
+
+def _ons_workbook(rows: tuple[tuple[str, str], ...]) -> bytes:
+    """The ONS built-up-area workbook as its reader sees it: F the settlement, G its band."""
+    sheet = [
+        '<?xml version="1.0"?>',
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        "<sheetData>",
+    ]
+    for number, (settlement, band) in enumerate(rows, start=1):
+        sheet.append(
+            f'<row r="{number}"><c r="F{number}"><v>{settlement}</v></c>'
+            f'<c r="G{number}"><v>{band}</v></c></row>'
+        )
+    sheet.append("</sheetData></worksheet>")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", "".join(sheet))
+    return buffer.getvalue()
+
+
+def _only_source(url: str, body: bytes):
+    """Answer one classification source, and refuse the rest as an offline build."""
+    def answer(request, timeout=0):
+        if request.full_url == url:
+            return io.BytesIO(body)
+        raise OSError("offline")
+
+    return answer
 
 
 class PseudoStationTest(unittest.TestCase):
@@ -223,42 +308,6 @@ class FaresParserTest(unittest.TestCase):
         )
         self.assertEqual(db.heritage_sites("NOT"), [])
 
-    def test_facets_from_several_files_are_merged_not_replaced(self) -> None:
-        # The checked-in reference data, a cache beside the feed and the feed's
-        # own lookup can all name the same station. Replacing made the answer
-        # depend on the order the files were read in, and let a stale cache
-        # drop a facet the checked-in file knew about.
-        db = FaresDb()
-        db._merge_location_facets("LCN", ["seaside"])
-        db._merge_location_facets("LCN", ["university"])
-        db._merge_location_facets("LCN", ["island", "nonsense"])
-        self.assertEqual(db.location_facets_by_crs["LCN"], {"island", "seaside", "university"})
-        db._merge_location_facets("  lcn ", "university")
-        self.assertEqual(db.location_facets_by_crs["LCN"], {"island", "seaside", "university"})
-        self.assertNotIn("lcn", db.location_facets_by_crs)
-
-    def test_major_london_and_non_england_wales_stations_have_a_fallback(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "KGX": Location("1000", "KGX", "LONDON KINGS X", ""),
-            "ECR": Location("2000", "ECR", "EAST CROYDON", ""),
-            "MAN": Location("3000", "MAN", "MANCHESTER PIC", ""),
-            "GLC": Location("4000", "GLC", "GLASGOW CENTRAL", ""),
-            "CDD": Location("5000", "CDD", "CARDENDEN", ""),
-        }
-        db._apply_major_station_fallbacks()
-        self.assertEqual(db.destination_type("KGX"), "city")
-        self.assertEqual(db.destination_type("ECR"), "city")
-        self.assertEqual(db.destination_type("MAN"), "city")
-        self.assertEqual(db.destination_type("GLC"), "city")
-        # CDD is Cardenden, not Cardiff Central: the feed's own name for the
-        # code. The fixture used to invent CARDIFF CENTRAL under CDD, which
-        # made the test assert a city for a station that is not one, and hid
-        # the same slip in the reviewed list. A fixture that contradicts the
-        # feed cannot catch a list entry that does.
-        self.assertEqual(db.destination_type("CDD"), "town")
-        self.assertIn("London", db.location_type_source or "")
-
     def test_the_size_bands_name_what_they_are(self) -> None:
         # The ONS bands are population classes, and collapsing the two smallest
         # into one "town" is what left villages filed as "other". The "other"
@@ -275,35 +324,6 @@ class FaresParserTest(unittest.TestCase):
         )
         self.assertNotIn("other", [key for key, _ in DESTINATION_TYPE_FILTERS])
         self.assertNotIn("No settlement band", [label for _, label in DESTINATION_TYPE_FILTERS])
-
-    def test_a_major_city_is_not_filed_as_other(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "NCL": Location("1", "NCL", "NEWCASTLE", ""),
-            "EDL": Location("2", "EDL", "EDALE", ""),
-        }
-        db._apply_major_station_fallbacks()
-        self.assertEqual(db.destination_type("NCL"), "city")
-        self.assertEqual(db.destination_type("EDL"), "village")
-        self.assertNotIn("other", db.destination_types("NCL"))
-        self.assertNotIn("other", db.destination_types("EDL"))
-
-    def test_attenborough_is_a_village_and_a_nature_site(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {"ATB": Location("1", "ATB", "ATTENBOROUGH", "")}
-        db._apply_major_station_fallbacks()
-        db._apply_reviewed_facets()
-        self.assertEqual(db.destination_type("ATB"), "village")
-        self.assertIn("nature", db.destination_types("ATB"))
-        self.assertNotIn("other", db.destination_types("ATB"))
-        self.assertEqual(
-            db.nature_sites("ATB"),
-            [{
-                "name": "Attenborough Nature Reserve",
-                "url": "https://www.nottinghamshirewildlife.org/attenborough-plan-your-visit",
-            }],
-        )
-        self.assertEqual(db.nature_sites("NOT"), [])
 
     def test_coastal_site_proof_requires_the_seaside_facet(self) -> None:
         db = FaresDb()
@@ -326,19 +346,6 @@ class FaresParserTest(unittest.TestCase):
             seaside_crs_missing_coastal_proofs(db.location_facets_by_crs),
             ["LCN"],
         )
-
-    def test_seaside_supplement_tags_classic_day_out_stations(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "BTN": Location("1", "BTN", "BRIGHTON", ""),
-            "BPN": Location("2", "BPN", "BLACKPOOL NORTH", ""),
-            "WSM": Location("3", "WSM", "WESTON SUPR MARE", ""),
-            "SOC": Location("4", "SOC", "SOUTHEND CENTRAL", ""),
-        }
-        db._apply_reviewed_facets()
-        for crs in ("BTN", "BPN", "WSM", "SOC"):
-            self.assertIn("seaside", db.location_facets_by_crs.get(crs, set()), crs)
-            self.assertTrue(db.coastal_sites(crs), crs)
 
     def test_every_seaside_tagged_crs_in_the_cache_has_a_coastal_proof(self) -> None:
         # Chip implies named subline: ONS seaside set + supplements ⊆ proofs.
@@ -373,37 +380,6 @@ class FaresParserTest(unittest.TestCase):
         db.location_facets_by_crs = {"TEN": set()}
         self.assertEqual(db.coastal_sites("TEN"), [])
 
-    def test_an_airport_station_is_in_the_airport_category(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {"XQB": Location("1", "XQB", "EAST M AIR LGE", "")}
-        db._apply_major_station_fallbacks()
-        db._apply_reviewed_facets()
-        self.assertIn("airport", db.destination_types("XQB"))
-        self.assertIn("airport", SUPPORTED_DESTINATION_FACETS)
-        self.assertIn(("airport", "Airports"), DESTINATION_TYPE_FILTERS)
-        # The airport is its own category, and the settlement it serves is
-        # still classified, so the row is not left as the unsourced remainder.
-        self.assertEqual(db.destination_type("XQB"), "village")
-        self.assertNotIn("other", db.destination_types("XQB"))
-
-    def test_a_station_settlement_band_becomes_a_village_not_other(self) -> None:
-        db = FaresDb()
-        db._read_ons_built_up_areas = lambda data: {  # type: ignore[method-assign]
-            "ANCASTER": {"name": "Ancaster", "type": "village", "band": "minor"},
-            "BOTTESFORD": {"name": "Bottesford", "type": "village", "band": "minor"},
-            "RETFORD": {"name": "Retford", "type": "town", "band": "medium"},
-        }
-        db.locations_by_crs = {
-            "ANC": Location("1", "ANC", "ANCASTER", ""),
-            "BTF": Location("2", "BTF", "BOTTESFORD", ""),
-            "RET": Location("3", "RET", "RETFORD", ""),
-        }
-        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
-            db._load_ons_location_types()
-        self.assertEqual(db.destination_type("ANC"), "village")
-        self.assertEqual(db.destination_type("BTF"), "village")
-        self.assertEqual(db.destination_type("RET"), "town")
-
     def test_a_bracketed_county_does_not_hide_a_settlement(self) -> None:
         db = FaresDb()
         self.assertEqual(db._settlement_name_candidates("Ascot (Berks)"), ["ASCOTBERKS", "ASCOT"])
@@ -427,8 +403,9 @@ class FaresParserTest(unittest.TestCase):
     def test_a_workbook_district_does_not_hide_a_settlement(self) -> None:
         # The workbook writes "Foxton (South Cambridgeshire)"; the station is
         # FOXTON, and the two sides have to normalise the same way. On the real
-        # feed this gap alone left 43 priced destinations unclassified.
-        db = FaresDb()
+        # feed this gap alone left 43 priced destinations unclassified. Keying
+        # the workbook is a pure function of its rows, so it is stated here;
+        # the station it has to reach is now proved at the feed boundary.
         bands = FaresDb._key_settlements(
             [
                 ("Foxton (South Cambridgeshire)", "minor"),
@@ -437,18 +414,14 @@ class FaresParserTest(unittest.TestCase):
         )
         self.assertEqual(bands["FOXTON"]["type"], "village")
         self.assertEqual(bands["NESTON"]["type"], "small_town")
-        db._read_ons_built_up_areas = lambda data: bands  # type: ignore[method-assign]
-        db.locations_by_crs = {"FXN": Location("1", "FXN", "FOXTON", "")}
-        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
-            db._load_ons_location_types()
-        self.assertEqual(db.destination_type("FXN"), "village")
 
     def test_two_settlements_of_one_name_are_refused_not_guessed(self) -> None:
         # Bucknell (Cherwell) and Bucknell (Shropshire) are different places
         # with the same name; a station called BUCKNELL cannot be told which one
         # it serves from its name, so it keeps the coverage report rather than
-        # taking a class that may belong to the other.
-        db = FaresDb()
+        # taking a class that may belong to the other. Keying the workbook is a
+        # pure function of its rows, so it is stated here; the station left
+        # unclassified is now proved at the feed boundary.
         same = FaresDb._key_settlements(
             [("Bucknell (Cherwell)", "minor"), ("Bucknell (Shropshire)", "minor")]
         )
@@ -457,11 +430,6 @@ class FaresParserTest(unittest.TestCase):
             [("Wick (Hackney)", "large"), ("Wick (Highland)", "small")]
         )
         self.assertIsNone(different["WICK"]["type"])
-        db._read_ons_built_up_areas = lambda data: different  # type: ignore[method-assign]
-        db.locations_by_crs = {"WCK": Location("1", "WCK", "WICK", "")}
-        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
-            db._load_ons_location_types()
-        self.assertEqual(db.destination_type("WCK"), "other")
 
     def test_a_station_qualifier_is_not_dropped_to_find_a_class(self) -> None:
         # Tried and dropped: stripping a trailing qualifier matched London
@@ -531,127 +499,6 @@ class FaresParserTest(unittest.TestCase):
             "a cache this build wrote must survive its own next load",
         )
 
-    def test_a_cache_written_before_the_day_out_sources_still_earns_them(self) -> None:
-        # ADR-0065: the three reviewed day-out lists shipped *without* a cache
-        # schema bump, and the reason has to keep holding. A cache written by
-        # the previous release is the current schema with no rspb /
-        # national_trust / national_park chip anywhere on it; the reviewed pass
-        # runs after the cache is read and tags additively, so those chips
-        # appear anyway. If that pass were ever moved before the cache load, or
-        # made to respect a cached facet list as final, a build on a warm cache
-        # would silently lose three chips until the schema was bumped.
-        db = FaresDb()
-        db.locations_by_crs = {
-            "PFL": Location("1", "PFL", "PURFLEET", ""),
-            "ANC": Location("2", "ANC", "ANCASTER", ""),
-        }
-        db._load_location_types_json(
-            {
-                "schema": LOCATION_CACHE_SCHEMA,
-                "source": "a build from before the day-out sources",
-                "records": {
-                    "PFL": {"primary": "other", "facets": []},
-                    "ANC": {"primary": "village", "facets": []},
-                },
-            }
-        )
-        self.assertEqual(db.location_facets_by_crs.get("PFL", set()), set())
-        db._apply_reviewed_facets()
-        self.assertIn("rspb", db.destination_types("PFL"))
-        self.assertEqual(db.rspb_sites("PFL")[0]["name"], "Rainham Marshes")
-        # A warm cache is not a stale-cache note: nothing was discarded.
-        self.assertEqual(
-            [note for note in db.report.skipped_files if "schema" in note], []
-        )
-
-    def test_a_discard_does_not_cost_a_later_source_its_label(self) -> None:
-        # The flag that records a discard is sticky, and it must not be
-        # consulted for every candidate after the one that discarded: a file
-        # that classifies the feed properly is loaded after a stale cache in
-        # every real layout, and clearing its label left the build claiming no
-        # source at all for classes a source had just supplied. ANC and RET are
-        # in no reviewed list, so nothing else can label this build.
-        with tempfile.TemporaryDirectory() as tmp:
-            feed = Path(tmp) / "fares"
-            feed.mkdir()
-            (feed / "stale.location-types.json").write_text(
-                json.dumps(
-                    {
-                        "schema": LOCATION_CACHE_SCHEMA - 1,
-                        "source": "an older build",
-                        "records": {"ANC": {"primary": "other"}, "RET": {"primary": "other"}},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (Path(tmp) / f"sourced.{DESTINATION_FACETS_FILE}").write_text(
-                json.dumps(
-                    {
-                        "schema": LOCATION_CACHE_SCHEMA,
-                        "source": "a sourced workbook",
-                        "records": {
-                            "ANC": {"primary": "village"},
-                            "RET": {"primary": "town"},
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            db = FaresDb()
-            db.locations_by_crs = {
-                "ANC": Location("1", "ANC", "ANCASTER", ""),
-                "RET": Location("2", "RET", "RETFORD", ""),
-            }
-            db._load_location_lookup(feed)
-        self.assertEqual(db.destination_type("ANC"), "village")
-        self.assertEqual(db.destination_type("RET"), "town")
-        # The label names the file that classified the feed, and the discarded
-        # cache's own claim is not in it: a label is recorded when a file's
-        # classes are kept, and dropped with the classes when they are not. The
-        # two wrong answers this replaces were an empty label, which claims
-        # nothing classified the feed, and the fallback label, which claims the
-        # reviewed lists did it when ANC and RET are in no reviewed list.
-        self.assertEqual(db.location_type_source, "a sourced workbook")
-        self.assertNotIn("an older build", db.location_type_sources)
-
-    def test_a_discarded_cache_does_not_stop_the_workbook_being_read(self) -> None:
-        # The whole classification pass, because a discarded file must not leave
-        # the build looking as though it already has a source: the classes are
-        # gone and the file's label is gone with them, so the workbook is what
-        # fills the gap. When the label stood, the pass returned early and every
-        # station the cache had classified fell through to the reviewed
-        # fallbacks -- 3,119 of 3,436 on the 24 September 2026 download. ANC is
-        # in no reviewed list, so "village" below can only have come from the
-        # workbook.
-        with tempfile.TemporaryDirectory() as tmp:
-            feeds = Path(tmp) / "feeds"
-            (feeds / "fares").mkdir(parents=True)
-            (feeds / "download-manifest.json").write_text("{}", encoding="utf-8")
-            (feeds / "location-types.json").write_text(
-                json.dumps(
-                    {
-                        "schema": LOCATION_CACHE_SCHEMA - 1,
-                        "source": "reviewed synthetic station types",
-                        "records": {"ANC": {"primary": "other", "facets": ["seaside"]}},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            db = FaresDb()
-            db._read_ons_built_up_areas = lambda data: {  # type: ignore[method-assign]
-                "ANCASTER": {"name": "Ancaster", "type": "village", "band": "minor"},
-            }
-            db.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
-            with mock.patch.object(
-                atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")
-            ):
-                db._load_location_lookup(feeds / "fares")
-        self.assertEqual(db.destination_type("ANC"), "village")
-        self.assertEqual(db.location_facets_by_crs["ANC"], {"seaside"})
-        # The build names the workbook, not the cache whose classes it threw
-        # away: that label is what the page's provenance line claims.
-        self.assertEqual(db.location_type_source, LOCATION_TYPE_SOURCE)
-
     def test_a_label_from_an_older_fare_index_cache_is_still_reported(self) -> None:
         # A fare-index pickle written before the labels were accumulated holds
         # one label and no list, and unpickling sets the instance dictionary
@@ -697,156 +544,6 @@ class FaresParserTest(unittest.TestCase):
                 ],
             )
 
-    def test_only_the_classification_files_this_project_writes_are_read(self) -> None:
-        # A file beside a feed whose name merely mentioned locations and types
-        # used to be loaded as a source, so a backup, a scratch probe or a
-        # staging copy of the cache was trusted exactly as much as the cache.
-        # The same bytes are read under a name this project writes and ignored
-        # under one it does not.
-        with tempfile.TemporaryDirectory() as tmp:
-            feed = Path(tmp) / "fares"
-            feed.mkdir()
-            lookalike = Path(tmp) / "location-types-notes.json"
-            lookalike.write_text(
-                json.dumps(
-                    {
-                        "schema": LOCATION_CACHE_SCHEMA,
-                        "source": "a scratch probe",
-                        "records": {"ANC": {"primary": "town"}},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            db = FaresDb()
-            db.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
-            with mock.patch.object(
-                atoc_fares.urllib.request, "urlopen", side_effect=OSError("offline")
-            ):
-                db._load_location_lookup(feed)
-                self.assertNotIn("ANC", db.location_types_by_crs)
-                self.assertIsNone(db.location_type_source)
-
-                (Path(tmp) / f"notes{LOCATION_TYPES_FILE}").write_text(
-                    lookalike.read_text(encoding="utf-8"), encoding="utf-8"
-                )
-                fresh = FaresDb()
-                fresh.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
-                fresh._load_location_lookup(feed)
-                self.assertNotIn(
-                    "ANC",
-                    fresh.location_types_by_crs,
-                    "a name glued onto the prefix is not a name this project writes",
-                )
-
-                lookalike.rename(Path(tmp) / f"probe.{LOCATION_TYPES_FILE}")
-                fresh = FaresDb()
-                fresh.locations_by_crs = {"ANC": Location("1", "ANC", "ANCASTER", "")}
-                fresh._load_location_lookup(feed)
-        self.assertEqual(fresh.destination_type("ANC"), "town")
-        self.assertEqual(fresh.location_type_source, "a scratch probe")
-
-    def test_a_build_names_every_source_that_classified_the_feed(self) -> None:
-        # The page's provenance line is where a reader learns where a
-        # destination's type comes from. London is classified by the reviewed
-        # list before the workbook is read at all, and the build used to publish
-        # that class as the workbook's own work -- so a build with both names
-        # both, and the reviewed floor is named last.
-        with tempfile.TemporaryDirectory() as tmp:
-            feeds = Path(tmp) / "feeds"
-            (feeds / "fares").mkdir(parents=True)
-            (feeds / "download-manifest.json").write_text("{}", encoding="utf-8")
-            db = FaresDb()
-            db._read_ons_built_up_areas = lambda data: {  # type: ignore[method-assign]
-                "ANCASTER": {"name": "Ancaster", "type": "village", "band": "minor"},
-            }
-            db.locations_by_crs = {
-                "KGX": Location("1", "KGX", "LONDON KINGS X", ""),
-                "ANC": Location("2", "ANC", "ANCASTER", ""),
-            }
-            with mock.patch.object(
-                atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")
-            ):
-                db._load_location_lookup(feeds / "fares")
-            written = json.loads((feeds / LOCATION_TYPES_FILE).read_text(encoding="utf-8"))
-        # The reviewed list classified London on its own, and the workbook was
-        # still read for the rest of the country: a build whose only classes are
-        # the reviewed fallbacks has to read it, or a first build would never
-        # classify anything outside them.
-        self.assertEqual(db.destination_type("KGX"), "city")
-        self.assertEqual(db.destination_type("ANC"), "village")
-        self.assertEqual(
-            db.location_type_sources, [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
-        )
-        self.assertEqual(
-            db.location_type_source,
-            LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE,
-        )
-        # Written back with both, so the next build names both without reading
-        # the workbook again. The list keeps the order the labels were loaded
-        # in; the string beside it is the page's reading order.
-        self.assertEqual(
-            written["provenance"], [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
-        )
-        self.assertEqual(
-            written["source"], LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE
-        )
-
-    def test_a_reviewed_fallback_the_workbook_already_names_is_reported(self) -> None:
-        # A reviewed entry for a station the workbook names is not an error
-        # today: the class is never applied, so nothing looks wrong. It becomes
-        # one the day a name match misses, and the reviewed class then lands on
-        # a station the workbook had classified correctly -- York was filed as a
-        # town beside a workbook that says city. Both halves matter: the code is
-        # named, and the workbook still wins while it is there.
-        def workbook() -> dict:
-            return {"YORK": {"name": "York", "type": "city", "band": "large"}}
-
-        db = FaresDb()
-        db._read_ons_built_up_areas = lambda data: workbook()  # type: ignore[method-assign]
-        db.locations_by_crs = {"YRK": Location("1", "YRK", "YORK", "")}
-        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(b"xlsx")):
-            db._load_ons_location_types()
-        db._apply_major_station_fallbacks()
-        self.assertIn("YRK", db.ons_classified_crs)
-        self.assertNotIn("YRK", db.report.reviewed_codes_redundant, "the list no longer names York")
-        self.assertEqual(db.destination_type("YRK"), "city")
-        # Put the entry back and it is named as redundant on the next pass.
-        with mock.patch.dict(atoc_fares.MAJOR_UK_STATION_FALLBACKS, {"YRK": "town"}):
-            db._apply_major_station_fallbacks()
-            self.assertIn("YRK", db.report.reviewed_codes_redundant)
-            self.assertEqual(db.destination_type("YRK"), "city", "the workbook's class still wins")
-            # Named once, because the pass runs again as each source lands and
-            # a note per pass would say the same thing three times.
-            recorded = list(db.report.reviewed_codes_redundant)
-            db._apply_major_station_fallbacks()
-            self.assertEqual(db.report.reviewed_codes_redundant, recorded)
-
-    def test_a_reviewed_code_the_feed_does_not_carry_is_named(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "GRN": Location("1", "GRN", "GRINDELFORD", ""),
-            "GRA": Location("2", "GRA", "GRANTHAM", ""),
-            "BHC": Location("3", "BHC", "BALLOCH CENTRAL", ""),
-        }
-        db._apply_major_station_fallbacks()
-        absent = db.report.reviewed_codes_absent
-        self.assertTrue(absent, "the dead codes are named")
-        # The lists are still intersected before they are applied, so the
-        # record is the only effect a dead code has. It is not a skipped file:
-        # nothing went unread, a reviewed list is naming a station the feed
-        # does not carry.
-        self.assertNotIn("ABD", db.location_types_by_crs)
-        self.assertEqual(db.report.skipped_files, [])
-        # A reviewed code the feed does carry is applied, and is not named as
-        # absent: the record is about the feed, not about the list.
-        self.assertEqual(db.destination_type("BHC"), "village")
-        self.assertNotIn("BHC", absent)
-        self.assertIn("ABD", absent)
-        # Re-running the pass must not restate it: the classification pass runs
-        # again as each source lands.
-        db._apply_major_station_fallbacks()
-        self.assertEqual(db.report.reviewed_codes_absent, absent)
-
     def test_every_london_code_is_one_the_feed_carries(self) -> None:
         # The seven Underground codes that had lost their leading Z, which made
         # them name no station at all. A reviewed list is only as good as this.
@@ -856,6 +553,11 @@ class FaresParserTest(unittest.TestCase):
             self.assertNotIn(dropped, LONDON_STATION_CRS)
 
     def test_the_heritage_reader_only_uses_current_uk_properties(self) -> None:
+        # The curated list is checked against UNESCO's own XML on every read, so
+        # a delisted property stops contributing and a curated station name that
+        # no longer names anything is reported. Loaded through a feed, the
+        # checked-in reference data has already tagged these same stations, so
+        # the reader's own answer can only be read off the step itself.
         body = (
             '<?xml version="1.0"?><query>'
             "<row><id_number>428</id_number><states>United Kingdom of Great Britain "
@@ -875,7 +577,7 @@ class FaresParserTest(unittest.TestCase):
         with mock.patch.object(
             atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
         ):
-            db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["heritage"])
+            db._apply_destination_facet(facet("heritage"))
         self.assertEqual(db.location_facets_by_crs["BTH"], {"heritage"})
         # Bathgate is a different place that merely starts with the same word.
         self.assertNotIn("BGX", db.location_facets_by_crs)
@@ -981,26 +683,6 @@ class FaresParserTest(unittest.TestCase):
         self.assertIn("Chester-le-Street", hadrian_stations)
         self.assertNotIn("Chester", hadrian_stations)
 
-    def test_a_coach_or_parkway_station_is_a_transport_interchange(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "XDO": Location("1", "XDO", "BATH BUS STATION", ""),
-            "TIN": Location("2", "TIN", "MAGNA TRAM STOP", ""),
-            "TPC": Location("3", "TPC", "THORPE CULVERT", ""),
-            "BUS": Location("4", "BUS", "BUSBY", ""),
-            "ATB": Location("5", "ATB", "ATTENBOROUGH", ""),
-        }
-        db._apply_reviewed_facets()
-        self.assertIn("transport", db.destination_types("XDO"))
-        self.assertIn("transport", db.destination_types("TIN"))
-        # A park and ride named after the village it serves carries no marker,
-        # so the code list has to reach it.
-        self.assertIn("transport", db.destination_types("TPC"))
-        # BUSBY is a village whose name merely contains the marker.
-        self.assertNotIn("transport", db.destination_types("BUS"))
-        self.assertNotIn("transport", db.destination_types("ATB"))
-        self.assertIn(("transport", "Transport interchanges"), DESTINATION_TYPE_FILTERS)
-
     def test_the_three_backlog_sources_are_facets_with_reviewed_lists(self) -> None:
         # ADR-0062: RSPB, National Trust and National Park / Landscape gateways
         # each ship as one facet and one reviewed list, never as a raw dump.
@@ -1010,12 +692,12 @@ class FaresParserTest(unittest.TestCase):
             "national_park": NATIONAL_PARK_GATEWAYS,
         }
         for key, attractions in expected.items():
-            facet = DESTINATION_FACETS_BY_KEY[key]
+            one = facet(key)
             self.assertIn(key, SUPPORTED_DESTINATION_FACETS)
-            self.assertIn((key, facet.label), DESTINATION_TYPE_FILTERS)
-            self.assertTrue(facet.url.startswith("http"), key)
-            self.assertIn("reviewed", facet.source.lower(), key)
-            self.assertEqual(facet.reviewed_attractions, attractions, key)
+            self.assertIn((key, one.label), DESTINATION_TYPE_FILTERS)
+            self.assertTrue(one.url.startswith("http"), key)
+            self.assertIn("reviewed", one.source.lower(), key)
+            self.assertEqual(one.reviewed_attractions, attractions, key)
             self.assertTrue(attractions, key)
             for attraction in attractions:
                 self.assertTrue(attraction.name.strip(), key)
@@ -1064,39 +746,15 @@ class FaresParserTest(unittest.TestCase):
         db._station_coordinates = {}
         self.assertEqual(db._pruned_attraction_crs(attraction), ["PFL"])
 
-    def test_a_reviewed_attraction_tags_its_station_and_names_the_proof(self) -> None:
-        # Chip implies a named proof (ADR-0064), extended to the ADR-0062
-        # sources: the station carries the facet and the reserve by name.
-        db = FaresDb()
-        db.locations_by_crs = {
-            "PFL": Location("1", "PFL", "PURFLEET", ""),
-            "BEM": Location("2", "BEM", "BEMPTON", ""),
-            "NOT": Location("3", "NOT", "NOTTINGHAM", ""),
-        }
-        db._station_coordinates = {
-            "PFL": (51.4810161506, 0.2367813953),
-            "BEM": (54.1440, -0.1730),
-        }
-        db._apply_reviewed_facets()
-        self.assertIn("rspb", db.destination_types("PFL"))
-        self.assertIn("rspb", db.destination_types("BEM"))
-        self.assertNotIn("NOT", db.location_facets_by_crs)
-        self.assertEqual(
-            db.rspb_sites("PFL"),
-            [{
-                "name": "Rainham Marshes",
-                "url": "https://www.rspb.org.uk/nature-reserves/rainham-marshes/",
-            }],
-        )
-        # A station the facet did not tag carries no proof for it.
-        self.assertEqual(db.rspb_sites("NOT"), [])
-
     def test_a_day_out_list_survives_a_pass_made_before_the_stations_were_known(self) -> None:
         # The loader applies the reviewed facets twice, and the first pass can
         # run before any classification file has named a station. The prune's
         # answer is a fact about the station set, so a first pass that cached it
         # as "no candidates" would leave the second pass, after the ONS read,
-        # tagging nothing at all.
+        # tagging nothing at all. A feed load cannot produce that state: it
+        # reads every station out of the feed before it looks anything up, so
+        # this is the one place the pass can be driven with an empty station
+        # set and the hand-built state is the only way to hold the rule.
         db = FaresDb()
         db._station_coordinates = {"PFL": (51.4810, 0.2368)}
         db._apply_reviewed_facets()
@@ -1148,17 +806,25 @@ class FaresParserTest(unittest.TestCase):
         )
 
     def test_a_facet_with_no_registered_reader_is_reported_not_raised_as_keyerror(self) -> None:
+        # A facet is added by writing one registry entry, and a reader that is
+        # not registered is a defect in that entry rather than a state a feed can
+        # be in -- the registry test above asserts every facet's reader is
+        # registered. The guard is what turns the defect into a reported source
+        # instead of a dead build, so it is stated against the step.
         db = FaresDb()
-        broken = dataclasses.replace(DESTINATION_FACETS_BY_KEY["seaside"], reader="not_a_reader")
+        broken = dataclasses.replace(facet("seaside"), reader="not_a_reader")
         with self.assertRaises(ValueError):
             db._apply_destination_facet(broken)
 
     def test_a_facet_source_with_no_readable_settlements_is_reported(self) -> None:
+        # A source that names no settlements must not tag nothing in silence. The
+        # only way to reach the guard is a reader that returns nothing, which a
+        # feed load discovers by opening a file rather than by building one.
         db = FaresDb()
         db.locations_by_crs = {"NOT": Location("1", "NOT", "NOTTINGHAM", "")}
         db._read_ons_coastal_facet = lambda: set()  # type: ignore[method-assign]
         with self.assertRaises(ValueError):
-            db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["seaside"])
+            db._apply_destination_facet(facet("seaside"))
         self.assertEqual(db.location_facets_by_crs, {})
 
     def test_learning_provider_reader_reads_the_town_column_by_name(self) -> None:
@@ -1181,6 +847,10 @@ class FaresParserTest(unittest.TestCase):
                 db._read_learning_provider_facet()
 
     def test_a_facet_source_applies_by_settlement_name(self) -> None:
+        # A facet sources its settlements from elsewhere and matches them
+        # against the station names the feed carries. The checked-in reference
+        # data already carries the answer for these stations on any feed load,
+        # so the reader's own answer is read off the step here.
         db = FaresDb()
         db.locations_by_crs = {
             "OXF": Location("1", "OXF", "OXFORD", ""),
@@ -1188,23 +858,10 @@ class FaresParserTest(unittest.TestCase):
             "NWE": Location("3", "NWE", "NEWPORT", ""),
         }
         db._read_learning_provider_facet = lambda: {"OXFORD", "YORK"}  # type: ignore[method-assign]
-        db._apply_destination_facet(DESTINATION_FACETS_BY_KEY["university"])
+        db._apply_destination_facet(facet("university"))
         self.assertEqual(db.location_facets_by_crs["OXF"], {"university"})
         self.assertEqual(db.location_facets_by_crs["YRK"], {"university"})
         self.assertNotIn("NWE", db.location_facets_by_crs)
-
-    def test_reviewed_facets_only_tag_stations_the_feed_actually_has(self) -> None:
-        db = FaresDb()
-        db.locations_by_crs = {
-            "HHD": Location("1", "HHD", "HOLYHEAD", ""),
-            "NOT": Location("2", "NOT", "NOTTINGHAM", ""),
-        }
-        island = DESTINATION_FACETS_BY_KEY["island"]
-        self.assertIn("HHD", island.reviewed_station_codes)
-        self.assertNotIn("NOT", island.reviewed_station_codes)
-        db._apply_reviewed_facets()
-        self.assertEqual(db.location_facets_by_crs["HHD"], {"island"})
-        self.assertNotIn("NOT", db.location_facets_by_crs)
 
     def test_codes_destinations_inside_the_budget_cheapest_first(self) -> None:
         results = self.db.destinations_within("GRN", 2000)
@@ -1673,6 +1330,518 @@ class FaresParserTest(unittest.TestCase):
         db.load_feed(reissue)
         results = db.destinations_within("GRN", 1_000_000)
         self.assertEqual([reachable.crs for reachable in results], ["LCN", "NOT", "PBO", "KGX"])
+
+
+class FeedBoundaryClassificationTest(unittest.TestCase):
+    """The classification rules, stated where a page build reads them.
+
+    Every rule here used to be asserted by building ``locations_by_crs`` by hand
+    and calling the private load step, which is the layer a reorganisation of
+    ``load_feed`` breaks without changing a page. These build a synthetic feed
+    and read the answer back through the public query methods, so what they are
+    coupled to is the fixture boundary a site is built from.
+
+    The station table below is the load-bearing part: the fixture's own
+    GRN..XFD is in no reviewed list but London King's Cross, and its own
+    classification file answers that one anyway, so a reviewed rule can only be
+    seen at the boundary if the feed carries the station the list names.
+    """
+
+    FALLBACK_STATIONS = (
+        # The London list, for a station the workbook does not name.
+        ("ECR", "EAST CROYDON", "city"),
+        # Major English cities outside the workbook, and the nations it does not
+        # cover: Scotland, Wales outside its settlement names, Northern Ireland.
+        ("MAN", "MANCHESTER PIC", "city"),
+        ("GLC", "GLASGOW CENTRAL", "city"),
+        ("NWY", "NEWRY", "town"),
+        # CDD is Cardenden, not Cardiff Central: the feed's own name for the
+        # code. An earlier hand-built fixture invented CARDIFF CENTRAL under CDD,
+        # which made a test assert a city for a station that is not one and hid
+        # the same slip in the reviewed list. A fixture that contradicts the
+        # feed cannot catch a list entry that does.
+        ("CDD", "CARDENDEN", "town"),
+        ("NCL", "NEWCASTLE", "city"),
+        # Reviewed settlement fallbacks: the floor that removes "No settlement
+        # band" from a destination a page can actually price.
+        ("EDL", "EDALE", "village"),
+        ("BHC", "BALLOCH CENTRAL", "village"),
+    )
+
+    def test_a_station_no_source_names_is_classified_by_its_reviewed_fallback(self) -> None:
+        # A reviewed list is a floor under the real sources, and a station
+        # nothing else classifies is still a destination the page can price:
+        # leaving it "other" is what the "No settlement band" answer was.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(
+                Path(tmp), *((crs, name) for crs, name, _ in self.FALLBACK_STATIONS)
+            )
+            db = FaresDb().load_feed(feed)
+        for crs, _name, kind in self.FALLBACK_STATIONS:
+            self.assertEqual(db.destination_type(crs), kind, crs)
+            self.assertNotIn("other", db.destination_types(crs), crs)
+
+    def test_a_reviewed_fallback_outranks_a_source_that_filed_the_station_other(self) -> None:
+        # The reviewed lists are the floor, so they are applied where a source's
+        # answer was "other" and not only where there is no answer at all: a
+        # station the workbook cannot name is still a settlement, and keeping
+        # the earlier class would publish the unsourced remainder. The source is
+        # named in the assertions because a file whose label is recorded is one
+        # whose classes were read, which is what makes "village" below the
+        # fallback's answer rather than the file's.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root, ("EDL", "EDALE"))
+            (root / "saying-other.location-types.json").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a source that filed Edale as other",
+                        "records": {"EDL": {"primary": "other"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            db = FaresDb().load_feed(feed)
+        self.assertIn("a source that filed Edale as other", db.location_type_sources)
+        self.assertEqual(db.destination_type("EDL"), "village")
+
+    def test_attenborough_is_a_village_and_a_nature_site(self) -> None:
+        # The reserve five minutes from the station is the proof the page names
+        # for the nature chip (ADR-0064), so the station has to earn both the
+        # class and the named day-out through a real load.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(Path(tmp), ("ATB", "ATTENBOROUGH"))
+            db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("ATB"), "village")
+        self.assertIn("nature", db.destination_types("ATB"))
+        self.assertNotIn("other", db.destination_types("ATB"))
+        self.assertEqual(
+            db.nature_sites("ATB"),
+            [{
+                "name": "Attenborough Nature Reserve",
+                "url": "https://www.nottinghamshirewildlife.org/attenborough-plan-your-visit",
+            }],
+        )
+        self.assertEqual(db.nature_sites("NOT"), [])
+
+    def test_an_airport_station_is_in_the_airport_category(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(Path(tmp), ("XQB", "EAST M AIR LGE"))
+            db = FaresDb().load_feed(feed)
+        self.assertIn("airport", db.destination_types("XQB"))
+        self.assertIn("airport", SUPPORTED_DESTINATION_FACETS)
+        self.assertIn(("airport", "Airports"), DESTINATION_TYPE_FILTERS)
+        # The airport is its own category, and the settlement it serves is
+        # still classified, so the row is not left as the unsourced remainder.
+        self.assertEqual(db.destination_type("XQB"), "village")
+        self.assertNotIn("other", db.destination_types("XQB"))
+
+    def test_the_seaside_supplement_tags_classic_day_out_stations(self) -> None:
+        # The ONS coastal workbook misses Blackpool, Brighton, Southend and
+        # Weston-super-Mare by name, so a reviewed supplement carries them: the
+        # chip has to reach the stations the feed actually contains, and each
+        # one has to name its beach.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(
+                Path(tmp),
+                ("BTN", "BRIGHTON"),
+                ("BPN", "BLACKPOOL NORTH"),
+                ("WSM", "WESTON SUPR MARE"),
+                ("SOC", "SOUTHEND CENTRAL"),
+            )
+            db = FaresDb().load_feed(feed)
+        for crs in ("BTN", "BPN", "WSM", "SOC"):
+            self.assertIn("seaside", db.location_facets_by_crs.get(crs, set()), crs)
+            self.assertTrue(db.coastal_sites(crs), crs)
+
+    def test_a_coach_or_parkway_station_is_a_transport_interchange(self) -> None:
+        # Locations whose purpose is to move people between networks are
+        # destinations, and without the tag the page had no answer for them: the
+        # name markers reach most, and the code list reaches the ones whose
+        # names say nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(
+                Path(tmp),
+                ("XDO", "BATH BUS STATION"),
+                ("TIN", "MAGNA TRAM STOP"),
+                ("TPC", "THORPE CULVERT"),
+                ("BUS", "BUSBY"),
+                ("ATB", "ATTENBOROUGH"),
+            )
+            db = FaresDb().load_feed(feed)
+        self.assertIn("transport", db.destination_types("XDO"))
+        self.assertIn("transport", db.destination_types("TIN"))
+        # A park and ride named after the village it serves carries no marker,
+        # so the code list has to reach it.
+        self.assertIn("transport", db.destination_types("TPC"))
+        # BUSBY is a village whose name merely contains the marker.
+        self.assertNotIn("transport", db.destination_types("BUS"))
+        self.assertNotIn("transport", db.destination_types("ATB"))
+        self.assertIn(("transport", "Transport interchanges"), DESTINATION_TYPE_FILTERS)
+
+    def test_reviewed_facets_only_tag_stations_the_feed_actually_has(self) -> None:
+        # A stale code on a reviewed list is dropped rather than applied to a
+        # station the feed does not carry, so a facet cannot name somewhere this
+        # build has never heard of.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(Path(tmp), ("HHD", "HOLYHEAD"))
+            db = FaresDb().load_feed(feed)
+        island = facet("island")
+        self.assertIn("HHD", island.reviewed_station_codes)
+        self.assertNotIn("NOT", island.reviewed_station_codes)
+        self.assertIn("island", db.destination_types("HHD"))
+        self.assertNotIn("island", db.destination_types("NOT"))
+
+    def test_a_reviewed_attraction_tags_its_station_and_names_the_proof(self) -> None:
+        # Chip implies a named proof (ADR-0064), extended to the ADR-0062
+        # sources: the station carries the facet and the reserve by name.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(Path(tmp), ("PFL", "PURFLEET"), ("BEM", "BEMPTON"))
+            db = FaresDb().load_feed(feed)
+        self.assertIn("rspb", db.destination_types("PFL"))
+        self.assertIn("rspb", db.destination_types("BEM"))
+        self.assertNotIn("rspb", db.destination_types("NOT"))
+        self.assertEqual(
+            db.rspb_sites("PFL"),
+            [{
+                "name": "Rainham Marshes",
+                "url": "https://www.rspb.org.uk/nature-reserves/rainham-marshes/",
+            }],
+        )
+        # A station the facet did not tag carries no proof for it.
+        self.assertEqual(db.rspb_sites("NOT"), [])
+
+    def test_a_warm_cache_still_earns_the_day_out_chips(self) -> None:
+        # ADR-0065: the three reviewed day-out lists shipped *without* a cache
+        # schema bump, and the reason has to keep holding. A cache written by the
+        # previous release is the current schema with no rspb chip anywhere on
+        # it; the reviewed pass runs after the cache is read and tags additively,
+        # so the chip appears anyway. If that pass were ever moved before the
+        # cache load, or made to respect a cached facet list as final, a build on
+        # a warm cache would silently lose the chips until the schema was bumped.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root, ("PFL", "PURFLEET"))
+            (root / f"warm.{DESTINATION_FACETS_FILE}").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a build from before the day-out sources",
+                        "records": {"PFL": {"primary": "other", "facets": []}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            db = FaresDb().load_feed(feed)
+        self.assertIn("rspb", db.destination_types("PFL"))
+        self.assertEqual(db.rspb_sites("PFL")[0]["name"], "Rainham Marshes")
+        # A warm cache is not a stale-cache note: nothing was discarded.
+        self.assertEqual(
+            [note for note in db.report.skipped_files if "schema" in note], []
+        )
+
+    def test_facets_from_several_files_are_merged_not_replaced(self) -> None:
+        # The checked-in reference data, a cache beside the feed and the feed's
+        # own lookup can all name the same station. Replacing made the answer
+        # depend on the order the files were read in, and let a stale cache drop
+        # a facet the checked-in file knew about. LCN keeps its seaside and its
+        # university beside the second file's island, a facet no registry entry
+        # declares is dropped rather than served, and a key written with padding
+        # and in lower case is the same station as the feed's own.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root)
+            (root / f"second.{DESTINATION_FACETS_FILE}").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a second file naming the same station",
+                        "records": {
+                            "  lcn ": {"primary": "city", "facets": ["island", "nonsense"]}
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("LCN"), "city")
+        self.assertEqual(
+            sorted(db.location_facets_by_crs["LCN"]), ["island", "seaside", "university"]
+        )
+        self.assertNotIn("lcn", db.location_facets_by_crs)
+
+    def test_a_reviewed_code_the_feed_does_not_carry_is_named(self) -> None:
+        # A reviewed list is only as good as its fit with the feed, so a code
+        # that names no station in it is recorded rather than left to grow. The
+        # lists are intersected before they are applied, so the record is the
+        # only effect a dead code has, and it is not a skipped file: nothing
+        # went unread, a reviewed list is naming a station the feed does not
+        # carry.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _feed_with_stations(Path(tmp), ("BHC", "BALLOCH CENTRAL"))
+            db = FaresDb().load_feed(feed)
+        absent = db.report.reviewed_codes_absent
+        self.assertTrue(absent, "the dead codes are named")
+        self.assertEqual(db.report.skipped_files, [])
+        # A reviewed code the feed does carry is applied, and is not named as
+        # absent: the record is about the feed, not about the list.
+        self.assertEqual(db.destination_type("BHC"), "village")
+        self.assertNotIn("BHC", absent)
+        self.assertIn("ABD", absent)
+        self.assertEqual(db.destination_type("ABD"), "other")
+
+    def test_a_size_band_names_the_settlement_class_of_a_station(self) -> None:
+        # The ONS bands are population classes, and the two smallest are the
+        # whole difference between a village and a town: collapsing them into
+        # one "town" is what left villages filed as "other".
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _first_build(
+                Path(tmp),
+                ("ANC", "ANCASTER"),
+                ("BTF", "BOTTESFORD"),
+                ("RET", "RETFORD"),
+            )
+            workbook = _ons_workbook(
+                (("Ancaster", "minor"), ("Bottesford", "minor"), ("Retford", "medium"))
+            )
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
+            ):
+                db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(db.destination_type("BTF"), "village")
+        self.assertEqual(db.destination_type("RET"), "town")
+
+    def test_a_workbook_district_does_not_hide_the_station_the_feed_carries(self) -> None:
+        # The workbook writes "Foxton (South Cambridgeshire)"; the station is
+        # FOXTON, and the two sides have to normalise the same way. On the real
+        # feed this gap alone left 43 priced destinations unclassified.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _first_build(Path(tmp), ("FXN", "FOXTON"))
+            workbook = _ons_workbook((("Foxton (South Cambridgeshire)", "minor"),))
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
+            ):
+                db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("FXN"), "village")
+
+    def test_a_refused_settlement_name_leaves_the_station_other(self) -> None:
+        # Wick (Hackney) and Wick (Highland) are different places in different
+        # bands; a station called WICK cannot be told which one it serves from
+        # its name, so it keeps the coverage report rather than taking a class
+        # that may belong to the other.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = _first_build(Path(tmp), ("WCK", "WICK"))
+            workbook = _ons_workbook(
+                (("Wick (Hackney)", "large"), ("Wick (Highland)", "small"))
+            )
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
+            ):
+                db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("WCK"), "other")
+
+    def test_a_reviewed_fallback_the_workbook_already_names_is_reported(self) -> None:
+        # A reviewed entry for a station the workbook names is not an error
+        # today: the class is never applied, so nothing looks wrong. It becomes
+        # one the day a name match misses, and the reviewed class then lands on
+        # a station the workbook had classified correctly -- York was filed as a
+        # town beside a workbook that says city. Both halves matter: the code is
+        # named, and the workbook still wins while it is there.
+        workbook = _ons_workbook((("York", "large"),))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
+            ):
+                named = FaresDb().load_feed(_first_build(root / "without", ("YRK", "YORK")))
+                # Put the entry back and the next build names it: the list no
+                # longer holds York, so nothing is redundant until one is.
+                with mock.patch.dict(atoc_fares.MAJOR_UK_STATION_FALLBACKS, {"YRK": "town"}):
+                    with_entry = FaresDb().load_feed(_first_build(root / "with", ("YRK", "YORK")))
+        self.assertEqual(named.destination_type("YRK"), "city")
+        self.assertNotIn("YRK", named.report.reviewed_codes_redundant, "the list no longer names York")
+        self.assertIn("YRK", with_entry.report.reviewed_codes_redundant)
+        self.assertEqual(
+            with_entry.destination_type("YRK"), "city", "the workbook's class still wins"
+        )
+        # Named once, because the pass runs again as each source lands and a
+        # note per pass would say the same thing three times.
+        self.assertEqual(with_entry.report.reviewed_codes_redundant.count("YRK"), 1)
+
+    def test_a_discard_does_not_cost_a_later_source_its_label(self) -> None:
+        # The flag that records a discard is sticky, and it must not be
+        # consulted for every candidate after the one that discarded: a file
+        # that classifies the feed properly is loaded after a stale cache in
+        # every real layout, and clearing its label left the build claiming no
+        # source at all for classes a source had just supplied. ANC and RET are
+        # in no reviewed list, so a class for them can only have come from a file.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root, ("ANC", "ANCASTER"), ("RET", "RETFORD"))
+            (root / "aaa.stale.location-types.json").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA - 1,
+                        "source": "an older build",
+                        "records": {"ANC": {"primary": "other"}, "RET": {"primary": "other"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / f"zzz.sourced.{DESTINATION_FACETS_FILE}").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a sourced workbook",
+                        "records": {"ANC": {"primary": "village"}, "RET": {"primary": "town"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(db.destination_type("RET"), "town")
+        # The label names the file that classified the feed, and the discarded
+        # cache's own claim is not in it: a label is recorded when a file's
+        # classes are kept, and dropped with the classes when they are not. The
+        # two wrong answers this replaces were an empty label, which claims
+        # nothing classified the feed, and the fallback label, which claims the
+        # reviewed lists did it when ANC and RET are in no reviewed list.
+        self.assertIn("a sourced workbook", db.location_type_sources)
+        self.assertNotIn("an older build", db.location_type_sources)
+
+    def test_a_discarded_cache_does_not_stop_the_workbook_being_read(self) -> None:
+        # The whole classification pass, because a discarded file must not leave
+        # the build looking as though it already has a source: the classes are
+        # gone and the file's label is gone with them, so the workbook is what
+        # fills the gap. When the label stood, the pass returned early and every
+        # station the cache had classified fell through to the reviewed
+        # fallbacks -- 3,119 of 3,436 on the 24 September 2026 download. ANC is
+        # in no reviewed list, so "village" below can only have come from the
+        # workbook.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root, ("ANC", "ANCASTER"))
+            # The fixture writes its own cache beside every feed it builds; this
+            # is that file, now carrying the classes a build wrote before the
+            # schema moved.
+            (root / "fares.location-types.json").write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA - 1,
+                        "source": "an older build",
+                        "records": {"ANC": {"primary": "other", "facets": ["seaside"]}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "download-manifest.json").write_text("{}", encoding="utf-8")
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(
+                    ONS_BUILT_UP_AREAS_FILE_URL, _ons_workbook((("Ancaster", "minor"),))
+                ),
+            ):
+                db = FaresDb().load_feed(feed)
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(db.location_facets_by_crs["ANC"], {"seaside"})
+        # The build names the workbook, not the cache whose classes it threw
+        # away: that label is what the page's provenance line claims.
+        self.assertIn(LOCATION_TYPE_SOURCE, db.location_type_sources)
+        self.assertNotIn("an older build", db.location_type_sources)
+
+    def test_only_the_classification_files_this_project_writes_are_read(self) -> None:
+        # A file beside a feed whose name merely mentioned locations and types
+        # used to be loaded as a source, so a backup, a scratch probe or a
+        # staging copy of the cache was trusted exactly as much as the cache.
+        # The same bytes are read under a name this project writes and ignored
+        # under one it does not.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _feed_with_stations(root, ("ANC", "ANCASTER"))
+            lookalike = root / "location-types-notes.json"
+            lookalike.write_text(
+                json.dumps(
+                    {
+                        "schema": LOCATION_CACHE_SCHEMA,
+                        "source": "a scratch probe",
+                        "records": {"ANC": {"primary": "town"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                atoc_fares.urllib.request, "urlopen", side_effect=OSError("offline")
+            ):
+                ignored = FaresDb().load_feed(feed)
+                self.assertEqual(ignored.destination_type("ANC"), "other")
+                self.assertNotIn("a scratch probe", ignored.location_type_sources)
+
+                (root / f"notes{LOCATION_TYPES_FILE}").write_text(
+                    lookalike.read_text(encoding="utf-8"), encoding="utf-8"
+                )
+                glued = FaresDb().load_feed(feed)
+                self.assertEqual(
+                    glued.destination_type("ANC"),
+                    "other",
+                    "a name glued onto the prefix is not a name this project writes",
+                )
+
+                lookalike.rename(root / f"probe.{LOCATION_TYPES_FILE}")
+                accepted = FaresDb().load_feed(feed)
+        self.assertEqual(accepted.destination_type("ANC"), "town")
+        self.assertIn("a scratch probe", accepted.location_type_sources)
+
+    def test_a_build_names_every_source_that_classified_the_feed(self) -> None:
+        # The page's provenance line is where a reader learns where a
+        # destination's type comes from. London is classified by the reviewed
+        # list before the workbook is read at all, and the build used to publish
+        # that class as the workbook's own work -- so a build with both names
+        # both, and the reviewed floor is named last.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = _first_build(root, ("ANC", "ANCASTER"))
+            workbook = _ons_workbook((("Ancaster", "minor"),))
+            with mock.patch.object(
+                atoc_fares.urllib.request,
+                "urlopen",
+                side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
+            ):
+                db = FaresDb().load_feed(feed)
+            written = json.loads((root / LOCATION_TYPES_FILE).read_text(encoding="utf-8"))
+        # The reviewed list classified London on its own, and the workbook was
+        # still read for the rest of the country: a build whose only classes are
+        # the reviewed fallbacks has to read it, or a first build would never
+        # classify anything outside them.
+        self.assertEqual(db.destination_type("KGX"), "city")
+        self.assertEqual(db.destination_type("ANC"), "village")
+        self.assertEqual(
+            db.location_type_sources, [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
+        )
+        self.assertEqual(
+            db.location_type_source,
+            LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE,
+        )
+        # Written back with both, so the next build names both without reading
+        # the workbook again. The list keeps the order the labels were loaded
+        # in; the string beside it is the page's reading order.
+        self.assertEqual(
+            written["provenance"], [LOCATION_FALLBACK_SOURCE, LOCATION_TYPE_SOURCE]
+        )
+        self.assertEqual(
+            written["source"], LOCATION_TYPE_SOURCE + " + " + LOCATION_FALLBACK_SOURCE
+        )
 
 
 class PublishableSelectorTest(unittest.TestCase):
