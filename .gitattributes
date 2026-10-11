@@ -5,5 +5,7 @@
 # `test_no_asset_carries_a_carriage_return` -- a claim about the bytes the
 # asset holds -- is true on a Windows checkout as it is in CI.
 /.gitattributes text eol=lf
-page/*.css text eol=lf
-page/*.js text eol=lf
+# `page/**`, not `page/*.js`: a gitattributes pattern containing a slash is
+# anchored and `*` stops at a directory separator, so the flat patterns never
+# reached page/station/*.js (verified with `git check-attr eol`).
+page/** text eol=lf
