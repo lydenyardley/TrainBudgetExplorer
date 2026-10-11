@@ -210,6 +210,25 @@ def unexpected_pdfs(folder: Path = LICENCES) -> list[str]:
     return sorted(pdf.name for pdf in folder.glob("*.pdf") if pdf.name not in named)
 
 
+def manifest_id_problems(folder: Path = LICENCES) -> list[str]:
+    """Manifest rows whose product id is not the format the marketplace issues.
+
+    The id is the key a clearance section is matched by, so a row carrying a
+    value in another shape is a product no clearance can ever name -- and the
+    register test that asserts the same format lives in a different file,
+    which is exactly how the two came to drift apart.
+    """
+    problems: list[str] = []
+    for row in load_manifest(folder):
+        product_id = str(row.get("product_id") or "")
+        if product_id and not PRODUCT_ID.fullmatch(product_id):
+            problems.append(
+                f"{row.get('filename', 'a manifest row')}: product id {product_id!r} is not "
+                f"{PRODUCT_ID.pattern}, the format the marketplace issues"
+            )
+    return problems
+
+
 def products(folder: Path = LICENCES) -> dict[str, Path | None]:
     """Every product a clearance has to speak about, and the file it was read from.
 
@@ -286,6 +305,7 @@ def clearance_problems(
             f"{name} is in {folder} and not in {MANIFEST_NAME}; add it to the "
             "manifest and give it a clearance section before anything is published"
         )
+    problems += manifest_id_problems(folder)
     known = products(folder)
     sections = parse_sections(text)
     needed, shape_problems = products_needed(releasing, folder)

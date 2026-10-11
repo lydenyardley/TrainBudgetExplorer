@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import unittest
 from pathlib import Path
+
+from tools.check_release_clearance import PRODUCT_ID
 
 LICENCES = Path(__file__).parent.parent / "licences"
 REGISTER = LICENCES / "README.md"
 MANIFEST = LICENCES / "licence-manifest.json"
-
-# The product id the marketplace puts in the licence filename and in Schedule 1 §3.
-PRODUCT_ID = re.compile(r"P-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 # The one field that decides whether a product may appear on a public page. A row
 # that does not state it has not been read (ADR-0021).
