@@ -6,12 +6,15 @@ each invariant can fail, because a check that can never fail is decoration.
 
 from __future__ import annotations
 
+import random
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
+import fuzz_feed
 from atoc_fares import FLOW_T, FaresDb
 from fuzz_feed import (
     MUTATIONS,
@@ -21,6 +24,8 @@ from fuzz_feed import (
     fuzz,
     main,
     mutate_file,
+    one_round,
+    timetable_violations,
 )
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
@@ -150,11 +155,12 @@ class FuzzRunTest(unittest.TestCase):
         self.assertEqual(check_timetable(self.timetable), [])
 
     def test_a_schedule_with_one_stop_is_a_violation(self) -> None:
-        # Build the failing state directly rather than hoping a mutation finds it.
+        # Build the failing state directly rather than hoping a mutation finds
+        # it, and assert the check sees the object it broke. A check that
+        # cannot fail is decoration.
         from atoc_timetable import CallingPoint, Schedule, TimetableDb
 
-        db = TimetableDb()
-        db.load_feed(self.timetable)
+        db = TimetableDb().load_feed(self.timetable)
         db.schedules.append(
             Schedule(
                 train_uid="BROKEN",
@@ -165,12 +171,15 @@ class FuzzRunTest(unittest.TestCase):
                 date_to="261211",
             )
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "broken"
-            path.mkdir()
-            db.load_feed(path)
-        violations = check_timetable(self.timetable)
-        self.assertEqual(violations, [])
+        self.assertEqual(timetable_violations(db), ["BROKEN has 1 stop(s)"])
+
+    def test_a_round_checks_the_timetable_side_of_the_feed_it_damaged(self) -> None:
+        # The wiring, not the check: a round that damaged the timetable copy
+        # reports what the timetable invariants found. Fault injection, so the
+        # assertion fails if one_round stops calling the check at all.
+        with mock.patch.object(fuzz_feed, "check_timetable", return_value=["BROKEN is no journey"]):
+            result = one_round(self.feed, self.root / "wired", random.Random(1), 1, 1)
+        self.assertIn("BROKEN is no journey", result.violations)
 
 
 class FuzzCommandTest(unittest.TestCase):
