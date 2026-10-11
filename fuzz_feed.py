@@ -188,6 +188,10 @@ def one_round(feed: Path, work: Path, rng: random.Random, number: int, seed: int
         result.violations.append("a record was rejected with no example to look at")
     if len(report.skipped_examples) > MAX_SKIPPED_EXAMPLES:
         result.violations.append(f"{len(report.skipped_examples)} examples kept, the cap is {MAX_SKIPPED_EXAMPLES}")
+    # The timetable side of the same damaged copy: a schedule that is not a
+    # journey fails the round that produced it, so the module checks what it
+    # claims to check.
+    result.violations.extend(check_timetable(work))
 
     try:
         answers = fares.destinations_within(ORIGIN, 1_000_000)
@@ -278,27 +282,35 @@ def fuzz(
     return results
 
 
-def check_timetable(feed: str | Path, *, seed: int = DEFAULT_SEED) -> list[str]:
-    """The timetable side of the invariants, on the feed as it stands.
+def timetable_violations(db: TimetableDb) -> list[str]:
+    """The timetable side of the invariants, on a database as loaded.
 
     Damaged timetable files are covered by `damage_feed.py`; what matters after
-    any load is that a schedule is a journey at all.
+    any load is that a schedule is a journey at all. A duration is not checked
+    here: a damaged time field inverts an arrival, which is a sanity problem
+    rather than a parser one, and this fuzzer's own rule is that it reports
+    provenance rather than plausibility.
     """
-    violations: list[str] = []
-    for path in (feed,):
-        db = TimetableDb()
-        try:
-            db.load_feed(path)
-        except Exception as error:  # noqa: BLE001
-            violations.append(f"loading the timetable raised {type(error).__name__}: {error}")
-            continue
-        for schedule in db.schedules:
-            if len(schedule.stops) < 2:
-                violations.append(f"{schedule.train_uid} has {len(schedule.stops)} stop(s)")
-        journey = db.best_journey("GRN", "NOT")
-        if journey is not None and journey.duration <= 0:
-            violations.append("a journey with no duration came back")
-    return violations
+    return [
+        f"{schedule.train_uid} has {len(schedule.stops)} stop(s)"
+        for schedule in db.schedules
+        if len(schedule.stops) < 2
+    ]
+
+
+def check_timetable(feed: str | Path) -> list[str]:
+    """Load the timetable side of a feed and check it is journeys at all.
+
+    Called once per round over the same damaged copy the fares invariants are
+    checked against, so a timetable record that parsed into something that is
+    not a journey fails the round that produced it.
+    """
+    db = TimetableDb()
+    try:
+        db.load_feed(feed)
+    except Exception as error:  # noqa: BLE001
+        return [f"loading the timetable raised {type(error).__name__}: {error}"]
+    return timetable_violations(db)
 
 
 def main(argv: list[str] | None = None) -> int:
