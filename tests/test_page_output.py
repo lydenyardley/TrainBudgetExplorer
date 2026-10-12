@@ -90,10 +90,13 @@ class SharedStationAssetTest(unittest.TestCase):
         page = (self.site / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
         # The fallback is a name in the heading, never an empty one: a heading
         # reading "from" and nothing is the failure this guards against. The
-        # sentence travels in the payload, and the browser suite drives the
-        # fallback itself over a page whose asset is missing.
+        # sentence travels in the page, the branch that writes it travels in
+        # the route's script, and the browser suite drives the fallback itself
+        # over a page whose asset is missing.
         self.assertIn("FIRST_USE_FALLBACK", page)
-        self.assertIn("origin-name", page)
+        script = page_script(page)
+        self.assertIn("origin-name", script)
+        self.assertIn("FIRST_USE_FALLBACK", script)
 
     def test_the_stylesheet_is_written_once_and_named_for_its_own_bytes(self) -> None:
         # One file beside the pages, and every station page names it. The
@@ -112,23 +115,62 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertRegex(name, r"^station-[0-9a-f]{12}\.css$")
         self.assertIn(name, self.log, "the build says what it wrote and where")
 
-    def test_every_station_page_links_the_stylesheet_and_inlines_none_of_it(self) -> None:
+    def test_every_station_page_names_the_script_and_inlines_none_of_it(self) -> None:
+        from page_templates import STATION_SCRIPT
+
         pages = sorted((self.site / "from").glob("*/index.html"))
         self.assertEqual(len(pages), 2)
         for page in pages:
             html = page.read_text(encoding="utf-8")
-            self.assertIn(build_demo_page.station_style_tag("/" + build_demo_page.station_style_asset_name()), html)
+            self.assertIn(build_demo_page.station_script_tag("/" + build_demo_page.station_script_asset_name()), html)
             # Not inlined: the whole point is that 2,712 pages stop carrying the
-            # same 34.6 KB, so a page that still held a <style> element would
-            # mean the file is being fetched and paid for anyway.
-            self.assertNotIn("<style>", html)
-            # And the script stays inline, because it draws the page's own
-            # rows: a request that did not arrive would leave an empty table,
-            # which is not a failure mode the picker models (ADR-0047). The
-            # script is the last one in the file, so what is asked for here is
-            # that there is one and it is not empty -- not what its first line
-            # says, which is the page's business.
-            self.assertTrue(page_script(html).strip())
+            # same 149 KB, so a page that still held the route's code would mean
+            # the file is being fetched and paid for anyway. The body's one
+            # inline block is the handoff the asset reads -- the page's own
+            # DATA -- and nothing else.
+            body = html.split("<body", 1)[1]
+            blocks = re.findall(r"<script>(.*?)</script>", body, re.DOTALL)
+            self.assertEqual(len(blocks), 1, [block[:60] for block in blocks])
+            self.assertTrue(blocks[0].strip().startswith("window.TBE_DATA = "))
+            self.assertLess(len(blocks[0]), len(STATION_SCRIPT))
+
+    def test_the_script_is_written_once_and_named_for_its_own_bytes(self) -> None:
+        # One file beside the pages, and every station page names it. The
+        # filename holds a digest of the script, so a changed script is a new
+        # file: a cached copy can never be served beside a page built from
+        # another revision of the code, and no build step has to be told to
+        # rename anything.
+        from page_templates import STATION_SCRIPT
+
+        name = build_demo_page.station_script_asset_name()
+        assets = sorted(
+            path.name
+            for path in self.site.glob("station-*.js")
+        )
+        self.assertEqual(assets, [name], assets)
+        written = (self.site / name).read_text(encoding="utf-8")
+        self.assertEqual(written, STATION_SCRIPT)
+        self.assertRegex(name, r"^station-[0-9a-f]{12}\.js$")
+        self.assertIn(name, self.log, "the build says what it wrote and where")
+
+    def test_the_chooser_names_its_script_and_the_build_writes_it(self) -> None:
+        # The chooser's code moves out of the page for the same reason the
+        # station route's does (T10): one file beside the release rather than a
+        # copy inside the one page that carries it.
+        from page_templates import CHOOSER_SCRIPT
+
+        chooser = (self.site / "index.html").read_text(encoding="utf-8")
+        name = build_demo_page.chooser_script_asset_name()
+        self.assertIn(build_demo_page.chooser_script_tag("/" + name), chooser)
+        written = (self.site / name).read_text(encoding="utf-8")
+        self.assertEqual(written, CHOOSER_SCRIPT)
+        self.assertRegex(name, r"^chooser-[0-9a-f]{12}\.js$")
+        # The body's one inline block is the handoff the asset reads -- the
+        # build's station list -- and nothing else.
+        body = chooser.split("<body", 1)[1]
+        blocks = re.findall(r"<script>(.*?)</script>", body, re.DOTALL)
+        self.assertEqual(len(blocks), 1, [block[:60] for block in blocks])
+        self.assertTrue(blocks[0].strip().startswith("window.TBE_CHOOSER_STATIONS = "))
 
     def test_the_page_takes_the_switch_away_when_the_stylesheet_does_not_arrive(self) -> None:
         # The picker's failure mode, one route down: a control that cannot do
@@ -410,7 +452,7 @@ class RouteManifestTest(unittest.TestCase):
             root = Path(tmp)
             self.build_site(root)
             chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
-            match = re.search(r"const STATIONS = (\[.*?\]);", chooser, re.DOTALL)
+            match = re.search(r"window\.TBE_CHOOSER_STATIONS = (\[.*?\]);", chooser, re.DOTALL)
             self.assertIsNotNone(match)
             stations = json.loads(match.group(1))
             self.assertEqual([entry["crs"] for entry in stations], ["GRN"])
@@ -498,15 +540,20 @@ class RouteManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.build_site(root, "--all-origins")
-            chooser = (root / "site" / "index.html").read_text(encoding="utf-8")
+            site = root / "site"
+            chooser = (site / "index.html").read_text(encoding="utf-8")
             # The route is handed what was typed and the station being offered,
             # so its list can show the matches a completion would otherwise
-            # hide (audit items 1 and 2, 9 October 2026). The wiring is the
-            # shared station-field block's own contract here; the browser suite
-            # drives the typing, the completion and the re-render over the
-            # real chooser, which is where the claim actually lives.
-            self.assertIn("onChange", chooser)
-            self.assertIn("typedQuery", chooser)
+            # hide (audit items 1 and 2, 9 October 2026). The wiring travels in
+            # the route's own asset rather than in the page, so this reads the
+            # file the chooser names; the browser suite drives the typing, the
+            # completion and the re-render over the real chooser, which is where
+            # the claim actually lives.
+            match = re.search(r'<script src="([^"]*chooser-[0-9a-f]+\.js)"', chooser)
+            self.assertIsNotNone(match, "the chooser names no shared script")
+            script = (site / match.group(1).rsplit("/", 1)[-1]).read_text(encoding="utf-8")
+            self.assertIn("onChange", script)
+            self.assertIn("typedQuery", script)
 
     def test_the_chooser_links_to_the_privacy_page(self) -> None:
         # The root page is where a reader starts, so the thing that says what
@@ -719,7 +766,9 @@ class EncodedPayloadTest(unittest.TestCase):
     def test_a_rendered_page_carries_the_tables_and_the_hydrator(self) -> None:
         self.assertIn('"columns":', embedded_text(self.page))
         self.assertNotIn('"partyPence":', embedded_text(self.page))
-        self.assertIn("hydrate", self.page)
+        # The tables travel inline; the hydrator travels in the route's shared
+        # script, which the page names beside the stylesheet.
+        self.assertIn("hydrate", page_script(self.page))
 
     def test_a_rendered_page_reads_back_as_the_payload_it_was_built_from(self) -> None:
         self.assertTrue(embedded_payload(self.page)["destinations"])

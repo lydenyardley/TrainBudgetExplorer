@@ -15,10 +15,10 @@ from pathlib import Path
 
 # Every stylesheet and every script this site ships, as a file of its own: an
 # editor sees them, `node --check` reads them, and a search for a symbol finds
-# one answer rather than a copy inside a string. They are read at import, so a
-# built page still fetches nothing of its own (ADR-0033) and the bytes of the
-# block are the bytes of the file. The read normalizes line endings, because a
-# checkout that hands back CRLF must not rewrite every page of the release.
+# one answer rather than a copy inside a string. They are read at import, so the
+# bytes of a shared asset are the bytes of the file. The read normalizes line
+# endings, because a checkout that hands back CRLF must not rewrite every page
+# of the release.
 _PAGE_ASSETS = Path(__file__).with_name("page")
 
 
@@ -28,6 +28,13 @@ def _page_file(name: str) -> str:
 
 
 SHARED_CSS = _page_file("shared.css")
+
+# Both routes' scripts are read here and written out as one hashed asset each,
+# so a page no longer carries a copy of its own code (12 October 2026 audit,
+# T1 and T10). The station route's script was measured byte-identical on every
+# page of a 24-page sample -- 149,377 bytes of it -- and the chooser's is the
+# same shape at one copy. The parts below are still concatenated in this order,
+# because the asset is still one script rather than several modules.
 
 # The station route's script, one file per panel under page/station/, in the
 # order they are concatenated below.
@@ -58,7 +65,6 @@ STATION_SCRIPT_PARTS = (
     "station/url-state.js",
     "station/wiring.js",
 )
-STATION_SCRIPT = "".join(_page_file(part) for part in STATION_SCRIPT_PARTS)
 
 # The station route's own stylesheet, which used to sit in its <style>
 # block beside the shared one. The two are still one string, because a
@@ -164,6 +170,12 @@ __THEME_TOGGLE__
      plain text in that state, and says so rather than leaving a reader to
      wonder why this station looks unlike every other one. -->
 <p class="sub" id="styleNote" hidden></p>
+<!-- The same failure mode one route down for the route's own code: the table
+     below is listed by it, so a page whose copy did not arrive shows an empty
+     table with no explanation unless something says so. The script tag's
+     onerror reveals this rather than the script itself, because the script is
+     what is missing. -->
+<p class="sub" id="scriptNote" hidden>The list of destinations needs this page's code, which did not load, so the table below is empty.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
 <section class="filter-bar" aria-label="Journey and destination filters">
@@ -338,8 +350,16 @@ __THEME_TOGGLE__
   <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
-__STATIONS_SRC__<script>
-""" + STATION_SCRIPT + """</script>
+__STATIONS_SRC__
+<!-- The page's own answer, inlined because it is the one part of the page
+     that differs per origin. The route's script arrives separately as one
+     shared asset and reads this block, so the bytes the browser keeps are the
+     same on every page of the route (T1). -->
+<script>
+window.TBE_DATA = __DATA__;
+window.TBE_FIRST_USE_FALLBACK = __FIRST_USE_FALLBACK__;
+</script>
+__STATION_SCRIPT__
 __ANALYTICS__
 </body>
 </html>
@@ -367,13 +387,25 @@ __CHOOSER_INTRO__
 __ORDERING_NOTE__
 <ul id="picks"></ul>
 <p id="nomatch" hidden></p>
+<!-- The station list is drawn by the route's own code, so a chooser whose copy
+     did not arrive shows an empty list with no explanation unless something
+     says so. The script tag's onerror reveals this rather than the script
+     itself, because the script is what is missing. -->
+<p class="sub" id="scriptNote" hidden>The station list needs this page's code, which did not load, so nothing is listed below.</p>
 <p id="capMessage" hidden></p>
 <span id="pickStatus" class="sr-only" role="status"></span>
 __NOTE__
 </main>
 <nav class="footnav"><a href="__BASE__/privacy/">Privacy</a></nav>
+<!-- The chooser's own stations, inlined because they are the one part of the
+     page that differs per build. The route's script arrives separately as one
+     shared asset and reads this block, so the bytes the browser keeps are the
+     same for every release that does not change its code (T10). -->
 <script>
-""" + _page_file("chooser.js") + """</script>
+window.TBE_CHOOSER_STATIONS = __STATIONS__;
+window.TBE_TITLE_SUFFIX = __TITLE_SUFFIX_JS__;
+</script>
+__CHOOSER_SCRIPT__
 __ANALYTICS__
 </body>
 </html>
@@ -677,12 +709,56 @@ STATION_FIELD_JS = """function attachStationField(options) {
 }"""
 
 
+def _shared_script(text: str, what: str) -> str:
+    """One route's script as the asset ships it, shared blocks filled in.
+
+    The blocks are the ones with_shared() inlines into the templates, because
+    the asset is the same code the template used to carry. The page's own
+    values the scripts used to declare inline -- the station page's DATA, the
+    chooser's station list -- now arrive on window.TBE_* from a small block
+    each page inlines, so everything filled here is the same on every page of
+    the route, which is the whole reason the file can be shared. A placeholder
+    left unfilled would ship a literal __NAME__ to the browser, so this refuses
+    like with_shared() does.
+    """
+    import json
+
+    filled = text
+    for placeholder, block, name in (
+        ("__LIST_KEYS__", LIST_KEYS_JS, "list keyboard block"),
+        ("__STATION_MATCH__", STATION_MATCH_JS, "station matcher block"),
+        ("__STATION_FIELD__", STATION_FIELD_JS, "station field block"),
+        ("__CHEVRON_JS__", json.dumps(CHEVRON), "disclosure mark for the script"),
+    ):
+        filled = filled.replace(placeholder, block)
+        if placeholder in filled:
+            raise ValueError(f"the shared {name} was not filled into {what}")
+    if "__DATA__" in filled or "__STATIONS__" in filled or "__TITLE_SUFFIX_JS__" in filled:
+        raise ValueError(
+            f"{what} still declares a per-page value, so it cannot be one shared file"
+        )
+    return filled
+
+
 CHEVRON = (
     '<svg class="chevron" viewBox="0 0 16 16" width="16" height="16"'
     ' aria-hidden="true" focusable="false">'
     '<path d="M4 6.25 8 10.25l4-4" fill="none" stroke="currentColor"'
     ' stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 )
+
+
+# The station route's script as the asset ships it: the panels concatenated in
+# STATION_SCRIPT_PARTS order, with the shared blocks filled in.
+STATION_SCRIPT = _shared_script(
+    "".join(_page_file(part) for part in STATION_SCRIPT_PARTS),
+    "the station route's script",
+)
+
+# The chooser route's own script. It is one file rather than several because the
+# route is one field over one list, and it moves out of the page for the same
+# reason the station route's does (T10).
+CHOOSER_SCRIPT = _shared_script(_page_file("chooser.js"), "the chooser route's script")
 
 
 SHARED_THEME = """<meta name="color-scheme" content="light dark">

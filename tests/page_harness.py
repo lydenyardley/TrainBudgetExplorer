@@ -47,12 +47,12 @@ def hydrate_rows(payload: dict) -> dict:
 
 def embedded_text(html: str) -> str:
     """The payload exactly as the page's own script receives it."""
-    start = html.index("const DATA = ") + len("const DATA = ")
+    start = html.index("window.TBE_DATA = ") + len("window.TBE_DATA = ")
     return html[start : html.index(";", start)]
 
 
 def embedded_payload(html: str) -> dict:
-    match = re.search(r"const DATA = (\{.*?\});\n", html, re.DOTALL)
+    match = re.search(r"window\.TBE_DATA = (\{.*?\});\n", html, re.DOTALL)
     if match is None:
         raise AssertionError("the page carries no embedded payload")
     return hydrate_rows(json.loads(match.group(1)))
@@ -137,14 +137,24 @@ def tearDownModule() -> None:
 
 
 def page_script(html: str) -> str:
-    """The page's own script, which is the last one in the file.
+    """The code the page executes.
 
-    The theme block is injected into the head so the palette is decided before
-    the first paint, so the *first* script is no longer the page's script, and a
-    test reading that slice is reading the theme block. The page's own script
-    is the last one, and this says so in one place instead of at fourteen.
+    The page inlines its own DATA and names the route's script beside the
+    stylesheet, so the last inline block is the payload rather than the code.
+    The bytes the browser keeps are the asset the build wrote once, so this
+    reads that asset rather than the inline block -- and the asset the page
+    names has to be the one this tree would write, or the test is reading code
+    the page does not run.
     """
-    return html.split("<script>")[-1].split("</script>")[0]
+    match = re.search(r'<script src="([^"]*station-[0-9a-f]+\.js)"', html)
+    if match is None:
+        return html.split("<script>")[-1].split("</script>")[0]
+    name = match.group(1).rsplit("/", 1)[-1]
+    assert name == build_demo_page.station_script_asset_name(), (
+        f"the page names {name} but this tree writes "
+        f"{build_demo_page.station_script_asset_name()}"
+    )
+    return build_demo_page.STATION_SCRIPT
 
 
 def js_function(source: str, name: str) -> str:

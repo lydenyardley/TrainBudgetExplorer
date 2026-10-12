@@ -2,16 +2,22 @@
 // for before one of them owns a place to put them: the table the rows are
 // built into, and the budget control that bounds them.
 //
-// The three placeholders at the top are substituted by the build. The list
-// keyboard block, the station matcher and the station field are shared with
-// the chooser, so they are written once in page_templates.py, and they lead
-// this file because this file leads the route's script.
+// The three placeholders at the top are substituted into the shared asset the
+// build writes once. The list keyboard block, the station matcher and the
+// station field are shared with the chooser, so they are written once in
+// page_templates.py, and they lead this file because this file leads the
+// route's script.
+//
+// The page's own answer arrives separately, in a small block the page inlines
+// before the asset: one script cannot be shared across pages while it carries
+// a page's destinations. The asset reads it here rather than declaring it, so
+// the bytes the browser keeps are the same for every page of the route.
 
 __LIST_KEYS__
 __STATION_MATCH__
 __STATION_FIELD__
-const DATA = __DATA__;
-const FIRST_USE_FALLBACK = __FIRST_USE_FALLBACK__;
+const DATA = window.TBE_DATA;
+const FIRST_USE_FALLBACK = window.TBE_FIRST_USE_FALLBACK;
 // Each row list arrives as a column list and a table of cells, because every row
 // in a list carried the same field names and the page was sending them once per
 // row. Hydrating here keeps the rest of this script reading rows as objects, and
