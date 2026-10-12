@@ -11,6 +11,7 @@ import ast
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
@@ -356,7 +357,13 @@ class AllOriginsCliTest(unittest.TestCase):
                 )
             self.assertEqual(code, 0)
             chooser = out.read_text(encoding="utf-8")
-            self.assertIn("Nothing is priced from any station in this build", chooser)
+            # The empty-build sentence is drawn by the route's own code, which
+            # travels in the shared asset the chooser names rather than in the
+            # page, so this reads the file the build wrote beside it.
+            match = re.search(r'<script src="([^"]*chooser-[0-9a-f]+\.js)"', chooser)
+            self.assertIsNotNone(match, "the chooser names no shared script")
+            script = (out.parent / match.group(1).rsplit("/", 1)[-1]).read_text(encoding="utf-8")
+            self.assertIn("Nothing is priced from any station in this build", script)
 
 class FreshOutputFolderTest(unittest.TestCase):
     """The README tells the operator to delete a stale _site/, so the build must

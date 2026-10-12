@@ -59,12 +59,14 @@ from atoc_knowledgebase import (
 )
 from destination_coverage import UnsourcedReport, unnameable_from_tally
 from page_templates import (
-    CHEVRON,
-    CHOOSER_TEMPLATE,
-    PRIVACY,
-    STATION_STYLESHEET,
-    TEMPLATE,
-)
+     CHEVRON,
+     CHOOSER_SCRIPT,
+     CHOOSER_TEMPLATE,
+     PRIVACY,
+     STATION_SCRIPT,
+     STATION_STYLESHEET,
+     TEMPLATE,
+ )
 from retailer import (
     AFFILIATE_NETWORKS,
     DEFAULT_PROVIDER,
@@ -515,6 +517,10 @@ def write_release(
     Returns the manifest path, because the caller reports what it wrote.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
+    # The chooser and the one script it fetches, written together: a release
+    # whose chooser names a script it did not write is the contract the crawl
+    # below refuses. Both build shapes end here, so neither can drift apart.
+    write_chooser_script(out_dir)
     write_page_atomic(
         out_dir / "index.html",
         render_chooser(
@@ -2610,6 +2616,10 @@ def build_payload(
         # The station route fetches one stylesheet, at the path this release is
         # published at (ADR-0047). The picker sets its own the same way.
         "styleSrc": with_base(base_path, "/" + station_style_asset_name()),
+        # And one script, at the path this release is published at (T1). The
+        # page's own answer is its destinations; the code that reads them is
+        # the same on every page of the route, so it travels once.
+        "scriptSrc": with_base(base_path, "/" + station_script_asset_name()),
         # S45: the state is a fact about the build, so it is carried in the
         # payload rather than re-derived by each renderer.
         "synthetic": price_source == DEFAULT_PRICE_SOURCE,
@@ -3038,6 +3048,12 @@ def render_page(
     route (ADR-0033, re-scoped 30 September 2026): the picker's list is the
     site's largest repeated item, so a build may point the page at the shared
     asset while the page's own destination payload still travels inline.
+
+    ``payload["scriptSrc"]`` is the second exception, and the larger one: the
+    station route's script measured 149,377 bytes byte-identical across 24
+    sampled pages, so it ships as one hashed asset beside the stylesheet (T1,
+    ADR-0033 amended). The payload travels inline because it is the one part of
+    the page that differs per origin.
     """
     prices = [row["adultPence"] for row in payload["destinations"]]
     prices += [row["adultPence"] for row in payload.get("singleDestinations", [])]
@@ -3072,6 +3088,7 @@ def render_page(
         for value, label in DESTINATION_TYPE_FILTERS
         if value in used
     )
+    script_tag = station_script_tag(payload.get("scriptSrc", ""))
     page = (
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
@@ -3093,6 +3110,7 @@ def render_page(
         .replace("__SYNTHETIC__", "true" if payload.get("synthetic", True) else "false")
         .replace("__SYNTHETIC_BANNER__", synthetic_markup(payload.get("synthetic", True)))
         .replace("__STATION_STYLE__", station_style_tag(payload.get("styleSrc", "")))
+        .replace("__STATION_SCRIPT__", script_tag)
     )
     # A station page with no stylesheet link is a page with no styling and no
     # request for any, which reads as a broken page rather than a broken build.
@@ -3102,6 +3120,11 @@ def render_page(
     # unfilled placeholder, and a payload that never named the document.
     if "__STATION_STYLE__" in page or '<link rel="stylesheet"' not in page:
         raise ValueError("the station page shipped without a stylesheet link")
+    # The same rule for the route's script, and it is the one that decides
+    # whether a page carries 149 KB of code or a request for it. A page whose
+    # payload names no script would render tables and wire nothing.
+    if "__STATION_SCRIPT__" in page or not script_tag:
+        raise ValueError("the station page shipped without its script")
     return page
 
 
@@ -3305,10 +3328,9 @@ def render_privacy(
 STATION_ASSET_NAME = "stations.js"
 
 
-# The station route's stylesheet: the second shared document, and the
-# last one (ADR-0047). The page's own answer is in its own bytes; this
-# is the part of a station page that is the same on every page of the
-# route. The name holds a digest of the content, so a changed
+# The station route's stylesheet (ADR-0047). The page's own answer is in its
+# own bytes; this is the part of a station page that is the same on every page
+# of the route. The name holds a digest of the content, so a changed
 # stylesheet is a new file rather than a changed one -- a cached copy
 # can never be served beside a page built from another revision of the
 # CSS, and no build step has to be told to rename anything.
@@ -3346,6 +3368,84 @@ def station_style_tag(src: str) -> str:
     if not src:
         return ""
     return f'<link rel="stylesheet" href="{html.escape(src, quote=True)}">' + "\n"
+
+
+# Both routes' scripts are shared documents beside the stylesheet, for the
+# reason ADR-0047 gave the stylesheet: the station route's script measured
+# 149,377 bytes byte-identical on every one of 24 sampled pages, so the page's
+# own answer is in its own bytes and the code that reads them is one file the
+# browser keeps (T1). The chooser's is the same treatment at one copy (T10).
+# The stems are the same one the stylesheet uses, so a route's assets are
+# grouped by that name in the output folder.
+STATION_SCRIPT_STEM = "station"
+CHOOSER_STEM = "chooser"
+
+
+def station_script_asset_name() -> str:
+    """The station script's file name, from a digest of its own bytes."""
+    digest = hashlib.sha256(STATION_SCRIPT.encode("utf-8")).hexdigest()[:12]
+    return f"{STATION_SCRIPT_STEM}-{digest}.js"
+
+
+def chooser_script_asset_name() -> str:
+    """The chooser script's file name, from a digest of its own bytes."""
+    digest = hashlib.sha256(CHOOSER_SCRIPT.encode("utf-8")).hexdigest()[:12]
+    return f"{CHOOSER_STEM}-{digest}.js"
+
+
+def write_station_script(out_dir: Path) -> Path:
+    """The one script every station page fetches, written once."""
+    path = out_dir / station_script_asset_name()
+    write_page_atomic(path, STATION_SCRIPT)
+    print(
+        f"wrote {path} ({len(STATION_SCRIPT.encode('utf-8')):,} bytes) "
+        "once for every station page rather than inside every one",
+        flush=True,
+    )
+    return path
+
+
+def write_chooser_script(out_dir: Path) -> Path:
+    """The one script the chooser fetches, written once."""
+    path = out_dir / chooser_script_asset_name()
+    write_page_atomic(path, CHOOSER_SCRIPT)
+    print(
+        f"wrote {path} ({len(CHOOSER_SCRIPT.encode('utf-8')):,} bytes) "
+        "once for the chooser rather than inside it",
+        flush=True,
+    )
+    return path
+
+
+def station_script_tag(src: str) -> str:
+    """The station route's code, as the one request it makes for it.
+
+    Deferred rather than a plain tag at the foot of the body: the page's answer
+    is already in its own bytes, so the reader sees the table while the script
+    is still on the wire, and a page whose copy never arrives is a page with no
+    wiring rather than a blank one. ADR-0047 dated the stylesheet for the same
+    reason.
+
+    The onerror reveals the page's own missing-script note rather than leaving
+    an empty table unexplained: the script is what is missing, so it cannot be
+    the thing that says so.
+    """
+    if not src:
+        return ""
+    return (
+        f'<script src="{html.escape(src, quote=True)}" defer '
+        "onerror=\"document.getElementById('scriptNote').hidden=false\"></script>\n"
+    )
+
+
+def chooser_script_tag(src: str) -> str:
+    """The chooser's code, as the one request it makes for it."""
+    if not src:
+        return ""
+    return (
+        f'<script src="{html.escape(src, quote=True)}" defer '
+        "onerror=\"document.getElementById('scriptNote').hidden=false\"></script>\n"
+    )
 
 
 def picker_has_options(payload: dict) -> bool:
@@ -3525,6 +3625,7 @@ def render_chooser(
         .replace("__BUDGET__", str(budget_pounds))
         .replace("__NOTE__", note_markup(note, "tag"))
         .replace("__BASE__", base_path.rstrip("/"))
+        .replace("__CHOOSER_SCRIPT__", chooser_script_tag(with_base(base_path, "/" + chooser_script_asset_name())))
         .replace("__ANALYTICS__", analytics)
         .replace("__SYNTHETIC__", "true" if synthetic else "false")
         .replace("__SYNTHETIC_BANNER__", synthetic_markup(synthetic))
@@ -4261,6 +4362,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
     # every page but the one row each page filters out (audit, 30 September
     # 2026, measured from this build's own output).
     write_station_style(out_dir)
+    write_station_script(out_dir)
     station_rows = station_asset_rows(index, base_path)
     write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
     print(
@@ -4563,8 +4665,9 @@ def _build_single_origin(ctx: BuildContext) -> int:
     ]
     out_dir.mkdir(parents=True, exist_ok=True)
     # The station route's stylesheet, written once before the page that
-    # asks for it (ADR-0047).
+    # asks for it (ADR-0047), and the route's script beside it (T1).
     write_station_style(out_dir)
+    write_station_script(out_dir)
     if index:
         station_page = out_dir / "from" / index[0]["slug"] / "index.html"
         write_page_atomic(

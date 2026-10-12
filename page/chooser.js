@@ -1,10 +1,15 @@
+// The page's own stations and its title suffix arrive separately, in a small
+// block the page inlines before this asset: one script cannot be shared while
+// it carries a build's station list. The asset reads them here rather than
+// declaring them, so the bytes the browser keeps are the same for every
+// release that does not change this file.
 __LIST_KEYS__
 __STATION_MATCH__
 __STATION_FIELD__
-const STATIONS = __STATIONS__;
+const STATIONS = window.TBE_CHOOSER_STATIONS;
 // What the tab and every retitle say after the budget. A release that
 // priced one station names it; a chooser says what it is for.
-const TITLE_SUFFIX = __TITLE_SUFFIX_JS__;
+const TITLE_SUFFIX = window.TBE_TITLE_SUFFIX;
 const picks = document.getElementById("picks");
 const nomatch = document.getElementById("nomatch");
 const status = document.getElementById("pickStatus");

@@ -27,7 +27,7 @@ const { checkTheFareDetails } = require("./station-fares.cjs");
 const { checkTheShortlist, compareTheDockWithTheTable } = require("./station-shortlist.cjs");
 const { measureTheLayout } = require("./station-layout.cjs");
 const { checkTheOriginPicker } = require("./station-picker.cjs");
-const { checkWithoutTheStylesheet } = require("./station-assets.cjs");
+const { checkWithoutTheStylesheet, checkWithoutTheScript } = require("./station-assets.cjs");
 async function runPage(browser, index, given, file, body, base) {
   // One context per page. The seller's stub route and the clipboard grant are
   // both context-scoped, and a page that failed a step must not hand the next
@@ -140,6 +140,7 @@ async function runPage(browser, index, given, file, body, base) {
     try {
       if (kind === "chooser") await checkChooser(page, url, check);
       else await checkReleaseRoot(page, url, check);
+      await checkWithoutTheScript({ page, url, check, notExercised, kind, context });
     } catch (error) {
       console.error("the browser test stopped early on " + given + ": " + error.message);
       stopped = true;
@@ -334,6 +335,7 @@ async function runPage(browser, index, given, file, body, base) {
     await measureTheLayout(world);
     await checkTheOriginPicker(world);
     await checkWithoutTheStylesheet(world);
+    await checkWithoutTheScript(world);
   } catch (error) {
     // A step that throws is a failed run, not a short one. The finally block
     // below reports whatever was checked, so this has to be carried out of the

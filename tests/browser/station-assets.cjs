@@ -8,6 +8,49 @@
  * test keeps the styling every other check reads.
  */
 const { notExercised } = require("./harness.cjs");
+async function checkWithoutTheScript(world) {
+  const { page, url, check, notExercised, kind, context } = world;
+  // T1: the station route fetches one script, and a fetch can fail. The rows
+  // are listed by it, so unlike the stylesheet there is no page to preserve --
+  // the table stays empty. What is proved instead is that the page says so:
+  // the script tag's onerror reveals the note, rather than leaving an empty
+  // table unexplained. The document is withheld on a second page in the same
+  // context, so the page under test keeps the code every other check here is
+  // driving.
+  const WITHOUT_SCRIPT = [
+    "a page whose script does not arrive says its list needs the code",
+    "and the list it would have drawn stays empty",
+  ];
+  if (kind === "station" || kind === "chooser" || kind === "release") {
+    const asset = kind === "station" ? "**/station-*.js" : "**/chooser-*.js";
+    const bare = await context.newPage();
+    await bare.route(asset, (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "no such script" })
+    );
+    await bare.goto(url);
+    const without = await bare.evaluate(() => ({
+      note: (document.getElementById("scriptNote") || {}).hidden,
+      noteText: ((document.getElementById("scriptNote") || {}).textContent || "").trim(),
+      rows: document.querySelectorAll("#rows tr[data-crs], #picks li").length,
+    }));
+    check(
+      WITHOUT_SCRIPT[0],
+      without.note === false && /did not load/.test(without.noteText),
+      without.noteText || "(nothing said)"
+    );
+    check(
+      WITHOUT_SCRIPT[1],
+      without.rows === 0,
+      `${without.rows} row(s) listed without the code`
+    );
+    await bare.close();
+  } else {
+    for (const name of WITHOUT_SCRIPT) {
+      check(name, notExercised("this route carries no fetched script, so no request can fail"));
+    }
+  }
+}
+module.exports = { checkWithoutTheStylesheet, checkWithoutTheScript };
 async function checkWithoutTheStylesheet(world) {
   const { page, url, check, notExercised, kind, context } = world;
   // ADR-0047: the station route fetches one stylesheet, and a fetch can fail.
@@ -64,4 +107,4 @@ async function checkWithoutTheStylesheet(world) {
     }
   }
 }
-module.exports = { checkWithoutTheStylesheet };
+module.exports = { checkWithoutTheStylesheet, checkWithoutTheScript };
