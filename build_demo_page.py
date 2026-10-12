@@ -352,6 +352,36 @@ def write_page_atomic(path: Path, html: str) -> None:
     replace_published(temporary, path)
 
 
+def page_is_current(path: Path, html: str) -> bool:
+    """Whether the page on disk already says what this build would write.
+
+    The payload's build stamp changes on every build by design, so the key is
+    the payload with builtAt masked rather than the file's bytes (T3): the
+    stamp is dropped and the rest is compared with sorted keys, which also
+    absorbs the serviceWeek key order that follows the process hash seed. A
+    page that cannot be read back is not current -- the safe direction is to
+    write -- so every failure here answers False, and a build that changed
+    nothing rewrites nothing.
+    """
+    try:
+        current = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    try:
+        decoder = json.JSONDecoder()
+        marker = "window.TBE_DATA = "
+        old, _ = decoder.raw_decode(current, current.index(marker) + len(marker))
+        new, _ = decoder.raw_decode(html, html.index(marker) + len(marker))
+    except ValueError:
+        return False
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    old.pop("builtAt", None)
+    new.pop("builtAt", None)
+    normalise = lambda payload: json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return normalise(old) == normalise(new)
+
+
 # -- the route manifest (S01, S04) ------------------------------------------
 #
 # The single weakness the re-envision audit names is the route contract: a
@@ -933,6 +963,189 @@ def prune_fare_index_caches(*used: Path, keep: int = FARE_INDEX_CACHE_KEEP) -> i
     return deleted
 
 
+# -- one origin's reusable facts (T2, T3, T6, T9) ---------------------------
+#
+# A page's two expensive answers, kept per origin under _cache/ beside the
+# other derived artefacts: the service week's journey facts, keyed by the
+# timetable they were searched from, and the priced counts with the coverage
+# they were counted for, keyed by the fares they were priced from. Two
+# sections in one file because they share the origin and the read/write
+# discipline but not the lifetime: the timetable feed changes weekly at most
+# and the fares feed daily, so a fares-only refresh reuses every journey fact
+# while re-pricing every origin, which is the daily case (T9).
+#
+# One file per origin rather than one file per feed, so the store is bounded:
+# the same 2,712 names are overwritten in place, and no prune pass is needed.
+# A section whose identity does not match is a miss rather than a page
+# assembled from another download's answers -- a cache is an optimisation, so
+# the worst it may do is be slow.
+PAGE_FACTS_SCHEMA = 1
+
+
+def page_facts_path(origin: str) -> Path:
+    """Where one origin's reusable answers live.
+
+    Resolved from CACHE_DIR on every call rather than bound at import, so a
+    build that points its cache elsewhere -- the tests do -- reads and writes
+    there too.
+    """
+    return CACHE_DIR / "page-facts" / f"{origin.strip().upper()}.json"
+
+
+def read_page_facts(origin: str) -> dict | None:
+    """One origin's facts, or None when there are none to reuse.
+
+    Anything unreadable is a miss: a missing file, a half-written write, a
+    schema this code no longer reads. Each section carries its own identity,
+    so a file from another feed is not rejected here -- its sections simply
+    miss one by one where they are read.
+    """
+    try:
+        raw = json.loads(page_facts_path(origin).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(raw, dict)
+        or raw.get("schema") != PAGE_FACTS_SCHEMA
+        or raw.get("origin") != origin.strip().upper()
+    ):
+        return None
+    return raw
+
+
+def write_page_facts(origin: str, facts: dict) -> None:
+    """Store one origin's facts atomically."""
+    facts = {**facts, "schema": PAGE_FACTS_SCHEMA, "origin": origin.strip().upper()}
+    path = page_facts_path(origin)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(facts, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    replace_published(temporary, path)
+
+
+def service_week_identity(
+    timetable_identity: str, source_index: int, origin: str, max_changes: int, days: list
+) -> str:
+    """Everything one origin's service-week answers depend on, as one string.
+
+    The timetable's own identity (the feed's content digest, or the slice
+    index's when the build reads no feed), which of the build's timetables was
+    searched -- the main one or the outbound-single focus over the same feed --
+    the origin, the change limit, and the exact days of the week. The priced
+    destinations are deliberately not in it: a fares-only refresh prices new
+    rows out of the same journeys, so the facts it needs are the ones that did
+    not move.
+    """
+    day_key = ",".join(day.isoformat() for day in days)
+    return f"{timetable_identity}:{source_index}:{origin.strip().upper()}:{max_changes}:{day_key}"
+
+
+def priced_facts_identity(fares_identity: str, day) -> str:
+    """Everything one origin's priced counts depend on, as one string.
+
+    ``fares_cache_identity`` already covers the feed's bytes, the code that
+    reads them and the classification beside them; the day matters because the
+    same feed prices differently on different days.
+    """
+    return f"{fares_identity}:{(day.isoformat() if day is not None else 'undated')}"
+
+
+def timetable_facts_identity(args, timetable, timetable_index) -> str | None:
+    """The identity one origin's service-week facts are keyed by.
+
+    The feed's content digest when the pages are built from a feed the build
+    loaded, the slice index's own identity when the feed was never read --
+    which is the index-covers case, where every page loads its own slice --
+    and None when there is no timetable at all. The identity names what the
+    pages read rather than what flags were passed, because a build handed both
+    a feed and a covering index reads only the index.
+    """
+    if timetable is not None and args.timetable:
+        return timetable_index_identity(args.timetable)
+    if timetable_index is not None:
+        return timetable_index.identity
+    return None
+
+
+def read_service_week(
+    origin: str, timetable_identity: str | None, source_index: int,
+    max_changes: int, days: list,
+) -> list | None:
+    """The stored (duration, changes) answers for one origin's week, or None.
+
+    The whole reached set is stored but only the week is returned: the build
+    filters to the destinations its fares priced, so a fares-only refresh that
+    prices a new row still finds that row's journeys waiting.
+    """
+    if timetable_identity is None or not days:
+        return None
+    facts = read_page_facts(origin)
+    if facts is None:
+        return None
+    section = facts.get("timetable")
+    if not isinstance(section, dict):
+        return None
+    if section.get("identity") != service_week_identity(
+        timetable_identity, source_index, origin, max_changes, days
+    ):
+        return None
+    weeks = section.get("weeks")
+    if not isinstance(weeks, list) or len(weeks) != len(days):
+        return None
+    return weeks
+
+
+def write_service_week(
+    origin: str, timetable_identity: str | None, source_index: int,
+    max_changes: int, days: list, weeks: list,
+) -> None:
+    """Store one origin's whole reached set for the week, for the next build."""
+    if timetable_identity is None or not days:
+        return
+    facts = read_page_facts(origin) or {}
+    facts["timetable"] = {
+        "identity": service_week_identity(
+            timetable_identity, source_index, origin, max_changes, days
+        ),
+        "weeks": weeks,
+    }
+    write_page_facts(origin, facts)
+
+
+def read_priced_facts(origin: str, fares_identity: str | None, day) -> dict | None:
+    """The stored priced counts and coverage for one origin, or None."""
+    if fares_identity is None:
+        return None
+    facts = read_page_facts(origin)
+    if facts is None:
+        return None
+    section = facts.get("fares")
+    if not isinstance(section, dict):
+        return None
+    if section.get("identity") != priced_facts_identity(fares_identity, day):
+        return None
+    return section
+
+
+def write_priced_facts(
+    origin: str, fares_identity: str | None, day, count: int, coverage: dict
+) -> None:
+    """Store one origin's priced counts and coverage, for the next build."""
+    if fares_identity is None:
+        return
+    facts = read_page_facts(origin) or {}
+    facts["fares"] = {
+        "identity": priced_facts_identity(fares_identity, day),
+        "count": count,
+        "coverage": coverage,
+    }
+    write_page_facts(origin, facts)
+
+
 def _iso_day(value: object) -> str:
     """A date as ``YYYY-MM-DD``, from an ISO timestamp or an HTTP-date.
 
@@ -1424,6 +1637,23 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="build every station page in prices-only parallel mode, report live "
         "progress, and resume pages already completed from the same feeds/config",
+    )
+    parser.add_argument(
+        "--shard",
+        default=None,
+        metavar="N/M",
+        help="build a disjoint share of the origin list as N of M (1-based): "
+        "this process writes every M-th origin starting at the N-th. Each "
+        "shard writes its own folder; --merge combines them into one site, "
+        "after proving they partition the feed's origins.",
+    )
+    parser.add_argument(
+        "--merge",
+        nargs="+",
+        default=None,
+        metavar="SHARD_DIR",
+        help="combine shard folders written by --shard into one site at --out. "
+        "Needs --feed, for the origin list the shards must partition.",
     )
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument(
@@ -2125,6 +2355,11 @@ def build_payload(
     reference_published: str = "",
     reference_checked: str = "",
     timetable_index: SliceIndex | None = None,
+    # The identity the service-week facts are keyed by: the timetable feed's
+    # content digest, or the slice index's when the build reads no feed. None
+    # means the week is searched every time, which is what every caller did
+    # before the facts existed.
+    timetable_identity: str | None = None,
 ) -> dict:
     """Every publishable destination from the origin, at both party prices.
 
@@ -2368,11 +2603,37 @@ def build_payload(
             for offset in range(0, SERVICE_WEEK_HORIZON + 1)
         ]
         wanted = {row["crs"] for collection in collections for row in collection}
-        for source in sources:
+        week_days = [day + timedelta(days=offset) for offset in range(0, SERVICE_WEEK_HORIZON + 1)]
+        for position, source in enumerate(sources):
+            # The week's answers outlive the fares they were searched for: a
+            # fares-only refresh prices new rows out of the same journeys, so
+            # the timetable half is read from the facts when they match and
+            # searched only when they do not (T9). The whole reached set is
+            # stored rather than the wanted subset, so a row the next fares
+            # feed prices for the first time still finds its journeys waiting.
+            source_index = 0 if source is timetable else 1
+            stored = read_service_week(
+                origin.crs, timetable_identity, source_index, max_changes, week_days
+            )
+            if stored is not None:
+                service_week.append(
+                    [
+                        {crs: pair for crs, pair in day_facts.items() if crs in wanted}
+                        for day_facts in stored
+                    ]
+                )
+                continue
             per_day = []
+            full_week = []
             for offset in range(0, SERVICE_WEEK_HORIZON + 1):
                 reached = source.journeys_from(
                     origin.crs, max_changes=max_changes, day=day + timedelta(days=offset)
+                )
+                full_week.append(
+                    {
+                        crs: [journey.duration, journey.changes]
+                        for crs, journey in reached.items()
+                    }
                 )
                 per_day.append(
                     {
@@ -2381,6 +2642,9 @@ def build_payload(
                         if crs in wanted
                     }
                 )
+            write_service_week(
+                origin.crs, timetable_identity, source_index, max_changes, week_days, full_week
+            )
             service_week.append(per_day)
 
     # Read out of the table by the day, not copied into the row. The index
@@ -3694,6 +3958,11 @@ class BuildContext:
     timetable: "TimetableDb | None" = None
     worker_timetable: str | None = None
     timetable_index: "SliceIndex | None" = None
+    # -- after _load_timetable -----------------------------------------
+    # The identity one origin's service-week facts are keyed by, resolved
+    # once here because hashing the feed costs seconds on the national
+    # download and both payload paths below would otherwise pay it.
+    timetable_identity: str | None = None
     cache_path: Path | None = None
     planned: list[str] = field(default_factory=list)
     # -- after read_provenance ------------------------------------------
@@ -3882,6 +4151,13 @@ def _load_timetable(ctx: BuildContext) -> int:
     else:
         print("No timetable supplied; building a prices-only page.", flush=True)
         ctx.timetable = None
+    # What the pages read, named once: the feed's content digest when a feed
+    # was loaded, the slice index's own identity when it was not, and nothing
+    # when there is no timetable to search. Hashed here rather than once per
+    # page, because the national download costs seconds to hash.
+    if ctx.timetable is not None or ctx.timetable_index is not None:
+        print("Hashing the timetable for the journey-facts identity ...", flush=True)
+    ctx.timetable_identity = timetable_facts_identity(args, ctx.timetable, ctx.timetable_index)
     return 0
 
 
@@ -4175,6 +4451,7 @@ def price_one_payload(ctx: BuildContext) -> int:
             reference_published=ctx.reference_published,
             reference_checked=ctx.reference_checked,
             timetable_index=ctx.sampled_index,
+            timetable_identity=ctx.timetable_identity,
         )
     except (KeyError, IndexError):
         print(f"origin {args.origin!r} not found in feed. Files read: {fares.files_read}", file=sys.stderr)
@@ -4258,6 +4535,173 @@ def release_gates(ctx: BuildContext) -> int:
     return 0
 
 
+def parse_shard(spec: str | None) -> tuple[int, int] | None:
+    """The shard share ``--shard N/M`` names, or None for the whole list.
+
+    Refused rather than guessed: shard 0, a share past the count, and a
+    denominator of zero would all silently build the wrong slice of the
+    network, and a merge that cannot tell would publish it.
+    """
+    if spec is None:
+        return None
+    try:
+        number, total = (int(part) for part in spec.split("/"))
+    except ValueError:
+        number, total = 0, 0
+    if total < 1 or number < 1 or number > total:
+        raise ValueError(f"--shard takes N/M with 1 <= N <= M, not {spec!r}.")
+    return number, total
+
+
+SHARD_MANIFEST_NAME = "shard.json"
+SHARD_MANIFEST_SCHEMA = 1
+
+
+def shard_agreement(shared: dict) -> dict:
+    """Everything two shards must agree on to merge into one site.
+
+    The page bytes: every shared input the pages are rendered from, with the
+    build stamp and the per-shard pieces (the origin subset, the cache paths a
+    worker read) left out. A merge of shards that disagree would publish pages
+    built as different releases under one chooser, so the merge refuses them
+    instead. Compared as canonical JSON, because key order must not decide it.
+    """
+    excluded = {
+        "built_at", "index", "fare_common_cache", "fare_index_dir",
+        "feed", "timetable", "timetable_index",
+    }
+    agreement = {
+        "source": source_fingerprint(),
+        "feed": feed_fingerprint(shared["feed"]),
+        "timetable": feed_fingerprint(shared["timetable"]) if shared["timetable"] else None,
+        "config": {
+            key: value for key, value in shared.items() if key not in excluded
+        },
+    }
+    index_spec = shared.get("timetable_index") or {}
+    agreement["timetable_index"] = index_spec.get("identity")
+    return json.loads(json.dumps(agreement, sort_keys=True, default=str))
+
+
+def merge_shards(args) -> int:
+    """Combine shard folders into the one site their pages belong to.
+
+    Each shard proves what it is: which share it built, what inputs it built
+    from, which origins those were, and what each priced. The merge proves the
+    rest: the shares are distinct and cover 1..M, the inputs agree, and the
+    origins partition the feed's list -- a shard set that overlaps, gapped, or
+    built from another download is refused rather than published. The chooser,
+    the station list, the manifest and the coverage report are then written
+    once from the union, through the same writers a single build uses.
+    """
+    if not args.feed:
+        print("error: --merge needs --feed, for the origin list the shards must partition.",
+              file=sys.stderr)
+        return 2
+    out_dir = Path(args.out).parent
+    shards: list[tuple[Path, dict]] = []
+    for raw in args.merge:
+        shard_dir = Path(raw)
+        try:
+            manifest = json.loads((shard_dir / SHARD_MANIFEST_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"error: {shard_dir} holds no readable {SHARD_MANIFEST_NAME}: {error}",
+                  file=sys.stderr)
+            return 2
+        if not isinstance(manifest, dict) or manifest.get("schema") != SHARD_MANIFEST_SCHEMA:
+            print(f"error: {shard_dir}/{SHARD_MANIFEST_NAME} is not a shard manifest.",
+                  file=sys.stderr)
+            return 2
+        shards.append((shard_dir, manifest))
+    total = shards[0][1].get("of")
+    numbers = sorted(manifest.get("shard") for _, manifest in shards)
+    if any(manifest.get("of") != total for _, manifest in shards) or numbers != list(range(1, total + 1)):
+        print(
+            "error: the shards are not shares 1..{} of one split: ".format(total)
+            + ", ".join(f"{directory.name} is share {manifest.get('shard')} of {manifest.get('of')}" for directory, manifest in shards),
+            file=sys.stderr,
+        )
+        return 2
+    inputs = shards[0][1].get("inputs")
+    for shard_dir, manifest in shards[1:]:
+        if manifest.get("inputs") != inputs:
+            print(
+                f"error: {shard_dir.name} was built from different inputs and cannot "
+                "merge into this site; rebuild the shards from the same feeds and flags.",
+                file=sys.stderr,
+            )
+            return 2
+    fares = FaresDb().load_feed(args.feed)
+    universe = sorted(
+        crs for crs in fares.locations_by_crs if not is_pseudo_station(crs)
+    )
+    union = sorted({crs for _, manifest in shards for crs in manifest.get("origins", [])})
+    if union != universe:
+        missing = [crs for crs in universe if crs not in union]
+        extra = [crs for crs in union if crs not in universe]
+        print(
+            "error: the shards do not partition this feed's origins: "
+            + (f"missing {len(missing)}: {', '.join(missing[:12])}" if missing else "")
+            + ("; " if missing and extra else "")
+            + (f"outside the feed: {', '.join(extra[:12])}" if extra else ""),
+            file=sys.stderr,
+        )
+        return 2
+    counts: dict[str, int] = {}
+    for _, manifest in shards:
+        for row in manifest.get("index", []):
+            counts[row["crs"]] = row["destinations"]
+    index = build_station_index(counts, fares.locations_by_crs)
+    coverage: UnsourcedReport = UnsourcedReport()
+    for _, manifest in shards:
+        for crs, data in (manifest.get("coverage") or {}).items():
+            coverage.replay_origin(crs, data)
+    if args.fail_on_unsourced and coverage:
+        return coverage.exit_code(True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for shard_dir, _manifest in shards:
+        source = shard_dir / "from"
+        if not source.is_dir():
+            continue
+        for child in sorted(source.iterdir()):
+            target = out_dir / "from" / child.name
+            if target.exists():
+                print(
+                    f"error: {child.name} is written by more than one shard; "
+                    "the shares overlap.",
+                    file=sys.stderr,
+                )
+                return 2
+            shutil.copytree(child, target)
+    release = shards[0][1].get("release", {})
+    built_at = max(str(manifest.get("built_at", "")) for _, manifest in shards)
+    write_station_style(out_dir)
+    write_station_script(out_dir)
+    write_chooser_script(out_dir)
+    station_rows = station_asset_rows(index, release.get("base_path", ""))
+    write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+    write_release(
+        out_dir,
+        index=index,
+        routes=[
+            with_base(release.get("base_path", ""), f"/from/{entry['slug']}/")
+            for entry in index
+        ],
+        budget_pounds=20,
+        note=release.get("note", ""),
+        price_source=release.get("price_source", DEFAULT_PRICE_SOURCE),
+        feed_date=release.get("feed_date"),
+        analytics=release.get("analytics", ""),
+        synthetic=release.get("synthetic", True),
+        privacy_contact=release.get("privacy_contact", ""),
+        features=release.get("features", {}),
+        built_at=built_at,
+        base_path=release.get("base_path", ""),
+    )
+    coverage.report()
+    return coverage.exit_code(args.fail_on_unsourced)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one build: the phases both shapes share, then the shape itself.
 
@@ -4271,6 +4715,14 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args(argv)
+    if args.merge and (args.all_origins or args.fast_all_origins or args.shard or args.only_stations):
+        print(
+            "error: --merge combines shard folders; it takes no build shape flags.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.merge:
+        return merge_shards(args)
     if args.fast_all_origins:
         args.all_origins = True
         if args.timetable:
@@ -4286,6 +4738,19 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.shard and not args.all_origins:
+        print(
+            "error: --shard names a share of a whole-network build, so it "
+            "needs --all-origins.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.shard:
+        try:
+            parse_shard(args.shard)
+        except ValueError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
     day: date | None = None
     if args.date:
         try:
@@ -4382,14 +4847,45 @@ def _build_all_origins(ctx: BuildContext) -> int:
             f"station(s): {', '.join(origins)}",
             flush=True,
         )
+    shard = parse_shard(args.shard)
+    if shard is not None:
+        number, total = shard
+        chosen = len(origins)
+        origins = [
+            crs for position, crs in enumerate(origins) if position % total == number - 1
+        ]
+        print(
+            f"Building shard {number}/{total}: {len(origins)} of {chosen} "
+            "origin(s); --merge combines the shares into one site",
+            flush=True,
+        )
     if args.fast_all_origins:
         print(f"Finding priceable origins across {len(origins):,} stations ...", flush=True)
+    # The identities the per-origin facts are keyed by, read once here rather
+    # than hashed once per page: the fares feed's bytes for the priced counts,
+    # the timetable's for the journey weeks (T6, T9). A timetable the build
+    # reads from a slice index is keyed by that index, because there is no
+    # feed to hash.
+    print("Hashing the feeds for the priced- and journey-facts identities ...", flush=True)
+    fares_identity = fares_cache_identity(args.feed)
+    timetable_identity = ctx.timetable_identity
     priced_counts: dict[str, int] = {}
     # One report for the whole build: a station met from fifty origins is
     # named once, and the build can refuse on a total rather than per page.
     coverage = UnsourcedReport()
     for number, crs in enumerate(origins, 1):
-        priced_counts[crs] = _priced_destinations(fares, timetable, crs, day, coverage)
+        # The counts and the coverage the last build priced out of the same
+        # fares, replayed rather than re-queried: the station index below is
+        # built from the facts either way, and the report reads the same (T6).
+        stored = read_priced_facts(crs, fares_identity, day)
+        if stored is not None and isinstance(stored.get("count"), int):
+            priced_counts[crs] = stored["count"]
+            coverage.replay_origin(crs, stored.get("coverage") or {})
+        else:
+            priced_counts[crs] = _priced_destinations(fares, timetable, crs, day, coverage)
+            write_priced_facts(
+                crs, fares_identity, day, priced_counts[crs], coverage.extract_origin(crs)
+            )
         if args.fast_all_origins and (number == len(origins) or number % 100 == 0):
             print(f"  priced {number:,}/{len(origins):,} stations", flush=True)
     # Refuse before writing 2,500 pages rather than after: a refused build
@@ -4454,6 +4950,11 @@ def _build_all_origins(ctx: BuildContext) -> int:
         # that does not come from a feed this dict already fingerprints.
         "reference_published": reference_published,
         "reference_checked": reference_checked,
+        # The identity the service-week facts are keyed by, so a worker
+        # reuses the journeys the last build searched rather than searching
+        # them again (T9). The fares feed is read from the per-origin index
+        # files, not from here, so it needs no identity in this dict.
+        "timetable_identity": timetable_identity,
     }
     jobs = []
     for crs in origins:
@@ -4466,9 +4967,13 @@ def _build_all_origins(ctx: BuildContext) -> int:
                 "origin_name": by_crs[crs]["name"],
             }
         )
+    # Resume is for every build, not only the prices-only parallel one: a
+    # timetabled build that dies at page 900 starts again at page one without
+    # it (T3). The signature already excludes the build stamp, so the key is
+    # the inputs with builtAt masked rather than the files' bytes.
     state_path = out_dir / BUILD_STATE_NAME
-    signature = resumable_signature(shared, index) if args.fast_all_origins else ""
-    completed = read_resume_state(state_path, signature) if args.fast_all_origins else set()
+    signature = resumable_signature(shared, index)
+    completed = read_resume_state(state_path, signature)
     if completed:
         jobs = [job for job in jobs if job["slug"] not in completed or not (out_dir / "from" / job["slug"] / "index.html").is_file()]
         print(f"resume: {len(completed):,} recorded page(s) already complete", flush=True)
@@ -4491,6 +4996,8 @@ def _build_all_origins(ctx: BuildContext) -> int:
 
     workers = max(1, args.workers)
     built_now = 0
+    rewritten = 0
+    unchanged = 0
     # Audit B1: without this, every pool worker re-parsed all 8.5M flow
     # lines on top of the parent's parse -- nine parses for eight workers.
     # Every build writes the shared metadata and one small index per origin
@@ -4511,21 +5018,31 @@ def _build_all_origins(ctx: BuildContext) -> int:
     prune_fare_index_caches(common_cache, index_dir)
 
     def publish_result(result: tuple[str, str, str]) -> None:
-        nonlocal built_now
+        nonlocal built_now, rewritten, unchanged
         slug, origin_name, html = result
         page = out_dir / "from" / slug / "index.html"
-        write_page_atomic(page, html)
+        # A rebuild whose inputs did not move rewrites nothing: the stamp is
+        # masked, so only a page whose answers changed is written again (T3).
+        # The progress record is written either way, so a build that changed
+        # nothing still resumes as complete.
+        if page_is_current(page, html):
+            unchanged += 1
+            verb = "unchanged"
+        else:
+            write_page_atomic(page, html)
+            rewritten += 1
+            verb = "wrote"
         built_now += 1
         completed.add(slug)
+        write_resume_state(state_path, signature, completed)
         if args.fast_all_origins:
-            write_resume_state(state_path, signature, completed)
             print(
                 f"[{built_now}/{len(jobs)}] "
-                f"wrote {slug} from {origin_name}",
+                f"{verb} {slug} from {origin_name}",
                 flush=True,
             )
         else:
-            print(f"wrote {page} from {origin_name}", flush=True)
+            print(f"{verb} {page} from {origin_name}", flush=True)
 
     if workers == 1:
         # The in-process path builds through the same job function the
@@ -4597,6 +5114,11 @@ def _build_all_origins(ctx: BuildContext) -> int:
                 publish_result(future.result())
     if args.fast_all_origins:
         print(f"station pages complete: {len(completed):,}/{len(index):,}", flush=True)
+    # Always said, including the all-resumed build that wrote nothing: the
+    # incremental answer is the point, and "rewrote nothing" is a result worth
+    # reading rather than an absence worth wondering about. Zero rewritten is
+    # the expected line on a second build of the same feeds (T3).
+    print(f"pages rewritten: {rewritten:,}, unchanged: {unchanged:,}", flush=True)
     # Pages from an earlier build are not deleted -- that is destructive
     # without asking -- but they are named, because a stale page in the
     # output folder is exactly what makes a local preview look wrong.
@@ -4637,6 +5159,43 @@ def _build_all_origins(ctx: BuildContext) -> int:
         f"python -m http.server --directory {out_dir} 8000, then http://localhost:8000/ "
         f"(station links start at /from/, so the file system cannot resolve them)"
     )
+    if shard is not None:
+        # What the merge proves: which share this was, what it was built
+        # from, which origins that meant, and what each priced -- the counts
+        # the union index is built from and the coverage the union report
+        # replays, so neither is queried again at merge time (T4).
+        number, total = shard
+        write_page_atomic(
+            out_dir / SHARD_MANIFEST_NAME,
+            json.dumps(
+                {
+                    "schema": SHARD_MANIFEST_SCHEMA,
+                    "shard": number,
+                    "of": total,
+                    "inputs": shard_agreement(shared),
+                    "built_at": shared["built_at"],
+                    "origins": origins,
+                    "index": index,
+                    "coverage": {
+                        crs: coverage.extract_origin(crs) for crs in origins
+                    },
+                    "release": {
+                        "note": note,
+                        "price_source": price_source,
+                        "feed_date": feed_date,
+                        "analytics": analytics,
+                        "synthetic": synthetic,
+                        "privacy_contact": privacy_contact,
+                        "features": features,
+                        "base_path": base_path,
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+        )
+        print(f"wrote {out_dir / SHARD_MANIFEST_NAME} (share {number}/{total} of this split)")
     coverage.report()
     return coverage.exit_code(args.fail_on_unsourced)
 

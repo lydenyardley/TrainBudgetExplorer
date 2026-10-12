@@ -312,6 +312,10 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         # slice, read from the index. `build_payload` uses it only when
         # `_WORKER["timetable"]` is None, so a build with a feed is unchanged.
         timetable_index=_WORKER.get("timetable_index"),
+        # The identity the service-week facts are keyed by, handed down with
+        # everything else the parent resolved once (T9). Absent on builds from
+        # before the facts existed, which search the week every time.
+        timetable_identity=_WORKER.get("timetable_identity"),
     )
     base_path = _WORKER["base_path"]
     payload["stations"] = []

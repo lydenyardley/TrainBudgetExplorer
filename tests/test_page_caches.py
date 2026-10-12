@@ -17,6 +17,7 @@ import unittest
 from unittest import mock
 import contextlib
 import io
+from datetime import date
 from pathlib import Path
 
 import build_demo_page
@@ -787,6 +788,114 @@ class TimetableIndexBuildTest(unittest.TestCase):
         )
         self.assertEqual(code, 0, said + err)
         self.assertEqual(sorted(self.pages("no_feed")), ["grantham", "nottingham"])
+
+
+class PageFactsTest(unittest.TestCase):
+    """One origin's reusable answers: the week's journeys and the priced counts.
+
+    T2, T3, T6 and T9 of the 12 October 2026 build-cost audit: the timetable
+    half of a page is searched once per timetable feed rather than once per
+    build, and the pricing pre-pass replays the counts it already priced. The
+    cache directory is the module's patched one, so no test reads another
+    run's facts -- and each test below names its own identity, so no test
+    reads another test's either.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.fares = FaresDb().load_feed(
+            build_synthetic_feed(root / "fares", include_restrictions=True)
+        )
+        self.timetable = TimetableDb().load_feed(build_synthetic_timetable(root / "timetable"))
+        self.day = date(2026, 10, 5)
+
+    def test_a_service_week_written_is_a_service_week_read(self) -> None:
+        from datetime import timedelta
+
+        days = [self.day + timedelta(days=offset) for offset in range(8)]
+        weeks = [{"LCN": [50, 0], "NOT": [45, 0]} for _ in days]
+        build_demo_page.write_service_week("GRN", "timetable-a", 0, 1, days, weeks)
+        self.assertEqual(
+            build_demo_page.read_service_week("GRN", "timetable-a", 0, 1, days), weeks
+        )
+
+    def test_a_fact_from_another_timetable_is_a_miss_not_a_page(self) -> None:
+        from datetime import timedelta
+
+        days = [self.day + timedelta(days=offset) for offset in range(8)]
+        build_demo_page.write_service_week(
+            "GRN", "timetable-a", 0, 1, days, [{"LCN": [50, 0]} for _ in days]
+        )
+        self.assertIsNone(build_demo_page.read_service_week("GRN", "timetable-b", 0, 1, days))
+        self.assertIsNone(build_demo_page.read_service_week("GRN", "timetable-a", 1, 1, days))
+        self.assertIsNone(build_demo_page.read_service_week("GRN", "timetable-a", 0, 2, days))
+        other = [self.day + timedelta(days=offset + 1) for offset in range(8)]
+        self.assertIsNone(build_demo_page.read_service_week("GRN", "timetable-a", 0, 1, other))
+        self.assertIsNone(build_demo_page.read_service_week("NOT", "timetable-a", 0, 1, days))
+
+    def test_a_half_written_facts_file_is_a_miss(self) -> None:
+        path = build_demo_page.page_facts_path("GRN")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        self.assertIsNone(build_demo_page.read_page_facts("GRN"))
+        self.assertIsNone(
+            build_demo_page.read_service_week("GRN", "timetable-a", 0, 1, [self.day])
+        )
+
+    def test_a_second_build_searches_no_week_it_already_searched(self) -> None:
+        # T9: the fares-only refresh reuses every journey fact. The build-day
+        # search still runs -- the legs and departures are the page's own --
+        # but the eight sweeps do not.
+        calls = []
+        real = TimetableDb.journeys_from
+
+        def spy(db, origin, **kwargs):
+            calls.append((origin, kwargs.get("day")))
+            return real(db, origin, **kwargs)
+
+        with mock.patch.object(TimetableDb, "journeys_from", spy):
+            cold = build_demo_page.build_payload(
+                self.fares, self.timetable, "GRN", day=self.day, timetable_identity="week-reuse"
+            )
+        cold_calls = len(calls)
+        self.assertGreater(cold_calls, 1, "the cold build searches the week")
+        with mock.patch.object(TimetableDb, "journeys_from", spy):
+            warm = build_demo_page.build_payload(
+                self.fares, self.timetable, "GRN", day=self.day, timetable_identity="week-reuse"
+            )
+        warm_calls = len(calls) - cold_calls
+        self.assertEqual(warm_calls, 1, "the warm build searches only its own day")
+        self.assertEqual(warm["serviceWeek"], cold["serviceWeek"])
+        self.assertEqual(warm["serviceDays"], cold["serviceDays"])
+
+    def test_a_new_row_priced_by_new_fares_finds_its_journeys_waiting(self) -> None:
+        # The whole reached set is stored rather than the wanted subset, so a
+        # destination the next fares feed prices for the first time is timed
+        # from the facts rather than searched for.
+        from datetime import timedelta
+
+        days = [self.day + timedelta(days=offset) for offset in range(8)]
+        build_demo_page.write_service_week(
+            "GRN", "timetable-a", 0, 1, days, [{"ZZZ": [99, 1]} for _ in days]
+        )
+        stored = build_demo_page.read_service_week("GRN", "timetable-a", 0, 1, days)
+        self.assertEqual(stored[0], {"ZZZ": [99, 1]})
+
+    def test_priced_counts_written_are_priced_counts_read(self) -> None:
+        coverage = {"count": 0, "coverage": {"totals": ["LCN"], "unsourced": [], "unnameable": 0}}
+        build_demo_page.write_priced_facts("GRN", "fares-a", self.day, 3, coverage["coverage"])
+        stored = build_demo_page.read_priced_facts("GRN", "fares-a", self.day)
+        self.assertIsNotNone(stored)
+        assert stored is not None
+        self.assertEqual(stored["count"], 3)
+        self.assertEqual(stored["coverage"]["totals"], ["LCN"])
+
+    def test_priced_counts_do_not_survive_a_new_fares_feed(self) -> None:
+        build_demo_page.write_priced_facts("GRN", "fares-a", self.day, 3, {})
+        self.assertIsNone(build_demo_page.read_priced_facts("GRN", "fares-b", self.day))
+        self.assertIsNone(build_demo_page.read_priced_facts("GRN", "fares-a", None))
 
 
 if __name__ == "__main__":
