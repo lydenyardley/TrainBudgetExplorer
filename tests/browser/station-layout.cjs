@@ -111,9 +111,12 @@ async function measureTheLayout(world) {
     // is the state a reader comparing two fares is actually in. It matters for
     // all three of these checks and for a different reason in each: the dock is
     // a fixed strip across the foot of the screen and every measurement below
-    // is of the results table; a page of one result has one page of results, so
-    // nav#pagination is hidden and its margin is nothing to measure; and a page
-    // of one result is too short to scroll its own table under the heading.
+    // is of the results table; a page whose whole list fits on one page -- the
+    // shape feed's builds, six and eight rows -- shows no nav#pagination, so
+    // its margin is nothing to measure; and only a page tall enough to scroll
+    // its table to the top of the screen can put its headings there, which the
+    // dated shape builds now are (measured: the table starts 724px down a page
+    // with 827px to scroll).
     await page.setViewportSize({ width: 1280, height: 600 });
     await open(facts.affordable);
     await page.evaluate(() => {
@@ -151,7 +154,7 @@ async function measureTheLayout(world) {
     });
     // Sticky and opaque on every page, because that is what the rule says.
     // Landed at the top of the viewport only where the page is long enough to
-    // scroll the headings there, which a one-row page is not.
+    // scroll the headings there, which a page that fits on one screen is not.
     check(
       "the column headings stay at the top of the screen once the table is scrolled",
       stuckHeadings.position === "sticky" &&
