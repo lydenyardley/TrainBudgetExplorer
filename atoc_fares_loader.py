@@ -1073,6 +1073,14 @@ class FaresLoader:
         self.report.files_read.append(name)
         if extension == "rst":
             self.restrictions.files_read.append(name)
+        if extension != "rst":
+            # Every DTD fares file opens with ``/!! Start of file`` and may close
+            # with a ``/!!`` trailer such as ``/!! Records: 3316``; a line that
+            # starts with ``/`` is a comment, never a record. The restrictions
+            # reader already skips them itself (atoc_restrictions.load_line).
+            # Without this the .RCM trailer was rejected as a bad date, and the
+            # .RLC reader took a comment's first columns for a railcard code.
+            lines = (line for line in lines if not line.startswith("/"))
         count(lines, loader, self.report, name)
 
     def _flow_index_nlcs(self, flow: Flow) -> tuple[str, ...]:
