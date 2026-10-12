@@ -1228,6 +1228,28 @@ class FaresParserTest(unittest.TestCase):
         # And a day before the start is the same answer for the same reason.
         self.assertIsNone(db.minimum_fare("TWO", "SDR", date(2025, 12, 31)))
 
+    def test_comment_and_trailer_lines_are_not_records(self) -> None:
+        # The 12 October 2026 feed closes its .RCM with `/!! Records: N`,
+        # which the reader rejected as a bad date and the audit then failed
+        # on. Every fares file gets the same header and trailer here.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        feed = build_synthetic_feed(
+            Path(tmp.name) / "rjfaf-trailer",
+            minimum_fares=(("TWO", "SDR", 1200, "01012026", "31122026"),),
+        )
+        clean = FaresDb().load_feed(feed)
+        for path in sorted(Path(feed).glob("rjfaf.*")):
+            body = path.read_text(encoding="utf-8").splitlines()
+            lines = ["/!! Start of file", *body, f"/!! Records: {len(body)}"]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        db = FaresDb().load_feed(feed)
+        self.assertEqual(db.report.records_skipped, 0, db.report.skipped_examples)
+        self.assertEqual(db.minimum_fare("TWO", "SDR", date(2026, 6, 1)), 1200)
+        self.assertEqual(set(db.railcards), set(clean.railcards))
+        self.assertEqual(set(db.ticket_types), set(clean.ticket_types))
+        self.assertEqual(set(db.locations_by_crs), set(clean.locations_by_crs))
+        self.assertEqual(len(db.flows), len(clean.flows))
     def test_the_window_covering_the_day_is_the_one_applied(self) -> None:
         db = self._db_with_minimums(
             ("TWO", "SDR", 1200, "01012020", "31122020"),
