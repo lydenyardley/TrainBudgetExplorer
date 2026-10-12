@@ -38,6 +38,34 @@ jobs:
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: python dtd_download.py --output-root feeds
 
+      - name: Download the Knowledgebase reference feeds
+        # Needed, not optional, for a faithful regeneration: the heritage prune
+        # reads station coordinates from the Knowledgebase stations.xml, and
+        # without it candidates are kept unfiltered -- the first run of this
+        # workflow re-added Buxton, Bradford and Richmond that way. The deploy
+        # workflow's facet check runs with this download in place, so this run
+        # must too; a failed download fails the run rather than producing a
+        # file the deploy check would then disagree with.
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds --kb-only
+
+      - name: List the feed's station codes
+        # Codes only, the public three-letter CRS, so a reviewer can name the
+        # stations a feed revision added or removed. No fare or record leaves.
+        shell: bash
+        run: |
+          mkdir -p facet-review
+          python - <<'PY' > facet-review/station-codes.txt
+          import sys
+          sys.path.insert(0, "tools")
+          from pathlib import Path
+          from regenerate_destination_facets import load_stations
+          db = load_stations(Path("feeds/fares/dtd-fares.zip"))
+          print("\n".join(sorted(db.locations_by_crs)))
+          PY
+          echo "station codes: $(wc -l < facet-review/station-codes.txt)"
       - name: Regenerate the facet reference data
         run: python tools/regenerate_destination_facets.py --feed feeds/fares/dtd-fares.zip
 
