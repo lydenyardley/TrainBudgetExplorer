@@ -33,7 +33,7 @@ than passing quietly. One module while you work on it:
 | Tests | `tests/` (28 modules, one per area); the page suite's shared fixture is `tests/page_harness.py`, and the browser suite is `tests/browser_test.cjs` -- the entry point the tools and CI invoke -- over `tests/browser/`: `tests/browser/harness.cjs` (the page list, the server, the money and date helpers, and the report), `tests/browser/chooser.cjs`, `tests/browser/release-root.cjs`, `tests/browser/a11y-matrix.cjs`, `tests/browser/station.cjs` (the station page's driver and the state every section reads), and one module per section of checks: `tests/browser/station-render.cjs`, `tests/browser/station-filters.cjs`, `tests/browser/station-rows.cjs`, `tests/browser/station-fares.cjs`, `tests/browser/station-shortlist.cjs`, `tests/browser/station-layout.cjs`, `tests/browser/station-picker.cjs`, `tests/browser/station-assets.cjs` |
 | Decisions | `adr/` (68 ADRs, each with a Status line), `docs/open-work.md` (what is still open and why), `docs/build-performance-findings.md` (every measured figure) |
 | Data | `reference-data/destination-facets.json`, checked against the registry in CI |
-| Release | `.github/workflows/deploy.yml`, `licences/release-clearance.md` (a person's decision, and it gates publishing) |
+| Release | `.github/workflows/deploy.yml`, `.github/workflows/regenerate-facets.yml` (manual: the facet reference regenerated from CI's download, as an artifact), `licences/release-clearance.md` (a person's decision, and it gates publishing) |
 
 ## The rules, and what enforces them
 
