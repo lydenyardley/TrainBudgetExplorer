@@ -555,33 +555,55 @@ class RunnerBuildOrServeTest(unittest.TestCase):
             out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
             code = run.main()
-        return code, out.getvalue(), builder.call_count, served
+        # The builder mock, not its call count: whether the runner decided to
+        # build is in how many times it was called, and what it decided to
+        # build is in the flags it was handed.
+        return code, out.getvalue(), builder, served
 
     def test_a_clean_checkout_builds_because_there_is_nothing_to_serve(self) -> None:
-        _, _, builds, _ = self.run_main("--no-build", site_exists=True)
-        self.assertEqual(builds, 0)
-        _, _, builds, served = self.run_main(site_exists=False)
-        self.assertEqual(builds, 1)
+        _, _, builder, _ = self.run_main("--no-build", site_exists=True)
+        self.assertEqual(builder.call_count, 0)
+        _, _, builder, served = self.run_main(site_exists=False)
+        self.assertEqual(builder.call_count, 1)
         self.assertEqual(len(served), 1)
 
     def test_a_second_run_serves_what_the_first_one_wrote(self) -> None:
         # --origin is the fast single-station build, and it is the one a
         # second run of it serves without rebuilding.
-        _, said, builds, served = self.run_main("--origin", "GRA", site_exists=True)
-        self.assertEqual(builds, 0)
+        _, said, builder, served = self.run_main("--origin", "GRA", site_exists=True)
+        self.assertEqual(builder.call_count, 0)
         self.assertEqual(len(served), 1)
         self.assertIn("without rebuilding", said)
 
-    def test_the_default_builds_the_whole_network(self) -> None:
-        # A one-station build has nowhere for the heading's station control
-        # to go, so the name renders as plain text -- the page that cannot
-        # change station. The default is the network, and it says what that
-        # costs before it starts.
-        _, said, builds, served = self.run_main(site_exists=False)
-        self.assertEqual(builds, 1)
+    def test_the_default_is_the_fast_page_not_the_network(self) -> None:
+        # T7: the double-click path set --all-origins itself, which made a
+        # first run a whole-network batch job -- hours on an 8 GB machine --
+        # so it never finished. The default is the fast single-origin page
+        # again, and the network is the named job behind --all-origins with
+        # its acknowledgement flag.
+        _, _, builder, served = self.run_main(site_exists=False)
+        self.assertEqual(builder.call_count, 1)
         self.assertEqual(len(served), 1)
-        self.assertIn("one page per priced station", said)
-        self.assertIn("--origin GRA", said)
+        args = builder.call_args[0][0]
+        self.assertFalse(args.all_origins)
+        self.assertIsNone(args.origin)
+
+    def test_the_network_build_names_itself_as_the_slow_job(self) -> None:
+        # --all-origins without the acknowledgement is refused before it
+        # starts, with the measured cost named, rather than after it has
+        # finished.
+        code, _, builder, served = self.run_main(
+            "--all-origins", site_exists=False
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(builder.call_count, 0)
+        self.assertEqual(served, [])
+        code, _, builder, served = self.run_main(
+            "--all-origins", "--i-know-this-is-slow", site_exists=False
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(builder.call_count, 1)
+        self.assertTrue(builder.call_args[0][0].all_origins)
 
     def test_a_build_older_than_the_sources_is_not_served(self) -> None:
         # Nine hours of committed work, a double-clicked runner, and a page
@@ -607,21 +629,21 @@ class RunnerBuildOrServeTest(unittest.TestCase):
         # Nine hours of committed work, a double-clicked runner and a page
         # from before it, with nothing on the page saying so. The runner
         # rebuilds when what it would serve is out of date, and says why.
-        _, said, builds, served = self.run_main(
+        _, said, builder, served = self.run_main(
             "--origin", "GRA", site_exists=True, stale=True
         )
-        self.assertEqual(builds, 1)
+        self.assertEqual(builder.call_count, 1)
         self.assertEqual(len(served), 1)
         self.assertIn("newer than _site/", said)
 
     def test_rebuild_builds_even_when_a_site_is_already_there(self) -> None:
-        _, _, builds, _ = self.run_main("--rebuild", site_exists=True)
-        self.assertEqual(builds, 1)
+        _, _, builder, _ = self.run_main("--rebuild", site_exists=True)
+        self.assertEqual(builder.call_count, 1)
 
     def test_no_build_refuses_rather_than_building_what_it_was_told_not_to(self) -> None:
-        code, _, builds, served = self.run_main("--no-build", site_exists=False)
+        code, _, builder, served = self.run_main("--no-build", site_exists=False)
         self.assertEqual(code, 1)
-        self.assertEqual(builds, 0)
+        self.assertEqual(builder.call_count, 0)
         self.assertEqual(served, [])
 
 class WorkerBudgetTest(unittest.TestCase):

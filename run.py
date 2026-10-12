@@ -358,8 +358,10 @@ def main() -> int:
     if args.timetable is not None and not args.timetable.exists():
         args.timetable = None
 
-    # The default is now the whole network, and this says what that costs
-    # before it starts rather than after it has finished. Measured on the real
+    # T7: the default is the fast single-origin page, not the whole network.
+    # The double-click path used to set --all-origins itself, which made a
+    # first run a whole-network batch job -- about four hours on this
+    # machine's free memory -- so it never finished. Measured on the real
     # feed with the national timetable, 2 October 2026, on this machine, by a
     # whole-network build rather than by a stopwatch over its first minutes:
     # 2,712 priced stations in 121 minutes of page building at 0.093 pages/s
@@ -371,17 +373,21 @@ def main() -> int:
     # minutes that followed came from the first nine minutes of a build, which
     # are the cheapest stations in the set. A rate taken from the first tenth of
     # the work is not a rate for the work. Both are withdrawn rather than
-    # qualified (ADR-0024, ADR-0050, ADR-0055, ADR-0057). The fast
-    # single-origin page is still one flag away, because a build of one station
-    # is the right tool for working on one station and the wrong thing to
-    # double-click.
-    if not args.all_origins and args.origin is None and not args.no_build:
-        args.all_origins = True
-        args.i_know_this_is_slow = True
-        print("Building one page per priced station. This is a one-off: the "
-              "next `python run.py` serves what this writes and starts "
-              "immediately. Pass --origin GRA for the fast single-station "
-              "page instead.")
+    # qualified (ADR-0024, ADR-0050, ADR-0055, ADR-0057). The whole-network
+    # build is still one flag away, because a build of one station is the
+    # right tool for working on one station and the wrong thing to mistake
+    # for the release.
+    #
+    # A single-origin page stands as text where a network page offers the
+    # station control: there is nowhere to change to, so the name is not a
+    # control that opens nothing (origin_control).
+    if args.all_origins and not args.i_know_this_is_slow:
+        print(
+            "error: --all-origins is a whole-network batch job, measured in "
+            "hours (ADR-0024): pass --i-know-this-is-slow to run it.",
+            file=sys.stderr,
+        )
+        return 2
 
     # The build and the serve are separate decisions. A runner that rebuilds
     # every time cannot answer "is this the build I made?", and a stale
