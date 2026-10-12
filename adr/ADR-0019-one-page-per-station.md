@@ -243,3 +243,23 @@ consequence. Two of its three numbers were wrong, and the third hid the defect:
 The selector itself did not move: ADR-0025's six reviewed codes remain the
 publishable set, and `EIS` at 5p stays excluded — see ADR-0025's own note for
 the review that asked whether it was hiding a real King's Cross fare.
+
+## Amendment — 12 October 2026: pages may be sharded, and rebuilt without rewriting
+
+Two things about how the set is written, neither about which pages are in it.
+
+**The set may be built in shares.** `--shard N/M` writes a disjoint share of
+the origin list into its own folder and `--merge` combines the shares after
+proving they partition the feed's origins, agree on inputs and overlap
+nowhere; the chooser, the station list and the manifest are written once from
+the union. A shard covers one share of the origin list, never part of a route:
+a station's page is either whole or absent, so the route contract decision 1
+made is unaffected by how many processes wrote it.
+
+**A rebuild rewrites nothing it already wrote.** One origin's priced counts
+and journey weeks are keyed by the feeds they came from, so a fares-only
+refresh reuses every journey fact and rewrites only the pages whose prices
+moved, and a second build of the same feeds reports zero rewritten pages. The
+key is the payload with `builtAt` masked, so the write path is proved by a
+comparison rather than trusted — the shape ADR-0055 has for staleness, applied
+one artifact down.

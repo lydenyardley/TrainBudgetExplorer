@@ -1,6 +1,6 @@
 # ADR-0050: The release is the whole network, and it is affordable
 
-**Status:** Accepted
+**Status:** Accepted; amended 12 October 2026 (see below)
 **Date:** 1 October 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0024 (scaling and the batch
 build, re-measured the same day), ADR-0046 (a row list ships as a table and a
@@ -104,3 +104,25 @@ python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
   --all-origins --workers 3 --out _cache/net_probe/index.html --notices nre,rdg,ogl,accuracy
 python tools/page_bytes.py --site _cache/net_probe
 ```
+
+## Amendment — 12 October 2026: the 498 MB figure is prices-only, and the build shards
+
+Decision 4's "measured release is 498 MB" was a prices-only build
+(`--fast-all-origins`): it never priced the service week, the two-ticket
+pairs or the departures the release ships, so it is not the release decision
+1 publishes. Measured 12 October 2026 in the release's own shape
+(`docs/build-performance-findings.md`): 24 major stations average 2.73 MB a
+page, a 10-page stride sample 806 KB, driven by two-ticket pair records in
+`railcardRules` (~1 MB on the heaviest hubs) rather than by anything the
+1 October work moved. The with-week shape projects to roughly 2.2 GB against
+the 800 MB budget — over, with wide error bars at n=10. The gate in decision
+4 is what settles it: it refuses on its own, and until the next real release
+runs it the projection stands as the estimate. `docs/open-work.md` carries
+the pair-rule encoding this measurement points at.
+
+What decision 1 publishes is unchanged: one page per priced station, chooser
+at the root. How it is built may now be sharded: `--shard N/M` over the
+origin list with a `--merge` that proves the partition, for the runners the
+single-build wall clock does not fit. A shard is a share of the same release,
+not a release of its own, and the merge writes the chooser, the station list
+and the manifest once from the union. Decisions 2, 3, 5 and 6 stand.

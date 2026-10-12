@@ -37,6 +37,60 @@ sweep, no raw OSM tourism tags, no polygon-wide landscape tagging) still hold.
 
 ## The open findings
 
+### P1 — a whole-network release is over its byte budget, and the pair rules are why
+
+**Severity:** P1 for a published release, and now measured rather than
+projected. **Route:** `build_demo_page.py`'s payload encoding, the deploy
+workflow's release build, `tools/page_bytes.py`'s budget gate.
+**Raised:** 12 October 2026, from the build-cost audit's own projection.
+
+**Evidence, measured 12 October 2026** (24 September 2026 DTD download,
+`--date`, `--notices nre,rdg,ogl,accuracy`, in `docs/build-performance-findings.md`).
+24 major stations average **2,734,828 bytes** a page, median 2,493,992, and a
+10-page alphabetical stride sample averages **806,367 bytes**, median 712,627,
+from 72,065 to 2,495,286. At 2,712 priced stations the with-week shape projects
+to roughly **2.2 GB** against the **800 MB** budget the gate holds the site to,
+with wide error bars at n=10 — so the direction is measured and the size is an
+estimate until the next real release runs the gate.
+
+**Where the bytes are.** Birmingham New Street's 1,626,528-byte payload breaks
+down as **1,050,373 railcardRules**, 220,029 destinations, 188,527 single
+destinations, 73,593 anytime destinations, 56,454 pool, 30,756 serviceWeek. The
+2,372 railcard rules are almost all two-ticket pair records (one per
+permitted ticket × route × location combination, ADR-0061), and all but 18 are
+referenced by a row, so the bulk is combinatorial rather than a leak: a hub that
+prices 288 destinations across three modes with many permitted pair splits
+produces thousands of distinct pairs. The audit asked the build to search the
+service week once for the network; what this shows is that the *payload* is now
+the expensive half, not the search.
+
+**What was tried, and did not help.** The service week is 30,756 bytes and the
+destinations 220 KB: neither is the problem. The 1 October T1/T10 work removed
+the route's script from every page exactly (148,477 bytes a page on the same
+station, same shape), which is about 385 MB across the network — and the release
+is still projected over budget, which is why this is a P1 rather than a footnote.
+
+**What would close it.** One of three, in an order a reader of the numbers would
+take. First, measure first: run a whole-network build in the release's own shape
+and let `python tools/page_bytes.py --site _site --budget-mb 800` refuse it, so
+the projection is replaced by a figure. Second, the pair rules: they are a code
+plus a price, and the pair's own minimum-fare behaviour is derivable from the
+rule's components rather than carried as a record per pair — an encoding change
+behind the payload's shape, so the browser suite's fare-panel checks hold it
+honest. Third, shard the build so a release that does not fit in one runner's
+wall clock can still be published (T4 landed the shards and the merge; nothing
+yet shards the release build).
+
+### The pair-rule encoding is the release's own cost, and it is measurable
+
+Raised by the same measurement, as its own finding because it is separable from
+the budget question above. `railcardRules` is the largest block on a real page
+and it grows combinatorially with the permitted pair splits, so the release's
+byte cost is now a function of how many two-ticket combinations the feed allows
+rather than of how many destinations it prices. Until the encoding changes, the
+whole-network byte figure cannot be reasoned about, only measured — which is the
+state the audit's projection came from.
+
 ### C27 — the chooser requires a known station name or a code prefix
 
 **Severity:** P2. **Route:** the full-build root chooser.
@@ -140,7 +194,7 @@ from AYW it exits 1 having printed `facet seaside: 149 in the checked-in copy,
 reading a feed. `tests/test_check_facet_reference.py` holds 16 tests over the
 comparison itself, which is a pure function and needs no feed.
 
-### A whole-network build holds the national timetable for its whole life
+### A whole-network build holds the national timetable for its whole life (superseded 12 October 2026)
 
 **Severity:** P1 for build cost, and no longer blocking a two-station preview.
 **Route:** `run.bat` / `build_stations.py` / the deploy workflow, that is, every
@@ -148,6 +202,13 @@ path that builds through `--all-origins`. **Raised:** 7 October 2026.
 **Partial fix landed:** the same day for the fares feed, 8 October 2026 for the
 timetable a page reads, and the same day again for the feed that timetable is
 read from.
+**Superseded 12 October 2026** by the per-origin facts of the build-cost audit:
+the entry's own framing — "a whole-network build holds the national timetable
+for its whole life" — is a statement about the *parent process*, and a page is
+built from a slice of it, so the question is per-page rather than
+whole-timetable. What survives is the per-origin slice work measured above,
+which the 12 October distribution (`docs/build-performance-findings.md`) shows
+costs 0.64 s to 105.17 s an origin rather than being uniform.
 
 **Evidence, corrected by measurement on 7 October 2026.** The index's *footprint*
 costs the minutes, not the work per search. National index: 1.87 GB held (4.92 ->
@@ -230,6 +291,14 @@ smaller and is measured in `docs/build-performance-findings.md` rather than
 guessed at here. Indexing the whole network is still not a thing to do: holding
 every origin's slice is holding the network 3,400 times over, so
 `tools/build_timetable_index.py --all-origins` refuses without `--max-bytes`.
+
+**12 October 2026: what that prescription would cost is now measurable.** A
+per-origin facts pass keyed by the slice index writes one file per origin and
+never re-searches a week the same timetable already answered — the shape T2
+asked for, without the national day index that would reintroduce the 1.87 GB
+whole-feed hold this entry was opened about. Indexing every origin's slice is
+still refused, and every build without an index still parses the feed; the
+facts layer does not change either, it removes the repeat search.
 
 **What it is not.** Not a fares problem. The whole fares feed loads in 36.9 s,
 the pricing pre-pass is 0.01-0.09 s per origin, and a prices-only page renders in
@@ -529,6 +598,11 @@ next reader does not file it as a defect.
 All four files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
 above. `git show <commit>` reads one back.
+
+The 12 October 2026 build-cost audit is pruned the same way: its twelve tasks
+landed, its measurements are in `docs/build-performance-findings.md`, the
+decisions they amend name them, and the one finding its work opened — the
+pair-rule encoding — is above.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in

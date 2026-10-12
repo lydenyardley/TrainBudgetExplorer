@@ -128,3 +128,28 @@ prices-only -- because the per-origin cost turned out not to be what made
 prices-only attractive. Decision 3 still stands: no incremental per-origin
 rebuilds, and the homogeneity argument for them is unaffected by any of this.
 Decision 4 still stands: the search core is not rewritten.
+
+## Amended 12 October 2026: the spread, the facts, and the shards
+
+Decision 3 is superseded in practice: incremental per-origin rebuilds exist.
+One origin's reusable answers are kept under `_cache/page-facts`, keyed by
+the feeds they came from -- the service week's journey facts by the
+timetable, the priced counts with their coverage by the fares -- so a
+fares-only refresh reuses every journey fact while re-pricing every origin,
+and a rebuild whose inputs did not move rewrites no page. The homogeneity
+worry behind decision 3 is answered the way the slice equivalence was:
+the replayed coverage reads exactly as the queried one, and the skipped
+write is proved by a masked comparison rather than trusted.
+
+The fixed-cost picture in the 1 October amendment is superseded by the
+distribution: `python tools/measure_origin_costs.py` times the slice cut,
+the day index and the reachability search per origin, and a twelve-origin
+stride sample runs mean 19.37 s against median 4.74 s with a 105.17 s
+maximum (`docs/build-performance-findings.md`). Task ordering follows the
+tail, not the middle.
+
+Wall clock divides by the shard count, which is the only lever that does:
+`--shard N/M` builds a disjoint share of the origin list into its own
+folder, and `--merge` combines the shares after proving they partition the
+feed's origins, agree on inputs, and overlap nowhere. Decisions 1, 2, 4
+and 5 stand.
