@@ -569,6 +569,16 @@ def write_release(
             + "\n".join(f"  {problem}" for problem in missing)
         )
     print(f"wrote {manifest_path} naming {len(manifest['routes'])} route(s) of this release")
+    # Last: a rebuild into the same folder must not accumulate the hashed
+    # files an earlier build wrote under another digest (T11). The crawl above
+    # already proved every page's requests resolve, so what is removed here is
+    # named by nothing.
+    prune_shared_assets(
+        out_dir,
+        station_style_asset_name(),
+        station_script_asset_name(),
+        chooser_script_asset_name(),
+    )
     return manifest_path
 
 
@@ -3446,6 +3456,38 @@ def chooser_script_tag(src: str) -> str:
         f'<script src="{html.escape(src, quote=True)}" defer '
         "onerror=\"document.getElementById('scriptNote').hidden=false\"></script>\n"
     )
+
+
+# The hashed files one build leaves for the next: a stylesheet or script whose
+# content changed is a new name rather than a changed one, so a rebuild into
+# the same folder leaves the copy the previous build wrote beside the one this
+# build wrote. Five station stylesheets accumulated in _site/ that way, and
+# `git status` listed what no page named. Only these three patterns are ever
+# removed: everything else in the folder is somebody else's to delete.
+SHARED_ASSET_PATTERNS = ("station-*.css", "station-*.js", "chooser-*.js")
+
+
+def prune_shared_assets(out_dir: Path, *keep: str) -> list[str]:
+    """Remove the hashed assets this build did not write, and name them.
+
+    ``keep`` holds the file names this build wrote. A name the manifest no
+    longer names is served to nobody and read by no page, so keeping it grows
+    the folder and lies in `git status` about what the release is.
+    """
+    kept = set(keep)
+    removed: list[str] = []
+    for pattern in SHARED_ASSET_PATTERNS:
+        for path in sorted(out_dir.glob(pattern)):
+            if path.is_file() and path.name not in kept:
+                path.unlink()
+                removed.append(path.name)
+    if removed:
+        print(
+            f"removed {len(removed)} asset file(s) no page names: "
+            + ", ".join(removed),
+            flush=True,
+        )
+    return removed
 
 
 def picker_has_options(payload: dict) -> bool:
