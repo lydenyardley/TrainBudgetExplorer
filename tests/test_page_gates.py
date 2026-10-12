@@ -14,10 +14,11 @@ import contextlib
 import io
 from pathlib import Path
 
+import atoc_fares
 import build_demo_page
 from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
 from build_demo_page import build_payload, build_station_index
-from make_synthetic_feed import _line, build_synthetic_feed
+from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates
 from destination_coverage import UnsourcedReport
 from parse_report import ParseReport
 
@@ -300,9 +301,13 @@ class ReviewedCodeGateTest(unittest.TestCase):
         # channel: reporting it as an unopened source would be a lie that also
         # hid it among the archive-inside-an-archive notes.
         with tempfile.TemporaryDirectory() as tmp:
-            db = FaresDb().load_feed(
-                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
-            )
+            # The prune's coordinates come from the fixture, not the licensed
+            # download a clean checkout lacks, whose absence is a skipped file.
+            coordinates = build_synthetic_station_coordinates(Path(tmp) / "stations.xml")
+            with mock.patch.object(atoc_fares, "DEFAULT_STATIONS_XML", coordinates):
+                db = FaresDb().load_feed(
+                    build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+                )
         self.assertTrue(db.report.reviewed_codes_absent)
         self.assertEqual(
             db.report.skipped_files,
