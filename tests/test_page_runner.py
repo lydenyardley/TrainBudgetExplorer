@@ -235,6 +235,154 @@ class AllOriginsCliTest(unittest.TestCase):
     def test_a_fresh_folder_gets_no_stale_note(self) -> None:
         self.assertNotIn("earlier build", self.build())
 
+    def test_a_second_build_of_the_same_feeds_rewrites_nothing(self) -> None:
+        # T3: the key is the payload with builtAt masked, so a rebuild whose
+        # inputs did not move rewrites no page. The resume record makes the
+        # second build skip every page; deleting the record exercises the
+        # write path instead, which compares each page and still writes none.
+        first = self.build()
+        self.assertNotIn("pages rewritten: 0", first)
+        second = self.build()
+        self.assertIn("pages rewritten: 0", second)
+        (self.out.parent / ".trainbudget-build.json").unlink()
+        third = self.build()
+        self.assertIn("pages rewritten: 0", third)
+        self.assertIn("unchanged: 2", third)
+
+    def test_a_timetabled_build_records_progress_for_a_resume(self) -> None:
+        # T3: resume was the prices-only parallel mode's alone, so a
+        # timetabled build that died at page 900 started again at page one.
+        # The progress record is written after every page whatever the mode.
+        self.build()
+        self.assertTrue((self.out.parent / ".trainbudget-build.json").is_file())
+
+    def test_a_bad_shard_share_is_refused_before_anything_builds(self) -> None:
+        for spec in ("0/2", "3/2", "1/0", "half", "1/2/3"):
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(self.feed),
+                        "--all-origins", "--shard", spec,
+                        "--out", str(self.out),
+                    ]
+                )
+            self.assertEqual(code, 2, spec)
+
+    def test_a_shard_needs_the_network_build_it_shares(self) -> None:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                ["--feed", str(self.feed), "--shard", "1/2", "--out", str(self.out)]
+            )
+        self.assertEqual(code, 2)
+
+    def test_shards_merge_to_the_site_a_single_build_writes(self) -> None:
+        # T4: wall clock divides by the shard count, which is the only lever
+        # that does. Two shares built apart merge to the same routes and the
+        # same page bytes as one build over the whole list.
+        shards = []
+        for number in (1, 2):
+            shard_out = self.out.parent / f"shard-{number}" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(self.feed),
+                        "--timetable", str(self.timetable),
+                        "--all-origins", "--shard", f"{number}/2",
+                        "--out", str(shard_out),
+                    ]
+                )
+            self.assertEqual(code, 0, buffer.getvalue())
+            shards.append(shard_out.parent)
+        for number, shard in enumerate(shards, 1):
+            manifest = json.loads((shard / "shard.json").read_text(encoding="utf-8"))
+            self.assertEqual((manifest["shard"], manifest["of"]), (number, 2))
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--merge", *[str(shard) for shard in shards],
+                    "--feed", str(self.feed),
+                    "--out", str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0, buffer.getvalue())
+        merged = sorted(child.name for child in (self.out.parent / "from").iterdir())
+        self.assertEqual(merged, ["grantham", "nottingham"])
+        whole = self.out.parent / "whole" / "index.html"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--timetable", str(self.timetable),
+                    "--all-origins",
+                    "--out", str(whole),
+                ]
+            )
+        self.assertEqual(code, 0, buffer.getvalue())
+        for slug in ("grantham", "nottingham"):
+            merged_page = (self.out.parent / "from" / slug / "index.html").read_text(encoding="utf-8")
+            self.assertTrue(
+                build_demo_page.page_is_current(
+                    whole.parent / "from" / slug / "index.html", merged_page
+                ),
+                f"shard-built {slug} differs from the whole-list build",
+            )
+
+    def test_a_merge_refuses_shards_that_do_not_partition_the_feed(self) -> None:
+        shard_out = self.out.parent / "shard-1" / "index.html"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--feed", str(self.feed),
+                    "--all-origins", "--shard", "1/2",
+                    "--out", str(shard_out),
+                ]
+            )
+        self.assertEqual(code, 0, buffer.getvalue())
+        shard = shard_out.parent
+        # Twice the same share: the shares overlap rather than partition.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                ["--merge", str(shard), str(shard), "--feed", str(self.feed),
+                 "--out", str(self.out)]
+            )
+        self.assertEqual(code, 2)
+        # One share of two: the merge is gapped.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                ["--merge", str(shard), "--feed", str(self.feed), "--out", str(self.out)]
+            )
+        self.assertEqual(code, 2)
+
+    def test_a_merge_refuses_shards_built_from_different_inputs(self) -> None:
+        first = self.out.parent / "shard-1" / "index.html"
+        second = self.out.parent / "shard-2" / "index.html"
+        for out, note in ((first, None), (second, "--note")):
+            flags = ["--feed", str(self.feed), "--all-origins"]
+            if note is None:
+                flags += ["--shard", "1/2"]
+            else:
+                flags += ["--shard", "2/2", note, "a different footer"]
+            flags += ["--out", str(out)]
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(flags)
+            self.assertEqual(code, 0, buffer.getvalue())
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                ["--merge", str(first.parent), str(second.parent),
+                 "--feed", str(self.feed), "--out", str(self.out)]
+            )
+        self.assertEqual(code, 2)
+
     def test_fast_all_origins_reports_progress_and_resumes_completed_pages(self) -> None:
         first = io.StringIO()
         with contextlib.redirect_stdout(first):
@@ -276,9 +424,13 @@ class AllOriginsCliTest(unittest.TestCase):
 
     def test_the_worker_path_and_the_inprocess_path_build_the_same_pages(self) -> None:
         # Audit A2: the two modes went through different job shapes once; the
-        # proof they agree is a byte-diff of the pages each mode writes.
+        # proof they agree is a byte-diff of the pages each mode writes. The
+        # pages are deleted between the builds so the pool really writes: a
+        # rebuild over present pages would skip the write after proving the
+        # bytes match, which proves the comparison rather than the writer.
         self.build()
         single = (self.out.parent / "from" / "grantham" / "index.html").read_text(encoding="utf-8")
+        shutil.rmtree(self.out.parent / "from")
         with contextlib.redirect_stdout(io.StringIO()):
             code = build_demo_page.main(
                 [

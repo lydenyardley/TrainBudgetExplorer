@@ -326,6 +326,44 @@ class UnsourcedReport:
             key=lambda item: (-len(self._origins.get(item[0], ())), item[0]),
         )
 
+    def extract_origin(self, origin: str | None) -> dict:
+        """One origin's share of this report, as plain data.
+
+        The per-origin slice the priced-facts store keeps beside the count, so
+        a warm build replays the coverage instead of re-querying the fares for
+        it (T6). Totals are the priced destinations the share is over;
+        unsourced pairs the station with the name the report would print.
+        """
+        key = (origin or "").strip().upper()
+        totals = sorted(self._origin_totals.get(key, ()))
+        unsourced = sorted(
+            (code, self._names.get(code, code))
+            for code, origins in self._origins.items()
+            if key in origins
+        )
+        return {
+            "totals": totals,
+            "unsourced": [list(pair) for pair in unsourced],
+            "unnameable": self._origin_unnameable.get(key, 0),
+        }
+
+    def replay_origin(self, origin: str | None, data: dict) -> None:
+        """Restore one origin's share from ``extract_origin``'s data.
+
+        The same notes the live queries would have written, so a replayed
+        report reads exactly as a queried one: the exit code, the message and
+        the worst shares cannot tell them apart.
+        """
+        key = (origin or "").strip().upper()
+        if not isinstance(data, dict):
+            return
+        for code in data.get("totals") or ():
+            self._note_total(code, key)
+        for pair in data.get("unsourced") or ():
+            code, name = pair
+            self.note(code, name, key)
+        self.note_unnameable(key, int(data.get("unnameable") or 0))
+
     def worst_shares(self, limit: int = SHARE_LIMIT) -> list[tuple[str, int, int]]:
         """The (origin, unsourced, total) shares, highest first.
 

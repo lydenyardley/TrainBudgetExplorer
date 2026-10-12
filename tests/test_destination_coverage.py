@@ -87,6 +87,35 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(report.note_fares_rows(fares, rows, "GRA"), 1)
         self.assertEqual([code for code, _ in report.stations()], ["DOR"])
 
+    def test_an_extracted_origin_replays_as_the_queries_wrote_it(self) -> None:
+        # T6: the pricing pre-pass replays the coverage it already priced
+        # rather than re-querying the fares for it. The replayed report reads
+        # exactly as the queried one: the stations, the shares, the message
+        # and the exit code cannot tell them apart.
+        fares = mock.Mock()
+        fares.destination_type.side_effect = lambda crs: "other" if crs == "DOR" else "town"
+        queried = UnsourcedReport()
+        tally: dict[str, int] = {}
+        rows = [mock.Mock(crs="DOR", station="DORE & TOTLEY"), mock.Mock(crs="LCN", station="LINCOLN")]
+        queried.note_unnameable("GRA", 2)
+        queried.note_fares_rows(fares, rows, "GRA")
+        queried.note_unnameable("NOT", 1)
+        replayed = UnsourcedReport()
+        replayed.replay_origin("GRA", queried.extract_origin("GRA"))
+        replayed.replay_origin("NOT", queried.extract_origin("NOT"))
+        self.assertEqual(replayed.stations(), queried.stations())
+        self.assertEqual(replayed.worst_shares(), queried.worst_shares())
+        self.assertEqual(replayed.message(), queried.message())
+        self.assertEqual(replayed.exit_code(False), queried.exit_code(False))
+        self.assertEqual(replayed.unnameable_by_origin(), {"GRA": 2, "NOT": 1})
+
+    def test_replaying_an_origin_the_report_never_saw_changes_nothing(self) -> None:
+        report = UnsourcedReport()
+        report.replay_origin("GRA", {"totals": [], "unsourced": [], "unnameable": 0})
+        report.replay_origin("GRA", None)
+        self.assertFalse(report)
+        self.assertEqual(report.message(), "")
+
 
 class ShareTest(unittest.TestCase):
     """The per-origin share audit A2 asked for: how much of one page is gap."""
