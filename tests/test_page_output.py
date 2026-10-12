@@ -153,6 +153,32 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertRegex(name, r"^station-[0-9a-f]{12}\.js$")
         self.assertIn(name, self.log, "the build says what it wrote and where")
 
+    def test_a_rebuild_removes_the_hashed_assets_no_page_names(self) -> None:
+        # Five station stylesheets accumulated in _site/ that way: a changed
+        # asset is a new name, so a rebuild into the same folder left every
+        # earlier copy beside the one the pages name. The second build into the
+        # same folder removes what its manifest no longer names (T11).
+        stale_css = self.site / "station-000000000000.css"
+        stale_css.write_text(":root {}", encoding="utf-8")
+        stale_js = self.site / "station-111111111111.js"
+        stale_js.write_text("// previous script", encoding="utf-8")
+        removed = build_demo_page.prune_shared_assets(
+            self.site,
+            build_demo_page.station_style_asset_name(),
+            build_demo_page.station_script_asset_name(),
+            build_demo_page.chooser_script_asset_name(),
+        )
+        self.assertEqual(sorted(removed), [stale_css.name, stale_js.name])
+        self.assertFalse(stale_css.exists())
+        self.assertFalse(stale_js.exists())
+        # What the pages name, and everything that is not a hashed asset,
+        # is left alone.
+        self.assertTrue((self.site / build_demo_page.station_script_asset_name()).is_file())
+        self.assertTrue((self.site / build_demo_page.station_style_asset_name()).is_file())
+        self.assertTrue((self.site / build_demo_page.chooser_script_asset_name()).is_file())
+        self.assertTrue((self.site / "stations.js").is_file())
+        self.assertTrue((self.site / "index.html").is_file())
+
     def test_the_chooser_names_its_script_and_the_build_writes_it(self) -> None:
         # The chooser's code moves out of the page for the same reason the
         # station route's does (T10): one file beside the release rather than a
