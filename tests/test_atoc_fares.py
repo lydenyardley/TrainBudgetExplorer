@@ -61,7 +61,7 @@ from atoc_fares import (
     is_advance_ticket,
     is_pseudo_station,
 )
-from make_synthetic_feed import _line, build_synthetic_feed, write_delete_marker
+from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates, write_delete_marker
 from atoc_restrictions import RESTRICTION_LAYOUTS
 
 
@@ -1580,7 +1580,11 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
         # carry.
         with tempfile.TemporaryDirectory() as tmp:
             feed = _feed_with_stations(Path(tmp), ("BHC", "BALLOCH CENTRAL"))
-            db = FaresDb().load_feed(feed)
+            # The prune's coordinates come from the fixture, not the licensed
+            # download a clean checkout lacks, whose absence is a skipped file.
+            coordinates = build_synthetic_station_coordinates(Path(tmp) / "stations.xml")
+            with mock.patch.object(atoc_fares, "DEFAULT_STATIONS_XML", coordinates):
+                db = FaresDb().load_feed(feed)
         absent = db.report.reviewed_codes_absent
         self.assertTrue(absent, "the dead codes are named")
         self.assertEqual(db.report.skipped_files, [])

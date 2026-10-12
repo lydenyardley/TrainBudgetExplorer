@@ -341,6 +341,34 @@ def _xml_escape(text: str) -> str:
     )
 
 
+def build_synthetic_station_coordinates(path: str | Path) -> Path:
+    """Write a Knowledgebase ``stations.xml`` holding a few station positions.
+
+    The heritage prune reads station coordinates from the licensed
+    Knowledgebase download, which a clean checkout -- CI's -- does not have,
+    and a missing file is reported as a skipped source, rightly. A test about
+    something else points the prune here instead, so it neither depends on
+    the local download nor reads that report as its own subject.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    stations = (
+        ("GRA", 52.9064, -0.6424),
+        ("NOT", 52.9472, -1.1461),
+        ("KGX", 51.5320, -0.1233),
+    )
+    body = "".join(
+        f"<Station><CrsCode>{crs}</CrsCode><Latitude>{lat}</Latitude>"
+        f"<Longitude>{lon}</Longitude></Station>"
+        for crs, lat, lon in stations
+    )
+    target.write_text(
+        f'<?xml version="1.0" encoding="utf-8"?><StationList>{body}</StationList>\n',
+        encoding="utf-8",
+    )
+    return target
+
+
 def build_synthetic_feed(
     path: str | Path,
     *,
