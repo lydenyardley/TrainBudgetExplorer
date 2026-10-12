@@ -216,23 +216,33 @@ class DigestTest(unittest.TestCase):
         )
 
     def test_a_replaced_licence_does_not_inherit_the_clearance(self) -> None:
-        pdf = product_digests()[DARWIN]
-        text = (
-            f"## {DARWIN}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
-            "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n"
-            f"- licence digest: {digest(pdf)}\n"
-        )
-        for product in products():
-            if product != DARWIN:
-                text += f"\n## {product}\n\n- state: excluded\n- reason: not used\n"
         # Same record, different file: the words on the page are unchanged and
         # the clearance is void, which is the only way this check can be right
-        # without reading the licence itself.
+        # without reading the licence itself. The PDFs are stand-ins named as
+        # the committed manifest names them: the licences are not in a clean
+        # checkout, and what is under test is the digest, not their wording.
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             for pdf_path in product_digests().values():
-                (folder / pdf_path.name).write_bytes(pdf_path.read_bytes())
+                (folder / pdf_path.name).write_bytes(
+                    b"%PDF-1.4 stand-in for " + pdf_path.name.encode("utf-8")
+                )
             _write_manifest(folder)
+            pdf = folder / product_digests()[DARWIN].name
+            text = (
+                f"## {DARWIN}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
+                "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n"
+                f"- licence digest: {digest(pdf)}\n"
+            )
+            for product in products():
+                if product != DARWIN:
+                    text += f"\n## {product}\n\n- state: excluded\n- reason: not used\n"
+            self.assertFalse(
+                any("licence file has changed" in p for p in clearance_problems(
+                    text, releasing=["fares", "timetable"], today=TODAY, folder=folder
+                )),
+                "the unreplaced stand-in matches its own digest",
+            )
             (folder / "Darwin-timetable-license-P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8.pdf").write_bytes(
                 b"%PDF-1.4 a different licence entirely"
             )
@@ -241,13 +251,23 @@ class DigestTest(unittest.TestCase):
             )
         self.assertTrue(any("licence file has changed" in p for p in problems))
 
+    @unittest.skipUnless(
+        product_digests()[DARWIN].is_file(),
+        "the Darwin licence PDF is licensed material and is not committed "
+        "(ADR-0067); this checks the local copy against the committed manifest",
+    )
+    def test_the_local_licence_matches_the_committed_manifest(self) -> None:
+        # Where the PDF is present, the manifest must name its exact bytes, or
+        # the gate in CI is judging a licence nobody holds.
+        pdf = product_digests()[DARWIN]
+        self.assertEqual(manifest_sha(pdf.name), file_sha256(pdf))
+
     def test_a_missing_pdf_is_judged_against_the_manifest(self) -> None:
         # CI has the manifest and not the PDFs. A clearance whose digest does
         # not match that manifest still fails, and one that matches can pass
         # without the file being in the checkout.
         pdf = product_digests()[DARWIN]
         committed = manifest_sha(pdf.name)
-        self.assertEqual(committed, file_sha256(pdf))
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             (folder / MANIFEST_NAME).write_text(
