@@ -328,12 +328,20 @@ async function checkTheShortlist(world) {
       dockControls.bar === 0 && !dockControls.barAfterCount,
       JSON.stringify(dockControls)
     );
-    // A row with no service is a fact about the day the page is about. The
-    // suite's fixture is built without a date, so it has no row of the shape
-    // the sweep writes. Both shapes are put into the page's own data under
-    // codes it has never seen -- the cheapest list is rebuilt from the three
-    // ticket lists on every render, and a code it already holds would be
-    // replaced rather than shown.
+    // A row with no service is a fact about the day the page is about, so these
+    // two checks need a page that has a day: a build with no date has no week
+    // to walk and there is nothing to report about one. Both shapes are put
+    // into the page's own data under codes it has never seen -- the cheapest
+    // list is rebuilt from the three ticket lists on every render, and a code it
+    // already holds would be replaced rather than shown.
+    //
+    // Each row also carries `serviceWeekIndex: null`, which is what the build
+    // sends for a row it holds no week for. Inheriting the source row's index
+    // pointed the row at a week table that cannot name a code this test
+    // invented, and the page then worded the absence from that table -- "any
+    // day this week", which is the truth about the data it was handed. The
+    // row's own next service is what these two checks are about, so the row
+    // has to be one the page reads for its own next service.
     const noService = await page.evaluate(() => {
       const source = (DATA.destinations || [])[0];
       if (!source || !DATA.serviceDate) return null;
@@ -351,6 +359,7 @@ async function checkTheShortlist(world) {
           changes: null,
           departures: [],
           journeyState: "no_service",
+          serviceWeekIndex: null,
           nextService: nextService,
         });
       const kept = DATA.destinations;
