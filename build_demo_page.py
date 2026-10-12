@@ -59,14 +59,14 @@ from atoc_knowledgebase import (
 )
 from destination_coverage import UnsourcedReport, unnameable_from_tally
 from page_templates import (
-     CHEVRON,
-     CHOOSER_SCRIPT,
-     CHOOSER_TEMPLATE,
-     PRIVACY,
-     STATION_SCRIPT,
-     STATION_STYLESHEET,
-     TEMPLATE,
- )
+    CHEVRON,
+    CHOOSER_SCRIPT,
+    CHOOSER_TEMPLATE,
+    PRIVACY,
+    STATION_SCRIPT,
+    STATION_STYLESHEET,
+    TEMPLATE,
+)
 from retailer import (
     AFFILIATE_NETWORKS,
     DEFAULT_PROVIDER,
