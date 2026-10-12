@@ -279,7 +279,14 @@
   .feed-record dt { color: var(--muted); }
   .feed-record dd { margin: 0; font-variant-numeric: tabular-nums; }
   /* S23: an absence the feed can name is not the same as a zero. */
-  td.missing { color: var(--muted); font-style: italic; }
+  /* An absence is a sentence, so it wraps. The numeric columns are nowrap so a
+     number never breaks across two lines, and the absence cell is one of them
+     (row-cells.js sets `num missing`), so it inherited that. Measured on the
+     dated demo station page at 320px with the wrap off: "No service Mon any day
+     this week" is 27px wider than its own cell and the suite's 320px check
+     reports the page scrolling sideways 15px. Wrapping is also what
+     `overflow-wrap: anywhere` on the body already asks for. */
+  td.missing { color: var(--muted); font-style: italic; white-space: normal; }
   .empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
   /* S26: the shortlist is a strip, not a section. It is a handful of places to
      compare rather than a result set to scan, and it sits directly above the
