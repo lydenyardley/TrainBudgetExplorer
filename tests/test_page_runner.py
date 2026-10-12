@@ -383,6 +383,92 @@ class AllOriginsCliTest(unittest.TestCase):
             )
         self.assertEqual(code, 2)
 
+    def test_a_changed_script_rewrites_every_page_and_keeps_the_release_whole(self) -> None:
+        # A script change leaves every payload alone and renames the hashed
+        # asset each page requests. A rebuild that kept pages because their
+        # payload matched, or resumed past them, would leave them naming the
+        # old file -- and the prune would then delete it from under them.
+        self.build()
+        site = self.out.parent
+        renamed = "station-feedfacecafe.js"
+        with mock.patch.object(
+            build_demo_page, "station_script_asset_name", return_value=renamed
+        ):
+            second = self.build()
+        self.assertNotIn("pages rewritten: 0", second)
+        for slug in ("grantham", "nottingham"):
+            page = (site / "from" / slug / "index.html").read_text(encoding="utf-8")
+            self.assertIn(f"/{renamed}", page, slug)
+        self.assertEqual(build_demo_page.crawl_internal_links(site), [])
+
+    def test_a_page_the_build_left_alone_keeps_the_asset_it_names(self) -> None:
+        # The build names an earlier build's page rather than deleting it, so
+        # the prune must not delete the stylesheet that page still requests.
+        self.build()
+        site = self.out.parent
+        kept = site / "station-0123456789ab.css"
+        kept.write_text(":root {}", encoding="utf-8")
+        orphan = site / "station-ba9876543210.css"
+        orphan.write_text(":root {}", encoding="utf-8")
+        earlier = site / "from" / "sleepy" / "index.html"
+        earlier.parent.mkdir(parents=True)
+        earlier.write_text(
+            '<link rel="stylesheet" href="/station-0123456789ab.css">', encoding="utf-8"
+        )
+        (site / ".trainbudget-build.json").unlink()
+        self.build()
+        self.assertTrue(kept.is_file(), "a page in the folder still names it")
+        self.assertFalse(orphan.exists(), "nothing names it")
+
+    def _shards(self) -> list[Path]:
+        shards = []
+        for number in (1, 2):
+            shard_out = self.out.parent / f"shard-{number}" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(self.feed),
+                        "--all-origins", "--shard", f"{number}/2",
+                        "--out", str(shard_out),
+                    ]
+                )
+            self.assertEqual(code, 0, buffer.getvalue())
+            shards.append(shard_out.parent)
+        return shards
+
+    def _merge(self, shards: list[Path]) -> tuple[int, str]:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            code = build_demo_page.main(
+                ["--merge", *[str(shard) for shard in shards],
+                 "--feed", str(self.feed), "--out", str(self.out)]
+            )
+        return code, buffer.getvalue()
+
+    def test_a_merge_refuses_shards_built_by_other_code(self) -> None:
+        # The merge writes the assets of the code it runs; shards from another
+        # revision name assets it never writes.
+        shards = self._shards()
+        with mock.patch.object(build_demo_page, "source_fingerprint", return_value="0" * 16):
+            code, said = self._merge(shards)
+        self.assertEqual(code, 2)
+        self.assertIn("different revision", said)
+        self.assertFalse((self.out.parent / "from").exists(), "a refused merge copies nothing")
+
+    def test_a_merge_refuses_a_folder_that_already_holds_pages(self) -> None:
+        shards = self._shards()
+        earlier = self.out.parent / "from" / "sleepy"
+        earlier.mkdir(parents=True)
+        (earlier / "index.html").write_text("from an earlier build", encoding="utf-8")
+        code, said = self._merge(shards)
+        self.assertEqual(code, 2)
+        self.assertIn("already holds station pages", said)
+        self.assertNotIn("overlap", said)
+        self.assertEqual(
+            sorted(child.name for child in (self.out.parent / "from").iterdir()), ["sleepy"]
+        )
+
     def test_fast_all_origins_reports_progress_and_resumes_completed_pages(self) -> None:
         first = io.StringIO()
         with contextlib.redirect_stdout(first):
