@@ -537,7 +537,17 @@ jobs:
           # way a published site does; the suite drives one station page from it.
           # --third-origin is what makes that true: without it only two stations
           # are priced and the picker has a single option and nothing to narrow.
-          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --knowledgebase _demo_kb --all-origins --out _demo_site/index.html
+          #
+          # --date is the day the fixture pages report; the reason it is fixed
+          # rather than today's is written on SERVICE_DATE in tools/verify.py,
+          # which is where the local `--browser` run reads it from too, so these
+          # pages and that run cannot come to name different days.
+          SERVICE_DATE=$(python -c "import sys; sys.path.insert(0, 'tools'); import verify; print(verify.SERVICE_DATE)")
+          if [ -z "$SERVICE_DATE" ]; then
+            echo "::error title=browser test::tools/verify.py named no SERVICE_DATE, so these pages would be built for no day and every check about the day would be skipped"
+            exit 1
+          fi
+          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --knowledgebase _demo_kb --all-origins --date "$SERVICE_DATE" --out _demo_site/index.html
           if [ ! -s _demo_site/privacy/index.html ]; then
             echo "::error title=browser test::the demo site wrote no privacy page, so a route every footer links to was never checked"
             exit 1
@@ -571,28 +581,38 @@ jobs:
           # passes a timetable gives every station page journeys, and a station
           # page with several rows never runs out of destinations, so the
           # prices-only shape (no timetable, the times columns stood down) and
-          # the one-row shape (a page whose whole list fits on one page, where
-          # paging and shortlist have nothing to do) are never met. ADR-0058
-          # records that a fixture whose list fits on one page cannot catch the
-          # paging mistake, so that is the shape to keep in the run.
+          # the one-page shape (a page whose whole list fits on one page, so
+          # paging never engages) are never met. ADR-0058 records that a fixture
+          # whose list fits on one page cannot catch the paging mistake, so that
+          # is the shape to keep in the run.
+          #
+          # The list is what fits on one page, not one row: the feed takes
+          # --third-origin and --return-network for the same reason the demo
+          # feed does, because a page with one row cannot exercise its own
+          # controls -- nothing to hold in the shortlist, one destination type,
+          # no heritage row -- and the checks it cannot run were skips, which is
+          # what the budget below exists to catch. The six to eight rows it now
+          # prices against each origin still fit on one page. The prices-only
+          # page gets no --date, because a build with no times has no day to
+          # report and a date would be a claim it cannot back; the one-page
+          # build gets the demo site's date for the same reason the demo site
+          # does.
           #
           # They join the same sweep rather than running alone, because
           # SKIP_BUDGET is measured across the whole sweep: a prices-only page
           # on its own skips about 10% of the checks (every journey one), and
           # the budget is a statement about the suite, not about one page.
-          python make_synthetic_feed.py _shape_feed --unserved-station
+          python make_synthetic_feed.py _shape_feed --unserved-station --third-origin --return-network
           # No --timetable, so the page prices fares only.
           python build_demo_page.py --feed _shape_feed --origin GRN --out _shape_site/prices-only/index.html
-          # No --return-network, so the secondary origin has one destination and
-          # the page it writes holds a single row.
-          python build_demo_page.py --feed _shape_feed --timetable _shape_feed --all-origins --out _shape_site/one-row/index.html
-          ONE_ROW=$(ls _shape_site/one-row/from/*/index.html 2>/dev/null | tail -1 || true)
+          python build_demo_page.py --feed _shape_feed --timetable _shape_feed --all-origins --date "$SERVICE_DATE" --out _shape_site/one-page/index.html
+          ONE_PAGE=$(ls _shape_site/one-page/from/*/index.html 2>/dev/null | tail -1 || true)
           PRICES_ONLY=_shape_site/prices-only/from/grantham/index.html
-          if [ ! -s "$PRICES_ONLY" ] || [ ! -s "$ONE_ROW" ]; then
-            echo "::error title=browser test::the shape build wrote no prices-only page or no single-row page, so one of the two page shapes the suite must meet was never checked"
+          if [ ! -s "$PRICES_ONLY" ] || [ ! -s "$ONE_PAGE" ]; then
+            echo "::error title=browser test::the shape build wrote no prices-only page or no one-page shape, so one of the two page shapes the suite must meet was never checked"
             exit 1
           fi
-          PAGES+=("$ONE_ROW" "$PRICES_ONLY")
+          PAGES+=("$ONE_PAGE" "$PRICES_ONLY")
           npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
 
       - name: Save the successful feed manifest and build fingerprint
