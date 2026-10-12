@@ -283,6 +283,15 @@ def resumable_signature(shared: dict, index: list[dict]) -> str:
         "config": {key: value for key, value in shared.items()
                    if key not in {"feed", "timetable", "built_at", "analytics"}},
         "stations": index,
+        # page/** is not in SOURCE_FILES, so a script or stylesheet change
+        # would otherwise resume past every page and leave them naming the
+        # previous asset. The names are digests of the bytes, so they are the
+        # identity of the code the pages fetch.
+        "assets": [
+            station_style_asset_name(),
+            station_script_asset_name(),
+            chooser_script_asset_name(),
+        ],
     }
     return hashlib.sha256(
         json.dumps(stable, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
@@ -370,11 +379,19 @@ def page_is_current(path: Path, html: str) -> bool:
     try:
         decoder = json.JSONDecoder()
         marker = "window.TBE_DATA = "
-        old, _ = decoder.raw_decode(current, current.index(marker) + len(marker))
-        new, _ = decoder.raw_decode(html, html.index(marker) + len(marker))
+        old_start = current.index(marker) + len(marker)
+        new_start = html.index(marker) + len(marker)
+        old, old_end = decoder.raw_decode(current, old_start)
+        new, new_end = decoder.raw_decode(html, new_start)
     except ValueError:
         return False
     if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+    # The markup around the payload is compared byte for byte: a template,
+    # stylesheet or script change leaves the payload alone but renames the
+    # hashed asset the page requests, and a page kept because its payload
+    # matched would go on naming a file the prune below then deletes.
+    if current[:old_start] + current[old_end:] != html[:new_start] + html[new_end:]:
         return False
     old.pop("builtAt", None)
     new.pop("builtAt", None)
@@ -3739,6 +3756,19 @@ def prune_shared_assets(out_dir: Path, *keep: str) -> list[str]:
     the folder and lies in `git status` about what the release is.
     """
     kept = set(keep)
+    # A page this build did not write -- a station an earlier build priced and
+    # this one does not, which the build names rather than deletes -- still
+    # requests the asset it was built with. Deleting that asset would break a
+    # page the build promised to leave alone, so anything a file in the folder
+    # still names is kept.
+    for page in out_dir.rglob("*.html"):
+        try:
+            text = page.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        kept.update(
+            href.rsplit("/", 1)[-1] for href in internal_hrefs(text)
+        )
     removed: list[str] = []
     for pattern in SHARED_ASSET_PATTERNS:
         for path in sorted(out_dir.glob(pattern)):
@@ -4631,6 +4661,17 @@ def merge_shards(args) -> int:
                 file=sys.stderr,
             )
             return 2
+    # The merge writes the shared assets from the code it runs, while the
+    # shards' pages request the assets of the code that built them. Shards
+    # from another revision would merge into pages naming files this merge
+    # never writes, so the revision is part of what must agree.
+    if (inputs or {}).get("source") != source_fingerprint():
+        print(
+            "error: the shards were built by a different revision of the build "
+            "code than this merge; rebuild the shards with this checkout.",
+            file=sys.stderr,
+        )
+        return 2
     fares = FaresDb().load_feed(args.feed)
     universe = sorted(
         crs for crs in fares.locations_by_crs if not is_pseudo_station(crs)
@@ -4658,21 +4699,34 @@ def merge_shards(args) -> int:
             coverage.replay_origin(crs, data)
     if args.fail_on_unsourced and coverage:
         return coverage.exit_code(True)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Every refusal before the first copy, so a refused merge leaves no
+    # half-merged site behind, and an overlap is told apart from a folder
+    # that already holds an earlier build.
+    owners: dict[str, Path] = {}
     for shard_dir, _manifest in shards:
         source = shard_dir / "from"
         if not source.is_dir():
             continue
         for child in sorted(source.iterdir()):
-            target = out_dir / "from" / child.name
-            if target.exists():
+            if child.name in owners:
                 print(
-                    f"error: {child.name} is written by more than one shard; "
-                    "the shares overlap.",
+                    f"error: {child.name} is written by both {owners[child.name].name} "
+                    f"and {shard_dir.name}; the shares overlap.",
                     file=sys.stderr,
                 )
                 return 2
-            shutil.copytree(child, target)
+            owners[child.name] = shard_dir
+    existing = out_dir / "from"
+    if existing.is_dir() and any(existing.iterdir()):
+        print(
+            f"error: {existing} already holds station pages; merge into an empty "
+            "folder so no page from an earlier build is published as this one.",
+            file=sys.stderr,
+        )
+        return 2
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, shard_dir in sorted(owners.items()):
+        shutil.copytree(shard_dir / "from" / name, out_dir / "from" / name)
     release = shards[0][1].get("release", {})
     built_at = max(str(manifest.get("built_at", "")) for _, manifest in shards)
     write_station_style(out_dir)

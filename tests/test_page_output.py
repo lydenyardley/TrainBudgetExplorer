@@ -179,6 +179,25 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertTrue((self.site / "stations.js").is_file())
         self.assertTrue((self.site / "index.html").is_file())
 
+    def test_a_page_is_current_only_when_nothing_but_its_stamp_moved(self) -> None:
+        # The rebuild skips a write only when the page would say the same
+        # thing. The stamp alone may differ; a different asset request may not,
+        # because the old asset is pruned once no page names it.
+        page = next((self.site / "from").glob("*/index.html"))
+        html = page.read_text(encoding="utf-8")
+        marker = '"builtAt":"'
+        if marker not in html:
+            marker = '"builtAt": "'
+        start = html.index(marker) + len(marker)
+        end = html.index('"', start)
+        restamped = html[:start] + "2001-01-01T00:00:00Z" + html[end:]
+        self.assertTrue(build_demo_page.page_is_current(page, restamped))
+        script = build_demo_page.station_script_asset_name()
+        # The tag only: the payload names the asset too, and a payload change is caught by the payload half.
+        renamed = html.replace(f'<script src="/{script}"', '<script src="/station-000000000000.js"', 1)
+        self.assertNotEqual(renamed, html)
+        self.assertFalse(build_demo_page.page_is_current(page, renamed))
+
     def test_the_chooser_names_its_script_and_the_build_writes_it(self) -> None:
         # The chooser's code moves out of the page for the same reason the
         # station route's does (T10): one file beside the release rather than a
