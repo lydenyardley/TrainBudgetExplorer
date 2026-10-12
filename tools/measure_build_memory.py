@@ -59,7 +59,13 @@ def memory_mb() -> tuple[int, int]:
     counter struct has to be laid out exactly or the call fails with a buffer
     error, and a measurement script that can be wrong about its own subject is
     worse than one that shells out. On Linux the same two numbers are first
-    and third lines of /proc/self/status.
+    resident set from /proc/self/status and the private bytes from
+    /proc/self/smaps_rollup. /proc/self/status has no "Private:" line, so the
+    private figure used to read 0 on every Linux run -- the broken-instrument
+    reading the test exists to refuse. Private_Clean + Private_Dirty is the
+    Linux counterpart of Windows' private bytes; a kernel without
+    smaps_rollup (before 4.14) falls back to RssAnon, the anonymous memory
+    only this process holds.
     """
     if sys.platform == "win32":
         script = ("$p=Get-Process -Id " + str(os.getpid()) + "; "
@@ -69,13 +75,26 @@ def memory_mb() -> tuple[int, int]:
         # PowerShell's -f writes thousands separators, which int() will not take.
         fields = out.split()
         return int(fields[0].replace(",", "")), int(fields[1].replace(",", ""))
-    values = {}
+    rss_kb = anon_kb = 0
     with open("/proc/self/status", encoding="utf-8") as handle:
         for line in handle:
-            for key, name in (("VmRSS:", "rss"), ("Private:", "private")):
-                if line.startswith(key):
-                    values[name] = int(line.split()[1]) // 1024
-    return values.get("rss", 0), values.get("private", 0)
+            if line.startswith("VmRSS:"):
+                rss_kb = int(line.split()[1])
+            elif line.startswith("RssAnon:"):
+                anon_kb = int(line.split()[1])
+    private_kb = None
+    try:
+        with open("/proc/self/smaps_rollup", encoding="utf-8") as handle:
+            private_kb = sum(
+                int(line.split()[1])
+                for line in handle
+                if line.startswith(("Private_Clean:", "Private_Dirty:"))
+            )
+    except OSError:
+        pass
+    if not private_kb:
+        private_kb = anon_kb
+    return rss_kb // 1024, private_kb // 1024
 
 
 class Trace:
