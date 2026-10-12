@@ -771,11 +771,16 @@ class RunnerBuildOrServeTest(unittest.TestCase):
         argv = ["run.py"] + list(flags)
         # The decision turns on whether _site/ is there, so the two states have
         # to be real directories rather than a flag the runner cannot see.
+        # Both are temporary: the repository's own _site/ is a local build
+        # that a clean checkout -- CI's -- does not have, so pointing at it
+        # made "a site exists" false there and every serve case a build case.
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
         if site_exists:
-            site = Path(__file__).parent.parent / "_site"
+            site = root / "_site"
+            site.mkdir()
         else:
-            site = Path(tempfile.mkdtemp()) / "never-built"
-            self.addCleanup(shutil.rmtree, site.parent, True)
+            site = root / "never-built"
         builder = mock.Mock(return_value=0)
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(sys, "argv", argv))
