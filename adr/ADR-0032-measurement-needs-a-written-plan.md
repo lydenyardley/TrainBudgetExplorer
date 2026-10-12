@@ -63,3 +63,15 @@ condition that a flag cannot bypass.
   a decision recorded next to it is not a decision the build can check.
 - **Inferring the plan from the snippet's contents.** A snippet that sets a
   cookie cannot be made compliant by describing it accurately afterwards.
+
+## 12 October 2026: an ADR that cites a measurement names the tool and the date
+
+The 12 October build-cost audit amended five decisions from its own figures
+and each cites its measurement in the amendment itself: the per-origin spread
+from `tools/measure_origin_costs.py` over a twelve-origin stride sample, the
+byte delta from a controlled two-build comparison in the release's own shape,
+and the whole-network projection from that sample. The measurements live in
+`docs/build-performance-findings.md`, which is the one place measured figures
+are held (ADR, and the README's summary links there). An ADR that leans on a
+figure therefore names the tool, the feed and the date it was taken, because a
+number without those cannot be re-derived and cannot be disagreed with.

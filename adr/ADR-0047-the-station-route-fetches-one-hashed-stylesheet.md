@@ -1,7 +1,7 @@
 # ADR-0047 — The station route fetches one hashed stylesheet
 
 **Date:** 1 October 2026
-**Status:** accepted
+**Status:** accepted; amended 12 October 2026 (see below)
 
 ## Context
 
@@ -128,3 +128,28 @@ one file, repeated 2,712 times, the right way to hold 16% of the site".
   project holds itself to, in a form that never grows: the picker's list was
   bigger and was moved for the same reason, and a station page that renders from
   its own bytes is a page that cannot be served from a cache at all.
+
+## Amendment — 12 October 2026: decision 5 is superseded, the script moves
+
+Decision 5 above kept the script inline because its absence is a shell page
+and the boundary could not absorb that without a second renderer. The 12
+October build-cost audit re-asked it against a measurement — 149,377 bytes
+byte-identical on every one of 24 sampled pages, an 827 MB whole-release
+projection against the 800 MB budget — and the answer changed without the
+reason being wrong: the absence is still a shell page, and there is still no
+second renderer. What changed is that the shell now says so. The script tag's
+`onerror` reveals the page's own missing-script note and the table stays
+empty rather than filling with nothing, which is the picker's failure mode
+one route down rather than a renderer. The browser suite withholds the asset
+and asserts both, the way it withholds the stylesheet.
+
+The chooser's script moves with it (T10): one `chooser-<digest>.js` beside
+the release rather than a copy inside the one page that carries it, because
+both routes' scripts come out of the same machinery and the two should move
+or stay together rather than by halves. A rebuild removes the hashed files
+its manifest no longer names (T11): a changed asset is a new name, so five
+stylesheets had accumulated in `_site/` beside the one the pages named.
+
+The decision that stands unchanged: a changed stylesheet is a new file, the
+`<link>` rather than an injected element, and the failure mode above — which
+the script now shares rather than being exempt from.

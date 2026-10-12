@@ -628,3 +628,69 @@ when done with it.
 - A whole-network build from an index, and an index for a whole network. The first
   is unmeasured and the second is refused without a byte budget, because it is
   3,767 files of a quarter of the feed each.
+
+## The 12 October 2026 build-cost audit: the per-origin spread, and the bytes
+
+Measured 12 October 2026 on this machine, on the 24 September 2026 DTD
+download (419,589 schedules, 7,818,772 fares). The audit's own task list is
+`docs/audits/2026-10-12-build-cost-and-data-architecture.md`; what landed is
+in the ADRs it names, and this section holds only the figures.
+
+**The spread, not the mean (T8).** `python tools/measure_origin_costs.py`
+times the slice cut, the day index and the reachability search per origin
+through the functions the build calls. The audit's three sampled origins
+reproduce on this machine (1.43 s, 8.66 s, 41.76 s against its 1.17 s,
+7.20 s, 28.48 s for the timetable half alone). A twelve-origin alphabetical
+stride sample, same feed, same day:
+
+| Origin | Slice schedules | Cut | Index/day | Search/day | 8-day total |
+|---|---|---|---|---|---|
+| AAP | 188,368 | 2.75 s | 2.08 s | 10.72 s | 105.17 s |
+| BKL | 90,265 | 0.67 s | 0.41 s | 7.18 s | 61.40 s |
+| CHD | 172,358 | 0.21 s | 0.78 s | 2.14 s | 23.58 s |
+| DOW | 21,088 | 0.24 s | 0.07 s | 0.36 s | 3.65 s |
+| GNB | 11,993 | 0.24 s | 0.04 s | 0.01 s | 0.64 s |
+| IGD | 811 | 1.69 s | 0.00 s | 0.02 s | 1.85 s |
+| LTV | 155,810 | 0.20 s | 0.57 s | 1.50 s | 16.70 s |
+| OCM | 0 | 0.28 s | 0.00 s | 0.00 s | 0.28 s |
+| RDW | 160,607 | 0.23 s | 0.70 s | 0.45 s | 9.47 s |
+| SOS | 0 | 0.27 s | 0.00 s | 0.00 s | 0.27 s |
+| WDL | 10,355 | 0.26 s | 0.05 s | 0.42 s | 3.99 s |
+| YVP | 113,248 | 0.20 s | 0.46 s | 0.20 s | 5.49 s |
+
+Mean 19.37 s against median 4.74 s, p90 61.40 s, maximum 105.17 s: the tail
+dominates, so the mean is 4x the median and the most expensive origin costs
+5.4x the mean. Task ordering for the facts pass and the sharding follows the
+tail, not the middle. OCM and SOS price fares but call at no timetable
+station, so their slice is empty and their pages are fares-only.
+
+**The bytes, measured against the 800 MB budget (T5).** The audit projected
+827 MB from a 24-page sample and could not say whether the sample or the
+budget was wrong. Both halves are now measured, same feed, same flags as the
+release (`--date`, `--notices nre,rdg,ogl,accuracy`):
+
+- Controlled T1 delta, same station, same shape, same feed, prices-only:
+  Birmingham New Street 261,362 bytes on 10 October 2026 → **112,885 bytes**
+  on 12 October 2026, a saving of 148,477 bytes, which is the 149,377-byte
+  script minus the small inline handoff. Per page the saving is exact,
+  because the bytes that moved are byte-identical on every page.
+- With timetable and service week, current code: 24 major stations average
+  **2,734,828 bytes** a page (median 2,493,992, smallest 1,116,077,
+  largest 6,831,298); a 10-page alphabetical stride sample averages
+  **806,367 bytes** (median 712,627, 72,065 to 2,495,286).
+- Where the megabytes live, Birmingham New Street's 1,626,528-byte DATA:
+  **1,050,373 railcardRules**, 220,029 destinations, 188,527 single
+  destinations, 73,593 anytime destinations, 56,454 pool, 30,756 serviceWeek.
+  The 2,372 railcard rules are nearly all two-ticket pair records, and all
+  but 18 are referenced by a row: the bulk is combinatorial, not a leak
+  (see `docs/open-work.md`, pair-rule encoding).
+
+The 498 MB whole-network figure of 1 October 2026 was a prices-only build
+(`--fast-all-origins`), so it never priced the week, the pairs or the
+departures the release ships. Against the 800 MB budget the release is held
+to, the with-week shape projects to roughly **2.2 GB** (10-page stride mean
+× 2,712, with wide error bars at n=10) — over budget, and driven by the
+pair-rule encoding rather than by the script T1 removed (2,712 × 149 KB ≈
+385 MB saved, the remainder still over). The next real release settles it
+with `python tools/page_bytes.py --site _site --budget-mb 800`, which refuses
+on its own; until then the projection above is the standing estimate.

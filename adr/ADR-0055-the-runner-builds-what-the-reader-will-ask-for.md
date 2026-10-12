@@ -1,6 +1,6 @@
 # ADR-0055: The runner builds what the reader will ask for, and never serves a stale one
 
-**Status:** Accepted
+**Status:** Accepted; amended 12 October 2026 (see below)
 **Date:** 1 October 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0024 (the release is
 published under the repository's own path), ADR-0050 (the release is the whole
@@ -84,3 +84,20 @@ The runner still says which of the three things it did.
 - **ADR-0051 is left as the record of the decision it was.** Its separation is
   kept; only its default is reversed, and the reason is written down here rather
   than in a comment.
+
+## Amendment — 12 October 2026: the default is the fast page again (T7)
+
+Decision 1 above made the double-click path a whole-network batch job, and a
+first run never finished: about four hours on this machine's free memory
+against the two hours the decision quoted from a larger one. The default is
+the fast single-origin page again, which is what this runner's own docstring
+already promised — the code contradicted it, and the contradiction is what
+this amends. A single-origin page stands as text where a network page offers
+the station control, so there is nowhere to change to and the name is not a
+control that opens nothing; the heading objection that moved the default to
+the network in the first place does not survive that reading.
+
+The whole-network build is still one flag away, and the flag now requires
+its acknowledgement: `--all-origins` without `--i-know-this-is-slow` is
+refused before it starts, with the measured cost named, rather than after it
+has finished. Decisions 2, 3 and 4 stand unchanged.
