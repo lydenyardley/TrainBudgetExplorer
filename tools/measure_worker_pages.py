@@ -63,13 +63,12 @@ def memory_mb() -> tuple[int, int]:
                              capture_output=True, text=True, check=True).stdout
         fields = out.split()
         return int(fields[0].replace(",", "")), int(fields[1].replace(",", ""))
-    values = {}
-    with open("/proc/self/status", encoding="utf-8") as handle:
-        for line in handle:
-            for key, name in (("VmRSS:", "rss"), ("Private:", "private")):
-                if line.startswith(key):
-                    values[name] = int(line.split()[1]) // 1024
-    return values.get("rss", 0), values.get("private", 0)
+    # Linux reads the same counters the build-memory tool does, from that
+    # tool, so the two cannot drift apart again: the copy here looked for a
+    # "Private:" line /proc/self/status does not have and read 0 every time.
+    from tools.measure_build_memory import memory_mb as linux_memory_mb
+
+    return linux_memory_mb()
 
 
 class Trace:

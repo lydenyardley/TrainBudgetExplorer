@@ -95,8 +95,14 @@ class WorkerMeasurementTest(unittest.TestCase):
 
         peak = _peak_from(report)
         self.assertIsNotNone(peak, report)
+        # Both figures are whole megabytes truncated from kilobytes, so two
+        # readings of the same footprint can differ by one. That is the
+        # instrument's resolution, not a smaller measurement: on Windows the
+        # readings round alike, and on Linux -- where the private figure read
+        # 0 until 12 October 2026 and this held trivially -- a freed and
+        # reloaded database lands a few hundred kilobytes either side.
         self.assertGreaterEqual(
-            peak, while_held,
+            peak, while_held - 1,
             "the reported peak must cover a database of this size while it is "
             "held; a smaller figure means the tool measured something other "
             "than what it loaded")
