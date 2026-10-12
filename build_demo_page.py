@@ -1081,6 +1081,14 @@ def timetable_facts_identity(args, timetable, timetable_index) -> str | None:
     pages read rather than what flags were passed, because a build handed both
     a feed and a covering index reads only the index.
     """
+    # A single-origin build loads the timetable focused on the destinations
+    # its fares price, so what it reaches depends on the fares feed as well as
+    # the timetable. A fares-only refresh that prices a new destination would
+    # read a stored week that never searched it and call the row "No
+    # service". Only the network build, whose pages are cut by origin alone,
+    # searches a week that the timetable decides by itself.
+    if not getattr(args, "all_origins", False):
+        return None
     if timetable is not None and args.timetable:
         return timetable_index_identity(args.timetable)
     if timetable_index is not None:

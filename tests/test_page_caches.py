@@ -811,6 +811,18 @@ class PageFactsTest(unittest.TestCase):
         self.timetable = TimetableDb().load_feed(build_synthetic_timetable(root / "timetable"))
         self.day = date(2026, 10, 5)
 
+
+    def test_a_fares_focused_timetable_is_never_a_journey_facts_source(self) -> None:
+        # The single-origin build cuts the timetable to the destinations its
+        # fares price, so its week is not a fact about the timetable alone; a
+        # fares refresh reusing it would call a newly priced row "No service".
+        import argparse
+
+        single = argparse.Namespace(all_origins=False, timetable="feed")
+        self.assertIsNone(build_demo_page.timetable_facts_identity(single, object(), None))
+        network = argparse.Namespace(all_origins=True, timetable=None)
+        index = type("Index", (), {"identity": "slice-id"})()
+        self.assertEqual(build_demo_page.timetable_facts_identity(network, None, index), "slice-id")
     def test_a_service_week_written_is_a_service_week_read(self) -> None:
         from datetime import timedelta
 
