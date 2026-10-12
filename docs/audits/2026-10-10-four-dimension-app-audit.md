@@ -5,6 +5,19 @@ recommendations have been implemented and the one that remains is a person's
 decision, rewritten in plain words below. The scores and the findings are the
 audit's own reading of the 10 October state and are kept as the record of what
 was found; the settled table near the end is what the fixes are held by.
+**Fixtures widened 12 October 2026.** The skip figure this audit recorded — 69 of
+815 checks (8.5%), over the suite's own 5% budget — was a property of its fixtures
+rather than of the suite: the shape feed priced each secondary origin to a single
+station, and neither fixture build carried a service date, so the checks about the
+day the table reports and about a page's own controls had nothing to read. The feed
+now takes the demo feed's `--third-origin --return-network`, both dated builds
+report Monday 5 October 2026 (`tools/verify.py`'s `SERVICE_DATE`, which the workflow
+reads rather than naming a second date), and the shape route is `one-page`, because
+what fits on one page is a list rather than a row. Re-measured on the same five
+pages on 12 October 2026: **830/830 checks passed, 25 of 824 skipped (3.0%), the run
+exits 0** — demo station 257/257 (3 skipped), chooser 71/71 (1), privacy 31/31,
+one-page station 254/254 (5), prices-only 217/217 (16). The 16 are the journey and
+day checks a build with no timetable cannot run.
 **Commit reviewed:** `1ecd719` on `main`, with the working tree's uncommitted edits
 present: `README.md` and the pruned `docs/audits/2026-10-09-impeccable-route-audit.md`.
 **Scope:** the whole app — the build (`build_demo_page.py`, `build_workers.py`,
