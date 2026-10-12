@@ -1,0 +1,60 @@
+# Regenerate the facet reference data from a fresh licensed download.
+#
+# Manual only. The deploy workflow's facet check refuses when the committed
+# reference-data/destination-facets.json no longer matches the feed CI
+# downloads, and the fix is to regenerate it from that same feed. The portal
+# credentials live only in this repository's secrets, so the regeneration
+# runs here, beside the download, rather than on a machine without them.
+#
+# What leaves the runner is the regenerated JSON and its diff against the
+# committed copy, as an artifact for a person to review and commit. The
+# feeds are licensed and are never uploaded; the credentials are passed as
+# environment variables the download tool never prints. Nothing is committed
+# or pushed from here: the workflow can only read the repository.
+
+name: regenerate facet reference
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the licensed DTD feeds
+        # The same command and secrets the deploy workflow uses, without its
+        # restored manifest, so this run always holds the current download.
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds
+
+      - name: Regenerate the facet reference data
+        run: python tools/regenerate_destination_facets.py --feed feeds/fares/dtd-fares.zip
+
+      - name: Diff against the committed copy
+        shell: bash
+        run: |
+          mkdir -p facet-review
+          cp reference-data/destination-facets.json facet-review/destination-facets.json
+          git diff --no-color -- reference-data/destination-facets.json > facet-review/destination-facets.diff || true
+          echo "diff lines: $(wc -l < facet-review/destination-facets.diff)"
+
+      - name: Upload the regenerated file and its diff
+        # Only the review folder: the JSON and the diff. feeds/ is never
+        # named here, so the licensed download cannot leave the runner.
+        uses: actions/upload-artifact@v4
+        with:
+          name: destination-facets
+          path: facet-review/
+          if-no-files-found: error
+          retention-days: 7
