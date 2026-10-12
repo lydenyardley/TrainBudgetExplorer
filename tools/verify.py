@@ -54,6 +54,20 @@ FEED_SCALE = (
 #: to reach below the first level or the panels stop being checked.
 JAVASCRIPT = "page/**/*.js"
 
+#: The service date the demo and shape pages are built for. A build with no date
+#: carries no week of days, so ten checks about the day the table reports -- the
+#: control's options, the wording of every absence, the day in the address --
+#: had nothing to read and were skipped on the two pages that have a timetable,
+#: on every run. Monday 5 October 2026 is inside the synthetic feed's own window
+#: (21 September to 11 December 2026) and is the date
+#: `tests/test_build_demo_page.py` builds its own pages for. Fixed rather than
+#: today's date, because the fixture's window is fixed: a build at today's date
+#: stops carrying journeys once the window ends, and which weekday the fixture
+#: shows should be a property of the fixture rather than of the run. The
+#: workflow's own build reads this constant rather than naming a second date,
+#: because two copies of a date is two chances for the suite and CI to drive
+#: different days and for only one of them to be noticed.
+SERVICE_DATE = "2026-10-05"
 DEMO_FEED = "_demo_feed"
 DEMO_KB = "_demo_kb"
 DEMO_SITE = "_demo_site"
@@ -151,22 +165,33 @@ def browser() -> Step:
         return step.done(None, "node is not on PATH")
     steps = [
         (["python", "make_synthetic_feed.py", DEMO_FEED, "--unserved-station", "--third-origin", "--return-network", "--knowledgebase", DEMO_KB], "the demo feed"),
-        (["python", "build_demo_page.py", "--feed", DEMO_FEED, "--timetable", DEMO_FEED, "--knowledgebase", DEMO_KB, "--all-origins", "--out", f"{DEMO_SITE}/index.html"], "the demo site"),
-        (["python", "make_synthetic_feed.py", SHAPE_FEED, "--unserved-station"], "the shape feed"),
+        (["python", "build_demo_page.py", "--feed", DEMO_FEED, "--timetable", DEMO_FEED, "--knowledgebase", DEMO_KB, "--all-origins", "--date", SERVICE_DATE, "--out", f"{DEMO_SITE}/index.html"], "the demo site"),
+        # --third-origin and --return-network for the same reason the demo feed
+        # takes them: without them this feed's secondary origins are priced to
+        # one station each, and a page with one row cannot exercise its own
+        # controls -- no shortlist of two, no second destination type, no
+        # heritage row, nothing for the dock to hold. The shape this build is
+        # for is the list that fits on one page (ADR-0058); the number of rows
+        # was never the point, and the six to eight the feed now prices against
+        # each origin still fit.
+        (["python", "make_synthetic_feed.py", SHAPE_FEED, "--unserved-station", "--third-origin", "--return-network"], "the shape feed"),
+        # No --timetable, so the page prices fares only, and no --date for the
+        # same reason: a build with no times has no day to report, and a page
+        # carrying a date it cannot report times for would be claiming one.
         (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--origin", "GRN", "--out", f"{SHAPE_SITE}/prices-only/index.html"], "the prices-only page"),
-        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--all-origins", "--out", f"{SHAPE_SITE}/one-row/index.html"], "the one-row pages"),
+        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--all-origins", "--date", SERVICE_DATE, "--out", f"{SHAPE_SITE}/one-page/index.html"], "the one-page shape"),
     ]
     for command, what in steps:
         if not _run(command, what):
             return step.done(None, f"{what} did not build")
 
     station = sorted(Path(ROOT, DEMO_SITE).glob("from/*/index.html"))
-    one_row = sorted(Path(ROOT, SHAPE_SITE).glob("one-row/from/*/index.html"))
+    one_page = sorted(Path(ROOT, SHAPE_SITE).glob("one-page/from/*/index.html"))
     pages = [
         *station[:1],
         Path(ROOT, DEMO_SITE, "index.html"),
         Path(ROOT, DEMO_SITE, "privacy/index.html"),
-        *one_row[-1:],
+        *one_page[-1:],
         Path(ROOT, SHAPE_SITE, "prices-only/from/grantham/index.html"),
     ]
     missing = [page for page in pages if not page.is_file() or not page.stat().st_size]
