@@ -10,12 +10,15 @@ stub; the tests make no network request.
 from __future__ import annotations
 
 import io
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from unittest import mock
 
+from make_synthetic_feed import build_synthetic_feed
 from tools import propose_nature_stations as proposer
 
 FEED_STATIONS = {
@@ -181,9 +184,18 @@ class ProposeTest(unittest.TestCase):
         self.assertEqual(error, "HTTP 403")
 
     def test_an_unreadable_page_is_named_rather_than_skipped(self) -> None:
+        # The station list comes from the synthetic feed and the page from a
+        # stubbed fetch: the default --feed is the licensed download, which a
+        # clean checkout does not have, and the live site is not under test.
         buffer = io.StringIO()
-        with redirect_stderr(buffer), redirect_stdout(io.StringIO()):
-            code = proposer.main(["--url", "https://www.wildlifetrusts.org/nature-reserves/x"])
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "fares")
+            with mock.patch.object(proposer, "fetch", return_value=(404, "")), \
+                    redirect_stderr(buffer), redirect_stdout(io.StringIO()):
+                code = proposer.main(
+                    ["--url", "https://www.wildlifetrusts.org/nature-reserves/x",
+                     "--feed", str(feed)]
+                )
         self.assertEqual(code, 0)
         self.assertIn("not read", buffer.getvalue())
 
