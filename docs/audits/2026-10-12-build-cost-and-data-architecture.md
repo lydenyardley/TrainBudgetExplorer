@@ -132,9 +132,9 @@ it, which is available without a runtime. That is task **T2**.
 | T6 | fold the pricing pre-pass into the facts pass | the pre-pass replays the counts it already priced; the station index is built from the facts | `python -m unittest tests.test_destination_coverage.ReportTest` |
 | T7 | decide what the local default build is | the default is the fast single-origin page again; `--all-origins` requires its acknowledgement | `python -m unittest tests.test_page_runner.RunnerBuildOrServeTest` |
 | T8 | publish the per-origin cost distribution | `tools/measure_origin_costs.py`: mean 19.37 s against median 4.74 s, max 105.17 s | `python tools/measure_origin_costs.py --origins AAT,ABA,AAP` |
-| T9 | reuse the timetable-derived facts across releases | a fares-only refresh reuses every journey fact; the store is keyed by feed content | the sweep-reuse case in `PageFactsTest` |
+| T9 | reuse the timetable-derived facts across releases | a fares-only refresh of the network build reuses every journey fact; the store is keyed by feed content, and a single-origin build, whose timetable is focused by its fares, neither reads nor writes it | the sweep-reuse case in `PageFactsTest` |
 | T10 | the same shared-asset treatment for the chooser | `chooser-<digest>.js` beside the release | `python -m unittest tests.test_page_output.SharedStationAssetTest` |
-| T11 | check whether hashed assets accumulate | a rebuild removes the hashed files its manifest no longer names | `...SharedStationAssetTest.test_a_rebuild_removes_the_hashed_assets_no_page_names` |
+| T11 | check whether hashed assets accumulate | a rebuild removes the hashed files no file in the folder names | `...SharedStationAssetTest.test_a_rebuild_removes_the_hashed_assets_no_page_names` |
 | T12 | record what this changes in the registers | ADR-0033, ADR-0047, ADR-0019, ADR-0024, ADR-0050, ADR-0055 and ADR-0032 amended; the findings hold the measurements | `python -m unittest tests.test_agents_map` |
 
 ## What is still open, and where it lives

@@ -438,6 +438,9 @@ the next person from re-deriving it.
    it rebuilds when the sources are newer than the build it would serve,
    because a stale page answers nothing on it.
    [ADR-0055](../adr/ADR-0055-the-runner-builds-what-the-reader-will-ask-for.md).
+   **Amended 12 October 2026.** The default is the single-origin page again,
+   and `--all-origins` refuses to start without `--i-know-this-is-slow` (T7 of
+   the build-cost audit, recorded in ADR-0055).
 
 ---
 

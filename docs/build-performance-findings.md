@@ -58,8 +58,11 @@ and **not finished in 17 minutes** (stopped) with the unfocused one, measured
 while the machine had 2.84 GB free. The second figure is a paging figure, and
 that is the point.
 
-`run.bat` calls `python run.py`, and `run.py`'s default is `--all-origins` with
-`focus_origin=None`, so every worker parses and holds the whole timetable. Since
+`run.bat` calls `python run.py`, and at the time of this measurement `run.py`'s
+default was `--all-origins` with `focus_origin=None`, so every worker parsed and
+held the whole timetable. Since 12 October 2026 the default is the single-origin
+page again and `--all-origins` needs `--i-know-this-is-slow` (T7 of the
+[build-cost audit](audits/2026-10-12-build-cost-and-data-architecture.md)). Since
 8 October 2026 a page is built from a slice of it cut for its own origin, so the
 1.87 GB is no longer what a page holds while it is assembled. The index is still
 parsed and held once per process, and that part is unchanged.
@@ -98,8 +101,10 @@ strategy 7 below, in plain words.
 
 Two facts about the default path are easy to miss and are both in `run.py`:
 
-- `python run.py` with no `--origin` sets `--all-origins` itself. The
-  double-click path is a whole-network batch job, not a preview.
+- Until 12 October 2026, `python run.py` with no `--origin` set
+  `--all-origins` itself, so the double-click path was a whole-network batch
+  job, not a preview. It is now the fast single-origin page (T7), and the
+  table above describes the earlier default.
 - The national timetable is **not** loaded unless `--with-timetable` is passed.
   The double-click default is a prices-only build.
 

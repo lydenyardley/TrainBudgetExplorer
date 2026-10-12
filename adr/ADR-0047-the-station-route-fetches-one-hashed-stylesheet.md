@@ -147,8 +147,11 @@ The chooser's script moves with it (T10): one `chooser-<digest>.js` beside
 the release rather than a copy inside the one page that carries it, because
 both routes' scripts come out of the same machinery and the two should move
 or stay together rather than by halves. A rebuild removes the hashed files
-its manifest no longer names (T11): a changed asset is a new name, so five
-stylesheets had accumulated in `_site/` beside the one the pages named.
+no file in the folder names (T11): a changed asset is a new name, so five
+stylesheets had accumulated in `_site/` beside the one the pages named. A page
+the build left alone -- an earlier build's station, named rather than deleted --
+keeps the asset it requests, and a page is rewritten whenever its markup would
+change, not only its payload, so no page the build kept names a pruned file.
 
 The decision that stands unchanged: a changed stylesheet is a new file, the
 `<link>` rather than an injected element, and the failure mode above — which
