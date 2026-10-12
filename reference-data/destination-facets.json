@@ -2,7 +2,7 @@
   "schema": 2,
   "source": "Office for National Statistics, Census 2021 built-up-area size bands and coastal classification",
   "feed": "feeds/fares/dtd-fares.zip",
-  "stations": 3436,
+  "stations": 3437,
   "facetSources": {
     "seaside": {
       "name": "Office for National Statistics, Census 2021 coastal communities characteristics of built-up areas, plus a reviewed CRS supplement for classic day-out stations the workbook name-match misses",
