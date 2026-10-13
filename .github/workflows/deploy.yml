@@ -45,6 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.feed_check.outputs.changed }}
+      fingerprint: ${{ steps.feed_fingerprint.outputs.value }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -283,6 +284,71 @@ jobs:
         # after the build costs both.
         run: python tools/check_fare_rate.py --feed feeds/fares/dtd-fares.zip --timetable feeds/timetable
 
+
+  # The whole-network build, split across runners. One runner wrote 1,821 of
+  # 2,705 pages in the 300 minutes the build step was allowed (run
+  # 38312084609, 12-13 October 2026): about 6.2 pages a minute on four
+  # workers, so the whole network needs some 440 minutes on one runner -- past
+  # the step bound and close to GitHub's 360-minute job limit. Six shards of
+  # every sixth origin (the split interleaves, so cheap and dear stations
+  # spread evenly) are about 450 pages, roughly 75 minutes each at that rate,
+  # run side by side. The assemble job merges them through --merge, which
+  # proves they partition the feed's origins and were built from the same
+  # inputs and code before it writes a page.
+  shard:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the licensed DTD feeds
+        # A job starts on a clean runner, so it downloads the feeds itself
+        # rather than receiving them: an artifact of a public repository can
+        # be downloaded by anyone signed in to GitHub, and the feeds are
+        # licensed. No manifest is restored, so this is always a full download.
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds
+
+      - name: Refuse a download the gates did not audit
+        # The portal can republish between jobs. Every gate above ran on the
+        # build job's download, so a job holding a different one stops here
+        # rather than publishing fares nobody audited. (The merge would refuse
+        # mismatched shards too; this names the reason first.)
+        env:
+          AUDITED: ${{ needs.build.outputs.fingerprint }}
+        shell: bash
+        run: |
+          HERE=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)
+          if [ "$HERE" != "$AUDITED" ]; then
+            echo "::error title=feed moved::this job downloaded feed $HERE, but the gates audited $AUDITED; the portal republished mid-run, so rerun the workflow"
+            exit 1
+          fi
+
+      - name: Download the Knowledgebase reference feeds
+        # Tolerant, exactly as in the build job: a second opinion the page
+        # says it lacks when the subscription is missing.
+        continue-on-error: true
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: |
+          if python dtd_download.py --output-root feeds --kb-only; then
+            echo "reference feeds downloaded"
+          else
+            echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded; the pages will say no independent reference feed was checked."
+          fi
+
       - name: Restore the timetable index
         # The timetable parse is the expensive part of this build, and it is
         # skipped entirely when the focused index is already on disk: measured
@@ -355,11 +421,19 @@ jobs:
         # build, it was a build that failed at 150 on a private repository and
         # published nothing. Raising it again needs the measurement redone, not a
         # hunch, and the measurement is the table above.
-        timeout-minutes: 300
-        if: steps.feed_check.outputs.changed == 'true'
+        #
+        # That table was measured on a 12-CPU desktop. The hosted runner is
+        # slower: run 38312084609 wrote 1,821 pages in 300 minutes on four
+        # workers, so the whole network was about 440 minutes on one runner.
+        # Hence the shards above. A share is about 450 pages, roughly 75
+        # minutes at the hosted rate; the bound is twice that, so a slow
+        # runner still finishes and a hung one is stopped well inside the
+        # job limit.
+        timeout-minutes: 150
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
           PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
+          SHARD: ${{ matrix.shard }}/6
         run: |
           BASE_ARGS=()
           if [ -n "$SITE_BASE_PATH" ]; then
@@ -391,13 +465,80 @@ jobs:
             --date "$(date -u +%Y-%m-%d)" \
             --all-origins \
             --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
-            --out _site/index.html \
+            --shard "$SHARD" \
+            --out "_shard/index.html" \
             --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
 
+      - name: Save the timetable index
+        # From one share only: every share builds the same index from the same
+        # feed, and a cache key can be written once.
+        if: matrix.shard == 1
+        uses: actions/cache/save@v4
+        with:
+          path: _cache
+          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-${{ needs.build.outputs.fingerprint }}
+
+      - name: Hand the share to the assemble job
+        # Pages only, never the feeds. A day is enough: the assemble job runs
+        # minutes after the last share.
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: _shard/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Merge the shares into one site, then every check the single build had.
+  assemble:
+    needs: [build, shard]
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the licensed DTD feeds
+        # A job starts on a clean runner, so it downloads the feeds itself
+        # rather than receiving them: an artifact of a public repository can
+        # be downloaded by anyone signed in to GitHub, and the feeds are
+        # licensed. No manifest is restored, so this is always a full download.
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds
+
+      - name: Refuse a download the gates did not audit
+        # The portal can republish between jobs. Every gate above ran on the
+        # build job's download, so a job holding a different one stops here
+        # rather than publishing fares nobody audited. (The merge would refuse
+        # mismatched shards too; this names the reason first.)
+        env:
+          AUDITED: ${{ needs.build.outputs.fingerprint }}
+        shell: bash
+        run: |
+          HERE=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)
+          if [ "$HERE" != "$AUDITED" ]; then
+            echo "::error title=feed moved::this job downloaded feed $HERE, but the gates audited $AUDITED; the portal republished mid-run, so rerun the workflow"
+            exit 1
+          fi
+
+      - name: Collect the shares
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: _shards
+
+      - name: Merge the shares into one site
+        # --merge refuses shares that overlap, leave a gap, or were built from
+        # another download or another revision of the code.
+        run: python build_demo_page.py --feed feeds/fares --merge _shards/shard-* --out _site/index.html
+
       - name: Hold the site inside the byte budget
-        if: steps.feed_check.outputs.changed == 'true'
         # A whole-network release is 498 MB of pages against a target of
         # 800 MB, measured rather than projected (tools/page_bytes.py). Nothing
         # else in this workflow can see that number grow: the manifest check
@@ -407,7 +548,6 @@ jobs:
         run: python tools/page_bytes.py --site _site
 
       - name: Check the release manifest
-        if: steps.feed_check.outputs.changed == 'true'
         # S07: the release is a set of routes, written beside the pages and
         # proved against them by the build. This step checks the set an operator
         # or a host would read, so a manifest that went missing between the
@@ -520,7 +660,7 @@ jobs:
         # against the demo page alone -- rather than against a file that is
         # not there.
         env:
-          SITE_BUILT: ${{ steps.feed_check.outputs.changed }}
+          SITE_BUILT: 'true'
         run: |
           npx --yes --package playwright playwright install --with-deps chromium
           # --third-origin makes the picker have options; --return-network
@@ -615,23 +755,14 @@ jobs:
           PAGES+=("$ONE_PAGE" "$PRICES_ONLY")
           npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
 
-      - name: Save the successful feed manifest and build fingerprint
-        if: steps.feed_check.outputs.changed == 'true'
-        run: python tools/build_inputs.py --fingerprint > .feed-state/build-inputs.sha256
 
-      - name: Save the timetable index
-        if: steps.feed_check.outputs.changed == 'true'
-        # Only written by a build that reached the parse, so a build that failed
-        # earlier cannot leave a half-written index behind for the next day to
-        # trust. The file is named after a digest of the feed and the stations
-        # it serves, so tomorrow's key misses if the timetable moved.
-        uses: actions/cache/save@v4
-        with:
-          path: _cache
-          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-${{ steps.feed_fingerprint.outputs.value }}
+      - name: Save the successful feed manifest and build fingerprint
+        run: |
+          mkdir -p .feed-state
+          cp feeds/download-manifest.json .feed-state/download-manifest.json
+          python tools/build_inputs.py --fingerprint > .feed-state/build-inputs.sha256
 
       - name: Save the successful feed manifest
-        if: steps.feed_check.outputs.changed == 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -642,10 +773,9 @@ jobs:
           # A key derived from the manifest file itself would produce a new
           # entry every run for the reason described above, and the restore
           # would never match a saved state.
-          key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ steps.feed_fingerprint.outputs.value }}
+          key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ needs.build.outputs.fingerprint }}
 
       - uses: actions/upload-pages-artifact@v3
-        if: steps.feed_check.outputs.changed == 'true'
         with:
           path: _site
 
@@ -704,7 +834,7 @@ jobs:
         run: python tools/check_release_clearance.py --release fares,timetable
 
   deploy:
-    needs: [build, clearance]
+    needs: [build, assemble, clearance]
     if: needs.build.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment:

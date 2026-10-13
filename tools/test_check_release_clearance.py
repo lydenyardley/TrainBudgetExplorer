@@ -450,7 +450,10 @@ class WorkflowTest(unittest.TestCase):
 
     def test_the_clearance_job_gates_the_deploy(self) -> None:
         self.assertIn("clearance:", self.workflow)
-        self.assertRegex(self.workflow, r"needs: \[build, clearance\]")
+        # The deploy job, and only it, must wait on the clearance; the jobs it
+        # also needs (the gates, the assembled site) may grow.
+        deploy = self.workflow.split("\n  deploy:\n", 1)[1]
+        self.assertRegex(deploy.split("\n", 1)[0], r"^    needs: \[[^\]]*\bclearance\]")
 
     def test_the_declared_shape_matches_the_flags_the_build_passes(self) -> None:
         build = self.workflow.split("Build the site from audited fares", 1)[1]
