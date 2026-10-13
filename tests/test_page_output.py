@@ -787,12 +787,15 @@ class EncodedPayloadTest(unittest.TestCase):
         encoded = encode_payload(self.payload)
         self.assertEqual(len(encoded["pool"]), 1)
         self.assertEqual(encoded["pool"][0]["url"], "https://example.invalid/search")
-        link = encoded["destinations"]["columns"].index("link")
-        self.assertEqual(encoded["destinations"]["rows"][0][link], -1)
+        table = encoded["destinations"]
+        own = [c for c in table["columns"] if c not in table.get("placed", [])]
+        self.assertEqual(table["rows"][0][own.index("link")], -1)
 
     def test_a_value_used_once_is_left_where_it_is(self) -> None:
         encoded = json.dumps(encode_payload(self.payload), separators=(",", ":"))
-        self.assertEqual(encoded.count("NOTTINGHAM"), 2)
+        # Once, not twice: the name is the station's, so the two lists that
+        # price Nottingham share it through ``places`` (ADR-0069).
+        self.assertEqual(encoded.count("NOTTINGHAM"), 1)
         self.assertEqual(encoded.count("https://example.invalid/search"), 1)
 
     def test_a_payload_with_nothing_repeated_carries_no_pool(self) -> None:
@@ -807,6 +810,55 @@ class EncodedPayloadTest(unittest.TestCase):
     def test_the_pool_reads_back_by_hand_as_well_as_through_the_page(self) -> None:
         encoded = encode_payload(self.payload)
         self.assertEqual(hydrate_rows(encoded)["destinations"], self.payload["destinations"])
+
+    # ADR-0069: what the fare lists share, and what a row packs.
+    fares_payload = {
+        "railcards": [{"key": "YNG"}, {"key": "DIS"}],
+        "destinations": [
+            {"crs": "LCN", "name": "LINCOLN", "adultPence": 870, "destinationTypes": ["city"],
+             "railcards": {"YNG": {"state": "eligible", "pricePence": 580, "minimumFarePence": None, "rule": "0"},
+                           "DIS": {"state": "blocked", "pricePence": None, "minimumFarePence": 1200, "rule": "3"}},
+             "tickets": [{"ticket": "SDR", "fromCrs": "GRN", "fromName": "GRANTHAM", "toCrs": "LCN",
+                          "toName": "LINCOLN", "adultPence": 870}]},
+            {"crs": "NOT", "name": "NOTTINGHAM", "adultPence": 1200, "destinationTypes": ["city"],
+             "railcards": {"DIS": {"state": "eligible", "pricePence": 800, "minimumFarePence": None, "rule": "1"},
+                           "YNG": {"state": "eligible", "pricePence": 800, "minimumFarePence": None, "rule": "1"}},
+             "tickets": None},
+        ],
+        "singleDestinations": [
+            {"crs": "LCN", "name": "LINCOLN", "adultPence": 500, "destinationTypes": ["city"],
+             "railcards": {"YNG": {"state": "eligible", "pricePence": 330, "minimumFarePence": None, "rule": "2"}},
+             "tickets": [{"ticket": "CDS", "fromCrs": "GRN", "fromName": "GRANTHAM", "toCrs": "LCN",
+                          "toName": "LINCOLN", "adultPence": 500, "extra": 1}]},
+        ],
+    }
+
+    def test_the_packed_lists_read_back_field_for_field_and_in_order(self) -> None:
+        encoded = json.loads(json.dumps(encode_payload(self.fares_payload)))
+        decoded = hydrate_rows(encoded)
+        for key in ("destinations", "singleDestinations"):
+            self.assertEqual(
+                json.dumps(decoded[key]), json.dumps(self.fares_payload[key]),
+                "same values and the same key order",
+            )
+
+    def test_a_station_column_is_sent_once_and_a_fare_column_stays_on_the_row(self) -> None:
+        encoded = encode_payload(self.fares_payload)
+        self.assertIn("name", encoded["places"]["columns"])
+        self.assertIn("destinationTypes", encoded["places"]["columns"])
+        self.assertNotIn("adultPence", encoded["places"]["columns"])
+        # The place, the ticket name map, and the one ticket with an extra field,
+        # which travels as it was written.
+        self.assertEqual(json.dumps(encoded).count("LINCOLN"), 3)
+
+    def test_a_row_out_of_the_common_order_travels_as_it_was(self) -> None:
+        encoded = encode_payload(self.fares_payload)
+        table = encoded["destinations"]
+        own = [c for c in table["columns"] if c not in table.get("placed", [])]
+        nottingham = table["rows"][1][own.index("railcards")]
+        pool = encoded.get("pool") or []
+        value = pool[-nottingham - 1] if isinstance(nottingham, int) and nottingham < 0 else nottingham
+        self.assertIsInstance(value, dict, "DIS before YNG is not the page's order, so it is not packed")
 
     def test_a_rendered_page_carries_the_tables_and_the_hydrator(self) -> None:
         self.assertIn('"columns":', embedded_text(self.page))

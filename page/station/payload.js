@@ -22,16 +22,67 @@ const FIRST_USE_FALLBACK = window.TBE_FIRST_USE_FALLBACK;
 // in a list carried the same field names and the page was sending them once per
 // row. Hydrating here keeps the rest of this script reading rows as objects, and
 // it is also what makes an older payload -- a plain list -- still render.
+//
+// ADR-0069: the fare lists also leave out what is the station's rather than the
+// fare's. A "placed" column is read from DATA.places by the row's station, and
+// a row's railcard decisions and tickets arrive packed by the orders in
+// DATA.rowCodec. Each is rebuilt here into the object the build wrote, field
+// for field and in the same order, so nothing below this function changes.
+function unpackRailcards(value, codec) {
+  if (!codec || !Array.isArray(value)) return value;
+  const out = {};
+  codec.cards.forEach((card, i) => {
+    const packed = value[i];
+    if (!Array.isArray(packed)) return;
+    out[card] = {
+      state: codec.states[packed[0]],
+      pricePence: packed[1],
+      minimumFarePence: packed[2],
+      rule: packed[3] === null ? null : String(packed[3]),
+    };
+  });
+  return out;
+}
+function unpackTickets(value, codec) {
+  if (!codec || !Array.isArray(value)) return value;
+  const named = { fromName: "fromCrs", toName: "toCrs" };
+  return value.map((packed) => {
+    if (!Array.isArray(packed)) return packed;
+    const ticket = {};
+    let at = 0;
+    for (const field of codec.columns) {
+      if (codec.names && named[field]) ticket[field] = codec.names[ticket[named[field]]];
+      else ticket[field] = packed[at++];
+    }
+    return ticket;
+  });
+}
 function hydrate(table) {
   if (!table || !Array.isArray(table.rows)) return table || [];
   const pool = DATA.pool || [];
+  const codec = DATA.rowCodec || {};
+  const placed = new Set(table.placed || []);
+  const places = DATA.places || { columns: [], rows: {} };
+  const placeAt = {};
+  places.columns.forEach((column, i) => { placeAt[column] = i; });
+  const own = table.columns.filter((column) => !placed.has(column));
+  const crsAt = own.indexOf("crs");
+  // A negative cell is an index into the page's pool of values that repeat,
+  // so the rows that share a link or a railcard record share one object.
+  const value = (cell) => (typeof cell === "number" && cell < 0 ? pool[-cell - 1] : cell);
   return table.rows.map((cells) => {
     const row = {};
-    for (let i = 0; i < table.columns.length; i += 1) {
-      const cell = cells[i];
-      // A negative cell is an index into the page's pool of values that repeat,
-      // so the rows that share a link or a railcard record share one object.
-      row[table.columns[i]] = typeof cell === "number" && cell < 0 ? pool[-cell - 1] : cell;
+    const station = placed.size ? places.rows[value(cells[crsAt])] : null;
+    let at = 0;
+    for (const column of table.columns) {
+      if (placed.has(column)) {
+        row[column] = station ? station[placeAt[column]] : null;
+        continue;
+      }
+      let cell = value(cells[at++]);
+      if (column === "railcards") cell = unpackRailcards(cell, codec.railcards);
+      else if (column === "tickets") cell = unpackTickets(cell, codec.tickets);
+      row[column] = cell;
     }
     return row;
   });
