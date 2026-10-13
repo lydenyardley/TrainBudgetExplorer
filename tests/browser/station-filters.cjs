@@ -123,6 +123,23 @@ async function driveTheFilters(world) {
           return entry && entry.pricePence !== null && entry.pricePence < d.adultPence;
         });
       if (!lowered.length) return null;
+      // The rows the card lowers are put on the first page. The table shows 20
+      // rows a page, cheapest first, and a card's minimum fare means the
+      // rows it lowers are the dearer ones: Falmouth Town's 16-25 Railcard
+      // lowers nothing under its £12 floor, so all of the first page was
+      // unchanged and a right page read as one that ignored the card.
+      window.__keptLists = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations];
+      const lowers = (d) => {
+        const entry = (d.railcards || {})[card.key];
+        return entry && entry.pricePence !== null && entry.pricePence < d.adultPence;
+      };
+      // Fifteen it lowers and five it does not, so one page holds both and
+      // the checks on unlowered rows still have rows to read.
+      const onePage = (list) => list.filter(lowers).slice(0, 15).concat(list.filter((d) => !lowers(d)).slice(0, 5));
+      DATA.destinations = onePage(DATA.destinations || []);
+      DATA.singleDestinations = onePage(DATA.singleDestinations || []);
+      DATA.anytimeDestinations = onePage(DATA.anytimeDestinations || []);
+      currentPage = 1;
       const dearest = lowered.reduce((high, d) => Math.max(high, d.adultPence), 0);
       setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
       select.value = "";
@@ -145,6 +162,8 @@ async function driveTheFilters(world) {
       await page.evaluate(() => {
         const select = document.getElementById("railcardSelect");
         select.value = "";
+        [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations] = window.__keptLists;
+        currentPage = 1;
         render();
       });
     } else {
