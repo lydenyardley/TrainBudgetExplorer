@@ -3247,48 +3247,186 @@ def _pool_key(value: object) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def _value_pool(tables: dict[str, list[dict]]) -> dict[str, int]:
-    """The values that repeat inside the row lists, and their pool positions.
+FARE_LISTS = ("destinations", "singleDestinations", "anytimeDestinations")
+TICKET_NAME_FIELDS = (("fromCrs", "fromName"), ("toCrs", "toName"))
 
-    Counting before choosing is what keeps this from being a hoist per field: a
-    value earns an entry when it appears more than once and is long enough that a
-    reference to it is cheaper than the value. On the Grantham page that is one
-    link object on all 190 rows, one railcard record per rule rather than per row,
-    and the arrays of destination types.
 
-    The length floor is what stops a pool costing more than it saves: pooling
-    false, which is five bytes, would spend five bytes on a reference to save five.
+def _railcard_codec(tables: dict[str, list[dict]]) -> dict | None:
+    """The card order and the states a row's railcard decisions are packed by.
+
+    A row's railcards were an object per card with four named fields, the
+    largest cell on the page: 629 KB of the Crewe page's 1.25 MB of rows
+    (shard 1 of run 38353105980). Packed, a decision is a four-item array in
+    the page's card order, and a row whose cards arrive in another order is
+    left as it was, so the page reads back the same object either way.
     """
-    counts: dict[str, int] = {}
-    for items in tables.values():
+    cards: list[str] = []
+    states: list[str] = []
+    for key in FARE_LISTS:
+        for row in tables.get(key, []):
+            value = row.get("railcards")
+            if isinstance(value, dict):
+                for card, details in value.items():
+                    if card not in cards:
+                        cards.append(card)
+                    if isinstance(details, dict) and details.get("state") not in states:
+                        states.append(details.get("state"))
+    return {"cards": cards, "states": states} if cards else None
+
+
+def _pack_railcards(value: object, codec: dict) -> object:
+    if not isinstance(value, dict) or not value:
+        return value
+    cards = codec["cards"]
+    if list(value) != [card for card in cards if card in value]:
+        return value
+    packed: list[object] = []
+    for card in cards:
+        details = value.get(card)
+        if details is None:
+            packed.append(0)
+            continue
+        if not isinstance(details, dict) or list(details) != [
+            "state", "pricePence", "minimumFarePence", "rule"
+        ]:
+            return value
+        rule = details["rule"]
+        if isinstance(rule, str) and rule.isdigit() and str(int(rule)) == rule:
+            rule = int(rule)
+        elif rule is not None:
+            return value
+        packed.append(
+            [codec["states"].index(details["state"]), details["pricePence"],
+             details["minimumFarePence"], rule]
+        )
+    return packed
+
+
+def _ticket_codec(tables: dict[str, list[dict]]) -> dict | None:
+    """The field order a row's tickets are packed by, and the names they share.
+
+    A ticket repeated both station names in full on every row (430 KB of the
+    Crewe page). Each name is the station's, so it is sent once in a page map
+    and the ticket keeps the code; a ticket whose fields differ from the common
+    order, or whose name disagrees with the map, is left as it was.
+    """
+    columns: list[str] | None = None
+    names: dict[str, str] = {}
+    clash = False
+    for key in FARE_LISTS:
+        for row in tables.get(key, []):
+            tickets = row.get("tickets")
+            if not isinstance(tickets, list):
+                continue
+            for ticket in tickets:
+                if not isinstance(ticket, dict):
+                    continue
+                if columns is None:
+                    columns = list(ticket)
+                for code_field, name_field in TICKET_NAME_FIELDS:
+                    code, name = ticket.get(code_field), ticket.get(name_field)
+                    if isinstance(code, str) and isinstance(name, str):
+                        if names.setdefault(code, name) != name:
+                            clash = True
+    if not columns:
+        return None
+    named = not clash and all(
+        code in columns and name in columns and columns.index(code) < columns.index(name)
+        for code, name in TICKET_NAME_FIELDS
+    )
+    packed_columns = [
+        field for field in columns
+        if not (named and field in {name for _, name in TICKET_NAME_FIELDS})
+    ]
+    return {"columns": columns, "packed": packed_columns, "names": names if named else None}
+
+
+def _pack_tickets(value: object, codec: dict) -> object:
+    if not isinstance(value, list):
+        return value
+    out: list[object] = []
+    for ticket in value:
+        if not isinstance(ticket, dict) or list(ticket) != codec["columns"]:
+            out.append(ticket)
+            continue
+        names = codec["names"]
+        if names is not None and any(
+            names.get(ticket[code]) != ticket[name] for code, name in TICKET_NAME_FIELDS
+        ):
+            out.append(ticket)
+            continue
+        out.append([ticket[field] for field in codec["packed"]])
+    return out
+
+
+def _placed_columns(tables: dict[str, list[dict]]) -> tuple[list[str], dict[str, dict]]:
+    """The columns that belong to a station rather than to one list's fare.
+
+    The three fare lists name mostly the same stations (534 of Crewe's 538
+    single-fare rows are also return rows), and a station's name, types and
+    named sites are the same in every list. A column is placed -- sent once per
+    station rather than once per row -- only when every row of every fare list
+    carries it with the same value for its station; anything a list prices
+    differently stays on the row.
+    """
+    lists = [tables[key] for key in FARE_LISTS if key in tables]
+    # One list has nothing to share with: placing its columns would only move
+    # them.
+    if len(lists) < 2:
+        return [], {}
+    column_sets = []
+    for items in lists:
+        seen: list[str] = []
         for row in items:
-            for value in row.values():
-                if isinstance(value, (dict, list)) or (
-                    isinstance(value, str) and len(value) >= POOL_MIN_BYTES
-                ):
-                    key = _pool_key(value)
-                    counts[key] = counts.get(key, 0) + 1
-    pool: dict[str, int] = {}
-    for items in tables.values():
+            for field in row:
+                if field not in seen:
+                    seen.append(field)
+        column_sets.append(seen)
+    if any("crs" not in columns for columns in column_sets):
+        return [], {}
+    common = [
+        field for field in column_sets[0]
+        if field != "crs" and all(field in columns for columns in column_sets[1:])
+    ]
+    by_station: dict[str, dict[str, str]] = {}
+    placed = []
+    for field in common:
+        agreed = True
+        values: dict[str, str] = {}
+        for items in lists:
+            for row in items:
+                crs = row.get("crs")
+                if not isinstance(crs, str):
+                    agreed = False
+                    break
+                key = _pool_key(row.get(field))
+                if values.setdefault(crs, key) != key:
+                    agreed = False
+                    break
+            if not agreed:
+                break
+        if agreed:
+            placed.append(field)
+    for items in lists:
         for row in items:
-            for value in row.values():
-                key = _pool_key(value)
-                if counts.get(key, 0) > 1 and key not in pool:
-                    pool[key] = len(pool)
-    return pool
+            entry = by_station.setdefault(row["crs"], {})
+            for field in placed:
+                entry[field] = row.get(field)
+    return placed, by_station
 
 
 def encode_payload(payload: dict) -> dict:
-    """The payload in the form a page ships: a column list and a row table per list.
+    """The payload in the form a page ships (ADR-0069).
 
-    Each row list keeps its own columns. The lists carry different fields, and one
-    shared column set would pad the picker's three fields out to a destination
-    row's twenty, which is a loss disguised as a saving.
-    ``page_templates`` hydrates the tables back into objects as the page loads, so values that repeat
-    inside a list are sent once in the page-level pool and referred to by index,
-    and
-    the rest of the script reads rows exactly as it did before the wire form
-    changed.
+    Each row list is a column list and a table of cells. The fare lists then
+    share what is the station's rather than the fare's: a column every list
+    agrees on for a station is sent once in ``places`` and left out of the
+    rows. A row's railcard decisions and tickets are packed by orders declared
+    once in ``rowCodec``. Values that still repeat are sent once in the
+    page-level pool and referred to by a negative index.
+
+    The page hydrates all of it back into the objects the build wrote, field
+    for field and in the same order, so no reader of the page changes.
     """
     tables = {
         key: payload[key]
@@ -3298,33 +3436,95 @@ def encode_payload(payload: dict) -> dict:
     if not tables:
         return payload
 
-    pool = _value_pool(tables)
-    values: list[object] = [None] * len(pool)
-    for items in tables.values():
-        for row in items:
-            for value in row.values():
-                position = pool.get(_pool_key(value))
-                if position is not None:
-                    values[position] = value
+    railcard_codec = _railcard_codec(tables)
+    ticket_codec = _ticket_codec(tables)
+    placed, by_station = _placed_columns(tables)
+    codec: dict[str, object] = {}
+    if railcard_codec:
+        codec["railcards"] = railcard_codec
+    if ticket_codec:
+        codec["tickets"] = {"columns": ticket_codec["columns"], "packed": ticket_codec["packed"]}
+        if ticket_codec["names"] is not None:
+            codec["tickets"]["names"] = ticket_codec["names"]
 
-    encoded = dict(payload)
-    for key, items in tables.items():
+    def packed_row(key: str, row: dict) -> dict:
+        if key not in FARE_LISTS:
+            return row
+        out = dict(row)
+        if railcard_codec and "railcards" in out:
+            out["railcards"] = _pack_railcards(out["railcards"], railcard_codec)
+        if ticket_codec and "tickets" in out:
+            out["tickets"] = _pack_tickets(out["tickets"], ticket_codec)
+        return out
+
+    packed_tables = {
+        key: [packed_row(key, row) for row in items] for key, items in tables.items()
+    }
+    placed_set = set(placed)
+
+    def row_values(key: str, row: dict, columns: list[str]):
+        for field in columns:
+            if key in FARE_LISTS and field in placed_set:
+                continue
+            yield row.get(field)
+
+    columns_by_key: dict[str, list[str]] = {}
+    for key, items in packed_tables.items():
         columns: list[str] = []
         for row in items:
             for field in row:
                 if field not in columns:
                     columns.append(field)
+        columns_by_key[key] = columns
 
-        def cell(value: object) -> object:
-            # A pool reference is a negative index, so it cannot be confused with
-            # a real cell: -1 is the pool's first entry, and null stays null.
-            position = pool.get(_pool_key(value)) if value is not None else None
-            return -(position + 1) if position is not None else value
+    counts: dict[str, int] = {}
 
-        encoded[key] = {
-            "columns": columns,
-            "rows": [[cell(row.get(field)) for field in columns] for row in items],
+    def poolable(value: object) -> bool:
+        return isinstance(value, (dict, list)) or (
+            isinstance(value, str) and len(value) >= POOL_MIN_BYTES
+        )
+
+    for key, items in packed_tables.items():
+        for row in items:
+            for value in row_values(key, row, columns_by_key[key]):
+                if poolable(value):
+                    k = _pool_key(value)
+                    counts[k] = counts.get(k, 0) + 1
+    pool: dict[str, int] = {}
+    values: list[object] = []
+    for key, items in packed_tables.items():
+        for row in items:
+            for value in row_values(key, row, columns_by_key[key]):
+                k = _pool_key(value)
+                if counts.get(k, 0) > 1 and k not in pool:
+                    pool[k] = len(values)
+                    values.append(value)
+
+    def cell(value: object) -> object:
+        # A pool reference is a negative index, so it cannot be confused with
+        # a real cell: -1 is the pool's first entry, and null stays null.
+        position = pool.get(_pool_key(value)) if value is not None else None
+        return -(position + 1) if position is not None else value
+
+    encoded = dict(payload)
+    for key, items in packed_tables.items():
+        table: dict[str, object] = {
+            "columns": columns_by_key[key],
+            "rows": [
+                [cell(value) for value in row_values(key, row, columns_by_key[key])]
+                for row in items
+            ],
         }
+        if key in FARE_LISTS and placed:
+            table["placed"] = [field for field in columns_by_key[key] if field in placed_set]
+        encoded[key] = table
+    if placed:
+        encoded["places"] = {
+            "columns": placed,
+            "rows": {crs: [entry.get(field) for field in placed] for crs, entry in by_station.items()},
+        }
+    if codec:
+        encoded["rowCodec"] = codec
     if values:
         encoded["pool"] = values
     return encoded
