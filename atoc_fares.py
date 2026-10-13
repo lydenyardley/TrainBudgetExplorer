@@ -189,7 +189,7 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "SWN": "town", "BTD": "village", "BYK": "village", "AWK": "village",
     "NMC": "small_town", "MRP": "village", "SRN": "village", "BDY": "village",
     "BNT": "village", "HYC": "town", "HYT": "town", "CGW": "village",
-    "CYB": "village", "HPE": "village",
+    "CYB": "village",
     # Fernhill was filed as a city in the Cardiff group, and it is a village in
     # the Scottish Borders. Burscough Junction's settlement is in the workbook
     # as a small built-up area, so the entry says so rather than understating
@@ -203,7 +203,7 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     # is the settlement the station is named for, and the class is the one the
     # workbook would give it: Newton-le-Willows is a town, not a village.
     "ALM": "village", "ARB": "town", "BDQ": "city", "BEE": "town",
-    "BUH": "village", "BWK": "town", "CBG": "city", "CLM": "village",
+    "BUH": "village", "BWK": "town", "CBG": "city",
     "DEE": "city", "DUN": "town", "ELO": "village", "FKG": "small_town",
     "GLE": "village", "HBB": "village", "HRS": "town", "HVN": "village",
     "HYM": "village", "INK": "village", "KDY": "town", "KIN": "village",
@@ -211,7 +211,7 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "LJL": "city", "LPY": "city", "MTS": "town", "NLW": "town",
     "NNG": "town", "PIT": "village", "PTH": "city", "RAU": "village",
     "RDF": "village", "SHY": "town", "SPO": "village", "STG": "city",
-    "STN": "town", "TPC": "village", "WFL": "village", "WWL": "village",
+    "STN": "town", "TPC": "village", "WFL": "village",
     # Nottingham Express Transit and East Midlands Parkway tram stops, and
     # park-and-ride platforms named after the village they serve
     "EMD": "village", "PEA": "village", "PPR": "town",
@@ -279,11 +279,11 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     # Bynea, Glan Conwy, Gorebridge, Carstairs, Bowling, Carfin, Holytown,
     # Deganwy, Llwynypia, Ton Pentre, Troed y Rhiw, Trehafod, Ynyswen,
     # Gilfach Fargoed, Pengam, Quakers Yard, Tondu and Tir Phil.
-    "SNG": "village", "CLA": "village", "HSY": "village", "HYW": "village",
+    "SNG": "village", "CLA": "village", "HYW": "village",
     "OXS": "village", "EFF": "village", "LPG": "village", "BOR": "village",
     "LLT": "village", "PTF": "village", "LLG": "village", "LLM": "village",
     "LNR": "village", "LNW": "village", "CIM": "village", "DOL": "village",
-    "BHR": "village", "SOI": "village", "BYE": "village", "GCW": "village",
+    "BHR": "village", "BYE": "village", "GCW": "village",
     "GBG": "village", "CRS": "village", "BWG": "village", "CRF": "village",
     "HLY": "village", "DGY": "village", "LLY": "village", "TPN": "village",
     "TRD": "village", "TRH": "village", "YNW": "village", "GFF": "village",
