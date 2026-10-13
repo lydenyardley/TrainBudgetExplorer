@@ -319,8 +319,10 @@ jobs:
   # workers, so the whole network needs some 440 minutes on one runner -- past
   # the step bound and close to GitHub's 360-minute job limit. Six shards of
   # every sixth origin (the split interleaves, so cheap and dear stations
-  # spread evenly) are about 450 pages, roughly 75 minutes each at that rate,
-  # run side by side. The assemble job merges them through --merge, which
+  # spread evenly) are about 450 pages each, run side by side. Measured in run
+  # 38353105980 (13 October 2026): shares 1 to 6 took 114, 111, 106, 87, 95
+  # and 103 minutes -- slower than the 75 the single-runner rate predicted,
+  # because each share loads the whole feed and timetable itself. The assemble job merges them through --merge, which
   # proves they partition the feed's origins and were built from the same
   # inputs and code before it writes a page.
   shard:
@@ -480,10 +482,11 @@ jobs:
         # That table was measured on a 12-CPU desktop. The hosted runner is
         # slower: run 38312084609 wrote 1,821 pages in 300 minutes on four
         # workers, so the whole network was about 440 minutes on one runner.
-        # Hence the shards above. A share is about 450 pages, roughly 75
-        # minutes at the hosted rate; the bound is twice that, so a slow
-        # runner still finishes and a hung one is stopped well inside the
-        # job limit.
+        # Hence the shards above. A share is about 450 pages; run 38353105980
+        # measured 87 to 114 minutes per share. The bound leaves the slowest of
+        # those 36 minutes of headroom and still stops a hung share well inside
+        # the job limit; a share that nears it is the signal to split further
+        # rather than to raise it.
         timeout-minutes: 150
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
@@ -612,8 +615,12 @@ jobs:
         run: python build_demo_page.py --feed feeds/fares --merge _shards/shard-* --out _site/index.html
 
       - name: Hold the site inside the byte budget
-        # A whole-network release is 498 MB of pages against a target of
-        # 800 MB, measured rather than projected (tools/page_bytes.py). Nothing
+        # The 498 MB a whole-network release measured on 1 October grew to
+        # 2,444 MB with two-ticket rows (run 38353105980), and this step is what
+        # caught it. ADR-0069 shares a station's facts across the fare lists
+        # and packs railcards and tickets; re-encoding shard 1's real pages
+        # measured 90.8 MB for 458 pages, about 536 MB for the network, against
+        # the 800 MB target (tools/page_bytes.py). Nothing
         # else in this workflow can see that number grow: the manifest check
         # counts routes, the journey check counts fields, and every one of
         # them is still satisfied by a release twice the size. This is the one
