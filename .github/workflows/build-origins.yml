@@ -1,0 +1,95 @@
+# Build a handful of station pages from the real feeds, for diagnosing a page
+# fault that only a real feed shows, and hand them back as a short-lived
+# artifact.
+#
+# Manual only. It never publishes, commits or caches anything. The artifact is
+# the built pages and the shared assets they load -- the same files the
+# public site serves -- and never feeds/: the licensed download stays on the
+# runner. A public repository's artifacts are downloadable by anyone, so it
+# is kept for one day, and whoever downloads it should delete it at once.
+
+name: build named origins
+
+on:
+  workflow_dispatch:
+    inputs:
+      origins:
+        description: "Origin CRS codes, comma-separated (e.g. FMT,BEN,AWM)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-origins
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Refuse anything but a list of CRS codes
+        env:
+          ORIGINS: ${{ inputs.origins }}
+        shell: bash
+        run: |
+          if ! [[ "$ORIGINS" =~ ^[A-Z]{3}(,[A-Z]{3})*$ ]]; then
+            echo "::error title=origins::'$ORIGINS' is not a comma-separated list of three-letter CRS codes"
+            exit 1
+          fi
+
+      - name: Download the licensed DTD feeds
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: python dtd_download.py --output-root feeds
+
+      - name: Download the Knowledgebase reference feeds
+        # Tolerant, as in deploy.yml: a different subscription, and the pages
+        # say so when it is missing.
+        continue-on-error: true
+        env:
+          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: |
+          if python dtd_download.py --output-root feeds --kb-only; then
+            echo "reference feeds downloaded"
+          else
+            echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded; the pages will say no independent reference feed was checked."
+          fi
+
+      - name: Build the named origins
+        # The same flags as the published build, less the base path: these
+        # pages are opened from a local server at /.
+        env:
+          ORIGINS: ${{ inputs.origins }}
+        shell: bash
+        run: |
+          python build_demo_page.py \
+            --feed feeds/fares \
+            --timetable feeds/timetable \
+            --knowledgebase feeds/knowledgebase \
+            --date "$(date -u +%Y-%m-%d)" \
+            --all-origins \
+            --only-stations "$ORIGINS" \
+            --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
+            --out "_origins/index.html" \
+            --notices nre,rdg,ogl,accuracy \
+            --require-live-reviewed-codes
+
+      - name: Hand back the pages
+        # _origins/ only: the pages and the shared assets beside them.
+        uses: actions/upload-artifact@v4
+        with:
+          name: origins
+          path: _origins/
+          if-no-files-found: error
+          retention-days: 1
