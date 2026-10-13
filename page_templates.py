@@ -140,7 +140,7 @@ __STATION_STYLE__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
+<h1 id="pageHeading">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
@@ -381,7 +381,7 @@ __SHARED_CSS__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading"><span class="heading-slot">Train fares up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br>__ORIGIN_CLAUSE__</h1>
+<h1 id="pageHeading">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br>__ORIGIN_CLAUSE__</h1>
 __CHOOSER_INTRO__
 <p class="sub" id="provenanceLine">__PROVENANCE__</p>
 __ORDERING_NOTE__

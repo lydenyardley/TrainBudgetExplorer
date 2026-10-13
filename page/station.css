@@ -174,7 +174,12 @@
   .row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }
   .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
          white-space: nowrap; position: relative; }
-  .buy::after { content: ""; position: absolute; inset: -11px -4px; }
+  /* The slop is sized from the link's own line box, not assumed from it: a
+     fixed -11px made 44px only where the font drew a 22px line, and a font
+     with a 20px line (DejaVu, on a machine without system-ui) left 42px. Each
+     side reaches at least 11px and as far as half of what 44px still needs. */
+  .buy::after { content: ""; position: absolute; left: -4px; right: -4px;
+                top: min(-11px, calc(50% - 22px)); bottom: min(-11px, calc(50% - 22px)); }
   tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
   tr.detail ul { margin: 0; padding-left: 1.1rem; }
   tr.detail li { font-variant-numeric: tabular-nums; }

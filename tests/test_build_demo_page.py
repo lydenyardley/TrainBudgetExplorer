@@ -2126,7 +2126,9 @@ class DemoPageTest(unittest.TestCase):
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
         self.assertIn('.toggle::after { content: ""; position: absolute; inset: -6px; }', self.stylesheet)
-        self.assertIn('.buy::after { content: ""; position: absolute; inset: -11px -4px; }', self.stylesheet)
+        # The link's slop is sized from its own line box, so 44px holds whatever
+        # height the font gives the line; the browser suite measures it.
+        self.assertIn('top: min(-11px, calc(50% - 22px)); bottom: min(-11px, calc(50% - 22px));', self.stylesheet)
 
     # -- the unpriced-origin page ------------------------------------------
 
@@ -2796,7 +2798,7 @@ class DemoPageTest(unittest.TestCase):
             render_chooser([], budget_pounds=20),
         ):
             self.assertNotIn("heading-sep", chooser)
-            self.assertIn('<span class="heading-slot">Train fares up to ', chooser)
+            self.assertIn('Train fares <span class="heading-slot">up to ', chooser)
             self.assertIn('<span class="heading-lead">from</span>', chooser)
             self.assertNotIn("originClause\"> from <", chooser)
 
