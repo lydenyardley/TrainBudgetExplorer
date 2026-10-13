@@ -381,10 +381,20 @@ async function driveTheFilters(world) {
         // narrowed to, so it presses a chip that has something to narrow to;
         // a page where no chip does is reported rather than failed.
         const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
-        const withRows = boxes.filter((box) => {
+        const chipsWithRows = () => boxes.filter((box) => {
           const count = document.querySelector(`[data-count-for="${box.value}"]`);
           return count && Number(count.textContent.replace(/\D/g, "")) > 0;
         });
+        // The cheapest budget can leave every chip at (0): on Bentham the two
+        // rows under £5 are both "other", so the first chip was pressed with
+        // nothing behind it and the list emptied, as the chip had said it
+        // would. The budget is opened to the ceiling before falling back.
+        let withRows = chipsWithRows();
+        if (!withRows.length) {
+          setBudget(budgetCeiling());
+          render();
+          withRows = chipsWithRows();
+        }
         const input = withRows[0] || boxes[0] || null;
         if (!input) return { pressed: false, rows: 0, label: "", name: "", noneLeft: true };
         const name = input.parentElement.querySelector("span").textContent.trim();
