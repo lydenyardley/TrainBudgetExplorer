@@ -1511,8 +1511,12 @@ function saysMoreThan(condition, code) {
           const codes = new Set();
           for (const key of ["destinations", "singleDestinations", "anytimeDestinations"]) {
             for (const row of DATA[key] || []) {
-              const code = (row.restrictionCode || "").trim().toUpperCase();
-              if (code) codes.add(code);
+              // A two-ticket row prints each ticket's condition as well as its
+              // own (ADR-0061), so those are on the page too.
+              for (const raw of [row.restrictionCode].concat((row.tickets || []).map((t) => t.restrictionCode))) {
+                const code = (raw || "").trim().toUpperCase();
+                if (code) codes.add(code);
+              }
             }
           }
           return [...codes].sort();

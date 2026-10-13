@@ -578,6 +578,22 @@ async function compareTheDockWithTheTable(world) {
       if (!select || days.length < 2) return null;
       const row = (DATA.destinations || []).find((r) => (r.changeStations || []).length && !r.tickets);
       if (!row) return null;
+      // The row is put on screen on its own, the way the no-service check
+      // above stages its rows. Read where it fell in the full list, a real
+      // page's first screen often holds none of its changed rows, the cell
+      // was empty, and an empty cell read as a day claiming a split.
+      const kept = DATA.destinations;
+      const keptBudget = document.getElementById("budget").value;
+      // And in the list it comes from: the row is a return, and on the
+      // "cheapest of any type" view the table is built from every list, so
+      // the cell read was another row's or none.
+      const modeBox = (value) => document.querySelector(`input[name="ticketMode"][value="${value}"]`);
+      const keptMode = (document.querySelector('input[name="ticketMode"]:checked') || {}).value;
+      if (modeBox("return")) modeBox("return").checked = true;
+      DATA.destinations = [row];
+      setBudget(budgetCeiling());
+      currentPage = 1;
+      render();
       const clashes = [];
       for (let i = 0; i < days.length; i += 1) {
         select.value = String(i);
@@ -589,8 +605,13 @@ async function compareTheDockWithTheTable(world) {
         const note = splitNote(row);
         if (note && !/via /.test(cell)) clashes.push({ day: days[i], cell: cell });
       }
+      DATA.destinations = kept;
+      if (keptMode && modeBox(keptMode)) modeBox(keptMode).checked = true;
       select.value = "0";
       select.dispatchEvent(new Event("change", { bubbles: true }));
+      setBudget(keptBudget);
+      currentPage = 1;
+      render();
       return { crs: row.crs, days: days.length, clashes: clashes };
     });
     if (splitByDay) {
