@@ -36,9 +36,12 @@ permissions:
   pages: write
   id-token: write
 
+# One group serialises every run, so two deploys never overlap. A running
+# build is never cancelled: a shard build is hours of runner time, and a
+# later run queues behind it instead (GitHub keeps one pending run per group).
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
