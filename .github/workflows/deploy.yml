@@ -159,6 +159,8 @@ jobs:
       - name: Detect whether the feed changed
         id: feed_check
         shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           mkdir -p .feed-state
           # Every source a build is made of, from one rule rather than a
@@ -178,7 +180,16 @@ jobs:
           if [ -f .feed-state/download-manifest.json ]; then
             PREVIOUS=$(python dtd_download.py --print-fingerprint .feed-state/download-manifest.json)
           fi
-          if [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
+          # Only the daily schedule may skip. A push or a manual run always
+          # builds: a push is a change someone made, and a manual run is someone
+          # asking for a build, so neither is second-guessed by the marker.
+          # The marker is .feed-state, saved by assemble only after a build
+          # passed every gate, so "unchanged" means the same feed fingerprint and
+          # the same build-inputs digest as the last successful build.
+          if [ "$EVENT" != "schedule" ]; then
+            echo "A $EVENT run always builds."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
             echo "Feeds and build inputs are unchanged; keeping the existing site."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
