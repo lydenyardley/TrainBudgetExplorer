@@ -2034,15 +2034,15 @@ def railcard_pair_detail_for(
     ]
     restrictions = [code for code in restrictions if code and code != "none"]
     texts = [(pool.rule_for(leg["rule"]) or {}).get("text") for leg in legs]
+    # Only what the page reads (the text, the ban and the condition) and
+    # nothing that names this row. The tickets, routes and endpoints are on
+    # the row's own tickets already; naming them here made every pair a record
+    # of its own, so the pool shared nothing: 7,290 records and 3.2 MB on the
+    # Crewe page, and a 2,444 MB release against an 800 MB budget (run
+    # 38353105980). Without them a page holds one record per distinct rule.
     rule = {
         "sequence": "two",
         "status": "current",
-        "ticketCode": two_part.first.ticket_code + " + " + two_part.second.ticket_code,
-        "routeCode": two_part.first.route_code + " + " + two_part.second.route_code,
-        "location": (
-            f"{origin.crs}/{two_part.change_crs} + "
-            f"{two_part.change_crs}/{two_part.crs}"
-        ),
         "restrictionCode": " + ".join(restrictions) or "none",
         "totalBan": total_ban,
         "text": (
