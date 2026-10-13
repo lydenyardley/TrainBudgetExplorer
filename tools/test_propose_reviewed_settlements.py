@@ -255,7 +255,10 @@ class MainTest(unittest.TestCase):
         # says so rather than condemning every other entry.
         self.assertIn("0 to delete", said)
         self.assertIn("1 in agreement", said)
-        self.assertIn("305 not in this feed", said)
+        # Every reviewed entry but Ladybank's, counted from the lists rather than
+        # written down, so pruning an entry does not break this test.
+        absent = len(proposer.reviewed_entries()) - 1
+        self.assertIn(f"{absent} not in this feed", said)
 
 
 if __name__ == "__main__":
