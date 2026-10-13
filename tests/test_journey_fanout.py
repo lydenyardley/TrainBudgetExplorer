@@ -84,5 +84,37 @@ class JourneyFanOutMatchesBestJourneyTest(unittest.TestCase):
                     )
 
 
+
+class AStationCalledTwiceTest(unittest.TestCase):
+    """An onward train that calls a station twice keeps the earlier call.
+
+    Far North trains call at Georgemas Junction, run to Thurso, and call at
+    Georgemas again on the way to Wick. The fan-out read the best journey it
+    held once per onward train, so the second call was compared against the
+    stale answer and replaced the first: Edinburgh's page timed GGJ at 513
+    minutes in the row and 540 in its own week table.
+    """
+
+    def test_the_fan_out_keeps_the_first_call(self) -> None:
+        import make_synthetic_feed as feed
+
+        trains = (
+            ("T20001", ("GRNT", "0900"), (), ("PETE", "0930"), "1111111", "P"),
+            ("T20002", ("PETE", "0945"), (("LINC", "1000", "1002"), ("NWRK", "1020", "1025")), ("LINC", "1045"), "1111111", "P"),
+        )
+        kept = feed.TIMETABLE_TRAINS
+        feed.TIMETABLE_TRAINS = trains
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                db = TimetableDb().load_feed(build_synthetic_timetable(Path(tmp) / "timetable"))
+                day = date(2026, 9, 28)
+                best = db.best_journey("GRN", "LCN", max_changes=1, day=day)
+                table = db.journeys_from("GRN", max_changes=1, day=day)
+        finally:
+            feed.TIMETABLE_TRAINS = kept
+        self.assertIsNotNone(best)
+        self.assertEqual(best.duration, 60)
+        self.assertEqual(_rank_or_none(table.get("LCN")), _rank(best))
+
 if __name__ == "__main__":
     unittest.main()

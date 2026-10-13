@@ -1385,7 +1385,12 @@ class TimetableDb:
                             )
                             journey = Journey(origin_crs, destination_crs, departure, arrival, legs)
                             if held is None or _rank(journey) < _rank(held):
-                                best[destination_crs] = journey
+                                # Held is refreshed with it. A train can call
+                                # a station twice (Georgemas Junction, before
+                                # and after Thurso), and the later call was
+                                # compared with the answer read before the
+                                # loop, so it replaced the better first one.
+                                best[destination_crs] = held = journey
         return best
 
     def intermediate_crs(
