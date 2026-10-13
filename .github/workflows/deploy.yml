@@ -755,8 +755,14 @@ jobs:
         # not there.
         env:
           SITE_BUILT: 'true'
+          # One version for the module and its browser: a browser downloaded by
+          # one release is not one another release will launch.
+          PLAYWRIGHT_VERSION: 1.63.0
         run: |
-          npx --yes --package playwright playwright install --with-deps chromium
+          # npx only puts playwright's command on PATH; the suite require()s
+          # the module, so it is installed where node resolves it.
+          npm install --no-save "playwright@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
           # --third-origin makes the picker have options; --return-network
           # gives the two secondary origins a set of destinations each, so
           # every station page the suite drives has more than one row. With a
@@ -847,7 +853,7 @@ jobs:
             exit 1
           fi
           PAGES+=("$ONE_PAGE" "$PRICES_ONLY")
-          npx --yes --package playwright node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
+          node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
 
 
       - name: Save the successful feed manifest and build fingerprint
