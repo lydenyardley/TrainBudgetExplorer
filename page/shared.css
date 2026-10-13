@@ -175,7 +175,11 @@
      320px) made one unbreakable 358px line, so "Train fares" sits outside it
      and may take a line of its own. */
   .heading-slot { white-space: nowrap; }
-  #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
+  /* min-width is the 24px pointer floor (WCAG 2.5.8), not a character: one
+     digit is 1ch, and at the 320px heading size 1ch plus the padding was 22px
+     wide in DejaVu, so a page whose whole budget is one digit had a field too
+     narrow to hit. */
+  #budgetNumber { width: 2ch; min-width: 1.5rem; padding: .05rem .1rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
                   letter-spacing: inherit; appearance: textfield; }
   #budgetNumber::-webkit-inner-spin-button { appearance: none; }
