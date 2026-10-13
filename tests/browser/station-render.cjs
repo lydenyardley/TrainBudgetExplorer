@@ -43,9 +43,17 @@ async function renderThePage(world) {
       await page.fill("#budgetNumber", amount);
       return page.locator("#budgetNumber").evaluate((el) => el.getBoundingClientRect().width);
     };
-    const budgetWidthAt9 = await widthAt("9");
-    const budgetWidthAt126 = await widthAt("126");
-    check("the heading budget width follows its character count", budgetWidthAt9 < budgetWidthAt126, `${budgetWidthAt9} / ${budgetWidthAt126}`);
+    // Both amounts are ones the field can hold. The field clamps to the
+    // page's ceiling, so on a page whose dearest fare is £7 "126" became "7"
+    // and the check compared one digit with one digit.
+    const ceiling = await page.locator("#budget").evaluate((el) => Number(el.max));
+    if (String(ceiling).length > 1) {
+      const budgetWidthAt1 = await widthAt("1");
+      const budgetWidthAtTop = await widthAt(String(ceiling));
+      check("the heading budget width follows its character count", budgetWidthAt1 < budgetWidthAtTop, `${budgetWidthAt1} / ${budgetWidthAtTop} (1 / ${ceiling})`);
+    } else {
+      check("the heading budget width follows its character count", notExercised(`this page's budget stops at £${ceiling}, one digit`));
+    }
     await page.locator(".budget-prefix").click();
     await page.keyboard.type("7");
     const replacedAmount = (await page.inputValue("#budgetNumber")).trim();
