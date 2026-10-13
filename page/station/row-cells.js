@@ -112,7 +112,10 @@ function journeyCell(destination, column) {
   // act on, and it was only ever inside a disclosure they had to open on every
   // row to find. It sits under the count now, in the column whose header is
   // the word "Changes".
-  const via = serviceDayIndex === 0 ? interchangeLine(destination) : null;
+  // And only beside a journey: a row with no journey on the day prints
+  // "Unknown" for the count, and naming a station under it would be a route
+  // the page has just said it does not know.
+  const via = !missing && serviceDayIndex === 0 ? interchangeLine(destination) : null;
   // The station sits on its own line under the count, so this cell is two
   // lines tall by design. It says so in the markup, because the check that
   // measures wrapped numbers cannot otherwise tell that from a number that
