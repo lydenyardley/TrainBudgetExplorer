@@ -3421,6 +3421,20 @@ class TwoPartRowTest(unittest.TestCase):
         self.assertEqual(yng["pricePence"], 1200 + 1785)
         self.assertEqual(yng["minimumFarePence"], 1200 + 1200)
         self.assertIn("R9", payload["railcardRules"][yng["rule"]]["text"])
+        # The pair's record is the rule, not the row: no tickets, routes or
+        # endpoints in it (the row's tickets carry those), so rows that meet
+        # the same rules share one record instead of each adding its own.
+        pair_rule = payload["railcardRules"][yng["rule"]]
+        self.assertFalse({"ticketCode", "routeCode", "location"} & set(pair_rule))
+        pair_ids = {
+            details["rule"]
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in payload[key]
+            if len(row.get("tickets") or []) == 2
+            for details in row["railcards"].values()
+        }
+        texts = {payload["railcardRules"][rule]["text"] for rule in pair_ids}
+        self.assertEqual(len(pair_ids), len(texts), "one record per distinct rule")
         self.assertLess(yng["pricePence"], leicester["adultPence"])
 
     def test_the_pair_is_the_journeys_own_and_not_the_cheapest(self) -> None:
