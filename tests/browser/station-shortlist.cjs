@@ -786,7 +786,7 @@ async function compareTheDockWithTheTable(world) {
       );
       check(
         "and every dock row can be taken off the shortlist from the dock itself",
-        dock.cells.every((entry) => entry.drop && new RegExp("^Remove " + entry.here.labelled.Station + " from").test(entry.labelled)),
+        dock.cells.every((entry) => entry.drop && entry.labelled.startsWith("Remove " + entry.here.labelled.Station + " from")),
         JSON.stringify(dock.cells.map((entry) => entry.labelled))
       );
       // Every cell in the dock row sits under a heading, and every heading has
