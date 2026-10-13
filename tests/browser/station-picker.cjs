@@ -42,8 +42,11 @@ async function checkTheOriginPicker(world) {
         // renders only when the element has position: relative (both do).
         const cs = getComputedStyle(el, "::after");
         if (cs.content !== '""') return Math.round(r.height);
-        // .toggle uses inset: -6px (12px total); .buy uses -11px vertical (22px).
-        return Math.round(r.height + (el.classList.contains("buy") ? 22 : 12)); };
+        // The slop's reach is read from its computed insets rather than
+        // assumed: .buy sizes its reach from its own line box, so a fixed
+        // figure here would credit a reach the page does not draw.
+        const reach = (name) => { const v = parseFloat(cs[name]); return Number.isFinite(v) ? Math.abs(v) : 0; };
+        return Math.round(r.height + reach("top") + reach("bottom")); };
       return {
         budgetLeads: budgetSize >= h1Size,
         secondaryHoldsPartyAndFilter: !!secondary &&

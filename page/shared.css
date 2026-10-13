@@ -170,7 +170,10 @@
   /* The amount and the words around it, in one box that cannot wrap. A break
      opportunity sits at the edge of an inline field whatever follows it, so
      without this the second line can begin with the number and the "from" can
-     be left at the end of the first. */
+     be left at the end of the first. The box holds "up to £20" and no more:
+     with the whole clause in it, a font wider than system-ui (DejaVu, at
+     320px) made one unbreakable 358px line, so "Train fares" sits outside it
+     and may take a line of its own. */
   .heading-slot { white-space: nowrap; }
   #budgetNumber { width: 2ch; min-width: 1ch; padding: .05rem .1rem; border: 0; outline: 0;
                   background: transparent; color: inherit; font: inherit; font-weight: inherit;
