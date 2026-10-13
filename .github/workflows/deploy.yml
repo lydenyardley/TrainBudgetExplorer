@@ -875,9 +875,12 @@ jobs:
           # would never match a saved state.
           key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ needs.build.outputs.fingerprint }}
 
+      # One day: the deploy job takes this artifact in the same run, minutes
+      # later, and a public repository's artifacts are downloadable by anyone.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+          retention-days: 1
 
   # The licence clearance, as its own job, so that it gates publication and
   # nothing else.
