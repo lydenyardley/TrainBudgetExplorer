@@ -198,15 +198,16 @@ jobs:
           VALUE=$(python - <<'PY'
           # The DTD fares and timetable only: the tolerant Knowledgebase download
           # shares the manifest, and may differ between jobs without changing a fare.
+          # The bytes, not the download time: each job downloads at its own minute.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
           rows = [
-              {f: e[f] for f in d._FINGERPRINT_FIELDS if f in e}
+              {f: e.get(f) for f in ("name", "sha256", "bytes")}
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows else "")
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$VALUE" ]; then
@@ -359,15 +360,16 @@ jobs:
           HERE=$(python - <<'PY'
           # The DTD fares and timetable only: the tolerant Knowledgebase download
           # shares the manifest, and may differ between jobs without changing a fare.
+          # The bytes, not the download time: each job downloads at its own minute.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
           rows = [
-              {f: e[f] for f in d._FINGERPRINT_FIELDS if f in e}
+              {f: e.get(f) for f in ("name", "sha256", "bytes")}
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows else "")
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$AUDITED" ]; then
@@ -392,6 +394,15 @@ jobs:
           else
             echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded; the pages will say no independent reference feed was checked."
           fi
+
+      - name: Pin the feed files' times
+        # The merge refuses shares built from different inputs, and a build
+        # names its feed by file names, sizes and modification times. Each
+        # share downloaded at its own moment, so the times differ although
+        # the bytes do not -- the step above proved the fares and timetable
+        # are the audited download. One fixed time on every share makes equal
+        # bytes read as the same feed, and nothing else.
+        run: find feeds -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
 
       - name: Restore the timetable index
         # The timetable parse is the expensive part of this build, and it is
@@ -568,15 +579,16 @@ jobs:
           HERE=$(python - <<'PY'
           # The DTD fares and timetable only: the tolerant Knowledgebase download
           # shares the manifest, and may differ between jobs without changing a fare.
+          # The bytes, not the download time: each job downloads at its own minute.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
           rows = [
-              {f: e[f] for f in d._FINGERPRINT_FIELDS if f in e}
+              {f: e.get(f) for f in ("name", "sha256", "bytes")}
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows else "")
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$AUDITED" ]; then
