@@ -202,12 +202,12 @@ REAL_SHAPE_FARES = (
 # the difference. YNG is the reviewed card the page therefore prices, and the
 # rules and minimum fare below hang off it.
 # The six reviewed public railcards, with the party each one prices, measured
-# against the real feed on 1 October 2026. The fixture used to carry a single
-# card, under a code that is not in the reviewed set at all, so a page built
-# from it offered a select with one option in it -- the control that exists to
-# offer six. Bounds are the card's own, so the party filter has something to
-# take out: Two Together cannot price one traveller, and the Student Discount
-# Card cannot price two.
+# against the real feed on 1 October 2026. Bounds are the card's own, so the
+# party filter has something to take out: Two Together cannot price one
+# traveller, and the Student Discount Card cannot price two. That all six reach
+# the page as six options is held twice over:
+# tests/test_build_fares.py::test_railcard_pricing_is_available_from_the_feed
+# and check 7c in tests/browser/station-fares.cjs.
 RAILCARDS = (
     ("YNG", "16-25 RAILCARD", "1", "8"),
     ("DIS", "DISABLED PERSONS RAILCARD", "1", "2"),
