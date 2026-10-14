@@ -314,6 +314,65 @@ for the slice it is about to cut.
 
 ---
 
+### The fares declaration cycle forces two late imports (closed 14 October 2026)
+
+**Severity:** P3. **Route:** `atoc_fares.py`, `atoc_fares_loader.py` and the new
+`atoc_fare_declarations.py`. **Raised:** 14 October 2026, from the comment
+audit's suppression census. **Closed:** the same day, by ADR-0070 and the commit
+that carries the declarations out.
+
+**What it was.** `FaresDb` is `atoc_fares`'s own class and mixes in `FaresLoader`
+from `atoc_fares_loader`, which reads 40 names -- the record layouts, the row
+types and the reviewed tables -- from `atoc_fares`. Each module imported the
+other below its own definitions, and both imports carried `# noqa: E402`.
+
+**Closed by.** The 103 declarations moved to `atoc_fare_declarations.py`, which
+imports neither fares module; both readers import it at the top and
+`atoc_fares.py` imports `FaresLoader` at the top. `atoc_fares.py` re-exports
+every name other modules already took from it, and ADR-0070 records why that
+surface stays whole. The two `# noqa: E402` are deleted rather than moved: the
+count in these two modules is 0.
+
+**Held by.** `python -c "import atoc_fares, atoc_fares_loader,
+atoc_fare_declarations"`; a scan of every `.py` file for names taken from
+`atoc_fares` finds 56 distinct names and none missing; and the fares suites
+(`tests/test_atoc_fares.py`, `tests/test_build_fares.py`, `tests/test_page_gates.py`)
+pass with the declarations in the new file.
+
+### The comment audit's findings, and the suppressions it left (closed 14 October 2026)
+
+**Route:** the whole default branch's comment text. **Raised:** 14 October 2026.
+**Closed:** the same day, when both findings landed and the suppressions were
+settled. The audit file was removed then; its three rejected ideas and the five
+comments it kept are under "Rejected designs, with the reason" above.
+
+The two findings, and what holds them:
+
+- **Encode the London code rule instead of narrating it.** `LONDON_STATION_CRS`'s
+  two paragraphs became named checks: `test_every_london_code_is_one_the_feed_carries`
+  pins the seven `Z` codes and the seven bare forms that must not be in the list,
+  `test_a_reviewed_code_the_feed_does_not_carry_is_named` holds the dead-code
+  record, and `tests/test_page_gates.py` holds that
+  `--require-live-reviewed-codes` refuses a dead code or a redundant one.
+- **Stop making a production import exist for a test's patch path.**
+  `atoc_fares.py`'s `import urllib.request` existed only so tests could patch
+  `atoc_fares.urllib.request`; the readers live in the loader and the tests patch
+  that now.
+
+**What the tree holds, measured 14 October 2026, and what it must stay.** From the
+54 the audit first counted, **40 suppressions remain**, and each names its cause:
+
+| Cause | Count | Where |
+|---|---|---|
+| a root-reaching `sys.path` insert before the imports, because the tool is run as `python tools/<name>.py` | 34 | 16 modules under `tools/` |
+| an intentional catch-all whose escape *is* the finding | 6 | `fuzz_feed.py` (3), `tools/check_slice_equivalence.py`, `tools/easy_fares_check.py`, `tools/propose_nature_stations.py` |
+
+The fares declaration cycle's two are gone (ADR-0070), and no module under
+`tests/` reaches for the project root before importing its siblings. The tree
+also holds **16 `# type: ignore`** comments. A `# noqa` without a comment naming
+its cause is indistinguishable from a silenced lint, so the comment is the
+permitted form and its absence would be the finding.
+
 ## Suggestions not yet taken up
 
 From the re-envision pass of 27 September 2026. Each carries the benefit it was
@@ -378,6 +437,70 @@ the next person from re-deriving it.
 | **S09** | Region, town or rail-network grouping once a geography source is chosen | The chooser already ranks all 2,718 priced stations and filters by name or code across them. Grouping adds a second way to browse a list nobody needs a second way to browse, and it needs the same geography source as S08 and C27 for no extra reach. |
 | **S27** | Discovery entry points such as "cities under £20" or "seaside under £20" | It is a curated editorial list dressed as a derived one. The project's rule is that a page says what the feed says and nothing more, and a landing page that decides which towns are worth a click is that page making a claim it has no evidence for. |
 | **S46** | A "Was this shortlist useful?" prompt or an optional feedback route | It is a tracker with a small payload, and it collects exactly the thing the page is careful not to collect. The same question is answered better by the S43 sessions, which are observed rather than recorded. |
+
+### Rejected designs, with the reason
+
+The reviews themselves are gone from the tree, so the structural ideas they
+weighed and rejected are kept here: they are the part a later reader would
+otherwise re-derive, and each carries the reason it was rejected.
+
+- **Moving the root Python modules into a package** (8 October 2026). High
+  import and CI churn, and the `AGENTS.md` map gets most of the orientation
+  benefit.
+- **Adding a Python type checker for page defects** (8 October 2026). The defects
+  live in JavaScript files, which Python types do not reach; `node --check`
+  catches the syntax half of it.
+- **Splitting `atoc_fares.py` for its length** (8 October 2026). Length alone was
+  not the cost F1 and F6 were about, and the file changed 19 times in 150 commits,
+  a third of the page's rate. **Superseded 14 October 2026** by ADR-0070, which
+  split it for a different reason: the declaration cycle it forced, not its size.
+- **Checking in real feed samples as fixtures** (8 October 2026). The data is
+  licensed (ADR-0005), so the synthetic fixture is the only regression test there
+  is.
+- **The national single-pass search, T2 as written** (12 October 2026). One
+  national day index per day of the week, held for the whole build, is the shape
+  the 8 October 2026 work removed. The per-origin facts layer delivers the same
+  payoff without holding the network, and sharding is what would make such a pass
+  affordable rather than a reason to build one.
+- **A database, or any store** (12 October 2026). A store removes the page write,
+  which measures 1.5 ms for a page as built and 10.9 ms for the largest page that
+  audit saw, and none of the work itself, because the facts still have to be
+  computed somewhere. ADR-0019's 14 October 2026 amendment holds the reasoning.
+- **Extracting the classification tables to data files with schema checks**
+  (14 October 2026). They are reviewed judgements with the reason written beside
+  each group, and they are checked harder than a schema already: a code the feed
+  does not carry and a code the workbook already classifies are both refused by
+  `--require-live-reviewed-codes`.
+- **`page_templates.py`'s templates rewritten as named template helpers**
+  (14 October 2026). The templates are literal HTML whose comments say why a
+  shape is what it is; a helper per fragment would separate the markup from its
+  reason, and those bytes are what the page tests, the byte budget and the browser
+  suite read.
+- **Turning the long test preambles into test names or parametrized ids**
+  (14 October 2026). Those comments are the "why" this repository asks for, and a
+  parametrized id cannot carry the paragraph that names the real-feed shape a
+  case came from.
+
+Five comments were seen and deliberately kept, each for the same shape of reason:
+
+- The two `_add_station` helpers in `tests/test_atoc_timetable.py` carry the same
+  comment about appending a station record rather than rewriting the file. They
+  are two fixtures with two signatures, and the comment sits on the byte handling
+  each one does.
+- `atoc_fares.py`'s `location_type_sources` field and the property below it open
+  with the same sentence. One is the docstring a caller reads, the other carries
+  the incident that shaped the field.
+- "One manifest of the routes a release actually serves" in `build_demo_page.py`
+  and the class docstring in `tests/test_page_output.py`. One is the build's
+  contract, the other says which contract the class tests.
+- The tram-stop note in `atoc_fare_declarations.py` appears in the reviewed
+  settlement fallback table and in `TRANSPORT_STATION_CRS`. Two tables, two facts:
+  one is a settlement class, the other a facet tag.
+- The duplicated `try: ... except OSError: continue` in the two prunes in
+  `build_demo_page.py`. The five lines of loop are two different rankings (one
+  keys by path, one takes the newest stamp per digest, and only the first honours
+  `protected` per file), so a shared helper would carry a flag rather than remove
+  a branch.
 
 ## What is waiting on a person
 
@@ -459,9 +582,9 @@ because a reader checking a closure wants the ADR and the test.
 
 ### The 8 October 2026 agent-efficiency audit
 
-`docs/audits/2026-10-08-agent-efficiency-architecture.md` is pruned to what it
-found still open. Its eight findings are settled here with the artifact that
-holds each one.
+The audit file was removed on 14 October 2026, when its last finding landed. Its
+eight findings are settled here with the artifact that holds each one, and its
+four rejected designs are under "Rejected designs, with the reason" above.
 
 | Finding | Closed by | Held by |
 |---|---|---|
@@ -509,13 +632,12 @@ against the table's own heading count).
 
 ### The 10 October 2026 whole-app audit
 
-`docs/audits/2026-10-10-four-dimension-app-audit.md` is pruned to the one
-recommendation that is still open, and that one is a person's decision rather than
-work: whether the licence and attribution notices a build is given have to ride on
-the two routes that show no fares, or whether they travel with the pages that do
-(route audit items [20] and [21]). The other thirteen landed on 11 October 2026;
-each is held by an artifact, and the two audits agree: the
+The audit file was removed on 14 October 2026: its one open recommendation is the
+notices question, which is question 1 under "What is waiting on a person" above
+and route audit items [20] and [21]. Its thirteen closed recommendations landed on
+11 October 2026; each is held by an artifact, and the two audits agree: the
 route audit's items [3], [4], [6], [10], [16], [18] and [22] are closed by them.
+Its browser-suite coverage figures are in `docs/build-performance-findings.md`.
 
 | Recommendation | Closed by | Held by |
 |---|---|---|
@@ -546,10 +668,12 @@ used to hold beside them is `atoc_fares_loader.FaresLoader`, mixed in.
 
 ### The 12 October 2026 build-cost audit
 
-`docs/audits/2026-10-12-build-cost-and-data-architecture.md` is pruned to what it
-left open. Its twelve tasks landed, each held by an artifact and by a command a
-reviewer can re-run; its figures are in `docs/build-performance-findings.md`, and
-the decisions it amends are named in its own T12 row.
+The audit file was removed on 14 October 2026. Its twelve tasks landed, each held
+by an artifact and by a command a reviewer can re-run; its figures are in
+`docs/build-performance-findings.md`, its two rejected designs are under "Rejected
+designs, with the reason" above, and the decisions it amends are named in its own
+T12 row. What it left open is the three open findings above: the byte budget, the
+pair-rule encoding and the sharded release build.
 
 | Task | What it asked | What landed | Command whose output a reviewer can reproduce |
 |---|---|---|---|
@@ -628,14 +752,16 @@ next reader does not file it as a defect.
 
 ## Where this came from
 
-All six files below are gone from the working tree; each was removed by the
+All ten files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
-above. `git show <commit>` reads one back.
+above. `git show <commit>` reads one back. The four dated 8 to 14 October 2026
+were removed on 14 October 2026, in the commit that settled their findings here;
+their rejections are under "Rejected designs, with the reason" and their figures
+are in `docs/build-performance-findings.md`.
 
-The 12 October 2026 build-cost audit is pruned the same way: its twelve tasks
-landed, its measurements are in `docs/build-performance-findings.md`, the
-decisions they amend name them, and the one finding its work opened — the
-pair-rule encoding — is above.
+The one review still in `docs/audits/` is
+`2026-10-09-impeccable-route-audit.md`, pruned to items [20] and [21], which are
+question 1 above. A review with nothing open does not keep a file.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in
@@ -654,3 +780,20 @@ pair-rule encoding — is above.
   twelve recommendations are settled in the table above; the one that keeps the
   first one done is the statement-needle rule in
   `tests/test_test_suite_shape.py`.
+- `docs/audits/2026-10-08-agent-efficiency-architecture.md` — the agent-efficiency
+  review. Its eight findings settle in the table above, its four rejected designs
+  are above, and the F7 rule it left is in `AGENTS.md`. Removed on 14 October
+  2026.
+- `docs/audits/2026-10-10-four-dimension-app-audit.md` — the whole-app review. Its
+  thirteen closed recommendations are in the table above, its one open one is
+  question 1, and its browser-suite coverage figures are in
+  `docs/build-performance-findings.md`. Removed on 14 October 2026.
+- `docs/audits/2026-10-12-build-cost-and-data-architecture.md` — the build-cost and
+  data-architecture review. Its twelve tasks are in the table above, its figures
+  are in `docs/build-performance-findings.md`, its two rejected designs are above,
+  and the three findings it opened are the open findings at the top of this file.
+  Removed on 14 October 2026.
+- `docs/audits/comment-audit-2026-10-14.md` — the comment audit. Both findings and
+  the suppression census are in the closed entry above, its rejected ideas are
+  above, and no `# noqa` in the tree is left with a cause the audit could not name.
+  Removed on 14 October 2026.
