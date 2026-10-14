@@ -2,9 +2,11 @@
 
 The gate's whole job is to refuse, so the tests are about refusal. The one
 that matters most is the shipped record: `licences/release-clearance.md` is
-written today with nothing cleared, and a test that let it drift into a pass
+written today with no licence cleared, and a test that let it drift into a pass
 would turn a documented refusal into a silent one -- which is the exact shape of
-the finding this gate closes.
+the finding this gate closes. The record does clear one product, the privacy
+contact, and that one is not a licence: the tests below hold that clearing it
+did not clear a release.
 
 The other tests are the ways a clearance might be faked, each asked of the same
 function: an answer that is not a yes, a clearance that has expired, one dated in
@@ -42,7 +44,12 @@ from tools.check_release_clearance import (
 
 ROOT = Path(__file__).parent.parent
 RECORD = ROOT / "licences" / "release-clearance.md"
-TODAY = date(2026, 9, 28)
+#: The day the shipped record is read. It is frozen rather than `date.today()`, so
+#: a run six months from now does not read a record whose clearances have quietly
+#: expired, and it has to be at or after every date the record itself carries or
+#: the record's own clearance reads as future-dated. The privacy contact's
+#: confirmation is dated this day.
+TODAY = date(2026, 10, 14)
 DARWIN = "P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8"
 
 
@@ -59,13 +66,17 @@ class ShippedRecordTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = RECORD.read_text(encoding="utf-8")
 
-    def test_the_shipped_record_clears_nothing_and_says_so(self) -> None:
-        # Nothing is cleared today, and the publish checklist is explicit that
-        # the DTD route is unresolved. A record that quietly cleared anything
-        # would be a licence claim nobody in this project has made.
+    def test_the_shipped_record_still_refuses_both_build_shapes(self) -> None:
+        # No licence is cleared, and the publish checklist is explicit that the
+        # DTD route is unresolved, so a release that publishes fares is refused
+        # whichever shape it asks for. The one product the record does clear is
+        # the privacy contact, which is a promise a person keeps rather than a
+        # licence anyone read, and clearing it must not be enough.
         for release in (["fares"], ["fares", "timetable"]):
             with self.subTest(release=release):
-                self.assertTrue(clearance_problems(self.text, releasing=release, today=TODAY))
+                problems = clearance_problems(self.text, releasing=release, today=TODAY)
+                self.assertTrue(problems)
+                self.assertTrue(any(DTD in problem for problem in problems), problems)
 
     def test_the_report_only_mode_needs_nothing_cleared(self) -> None:
         # The shape of the question matters: a run that publishes nothing is
@@ -83,15 +94,20 @@ class ShippedRecordTest(unittest.TestCase):
                     f"{product} is a known product with no section in the record",
                 )
 
-    def test_every_exclusion_states_a_reason(self) -> None:
+    def test_every_product_has_a_decision_and_every_exclusion_a_reason(self) -> None:
+        # Every product is either cleared or excluded, and an exclusion has to
+        # say why: excluding is the safe direction, so it may not need an
+        # approval, but it may not be silent either.
         sections = parse_sections(self.text)
         for product in products():
             fields = next(f for h, f in sections.items() if product.lower() in h.lower())
             with self.subTest(product=product):
-                self.assertEqual(fields.get("state"), "excluded")
-                self.assertTrue(
-                    fields.get("reason", "").strip(), f"{product} is excluded with no reason"
-                )
+                state = fields.get("state")
+                self.assertIn(state, ("cleared", "excluded"), f"{product} has no decision")
+                if state == "excluded":
+                    self.assertTrue(
+                        fields.get("reason", "").strip(), f"{product} is excluded with no reason"
+                    )
 
 
 class ParseTest(unittest.TestCase):
@@ -151,7 +167,7 @@ class ClearanceTest(unittest.TestCase):
     def test_a_clearance_dated_in_the_future_is_a_refusal(self) -> None:
         # A decision that has not happened yet is not a decision.
         problems = clearance_problems(
-            self._record(**{"approved on": "2026-10-01"}), releasing=["fares"], today=TODAY
+            self._record(**{"approved on": "2026-10-15"}), releasing=["fares"], today=TODAY
         )
         self.assertTrue(any("future" in p for p in problems))
 
@@ -372,8 +388,10 @@ class RecordShapeTest(unittest.TestCase):
             self.assertEqual(main(["--record", str(RECORD), "--report-only"]), 0)
         said = out.getvalue()
         self.assertIn("outstanding", said)
-        self.assertIn(PRIVACY, said)
         self.assertIn(DTD, said)
+        # The privacy contact is the one product this record clears, so it is no
+        # longer outstanding; every licence product still is.
+        self.assertNotIn(PRIVACY, said)
         self.assertNotIn("cleared for the record as it stands", said)
         # A product with no section at all is outstanding too: unrecorded is
         # not the same as cleared, and the filed-and-forgotten case is exactly
