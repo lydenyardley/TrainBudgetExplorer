@@ -139,5 +139,5 @@ from the party the page does not either.
 Verified by:
 
     python -m unittest tests.test_atoc_fares
-    python -m unittest tests.test_build_demo_page
+    python -m unittest tests.test_build_fares
     npx --yes --package playwright node tests/browser_test.cjs _demo_site/index.html _demo_site/from/grantham/index.html

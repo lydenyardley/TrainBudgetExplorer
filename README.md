@@ -373,12 +373,16 @@ checked:
 | `tests/test_feed_audit.py` | Nine tests for the audit and for damaged input |
 | `tests/test_dtd_download.py` | Downloader safety, authentication, validation, and DTD audit tests |
 | `tests/test_benchmark.py` | Ten tests for the feed shapes and the cap measurement |
-| `tests/test_build_demo_page.py` | What the page says: payload, template, licence slot, copy control, and the page's own prose (the seams below have modules of their own) |
+| `tests/test_build_demo_page.py` | What the page says: its shape, its controls, its rows and its accessibility contracts |
+| `tests/test_build_fares.py` | The fares half of the payload: ticket modes, restrictions, railcard pricing, facets and counts |
+| `tests/test_build_provenance.py` | Where the numbers came from: notices, contact, the price source, freshness and the privacy notice |
+| `tests/test_build_chooser.py` | The entry route: the directory, its note, the truncated list and the links every route carries |
+| `tests/test_build_links.py` | What a row hands off: the seller search page, the disclosure and the journey copy |
 | `tests/test_page_runner.py` | The runner's station flags, what it passes to the builder, build-or-serve, and the worker count |
 | `tests/test_page_gates.py` | What a build refuses to publish: unsourced destinations, unreviewed codes, pseudo-stations, partial metadata, the ceilings |
 | `tests/test_page_caches.py` | The parsed-fares and timetable caches, their prune rules, the timetable index a build cuts, and the return leg |
 | `tests/test_page_output.py` | The shared station asset, slug and route agreement, the release manifest, and the payload the page carries |
-| `tests/page_harness.py` | The page suite's shared fixture and helpers, imported by every `tests/test_page_*.py` module |
+| `tests/page_harness.py` | The page suite's shared fixture and helpers: `PageTestCase` (the one synthetic page the content tests read) and the readers every page test module imports |
 | `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
 | `tests/browser_test.cjs` | Playwright test entry point: drives the generated page in a real browser, over the modules in `tests/browser/` |
 | `tests/test_fare_shapes.py` | Route codes, shared station codes, and the skip tally |
