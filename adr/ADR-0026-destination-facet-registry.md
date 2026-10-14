@@ -129,6 +129,10 @@ prints the count beside the unsourced stations. Re-measured on 30 September
 41,034 with no location record, 39,986 with no station code, and 3,524 to a
 fare-construction point with no train behind it. The CI gate's
 `--unsourced-ceiling` holds the classifiable half to its measured floor.
+(Raised 2026-10-14 from 1,533 to 1,544 with Lyden's approval: the station
+count went from 3,437 to 3,453 (5f5df69), adding 11 unsourced priced
+destinations (e.g. CPK, WFH, WFJ, BID, PMT). Lower it again as reviewed
+classes are added.)
 The unnameable half is a fact about the feed, not a defect in the
 registry.
 
