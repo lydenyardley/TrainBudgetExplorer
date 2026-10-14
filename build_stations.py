@@ -65,19 +65,17 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from build_demo_page import NOTICES
+# The floor is the measured cost of the feeds plus the reserve, not a guess: a
+# machine short of it still builds, on one page at a time, with Windows paging.
+# Said before the build starts rather than discovered halfway through it.
+from build_workers import ONE_WORKER_FLOOR, free_memory_bytes
+from run import serve
+
 ROOT = Path(__file__).parent
 SITE = ROOT / "_stations"
 PORT_DEFAULT = 8742
 DEFAULT_CODES = ("GRA", "NOT")
-
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from build_demo_page import NOTICES  # noqa: E402
-# The floor is the measured cost of the feeds plus the reserve, not a guess: a
-# machine short of it still builds, on one page at a time, with Windows paging.
-# Said before the build starts rather than discovered halfway through it.
-from build_workers import ONE_WORKER_FLOOR, free_memory_bytes  # noqa: E402
-from run import serve  # noqa: E402
 
 
 def missing_feeds(

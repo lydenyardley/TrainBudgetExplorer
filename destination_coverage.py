@@ -26,10 +26,8 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from atoc_fares import FaresDb, is_pseudo_station  # noqa: E402
-from feeds_cli import add_feed_args  # noqa: E402
+from atoc_fares import FaresDb, is_pseudo_station
+from feeds_cli import add_feed_args
 
 # The primary class a station keeps when no source names its settlement. The
 # name is the old filter label; the value is what the payload carries.

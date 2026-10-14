@@ -46,18 +46,17 @@ import threading
 import webbrowser
 from pathlib import Path
 
+# Written by the build beside the pages, naming the routes this release
+# serves. Imported rather than repeated so the tidying step below and the
+# build that precedes it cannot name the file differently. No path insert: a
+# file at the repository root is importable from a script run and from a test
+# alike, which is the whole of what the insert was for.
+from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME
+from build_workers import free_memory_bytes, worker_budget
+
 ROOT = Path(__file__).parent
 SITE = ROOT / "_site"
 PORT_DEFAULT = 8741
-# Written by the build beside the pages, naming the routes this release
-# serves. Imported rather than repeated so the tidying step below and the
-# build that precedes it cannot name the file differently. The path insert is
-# for the "import run" case (a test), where the project root is not otherwise
-# importable; running this file as a script already has it.
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME  # noqa: E402
-from build_workers import free_memory_bytes, worker_budget  # noqa: E402
 
 
 def _feed_exists(path: Path) -> bool:
