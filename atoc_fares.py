@@ -19,11 +19,6 @@ import os
 import pickle
 from pathlib import Path
 import re
-# The readers in atoc_fares_loader reach the ONS, UNESCO and UKPRN sources
-# through this module, and the tests stub them by patching
-# ``atoc_fares.urllib.request``: it is the same module object there, so the
-# binding stays where a reader of this file expects it.
-import urllib.request  # noqa: F401
 import xml.etree.ElementTree as ET
 
 from atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
@@ -83,22 +78,18 @@ LOCATION_TYPE_SOURCE = (
 # built-up area is a major BUA; the remaining codes are reviewed classifications
 # for the largest destinations outside the workbook's coverage. They are applied
 # only after the ONS/name lookup misses, so a future ONS match always wins.
-# The London list is written in the feed's own CRS. The London Underground,
-# DLR and Overground codes carry a leading Z the National Rail ones do not, and
-# seven entries had been written without it, so they named no station at all
-# (Blackfriars is ZBF, not BKF). A dead code costs nothing at runtime, which is
-# exactly why the reader below names it.
+# The London list is written in the feed's own CRS: the Underground, DLR and
+# Overground codes carry a leading Z that the National Rail ones do not, so a
+# code the feed does not carry names no station (Blackfriars is ZBF, not BKF),
+# and a test pins the seven codes that carry the Z and the seven bare forms that
+# must not be in this list.
 #
-# Every entry must be a station the ONS workbook does not name, because that is
-# the whole point of a fallback: it is applied only where the workbook and the
-# name lookup miss. Seventeen entries broke that rule -- Ascot, Battle,
-# Knighton, Windermere, Wickford, Welshpool, Brockenhurst, Bramhall, Bangor,
-# Truro, York, Solihull, Swansea, Leicester, Bournemouth, Berkhamsted and
-# Lostock Gralam are all in the workbook -- and they were removed rather than
-# kept, because an entry that never applies is still a claim about a station
-# someone else already classified, and the day the name match misses it would
-# land: Knighton would become a city, Windermere a city, York a town. The
-# workbook names them correctly, so nothing is lost.
+# Every entry must be a station the ONS workbook does not name, because a
+# fallback is applied only where the workbook and the name lookup miss: an entry
+# that never applies is still a claim about a station someone else classified,
+# and it would land the day the name match missed. Both kinds are recorded as
+# the list is applied, and a build with --require-live-reviewed-codes refuses
+# either, so neither can grow here unnoticed.
 LONDON_STATION_CRS = frozenset({
     "BFN", "BWD", "CHC", "CLJ", "CTK", "DLK", "ECR", "EUS", "FST",
     "GTN", "HAY", "HMY", "KGX", "LBG", "LES", "LST", "MYB", "PAD",
