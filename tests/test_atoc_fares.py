@@ -12,6 +12,7 @@ import json
 import pickle
 import tempfile
 import unittest
+import urllib.request
 import zipfile
 from unittest import mock
 
@@ -575,7 +576,7 @@ class FaresParserTest(unittest.TestCase):
             "BGX": Location("2", "BGX", "BATHGATE", ""),
         }
         with mock.patch.object(
-            atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
+            urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
         ):
             db._apply_destination_facet(facet("heritage"))
         self.assertEqual(db.location_facets_by_crs["BTH"], {"heritage"})
@@ -595,7 +596,7 @@ class FaresParserTest(unittest.TestCase):
         db = FaresDb()
         db.locations_by_crs = {"BTH": Location("1", "BTH", "BATH SPA", "")}
         with mock.patch.object(
-            atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
+            urllib.request, "urlopen", return_value=io.BytesIO(body.encode())
         ):
             with self.assertRaises(ValueError):
                 db._read_unesco_heritage_facet()
@@ -835,11 +836,11 @@ class FaresParserTest(unittest.TestCase):
             "10007776\tA COLLEGE WITH NO TOWN\t\t\r\n"
         )
         db = FaresDb()
-        with mock.patch.object(atoc_fares.urllib.request, "urlopen", return_value=io.BytesIO(body.encode())):
+        with mock.patch.object(urllib.request, "urlopen", return_value=io.BytesIO(body.encode())):
             names = db._read_learning_provider_facet()
         self.assertEqual(names, {"OXFORD", "YORK"})
         with mock.patch.object(
-            atoc_fares.urllib.request,
+            urllib.request,
             "urlopen",
             return_value=io.BytesIO(b"UKPRN\tPROVIDER_NAME\r\n10007774\tOXFORD\r\n"),
         ):
@@ -1632,7 +1633,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
                 (("Ancaster", "minor"), ("Bottesford", "minor"), ("Retford", "medium"))
             )
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
             ):
@@ -1649,7 +1650,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
             feed = _first_build(Path(tmp), ("FXN", "FOXTON"))
             workbook = _ons_workbook((("Foxton (South Cambridgeshire)", "minor"),))
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
             ):
@@ -1667,7 +1668,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
                 (("Wick (Hackney)", "large"), ("Wick (Highland)", "small"))
             )
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
             ):
@@ -1685,7 +1686,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
             ):
@@ -1773,7 +1774,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
             )
             (root / "download-manifest.json").write_text("{}", encoding="utf-8")
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(
                     ONS_BUILT_UP_AREAS_FILE_URL, _ons_workbook((("Ancaster", "minor"),))
@@ -1808,7 +1809,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with mock.patch.object(
-                atoc_fares.urllib.request, "urlopen", side_effect=OSError("offline")
+                urllib.request, "urlopen", side_effect=OSError("offline")
             ):
                 ignored = FaresDb().load_feed(feed)
                 self.assertEqual(ignored.destination_type("ANC"), "other")
@@ -1840,7 +1841,7 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
             feed = _first_build(root, ("ANC", "ANCASTER"))
             workbook = _ons_workbook((("Ancaster", "minor"),))
             with mock.patch.object(
-                atoc_fares.urllib.request,
+                urllib.request,
                 "urlopen",
                 side_effect=_only_source(ONS_BUILT_UP_AREAS_FILE_URL, workbook),
             ):
