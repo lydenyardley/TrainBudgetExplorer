@@ -1,6 +1,6 @@
 # ADR-0055: The runner builds what the reader will ask for, and never serves a stale one
 
-**Status:** Accepted; amended 12 October 2026 (see below)
+**Status:** Accepted; amended 12 October 2026 and 14 October 2026 (see below)
 **Date:** 1 October 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0024 (the release is
 published under the repository's own path), ADR-0050 (the release is the whole
@@ -101,3 +101,33 @@ The whole-network build is still one flag away, and the flag now requires
 its acknowledgement: `--all-origins` without `--i-know-this-is-slow` is
 refused before it starts, with the measured cost named, rather than after it
 has finished. Decisions 2, 3 and 4 stand unchanged.
+
+## Amendment — 14 October 2026: the source list is read from the build's imports
+
+Decision 3's `sources_are_newer()` walked a tuple written out in the runner, and
+`build_demo_page.SOURCE_FILES` was a second tuple kept by hand for the same
+purpose. Both had drifted from the build they describe: every build imports
+`atoc_fares_loader`, `atoc_knowledgebase` and `destination_coverage`, and neither
+list named one of them, so a fix to any of the three left this runner serving the
+pages from before it while saying nothing. `tools/build_inputs.py` replaced the
+workflow's hand-kept list with a rule for the same reason (F4 of the 8 October
+2026 agent-efficiency audit); the two local lists are now read the same way.
+
+`build_demo_page.module_sources()` walks the build's own imports, transitively,
+and `SOURCE_FILES` is that walk plus the data a build reads rather than imports:
+the `reference-data/*.json` the facet reader globs, because a regenerated facet
+file changes what a page calls its destinations, and the mark in `assets/` that
+`nre_attribution` inlines into every page carrying the NRE credit. Neither
+directory was on either list before, so replacing the brand mark left every
+built page showing the old one. The runner imports these names instead of
+keeping a second list, so there is one owner and no copy to forget; a module
+moved into a new file is on the list the moment the build imports it.
+
+Two costs, both measured on this machine. The walk parses the 13 modules the
+build reaches and is **259 ms** of `build_demo_page`'s 584 ms import, once per
+process. And the set hashed by `source_fingerprint()` changed, so every cache
+keyed on it (ADR-0031) is invalidated once: the next build re-parses the feed,
+55.6s on the real timetable against 2.6s restored, and an interrupted build
+does not resume. CI's own fingerprint needed one edit rather than a rework:
+`tools/build_inputs.py` is a rule about where sources live, and it now names
+`assets/*` beside `reference-data/*`.

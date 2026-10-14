@@ -70,8 +70,9 @@ declaration is free to import `atoc_fare_declarations` directly.
   shared declarations is reachable from the top of both.
 - `atoc_fare_declarations.py` is a build input and must stay on the `AGENTS.md`
   map; `tests/test_agents_map.py` fails if it does not.
-- It is named in both local rebuild lists (`build_demo_page.SOURCE_FILES` and
-  `run.BUILD_SOURCES`), so editing a reviewed table still marks a built site out
+- It is on `build_demo_page.SOURCE_FILES`, which is read from the build's own
+  imports and imported by the runner rather than repeated (ADR-0055's amendment
+  of 14 October 2026), so editing a reviewed table still marks a built site out
   of date; `tools/build_inputs.py` reaches it as a `*.py` input for CI, and
   `tools/test_build_inputs.py` proves that by following the build's imports.
 - The re-export block is 85 names long. It is a flat, alphabetical list, and a

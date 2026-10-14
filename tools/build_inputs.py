@@ -26,13 +26,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 #: What a build is made of: the modules beside this one, the page's own CSS and
-#: JS, and the generated reference data a build reads. `tests/` and `tools/`
-#: are not build inputs, and neither is anything else, which is why this is a
-#: rule about where sources live rather than a list of names to keep up to date.
-#: The page's pattern reaches below the first level, because the station route's
-#: script is one file per panel under a subdirectory: a pattern that stopped at
-#: `page/*` would hash the directory and none of the files in it.
-INPUTS = ("*.py", "page/**/*", "reference-data/*")
+#: JS, the generated reference data a build reads, and the brand mark the
+#: footer inlines. `tests/` and `tools/` are not build inputs, and neither is
+#: anything else, which is why this is a rule about where sources live rather
+#: than a list of names to keep up to date. The page's pattern reaches below the
+#: first level, because the station route's script is one file per panel under a
+#: subdirectory: a pattern that stopped at `page/*` would hash the directory and
+#: none of the files in it.
+INPUTS = ("*.py", "page/**/*", "reference-data/*", "assets/*")
 
 
 def build_inputs(root: Path = ROOT) -> list[Path]:

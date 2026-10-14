@@ -17,6 +17,7 @@ Together price when the current DTD railcard rules permit that fare.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import html
 import json
@@ -199,19 +200,55 @@ MEASUREMENT_PLANS = {
 MANIFEST_NAME = "download-manifest.json"
 BUILD_STATE_NAME = ".trainbudget-build.json"
 CACHE_DIR = Path(__file__).parent / "_cache"
-SOURCE_FILES = (
-    "atoc_fare_declarations.py",
-    "atoc_fares.py",
-    "atoc_restrictions.py",
-    "atoc_timetable.py",
-    "build_demo_page.py",
-    "build_workers.py",
-    "feeds_cli.py",
-    "page_templates.py",
-    "parse_report.py",
-    "retailer.py",
-    "reference-data/destination-facets.json",
+
+
+def module_sources(root: Path, start: str) -> tuple[str, ...]:
+    """Every module of this project that ``start`` reaches through its imports.
+
+    A build is a function of the code it runs, and that list used to be kept by
+    hand -- once here and again in the runner -- so a module named by neither
+    left a built site looking current after a change to it. Three were: every
+    build imports ``atoc_fares_loader``, ``atoc_knowledgebase`` and
+    ``destination_coverage``, and neither list named one of them (F4 of the 8
+    October 2026 agent-efficiency audit, which fixed CI's list the same way).
+    The imports answer it now, so nothing has to be remembered.
+    """
+    found: list[str] = []
+    pending = [start]
+    while pending:
+        name = pending.pop()
+        if name in found:
+            continue
+        found.append(name)
+        for node in ast.walk(ast.parse((root / name).read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                reached = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                reached = [node.module.split(".")[0]]
+            else:
+                continue
+            pending.extend(f"{module}.py" for module in reached if (root / f"{module}.py").is_file())
+    return tuple(sorted(found))
+
+
+# Read as data rather than imported, and therefore not reachable by walking
+# imports. `atoc_fare_declarations` globs `reference-data/*.json` for the
+# reviewed destination facets, so regenerating one of those files changes what a
+# page calls its destinations; `nre_attribution` inlines the mark in `assets/`
+# into every page that carries the NRE credit, and a missing one is a refusal
+# rather than a page without a credit.
+DATA_PATTERNS = ("reference-data/*.json", "assets/*")
+DATA_SOURCES = tuple(
+    sorted(
+        path.relative_to(Path(__file__).parent).as_posix()
+        for pattern in DATA_PATTERNS
+        for path in Path(__file__).parent.glob(pattern)
+        if path.is_file()
+    )
 )
+# What a generated page is a function of, hashed into `source_fingerprint` and
+# so into every cache key built from it.
+SOURCE_FILES = module_sources(Path(__file__).parent, "build_demo_page.py") + DATA_SOURCES
 
 
 @functools.lru_cache(maxsize=1)
