@@ -263,3 +263,45 @@ moved, and a second build of the same feeds reports zero rewritten pages. The
 key is the payload with `builtAt` masked, so the write path is proved by a
 comparison rather than trusted — the shape ADR-0055 has for staleness, applied
 one artifact down.
+
+## Amendment — 14 October 2026: the store question, asked again
+
+The 12 October 2026 build-cost audit asked the question behind the question, and
+decision 1 stands. Building one page per station is not what makes the build
+slow: a page's numbers are computed from the two national feeds inside the build,
+and a store would remove the last step of that — the file write, measured at
+1.5 ms for a page as built and 10.9 ms for the largest page the audit saw, which
+is 0.014% to 0.10% of the 10.75 s a page takes to compute — while keeping every
+second of the computation, because the facts a page shows still have to be
+computed somewhere. Both figures live in `docs/build-performance-findings.md`:
+the 10.75 s is the build's own average on one worker, and the distribution it is
+a mean over is there too. The 14 October 2026 measurement replaced the audit's
+`~20 ms a page`, which no one had reproduced. What the public record says about
+how the commercial sites are built, read on 12 October 2026, so a later reader
+does not re-derive it:
+
+| Source | What it says | URL |
+|---|---|---|
+| National Rail | the Knowledgebase is a database of station content for 2,500+ stations, published as feeds; the Online Journey Planner is the engine that plans routes and calculates fares; Darwin supplies live times | https://www.nationalrail.co.uk/developers/knowledgebase-data-feeds/, https://www.nationalrail.co.uk/developers/online-journey-planner-data-feeds/, https://www.nationalrail.co.uk/developers/darwin-data-feeds/ |
+| Trainline | Best Fare Finder is built from customers' own journey searches, and a search needs a route, a date and passengers | https://www.thetrainline.com/farefinder |
+| LNER | Deal Finder is the browse-under-a-budget flow a reader would compare this site to, described as browsing journeys and dates | https://news.railbusinessdaily.com/lner-launches-new-deal-finder-feature/ |
+| CDS (National Rail's supplier) | more than 100 integrated data feeds, 227 million Journey Planner requests handled | https://www.cds.co.uk/our-work/national-rail-enquiries |
+
+No public source describes either company pre-rendering a station page per
+station, and none describes the cost of the choice, so the comparison below is
+this project's own reasoning rather than evidence about them.
+
+| | Static pages today | Pages rendered from a store at request time |
+|---|---|---|
+| Per-page file write | 1.5 ms to 10.9 ms, the last step, and the only part a store removes | none |
+| Per-page fare and journey computation | 10.75 s of work a page on one worker (the mean `tools/measure_origin_costs.py` quotes) | the same work, at request time, or precomputed into the store |
+| Serving | any static host, no runtime, offline-friendly, crawlable, one URL per station | a host with a runtime, plus a store, plus a cold path |
+| Release gate | files plus a manifest the gates can read | a live service the gates cannot read |
+| Freshness | a rebuild, then a publish | write once to the store |
+| Licensing and provenance | the release is an artifact a person clears | data served from a service has to be re-argued |
+
+The static argument wins on every row except the two a reader feels, and a store
+fixes neither of those. What a store would change is the rebuild, and that is
+available without a runtime: one pass that writes the facts and renders the pages
+from them, which is the per-origin facts layer of the 12 October 2026 work
+(`_cache/page-facts`, ADR-0024's 12 October amendment) and not a database.

@@ -379,69 +379,62 @@ the next person from re-deriving it.
 | **S27** | Discovery entry points such as "cities under £20" or "seaside under £20" | It is a curated editorial list dressed as a derived one. The project's rule is that a page says what the feed says and nothing more, and a landing page that decides which towns are worth a click is that page making a claim it has no evidence for. |
 | **S46** | A "Was this shortlist useful?" prompt or an optional feedback route | It is a tracker with a small payload, and it collects exactly the thing the page is careful not to collect. The same question is answered better by the S43 sessions, which are observed rather than recorded. |
 
-## Questions a future design pass still has to answer
+## What is waiting on a person
 
-1. **Is the release meant to expose the whole station network now, or
-   intentionally just Grantham?** The route contract no longer depends on the
-   answer — the deployment publishes a one-station chooser whose contract is the
-   same as a full build's, every internal link resolves, and the release
-   manifest is proved against the files on disk. What is open is the *coverage*
-   decision: a one-station release is coherent, but a reader arriving at a "where
-   can we go from anywhere" product meets exactly one origin. This is the only
-   question in the 27 September critique that its own re-verification could not
-   close, and it is a decision rather than a defect.
-   Answer: Should expose the whole station network
-   **Answered, and shipped.** The deploy workflow builds `--all-origins`, so
-   every one of the 2,718 priced stations has a page and the root is the
-   chooser offering all of them. The objection was cost, and it was entirely
-   ADR-0024's projection of about two days, measured on an invented uniform feed
-   where every station priced 2,500 destinations. The real feed's median origin
-   prices 91, and a whole-network build with journey times measures at about 81
-   minutes on a two-core runner. ADR-0024 is amended with the numbers, and
-   [ADR-0050](../adr/ADR-0050-the-release-is-the-whole-network.md) is the decision.
-2. **Is the Two Together enforcement the answer the brief wanted?** The solo case
-   is now refused rather than shown, which the enforcement test holds. Whether
-   the brief wanted that, or wanted an explicitly conditional per-person
-   comparison instead, was never put to it.
-   Answer: I don't understand the question exactly, but Two Together is supposed to be just ONE of the entire collection of available railcards to choose from. Also, the default should be no railcards selected, until one is added, then it should be remembered by the browser
-   **Answered, and the question was the wrong shape.** Two Together was never
-   the only railcard the page knew about; it was the only one it offered. The
-   feed's catalogue holds 382 codes, and the passenger cards arrive in families:
-   16-25 is YNG, and Y3R for three years, YN3 bought online, RYP as a
-   repaperminted replacement. A reader holding any of them holds the same card,
-   so a railcard is modelled as a product with the codes the feed carries for it,
-   and the reviewed set is six products rather than one card.
-   **Landed.** The page offers all six in one control, nothing is selected by
-   default, and the browser remembers the reader's card.
-   [ADR-0052](../adr/ADR-0052-the-railcard-is-one-of-a-collection.md) is the
-   decision, and its argument is the payload shape. A card's whole answer costs
-   433 bytes a row, so six of them is a sixfold regression on a page that already
-   carries 411KB. The row keeps a price and a rule key per card, and the page
-   writes the sentences. The real page went from 411,583 to 421,124 bytes and now
-   carries six cards where it carried one.
-3. **Does the local preview keep its own build step, or does the runner become a
-   server for a folder the builder produces?** The concrete cost of the split has
-   been fixed, so the question is open again rather than answered by a defect:
-   the runner still shells out to the builder, which works, and no finding says
-   it should not.
-   Answer: I don't know - apply the best-practice decision
-   **Answered.** Best practice for a static site with a build step is that the
-   two are separate commands, because a server that rebuilds on every start
-   cannot tell you what it is serving. `run.py` now serves `_site/` as it is and
-   says so, builds once on a clean checkout because there is nothing to serve
-   then, takes `--rebuild` to build again, and `--no-build` to refuse rather than
-   build what it was told not to.
-   [ADR-0051](../adr/ADR-0051-the-runner-serves-and-the-build-builds.md).
-   **Amended 1 October 2026.** The separation stands and the default is
-   reversed: `python run.py` now builds the whole network, because a
-   single-origin build cannot render the heading's station control at all, and
-   it rebuilds when the sources are newer than the build it would serve,
-   because a stale page answers nothing on it.
-   [ADR-0055](../adr/ADR-0055-the-runner-builds-what-the-reader-will-ask-for.md).
-   **Amended 12 October 2026.** The default is the single-origin page again,
-   and `--all-origins` refuses to start without `--i-know-this-is-slow` (T7 of
-   the build-cost audit, recorded in ADR-0055).
+Everything else in this file is work. These are decisions, and each one changes
+what gets built, so each is written as the choice it is. None of them is blocked
+on a tool.
 
+1. **Do the two routes that show no fares have to carry the licence notices?** A
+   build is given its notices (`--notices nre,rdg,ogl,accuracy`), and those words
+   appear on the station page only, which is the one route that shows a price.
+   The chooser at `/` and the privacy page at `/privacy/` carry none, and a
+   released site serves all three. Route audit items [20] and [21].
+   - *Record the position* that the notices travel with the pages that show
+     fares, and write the check that fails when a release route shows a fare
+     without them. That is a dated line in `licences/release-clearance.md` and
+     one build check, and it is the half that fits this project's habit of
+     proving its own claims.
+   - *Or render the notices on every route*, so the chooser and the privacy page
+     carry the same attribution the station page does.
+   Why it is not the project's call alone: the licences and attributions the
+   operator supplies say who the fares and times come from, and whether that
+   obligation rides on a page that shows no fare is a reading of the terms. The
+   first time this came up it was filed as a question, not a defect, for the same
+   reason.
+2. **Where would a "find my station" answer come from, if anywhere?** C27 and S08.
+   A traveller who knows their town but not the station's name or three-letter
+   code cannot start, and "nearest station" is not derivable from this feed. A
+   second path needs a named, reviewed coordinate source, its licence and
+   provenance recorded beside the station index, and the location permission
+   explained in full before it is asked for. Manual name and code search stays
+   the default whichever way this goes.
+3. **Is a service date a product mode?** S24 and S25. Today's times are aggregate
+   schedules and the day control is a filter. A date-specific snapshot, labelled
+   beside the times and carrying bank holidays and service exceptions where the
+   source supports them, is a product decision rather than a data one, and S25
+   sits downstream of whatever this answer is.
+4. **Which byte-budget path first?** The P1 finding above lists three ways the
+   release gets back inside its 800 MB budget: measure the real release first,
+   change the pair-rule encoding, or shard the build. The order is a judgement
+   about what to spend time on: the first replaces a projection with a figure,
+   the second is the one that actually removes the bytes, and the third only makes
+   an over-budget release affordable to publish.
+5. **Does the site get a public name?** S40. A shortlist is in
+   `docs/name-ideas.md`, and nothing in the code is named until one is chosen.
+6. **Are the traveller sessions run?** S43. Short, task-focused sessions with
+   someone who has a price ceiling and no destination, before the next round of
+   polish, so the next changes come from interpretation failures rather than from
+   features that were possible.
+7. **The stop rule's own date.** ADR-0004 sets a written review for **21 October
+   2026**: is there community traction, and is the thing worth keeping. S44 is the
+   argument about what to measure before that date, and it is measured at the
+   community posts rather than on the page. Nothing is built for this.
+
+Three questions this file used to carry are answered and their answers are in the
+settled table below: the release covers the whole network (ADR-0050), a railcard
+is one of a collection with none selected by default (ADR-0052), and the runner
+serves while the build builds (ADR-0051, amended by ADR-0055).
 ---
 
 ## Settled in this pass, and where the record is
@@ -477,7 +470,7 @@ holds each one.
 | F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
 | F4, the CI rebuild fingerprint was a hand-kept three-file list, written twice, and eight of the last 150 commits had changed only unlisted inputs | one script hashes every build input and both workflow steps call it | `tools/build_inputs.py`, held by `tools/test_build_inputs.py`, which fails on a transitively imported module that is not covered |
 | F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--fast` is the two feed-scale tests its docstring names, and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
-| F6, the two hot test files were the biggest in the repository | the Python half moved out by feature seam over the fixture in `tests/page_harness.py`, and the JavaScript half was split on 11 October 2026 | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; and the browser suite is one module per route and section under `tests/browser/`, with `tests/browser_test.cjs` as the entry point. **Still open: `DemoPageTest` itself** (2,985 lines and 163 methods in one class) |
+| F6, the two hot test files were the biggest in the repository | the Python half moved out by feature seam over the fixture in `tests/page_harness.py`, and the JavaScript half was split on 11 October 2026 | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; and the browser suite is one module per route and section under `tests/browser/`, with `tests/browser_test.cjs` as the entry point. **Landed 14 October 2026:** those 163 methods are one class per subject over `PageTestCase` in `tests/page_harness.py` -- `DemoPageTest` keeps 52, and `tests/test_build_fares.py` (43), `tests/test_build_provenance.py` (33), `tests/test_build_chooser.py` (19) and `tests/test_build_links.py` (16) took the rest -- the same 180 tests with 179 of their 180 names unchanged (the contact test is rewritten, because route audit item [15] landed in the same pass), and `python -m unittest tests.test_build_demo_page tests.test_build_fares tests.test_build_provenance tests.test_build_chooser tests.test_build_links` green on the 180 in 28 s (14 October 2026) |
 | F7, fixture-versus-real-feed gaps recurred | the rule is in `AGENTS.md`: a real-feed defect fix adds the minimal synthetic record with the fixing commit named | the passing-stop record in `make_synthetic_feed.py`, held by a test in `tests/test_atoc_timetable.py` |
 | F8, measured figures lived in the README and were withdrawn rather than corrected | the README's measured section is a summary that links | `docs/build-performance-findings.md`, which holds "The whole network, measured" behind the README's link |
 
@@ -521,9 +514,24 @@ recommendation that is still open, and that one is a person's decision rather th
 work: whether the licence and attribution notices a build is given have to ride on
 the two routes that show no fares, or whether they travel with the pages that do
 (route audit items [20] and [21]). The other thirteen landed on 11 October 2026;
-each is held by the artifact named in that file's settled table, and the two
-audits agree: the route audit's items [3], [4], [6], [10], [16], [18] and [22]
-are closed by them.
+each is held by an artifact, and the two audits agree: the
+route audit's items [3], [4], [6], [10], [16], [18] and [22] are closed by them.
+
+| Recommendation | Closed by | Held by |
+|---|---|---|
+| R1, the chooser opened its list over its own explanation and could navigate on a click meant for prose | the shared field block takes an `anchor` and an `openOn`: the chooser opens on typing and draws the panel over the list's own place, never over the intro | `page_templates.py`'s `STATION_FIELD_JS`, and the browser suite's "a click on the prose leaves the page alone while a completion is in the field" |
+| R2, an empty chooser field rendered every station (51,770px) | the directory is capped and says so: a stated top 40 of the true count, the field still the primary path | `page/chooser.js`'s `render()`, the browser suite's "the field opens on a stated top-N of stations rather than the whole directory" |
+| R3, the entry route carried no provenance | `render_chooser` takes the build's `price_source` and `feed_date` and prints the station page's own sentence | `build_demo_page.render_chooser`, `tests/test_build_chooser.py`'s entry-provenance test |
+| R4, the picker capped silently and station search was two behaviours | one `stationMatches` and one `STATION_LIST_CAP` serve both routes, and the picker states its cap in the same sentence the chooser uses | `page_templates.py`'s `STATION_MATCH_JS`, `page/station/picker.js`, the browser suite's picker-cap check |
+| R5, the privacy "below" pointed at a section above it | the summary now precedes the deep dive, and a test asserts the order so the sentence cannot drift again | `page_templates.py`'s privacy template, `tests/test_build_provenance.py`'s order assertions |
+| R6, no build date and the deep dive read first | "What this site does" reads first and one dated line under the title dates the build-dependent promises from `builtAt` | `render_privacy`'s `built_at`, the privacy template's `#builtLine` |
+| R8, the release was written twice, with two writers and two clocks | one `write_release()` for both shapes, `write_page_atomic` everywhere and one `builtAt` | `build_demo_page.write_release` |
+| R9, `main()` was 1,001 lines holding two build scripts | `main()` is 41 lines over five named phases, and the two shapes are `_build_all_origins` and `_build_single_origin` | `build_demo_page.load_inputs` … `release_gates`, and the two `_build_*` functions |
+| R10, `build_payload()`'s eight nested closures | a `PageContext` NamedTuple carries the per-page configuration and a `RulePool` owns the rule numbering; every builder is a module-level function | `build_demo_page.PageContext`, `RulePool`, `railcard_detail_for`, `destination_row`, `day_answer` |
+| R11, `page/station.js` (2,737 lines) and `tests/browser_test.cjs` (7,163 lines) were monoliths | the station route's script is one file per panel under `page/station/`, concatenated in a named order; the browser suite is one module per route and section under `tests/browser/` | `page_templates.STATION_SCRIPT_PARTS`, `tests/browser/`, and the pages built from this tree passing every check they can run |
+| R12, `matches()` was copied in two route scripts | it is `stationMatches`, in the shared `STATION_MATCH_JS` block | `page_templates.STATION_MATCH_JS` |
+| R13, `FaresDb` held its loader and its queries in one 2,401-line class | the loader is a `FaresLoader` mixin in `atoc_fares_loader.py`; `FaresDb` owns the state and the queries unchanged | `atoc_fares_loader.FaresLoader`, `atoc_fares.FaresDb(FaresLoader)` |
+| R14, a Windows build emitted CRLF pages while CI emitted LF | every write passes `newline="\n"`, and `.gitattributes` pins `page/*` to LF so the working tree agrees with the blob | `write_page_atomic`, `write_resume_state`, `.gitattributes`, and `tests/test_page_output.py`'s byte test |
 
 The structure work is worth naming here because it is what a later change lands
 in. `build_demo_page.main()` is 41 lines over five named phases
@@ -535,6 +543,28 @@ a `RulePool`. `page/station.js` became one file per panel under `page/station/`,
 and `tests/browser_test.cjs` became one module per route and section under
 `tests/browser/`. `FaresDb` keeps its state and its queries, and the loader it
 used to hold beside them is `atoc_fares_loader.FaresLoader`, mixed in.
+
+### The 12 October 2026 build-cost audit
+
+`docs/audits/2026-10-12-build-cost-and-data-architecture.md` is pruned to what it
+left open. Its twelve tasks landed, each held by an artifact and by a command a
+reviewer can re-run; its figures are in `docs/build-performance-findings.md`, and
+the decisions it amends are named in its own T12 row.
+
+| Task | What it asked | What landed | Command whose output a reviewer can reproduce |
+|---|---|---|---|
+| T1 | the station script out of every page | `station-<digest>.js` beside the stylesheet; each page inlines only its own `DATA` | `python tools/page_bytes.py --site _bytes_site` on a controlled two-build comparison; 261,362 → 112,885 bytes on one station |
+| T2 | search the service week once for the network, write the facts | the facts store exists and is keyed per origin; the *national* single-pass search was not built, because it would hold the national timetable for the whole build | `python -m unittest tests.test_page_caches.PageFactsTest` |
+| T3 | a rebuild keyed per origin | one origin's priced counts and journey weeks keyed by feed; a masked payload comparison skips unchanged writes | `python -m unittest tests.test_page_runner.AllOriginsCliTest` |
+| T4 | build in shards and merge | `--shard N/M` and `--merge`, with a merge that proves the partition | the same `AllOriginsCliTest` module's shard cases |
+| T5 | measure the release against its budget | measured in the release's own shape: 24 major stations average 2.73 MB a page, a stride sample 806 KB; the with-week shape projects to ~2.2 GB against 800 MB, which is the P1 finding above | `python tools/page_bytes.py --site _stride_site` |
+| T6 | fold the pricing pre-pass into the facts pass | the pre-pass replays the counts it already priced; the station index is built from the facts | `python -m unittest tests.test_destination_coverage.ReportTest` |
+| T7 | decide what the local default build is | the default is the fast single-origin page again; `--all-origins` requires its acknowledgement | `python -m unittest tests.test_page_runner.RunnerBuildOrServeTest` |
+| T8 | publish the per-origin cost distribution | `tools/measure_origin_costs.py`: mean 19.37 s against median 4.74 s, max 105.17 s | `python tools/measure_origin_costs.py --origins AAT,ABA,AAP` |
+| T9 | reuse the timetable-derived facts across releases | a fares-only refresh of the network build reuses every journey fact; the store is keyed by feed content, and a single-origin build neither reads nor writes it | the sweep-reuse case in `PageFactsTest` |
+| T10 | the same shared-asset treatment for the chooser | `chooser-<digest>.js` beside the release | `python -m unittest tests.test_page_output.SharedStationAssetTest` |
+| T11 | check whether hashed assets accumulate | a rebuild removes the hashed files no file in the folder names | `...SharedStationAssetTest.test_a_rebuild_removes_the_hashed_assets_no_page_names` |
+| T12 | record what this changes in the registers | ADR-0033, ADR-0047, ADR-0019, ADR-0024, ADR-0050, ADR-0055 and ADR-0032 amended; the findings hold the measurements | `python -m unittest tests.test_agents_map` |
 
 ### The measurements three ADRs lean on
 
@@ -598,7 +628,7 @@ next reader does not file it as a defect.
 
 ## Where this came from
 
-All four files below are gone from the working tree; each was removed by the
+All six files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
 above. `git show <commit>` reads one back.
 

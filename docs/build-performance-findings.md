@@ -4,9 +4,11 @@
 **For:** the next person who double-clicks `run.bat` and wonders why a two-station
 preview is taking most of an hour.
 
-Every number here was measured on this repository's own machine on 7 and
+Every number here was measured on this repository's own machine, on 7 and
 8 October 2026 against the feeds downloaded 24 September 2026
-(`feeds/fares/dtd-fares.zip`, `feeds/timetable/dtd-timetable.zip`).
+(`feeds/fares/dtd-fares.zip`, `feeds/timetable/dtd-timetable.zip`), and on the
+later dates named by the sections that carry them: 12 October 2026 for the
+build-cost audit's figures, 14 October 2026 for the page write.
 
 Each figure is labelled measured or
 extrapolated, and the reproduction command is beside it. Where a figure is an
@@ -699,3 +701,41 @@ pair-rule encoding rather than by the script T1 removed (2,712 × 149 KB ≈
 385 MB saved, the remainder still over). The next real release settles it
 with `python tools/page_bytes.py --site _site --budget-mb 800`, which refuses
 on its own; until then the projection above is the standing estimate.
+
+**The page write, measured (14 October 2026).** The audit's argument against a
+store turned on what a store would remove, and the one figure it carried for
+that -- "~20 ms a page, measured as `write_page_atomic`" -- was never
+transcribed anywhere, so it is measured here instead. 200 writes of three
+payload sizes, through `build_demo_page.write_page_atomic` as the build calls
+it:
+
+| Payload | Written | First write | Median | p90 | Share of a page's 10.75 s |
+|---|---|---|---|---|---|
+| Birmingham New Street as built | 258,021 B | 1.73 ms | **1.51 ms** | 1.97 ms | 0.014% |
+| the audit's mean page | 2,734,888 B | 5.05 ms | **5.32 ms** | 6.99 ms | 0.049% |
+| the largest page the audit measured | 6,831,358 B | 11.54 ms | **10.90 ms** | 12.01 ms | 0.10% |
+
+The second and third rows write the first row's bytes padded to that size, so
+they measure the write and not the content. What limits the figure is the OS
+page cache: every write after the first is a cached write, which is the best
+case for the write and the worst case for the store's argument. It does not
+matter which way that cuts, because the whole write is 0.014% to 0.10% of what
+a page costs to compute -- the audit's ~20 ms is 4x the mean page's real
+figure, and its conclusion survives the correction: a store removes the write,
+and the write was never the cost.
+
+```python
+# the three payload sizes, 200 writes each, warm cache (14 October 2026)
+from pathlib import Path
+import statistics, tempfile, time
+import build_demo_page as b
+raw = Path("_site/from/birmingham-n-st/index.html").read_bytes().replace(b"\r\n", b"\n").decode()
+for target in (len(raw), 2_734_828, 6_831_298):
+    out = Path(tempfile.mkdtemp()) / "page.html"
+    times = []
+    for _ in range(200):
+        start = time.perf_counter()
+        b.write_page_atomic(out, raw + " " * (target - len(raw)))
+        times.append((time.perf_counter() - start) * 1000)
+    print(f"{target:,} B median {statistics.median(times):.2f} ms")
+```
