@@ -402,11 +402,10 @@ class FaresParserTest(unittest.TestCase):
         self.assertTrue(db._settlement_matches("BATH", settled))
 
     def test_a_workbook_district_does_not_hide_a_settlement(self) -> None:
-        # The workbook writes "Foxton (South Cambridgeshire)"; the station is
-        # FOXTON, and the two sides have to normalise the same way. On the real
-        # feed this gap alone left 43 priced destinations unclassified. Keying
-        # the workbook is a pure function of its rows, so it is stated here;
-        # the station it has to reach is now proved at the feed boundary.
+        # The workbook writes "Foxton (South Cambridgeshire)" and the station is
+        # FOXTON: this is that normalisation rule as a pure function of the
+        # workbook's rows. What the same gap costs on the real feed is measured
+        # by test_a_workbook_district_does_not_hide_the_station_the_feed_carries.
         bands = FaresDb._key_settlements(
             [
                 ("Foxton (South Cambridgeshire)", "minor"),
@@ -1643,9 +1642,10 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
         self.assertEqual(db.destination_type("RET"), "town")
 
     def test_a_workbook_district_does_not_hide_the_station_the_feed_carries(self) -> None:
-        # The workbook writes "Foxton (South Cambridgeshire)"; the station is
-        # FOXTON, and the two sides have to normalise the same way. On the real
-        # feed this gap alone left 43 priced destinations unclassified.
+        # On the real feed this gap alone left 43 priced destinations
+        # unclassified: the workbook's "Foxton (South Cambridgeshire)" never
+        # reached the station FOXTON. The rule itself is the one
+        # test_a_workbook_district_does_not_hide_a_settlement states.
         with tempfile.TemporaryDirectory() as tmp:
             feed = _first_build(Path(tmp), ("FXN", "FOXTON"))
             workbook = _ons_workbook((("Foxton (South Cambridgeshire)", "minor"),))

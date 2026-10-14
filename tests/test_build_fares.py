@@ -403,10 +403,8 @@ class FaresPayloadTest(PageTestCase):
         # R9 is the railcard's travel condition, not a total ban, so the
         # synthetic fares that carry it remain eligible.
         cards = {card["key"]: card for card in self.payload["railcards"]}
-        # All six reviewed cards, with the party each one prices. The
-        # fixture used to carry a single card under a code that is not in
-        # the reviewed set at all, so the control built to offer six came
-        # out with one option in it.
+        # All six reviewed cards, with the party each one prices, so the
+        # selector the page builds has six options rather than one.
         self.assertEqual(
             list(cards),
             ["YNG", "DIS", "NEW", "SRN", "BB2", "2TR"],

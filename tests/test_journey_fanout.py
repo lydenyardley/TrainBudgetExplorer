@@ -9,17 +9,13 @@ search, so this asserts they agree, in both directions: every destination the
 fan-out returns must rank the same, and every destination it omits must be one
 best_journey also cannot reach.
 """
-import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from atoc_timetable import TimetableDb, _rank  # noqa: E402
-from make_synthetic_feed import build_synthetic_timetable  # noqa: E402
+from atoc_timetable import TimetableDb, _rank
+from make_synthetic_feed import build_synthetic_timetable
 
 
 def _rank_or_none(journey):
