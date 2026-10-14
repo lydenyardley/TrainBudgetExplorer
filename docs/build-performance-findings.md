@@ -64,7 +64,7 @@ that is the point.
 default was `--all-origins` with `focus_origin=None`, so every worker parsed and
 held the whole timetable. Since 12 October 2026 the default is the single-origin
 page again and `--all-origins` needs `--i-know-this-is-slow` (T7 of the
-[build-cost audit](audits/2026-10-12-build-cost-and-data-architecture.md)). Since
+12 October 2026 build-cost audit, settled in `docs/open-work.md`). Since
 8 October 2026 a page is built from a slice of it cut for its own origin, so the
 1.87 GB is no longer what a page holds while it is assembled. The index is still
 parsed and held once per process, and that part is unchanged.
@@ -640,8 +640,8 @@ when done with it.
 
 Measured 12 October 2026 on this machine, on the 24 September 2026 DTD
 download (419,589 schedules, 7,818,772 fares). The audit's own task list is
-`docs/audits/2026-10-12-build-cost-and-data-architecture.md`; what landed is
-in the ADRs it names, and this section holds only the figures.
+settled in `docs/open-work.md` under "The 12 October 2026 build-cost audit";
+what landed is in the ADRs it names, and this section holds only the figures.
 
 **The spread, not the mean (T8).** `python tools/measure_origin_costs.py`
 times the slice cut, the day index and the reachability search per origin
@@ -739,3 +739,19 @@ for target in (len(raw), 2_734_828, 6_831_298):
         times.append((time.perf_counter() - start) * 1000)
     print(f"{target:,} B median {statistics.median(times):.2f} ms")
 ```
+
+## The page suite's coverage, measured
+
+Measured 12 October 2026 over the five pages `tools/verify.py --browser` drives:
+**830 checks passed of 855, none failed, 25 skipped (2.9%), exit 0** -- demo
+station 257/257 (3 skipped), chooser 71/71 (1), privacy 31/31, one-page station
+254/254 (5), prices-only 217/217 (16). The skipped checks are the journey and day
+checks a build with no timetable cannot run.
+
+The whole-app audit of 10 October 2026 had recorded 69 of 815 skipped (8.5%, over
+the suite's own 5% budget) on the previous fixtures. That was a property of the
+fixtures rather than of the suite, because the shape feed priced each secondary
+origin to a single station and neither fixture build carried a service date.
+`tools/verify.py` now builds both fixtures for `SERVICE_DATE` and passes
+`--third-origin --return-network`, and the shape route is `one-page`, because what
+fits on one page is a list rather than a row.
