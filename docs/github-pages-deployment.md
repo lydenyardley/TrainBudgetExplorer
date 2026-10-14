@@ -80,7 +80,7 @@ The workflow passes this value to the page builder so internal links work under 
 
 ### The privacy contact
 
-The build names the public issue tracker as the contact route and prints no email address (ADR-0068). Publication still waits on confirmation that issue notifications are monitored (`docs/publish-checklist.md`). A repository variable named `PRIVACY_CONTACT` overrides that route when the checklist records a different one, and the workflow passes it to the build.
+The build names the public issue tracker as the contact route and prints no email address (ADR-0068). The owner confirmed on 14 October 2026 that its notifications reach an address they read, which is the confirmation publication waited on; `licences/release-clearance.md` holds it under `privacy contact`, dated and expiring a year later, and `docs/publish-checklist.md` records it. A repository variable named `PRIVACY_CONTACT` overrides that route when a different one is recorded, and the workflow passes it to the build.
 
 ## What gets published
 

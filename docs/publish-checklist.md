@@ -21,9 +21,13 @@ below is unfinished, and the shape the workflow now publishes is `fares,timetabl
 because the daily build loads the national timetable to show times and changes.
 Two things are therefore not cleared — the DTD fares product, and the Darwin
 timetable product schedule, which this project reads as internal business
-purposes only. Nothing in `build_demo_page.py` or `run.py` reads the record, so a
-contributor can still build, test and open a real-feed page locally with no
-clearance in sight.
+purposes only. A third gate sits on the same shape, the privacy contact, and it
+**was cleared on 14 October 2026** when the owner confirmed that the issue
+tracker's notifications reach an address they read; the record dates it and
+expires it a year later. Nothing in `build_demo_page.py` or `run.py` reads the
+record, so a contributor can still build, test and open a real-feed page locally
+with no clearance in sight, and the two licence refusals above are what still
+stand in the way of a published release.
 
 The shape is not chosen by hand. `tools/check_release_clearance.py` refuses a
 `--release` it does not recognise, and a test compares the shape the workflow
@@ -138,15 +142,18 @@ answered, and answered as nil.
       page computes them from a static schedule. The Developer Pack is evidence
       that the static feed carries no live movements and that Darwin's forecasts
       are something it computes, which is an argument rather than an answer
-- [ ] **A monitored contact route exists.** The privacy page names the public
+- [x] **A monitored contact route exists.** The privacy page names the public
       issue tracker (`https://github.com/lydenyardley/TrainBudgetExplorer/issues`,
       `DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py`, ADR-0068) and prints no
-      email address. Lyden has **not** confirmed that he monitors issue
-      notifications. Confirm that before the site is public: the page promises
-      a reader that somebody is at the end of the route. `PRIVACY_CONTACT` or
-      `--privacy-contact` can name a different route. `tools/check_release_clearance.py`
-      still treats this as its own outstanding question, because a page can
-      clear every licence and still publish a route nobody reads.
+      email address. The owner confirmed on **14 October 2026** that its
+      notifications reach an address they read, which is what the page promises
+      a reader. `licences/release-clearance.md` holds that decision under
+      `privacy contact`, dated and expiring a year later, and
+      `tools/check_release_clearance.py` stops treating it as outstanding. It is
+      a circumstance rather than a term, so the confirmation is repeated when
+      the record expires rather than inherited. `PRIVACY_CONTACT` or
+      `--privacy-contact` can name a different route: record the override there
+      and clear the route it names instead.
 - [ ] If RDG quotes a non-zero fee, the project rejects it and keeps the zero-cost
       route rather than silently adding a cost
 

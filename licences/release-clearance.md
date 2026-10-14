@@ -1,6 +1,9 @@
 # Release clearance
 
-**Nothing here is cleared, and the deploy workflow is gated on that.** This file
+**No licence here is cleared, and the deploy workflow is gated on that.** The one
+product this record clears is the privacy contact, which is not a licence: it is
+a promise a person keeps rather than a term anyone read, and the [section
+below](#privacy-contact) holds the date it was confirmed and by whom. This file
 is the record the gate reads, and it is edited in a pull request by a person who
 has read the actual terms — which is the point, because no tool here can read a
 licence and decide whether it permits publication. What the tool can do is make
@@ -121,6 +124,10 @@ It is a portal subscription rather than a marketplace product schedule, so it
 has no PDF in this folder and no product id — which is precisely why it needed a
 section of its own.
 
+The register records a documented zero-cost working conclusion from the public
+charging material, not a signed entitlement, and the letter to RDG is drafted at
+`docs/rdg-licence-enquiry.md` and unanswered.
+
 ## the NRE mark is reversed
 
 - state: open question, not a product decision
@@ -153,22 +160,37 @@ Turn it into one by adding it to `products_needed()` in
 
 ## privacy contact
 
-- state: excluded
-- reason: a monitored contact route exists only once somebody confirms they read the issue tracker, and that confirmation has not been given
+- state: cleared
+- answer: yes
+- read on: 2026-10-14
+- approved by: Lyden Yardley, the repository owner
+- approved on: 2026-10-14
+- expires: 2027-10-14
 
 Every generated route carries a contact, and the privacy page tells a reader
 that somebody is at the end of it. The build names the public issue tracker
 (`https://github.com/lydenyardley/TrainBudgetExplorer/issues`, ADR-0068) and
-prints no email address. Nothing has confirmed that issue notifications are
-read.
+prints no email address.
 
-Clearing this means: the date it was confirmed that those notifications are
-monitored, and who confirmed it. `PRIVACY_CONTACT` or `--privacy-contact` can
-still name a different route; record that override here if one is published.
+**Why it is cleared.** The owner confirmed on 14 October 2026 that the issue
+tracker's notifications reach an address they read, so the route every generated
+page names is a monitored one. That confirmation is the whole of what this
+section claims, and it is the one thing no tool here can check: nothing in this
+repository reads a mailbox.
 
-The register records a documented zero-cost working conclusion from the public
-charging material, not a signed entitlement, and the letter to RDG is drafted at
-`docs/rdg-licence-enquiry.md` and unanswered.
+**Why it expires.** The claim is about a person watching an inbox, which is a
+circumstance rather than a term, so it is dated for a year and the confirmation
+is repeated rather than inherited. Re-clearing is this date changed after a fresh
+look at the route.
+
+**What would take it back.** `PRIVACY_CONTACT` or `--privacy-contact` can name a
+different route: record that override here and clear the route it names instead.
+Anyone who stops reading the tracker sets `state: excluded` again, and the gate
+refuses a release on the line, because refusing is the safe direction.
+
+This is the second of the two products that are not a filed licence.
+[`dtd`](#dtd) is still excluded, so clearing this one does not by itself let
+anything publish.
 
 ## P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8
 

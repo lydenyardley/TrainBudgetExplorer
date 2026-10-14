@@ -28,9 +28,18 @@ without the page carrying an email address.
    they monitor issue notifications, with the date and who confirmed it.
    Choosing the route is not that confirmation.
 
+   **Amended 14 October 2026.** The confirmation arrived. The owner confirmed
+   that the tracker's notifications reach an address they read, and the record
+   now carries `privacy contact` as `cleared`, read and approved on 14 October
+   2026 and expiring 14 October 2027, because an inbox somebody watches is a
+   circumstance rather than a term. Nothing else changes: the route, the
+   `PRIVACY_CONTACT` override and the gate are as above.
+
 ## Consequences
 
 The live page does not contain the project's email address. A reader who
-wants to write still has a working URL. Publication remains blocked until
-the checklist item "A monitored contact route exists" is ticked and the
-clearance section is updated to match.
+wants to write still has a working URL. The checklist item "A monitored
+contact route exists" was ticked and the clearance section updated on
+14 October 2026, so publication is no longer blocked on this route: it is
+blocked on the two licence products the release publishes, which the DTD
+route leaves unresolved.
