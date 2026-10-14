@@ -28,11 +28,11 @@ class SlowListTest(unittest.TestCase):
 class WithoutTest(unittest.TestCase):
     def test_it_drops_only_the_named_tests(self) -> None:
         class Named(unittest.TestCase):
-            def test_one(self) -> None:  # noqa: D102 - a name to drop, not a behaviour
-                pass
+            def test_one(self) -> None:
+                """A name to drop, not a behaviour."""
 
-            def test_two(self) -> None:  # noqa: D102
-                pass
+            def test_two(self) -> None:
+                """A name to keep, and the one the suite should hold."""
 
         one, two = Named("test_one"), Named("test_two")
         suite = unittest.TestSuite([unittest.TestSuite([one]), two])
