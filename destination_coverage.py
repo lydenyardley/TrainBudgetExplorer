@@ -441,7 +441,7 @@ class UnsourcedReport:
                 f"error: {count} unsourced priced destination"
                 f"{'' if count == 1 else 's'} {'exceeds' if count == 1 else 'exceed'} "
                 f"the ceiling of {ceiling} (--unsourced-ceiling). Add a reviewed "
-                "class in atoc_fares.REVIEWED_SETTLEMENT_FALLBACKS to lower "
+                "class in atoc_fare_declarations.REVIEWED_SETTLEMENT_FALLBACKS to lower "
                 "the count, or raise the ceiling deliberately with a reason.",
                 file=sys.stderr,
             )
@@ -451,7 +451,8 @@ class UnsourcedReport:
             print(
                 f"error: refusing to publish with {count} unsourced priced "
                 f"destination{plural} (--fail-on-unsourced). Add a reviewed class in "
-                "atoc_fares.REVIEWED_SETTLEMENT_FALLBACKS, or drop the flag to publish anyway.",
+                "atoc_fare_declarations.REVIEWED_SETTLEMENT_FALLBACKS, or drop the flag "
+                "to publish anyway.",
                 file=sys.stderr,
             )
             return 2

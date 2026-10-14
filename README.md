@@ -35,7 +35,7 @@ payload value for an unnamed settlement, but it is no longer a filter chip:
 reviewed list covers the places a page prices, so Newcastle is a city, an
 airport station is an airport, and Attenborough is a village.
 
-Every facet is one entry in `DESTINATION_FACET_SOURCES` in `atoc_fares.py`:
+Every facet is one entry in `DESTINATION_FACET_SOURCES` in `atoc_fare_declarations.py`:
 the label, the dataset it comes from, where that dataset lives, what geography
 it covers, and the reader that turns it into settlement names. The filter chips,
 the page payload, the generated cache's provenance and the checked-in reference
@@ -336,6 +336,7 @@ checked:
 |---|---|
 | `atoc_fares.py` | The loaded fares database and the queries asked of it: the budget query, the publishable selector and the destination classification |
 | `atoc_fares_loader.py` | The fare feed reader and the classification sources, mixed into `FaresDb` |
+| `atoc_fare_declarations.py` | The fare feed's record layouts, row types and reviewed classification tables |
 | `atoc_restrictions.py` | RSPS5045 `.RST` restriction parser and its publication gate |
 | `atoc_timetable.py` | CIF timetable parser, journey and reachability queries, and the per-origin slice a page is built from |
 | `grantham_sweep.py` | CLI: every destination in a budget, with journeys |

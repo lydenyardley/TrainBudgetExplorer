@@ -21,6 +21,47 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from atoc_fare_declarations import (
+    DESTINATION_FACET_READERS,
+    DESTINATION_FACET_SOURCES,
+    FLOW_F_SLICES,
+    FLOW_F_WIDTH,
+    FLOW_T_SLICES,
+    FLOW_T_WIDTH,
+    HERITAGE_STATIONS_BY_SITE,
+    LEARNING_PROVIDERS_FILE_URL,
+    LOCATION_BAND_TYPES,
+    LOCATION_CACHE_SCHEMA,
+    LOCATION_FALLBACK_SOURCE,
+    LOCATION_OFFSETS,
+    LOCATION_TYPES_FILE,
+    LOCATION_TYPE_SOURCE,
+    LONDON_STATION_CRS,
+    MAJOR_UK_STATION_FALLBACKS,
+    MINIMUM_FARE_OFFSETS,
+    ONS_BUILT_UP_AREAS_DATASET_URL,
+    ONS_BUILT_UP_AREAS_FILE_URL,
+    ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
+    RAILCARD_OFFSETS,
+    REVIEWED_SETTLEMENT_FALLBACKS,
+    SUPPORTED_DESTINATION_FACETS,
+    TICKET_TYPE_OFFSETS,
+    UNESCO_WORLD_HERITAGE_FILE_URL,
+    DestinationFacet,
+    Fare,
+    Flow,
+    Location,
+    MinimumFare,
+    Railcard,
+    TicketType,
+    _as_int,
+    _parse_dtd_date,
+    _require_width,
+    _text,
+    classification_files,
+    dtd_flag,
+    location_lookup_candidates,
+)
 from parse_report import ParseReport, count, decode_lines, read_feed_files
 
 if TYPE_CHECKING:
@@ -1236,52 +1277,3 @@ class FaresLoader:
 
     def _load_restrictions(self, line: str) -> None:
         self.restrictions.load_line(line)
-
-
-# Imported below the class, and below ``atoc_fares``'s own definitions: the
-# readers work on the record layouts and the row types that module declares
-# above its ``from atoc_fares_loader import FaresLoader`` line, so those names
-# only exist once it has reached that point. ``FaresDb`` itself is the one
-# exception -- the class is defined after this import returns, so the two
-# methods that need it import it where they use it.
-from atoc_fares import (  # noqa: E402
-    DESTINATION_FACET_READERS,
-    DESTINATION_FACET_SOURCES,
-    FLOW_F_SLICES,
-    FLOW_F_WIDTH,
-    FLOW_T_SLICES,
-    FLOW_T_WIDTH,
-    HERITAGE_STATIONS_BY_SITE,
-    LEARNING_PROVIDERS_FILE_URL,
-    LOCATION_BAND_TYPES,
-    LOCATION_CACHE_SCHEMA,
-    LOCATION_FALLBACK_SOURCE,
-    LOCATION_OFFSETS,
-    LOCATION_TYPES_FILE,
-    LOCATION_TYPE_SOURCE,
-    LONDON_STATION_CRS,
-    MAJOR_UK_STATION_FALLBACKS,
-    MINIMUM_FARE_OFFSETS,
-    ONS_BUILT_UP_AREAS_DATASET_URL,
-    ONS_BUILT_UP_AREAS_FILE_URL,
-    ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
-    RAILCARD_OFFSETS,
-    REVIEWED_SETTLEMENT_FALLBACKS,
-    SUPPORTED_DESTINATION_FACETS,
-    TICKET_TYPE_OFFSETS,
-    UNESCO_WORLD_HERITAGE_FILE_URL,
-    DestinationFacet,
-    Fare,
-    Flow,
-    Location,
-    MinimumFare,
-    Railcard,
-    TicketType,
-    _as_int,
-    _parse_dtd_date,
-    _require_width,
-    _text,
-    classification_files,
-    dtd_flag,
-    location_lookup_candidates,
-)
