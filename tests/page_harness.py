@@ -19,8 +19,12 @@ import json
 import re
 import shutil
 import tempfile
+import unittest
 
 import build_demo_page
+from atoc_fares import FaresDb
+from atoc_timetable import TimetableDb
+from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
 
 def _unpack_railcards(value, codec):
@@ -99,6 +103,51 @@ def hydrate_rows(payload: dict) -> dict:
     for key in ("pool", "places", "rowCodec"):
         payload.pop(key, None)
     return payload
+
+
+class PageTestCase(unittest.TestCase):
+    """The one page every page-content test reads.
+
+    The synthetic feed, its parsed timetable, the one payload and the one
+    rendered page are the fixture of every test that makes a claim about that
+    page, so they are built here rather than in each of the modules that read
+    them (F6 of the 8 October 2026 agent-efficiency audit). The class holds no
+    test of its own, so unittest collects nothing from it, and each subclass
+    gets its own build and its own temporary directory.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.fares = FaresDb().load_feed(
+            build_synthetic_feed(
+                Path(cls._tmp.name) / "fares",
+                include_unserved_station=True,
+                include_restrictions=True,
+            )
+        )
+        cls.timetable = TimetableDb().load_feed(build_synthetic_timetable(Path(cls._tmp.name) / "timetable"))
+        cls.payload = build_demo_page.build_payload(cls.fares, cls.timetable, "GRN")
+        cls.html = build_demo_page.render_page(cls.payload, budget_pounds=20)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    @property
+    def stylesheet(self) -> str:
+        """The CSS this page is served with, which is no longer inside it.
+
+        ADR-0047: the station route fetches one stylesheet rather than inlining
+        it, because the same 34.6 KB on 2,712 pages was 92 MB of a site measured
+        at 583 MB. A test that asserts a rule exists therefore asserts it
+        against the document the page loads -- one string, identical on every
+        station page, written beside them by the build -- rather than against
+        the page, which no longer carries any of it.
+        """
+        from page_templates import STATION_STYLESHEET
+
+        return STATION_STYLESHEET
 
 
 def embedded_text(html: str) -> str:
