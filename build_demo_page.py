@@ -200,6 +200,7 @@ MANIFEST_NAME = "download-manifest.json"
 BUILD_STATE_NAME = ".trainbudget-build.json"
 CACHE_DIR = Path(__file__).parent / "_cache"
 SOURCE_FILES = (
+    "atoc_fare_declarations.py",
     "atoc_fares.py",
     "atoc_restrictions.py",
     "atoc_timetable.py",
@@ -956,9 +957,7 @@ def prune_fare_index_caches(*used: Path, keep: int = FARE_INDEX_CACHE_KEEP) -> i
             try:
                 stamps.append(path.stat().st_mtime)
             except OSError:
-                # Gone already, or held by a scanner. A file that cannot be
-                # read cannot be ranked, and tidying must never be the reason
-                # an otherwise good build fails.
+                # Unreadable is unrankable, as in prune_timetable_caches.
                 continue
         if any(path.resolve() in protected for path in paths):
             in_use += 1
@@ -5395,9 +5394,8 @@ def _build_all_origins(ctx: BuildContext) -> int:
             f"note: {len(stale)} page folder(s) in {out_dir / 'from'} are from an earlier build and were not "
             f"rewritten: {', '.join(stale)}. Delete them yourself if you want the folder to match this build."
         )
-    # The release's own routes, through the one writer both build shapes
-    # share: the chooser with this build's provenance, the notice dated
-    # from the stamp the pages carry, the crawl and the manifest.
+    # The release's own routes: one writer for both build shapes, and what it
+    # writes is write_release's own subject.
     write_release(
         out_dir,
         index=index,
@@ -5553,9 +5551,7 @@ def _build_single_origin(ctx: BuildContext) -> int:
             f"note: {payload['origin']['name']} priced no destination, so this build "
             "writes only the chooser; there is no station page to serve."
         )
-    # The release's own routes, through the one writer both build shapes
-    # share. The manifest is dated from the page's own stamp rather than from
-    # a second clock read a moment later (four-dimension audit R8).
+    # The release's own routes, through the same writer as the other shape.
     write_release(
         out_dir,
         index=index,

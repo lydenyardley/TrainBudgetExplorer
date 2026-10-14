@@ -241,6 +241,7 @@ def remove_unwritten_station_pages() -> list[str]:
 BUILD_SOURCES = (
     "build_demo_page.py",
     "page_templates.py",
+    "atoc_fare_declarations.py",
     "atoc_fares.py",
     "atoc_restrictions.py",
     "atoc_timetable.py",
