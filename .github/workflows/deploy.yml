@@ -291,7 +291,11 @@ jobs:
       - name: Gate the unsourced-destination count
         # 1,533 measured on 30 September 2026, after the workbook's own
         # district stopped hiding the settlement its name carries (ADR-0026).
-        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1533
+        # Raised 2026-10-14 with Lyden's approval: the station count went from
+        # 3,437 to 3,453 (5f5df69), adding 11 unsourced priced destinations
+        # (e.g. CPK, WFH, WFJ, BID, PMT). Lower it again as reviewed classes
+        # are added.
+        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1544
 
       - name: Gate the published price per minute
         # A price on its own is not a fact a reader can act on. Divided by the
