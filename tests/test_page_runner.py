@@ -868,6 +868,44 @@ class RunnerBuildOrServeTest(unittest.TestCase):
             with mock.patch.object(run, "SITE", Path(tmp)):
                 self.assertFalse(run.sources_are_newer())
 
+    def test_every_file_the_build_reads_is_a_reason_to_rebuild(self) -> None:
+        # The runner kept its own copy of the build's inputs, and the copy had
+        # drifted from the build's: three modules every build imports --
+        # atoc_fares_loader, atoc_knowledgebase and destination_coverage -- were
+        # named by neither list, so a fix to one of them left this command
+        # serving the pages from before it. The runner asks the build now, and
+        # every name on the build's list is tried here: a name added to the
+        # build without the runner reading it fails this.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            site = root / "_site"
+            site.mkdir()
+            manifest = site / run.RELEASE_MANIFEST_NAME
+            manifest.write_text("{}", encoding="utf-8")
+            os.utime(manifest, (1000, 1000))
+            sources = []
+            for name in build_demo_page.SOURCE_FILES:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+                os.utime(path, (2000, 2000))
+                sources.append(path)
+            with mock.patch.object(run, "ROOT", root), mock.patch.object(run, "SITE", site):
+                self.assertTrue(run.sources_are_newer())
+                # One file at a time, the rest older than the manifest: the
+                # answer has to be that file's mtime and not the list's length.
+                for path in sources:
+                    for other in sources:
+                        stamp = 2000 if other is path else 500
+                        os.utime(other, (stamp, stamp))
+                    self.assertTrue(
+                        run.sources_are_newer(), f"{path.name} does not mark the site stale"
+                    )
+                for path in sources:
+                    os.utime(path, (500, 500))
+                self.assertFalse(run.sources_are_newer())
+        self.assertIn("atoc_knowledgebase.py", build_demo_page.SOURCE_FILES)
+
     def test_a_build_the_sources_have_moved_past_is_rebuilt(self) -> None:
         # Nine hours of committed work, a double-clicked runner and a page
         # from before it, with nothing on the page saying so. The runner

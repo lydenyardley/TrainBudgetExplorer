@@ -7,6 +7,7 @@ October 2026 agent-efficiency audit)."""
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import pathlib
@@ -151,6 +152,53 @@ class TimetableCachePruneTest(unittest.TestCase):
             before, after,
             "a change to any source file the parser reads is a different cache",
         )
+
+    def test_the_source_list_covers_every_module_the_build_imports(self) -> None:
+        # The list was a literal here and again in the runner, and the two had
+        # drifted from the build: `atoc_fares_loader`, `atoc_knowledgebase` and
+        # `destination_coverage` are imported by every build and were named by
+        # neither, so editing one left a built site looking current. It is read
+        # from the imports now, and this fails if a module stops being reached.
+        root = Path(build_demo_page.__file__).parent
+        covered = set(build_demo_page.SOURCE_FILES)
+        reached: set[str] = set()
+        pending = ["build_demo_page.py"]
+        while pending:
+            name = pending.pop()
+            if name in reached:
+                continue
+            reached.add(name)
+            self.assertIn(name, covered, f"the build imports {name} and does not hash it")
+            for node in ast.walk(ast.parse((root / name).read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    names = [alias.name.split(".")[0] for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    names = [node.module.split(".")[0]]
+                else:
+                    continue
+                pending.extend(f"{module}.py" for module in names if (root / f"{module}.py").is_file())
+        self.assertGreater(len(reached), 5, "the build's imports were not followed")
+        # The two files a build reads as data rather than importing: the reviewed
+        # destination facets, and the brand mark the footer inlines.
+        self.assertIn("reference-data/destination-facets.json", covered)
+        self.assertIn("assets/powered-by-national-rail.svg", covered)
+
+    def test_module_sources_follows_an_import_chain(self) -> None:
+        # The walk is what makes the list above true, so it is held to its own
+        # answers rather than only to the tree it runs in: a module reached
+        # through another module counts, and a name that is not a file beside
+        # it -- the standard library, a misspelling -- does not.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "one.py").write_text(
+                "import json\nimport two\nfrom nope import missing\n", encoding="utf-8"
+            )
+            (root / "two.py").write_text("from three import name\n", encoding="utf-8")
+            (root / "three.py").write_text("name = 1\n", encoding="utf-8")
+            self.assertEqual(
+                build_demo_page.module_sources(root, "one.py"),
+                ("one.py", "three.py", "two.py"),
+            )
 
     def test_a_build_says_whether_it_parsed_or_restored_the_timetable(self) -> None:
         # On the real feed those are 55.6s and 2.6s, so the line that reports

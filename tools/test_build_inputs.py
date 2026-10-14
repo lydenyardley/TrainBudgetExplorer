@@ -33,13 +33,15 @@ class CoveredModulesTest(unittest.TestCase):
         self.assertGreater(len(seen), 5, "the build's imports were not followed")
 
     def test_the_page_and_the_reference_data_are_inputs(self) -> None:
-        # Neither is imported, so neither would be caught by the test above: the
-        # page's CSS and JS are inlined by page_templates, and the reference data
-        # is read as data. Every file under page/ is an input, because the
-        # station route's script is one file per panel there.
+        # None of these is imported, so none would be caught by the test above:
+        # the page's CSS and JS are inlined by page_templates, the reference data
+        # is read as data, and the brand mark is read and inlined into the footer
+        # of every page that carries the NRE credit. Every file under page/ is an
+        # input, because the station route's script is one file per panel there.
         names = {path.relative_to(build_inputs.ROOT).as_posix() for path in build_inputs.build_inputs()}
         page = {path.relative_to(build_inputs.ROOT).as_posix() for path in build_inputs.ROOT.glob("page/**/*") if path.is_file()}
         self.assertIn("reference-data/destination-facets.json", names)
+        self.assertIn("assets/powered-by-national-rail.svg", names)
         self.assertEqual(page - names, set(), "a file the page ships is not a build input")
 
 

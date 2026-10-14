@@ -51,7 +51,7 @@ from pathlib import Path
 # build that precedes it cannot name the file differently. No path insert: a
 # file at the repository root is importable from a script run and from a test
 # alike, which is the whole of what the insert was for.
-from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME
+from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME, SOURCE_FILES
 from build_workers import free_memory_bytes, worker_budget
 
 ROOT = Path(__file__).parent
@@ -234,21 +234,11 @@ def remove_unwritten_station_pages() -> list[str]:
     return removed
 
 
-# The files whose mtime decides whether _site/ is out of date. A build is a
-# function of the builder and its template, so those two decide it; the modules
-# they import decide it too, and a change to the fare maths that never reaches
-# the page is still a change to the page's numbers.
-BUILD_SOURCES = (
-    "build_demo_page.py",
-    "page_templates.py",
-    "atoc_fare_declarations.py",
-    "atoc_fares.py",
-    "atoc_restrictions.py",
-    "atoc_timetable.py",
-    "retailer.py",
-)
-
-
+# The files whose mtime decides whether _site/ is out of date: the build's own
+# list of what it reads, asked rather than repeated. This was a second hand-kept
+# tuple beside the build's, and the two drifted -- three modules every build
+# imports were named by neither -- so a fix to one of them left the runner
+# serving the pages from before it.
 def sources_are_newer() -> bool:
     """Is any source newer than the build this runner is about to serve?
 
@@ -263,7 +253,7 @@ def sources_are_newer() -> bool:
         built = manifest.stat().st_mtime
     except OSError:
         return False
-    for name in BUILD_SOURCES:
+    for name in SOURCE_FILES:
         source = ROOT / name
         try:
             if source.stat().st_mtime > built:
