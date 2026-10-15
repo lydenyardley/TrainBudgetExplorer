@@ -12,9 +12,9 @@ temporary directory and compares the result with the copy in the repository, so
 the failure lands in a pull request or in CI rather than in a build that
 classifies stations from a description of the registry that was true last month.
 
-    python tools/check_facet_reference.py
-    python tools/check_facet_reference.py --feed feeds/fares/dtd-fares.zip
-    python tools/check_facet_reference.py --keep-unavailable heritage
+    python -m tools.check_facet_reference
+    python -m tools.check_facet_reference --feed feeds/fares/dtd-fares.zip
+    python -m tools.check_facet_reference --keep-unavailable heritage
 
 Exit codes: 0 the checked-in copy matches the registry, 1 it differs and every
 difference is named, 2 a facet could not be read at all or the checked-in copy is
@@ -44,13 +44,10 @@ import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
-# Reach the project root whether run as `python tools/check_facet_reference.py`
-# (the README's way) or imported as tools.check_facet_reference (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import SUPPORTED_DESTINATION_FACETS  # noqa: E402
-from feeds_cli import add_feed_args  # noqa: E402
-from tools.regenerate_destination_facets import DEFAULT_FEED, build  # noqa: E402
+from atoc_fares import SUPPORTED_DESTINATION_FACETS
+from feeds_cli import add_feed_args
+from tools.regenerate_destination_facets import DEFAULT_FEED, build
 
 DEFAULT_REFERENCE = (
     Path(__file__).resolve().parent.parent / "reference-data" / "destination-facets.json"
@@ -219,7 +216,7 @@ def check(feed: Path, reference: Path, keep_unavailable: set[str]) -> int:
         stations = f", {result.moved} of them stations" if result.moved else ""
         print(
             f"{len(result.lines)} difference(s) against the registry{stations}: run "
-            "tools/regenerate_destination_facets.py and commit the result"
+            "python -m tools.regenerate_destination_facets and commit the result"
         )
         return 1
     records = len(regenerated.get("facets") or {})

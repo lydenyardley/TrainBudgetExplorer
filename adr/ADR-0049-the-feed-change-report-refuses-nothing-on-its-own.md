@@ -73,6 +73,6 @@ its reader to stop believing it.
 Read by running:
 
 ```bash
-python tools/feed_change_report.py --previous-feed feeds/previous --feed feeds/fares
+python -m tools.feed_change_report --previous-feed feeds/previous --feed feeds/fares
 python -m unittest tools.test_feed_change_report -v
 ```

@@ -23,6 +23,7 @@ from atoc_timetable import SliceIndex, TimetableDb
 from build_demo_page import (
     STATION_ASSET_NAME,
     build_payload,
+    places_in_payload,
     render_page,
     wants_nre_credit,
     with_base,
@@ -260,12 +261,20 @@ def worker_budget(cores: int | None = None, free_bytes: int | None = None) -> in
     return max(1, min(cores, MAX_WORKERS, affordable))
 
 
-def build_page_job(job: dict) -> tuple[str, str, str]:
+def build_page_job(job: dict) -> tuple[str, str, str, int]:
     """Build one station page from a config-only job.
 
     --all-origins is embarrassingly parallel: each origin's page depends only
     on the feed, the shared config, and its own origin. The worker returns the
     rendered HTML; the parent writes it.
+
+    It returns the places the page carries as well, because the page is the
+    only thing that knows: a place the feed prices in two fares is one of its
+    rows and no fare selector prices it before the page exists (ADR-0061). The
+    chooser's number comes from here rather than from a second walk in the
+    index pass -- measured on the real feed on 15 October 2026, that walk cost
+    3.0s for Grantham and 15.9s for Manchester Piccadilly, per origin, for a
+    number this function has already worked out.
     """
     origin_crs = job["crs"]
     fares = _WORKER["fares"]
@@ -326,4 +335,4 @@ def build_page_job(job: dict) -> tuple[str, str, str]:
         analytics=_WORKER["analytics"],
         nre_credit=wants_nre_credit(_WORKER["attribution"]),
     )
-    return job["slug"], job["origin_name"], html
+    return job["slug"], job["origin_name"], html, places_in_payload(payload)

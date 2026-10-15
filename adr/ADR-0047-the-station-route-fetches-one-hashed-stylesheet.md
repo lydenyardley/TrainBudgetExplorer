@@ -16,7 +16,7 @@ It was asked against the whole network. `python build_demo_page.py --feed
 feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out
 _cache/site_measure/index.html` wrote all 2,712 station pages plus the chooser
 and the privacy page in six minutes on eight workers, and
-`python tools/page_bytes.py --site _cache/site_measure` reports **583 MB of the
+`python -m tools.page_bytes --site _cache/site_measure` reports **583 MB of the
 800 MB budget**. The target is met with 217 MB to spare, so nothing *has* to
 move. What is left is a judgement about the shape of that headroom:
 

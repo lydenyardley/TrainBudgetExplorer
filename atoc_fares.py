@@ -109,6 +109,14 @@ from atoc_fare_declarations import (
     seaside_crs_missing_coastal_proofs,
     select_nearest_stations,)
 
+# The budget that means no budget, for the queries that ask "everything this
+# origin can reach" rather than "what is inside ten pounds". It lives beside
+# those queries because it is a bound on them: the caches, the provenance pass,
+# the page builder and the coverage report all ask the same question, and four
+# copies of the sentinel was four places for it to drift apart.
+EVERYTHING_PENCE = 1_000_000
+
+
 class FaresDb(FaresLoader):
     """Indexes the feed files that budget discovery reads."""
 

@@ -187,32 +187,38 @@ async function driveTheFilters(world) {
     );
     await checkChip("university", "a type this page offers is offered", "a university town is findable by the university facet");
     await checkChip("island", "a facet with no destination here offers no chip", "an island destination is findable by the island facet");
-    // A chip the payload says the page carries must be on screen, and one it
-    // does not must not be: the two directions are separate checks because
-    // they failed separately.
+    // A chip the page's list carries inside the budget must be on screen, and
+    // one it does not must not be: the two directions are separate checks
+    // because they failed separately. Both are read against the budget, because
+    // that is the rule the page offers a chip on -- a type whose only
+    // destinations are dearer than the budget is a chip that cannot succeed
+    // here, and is not offered.
     const carriedTypes = await page.evaluate(() => {
       const types = new Set();
-      for (const d of TYPES.list()) for (const type of TYPES.types(d)) types.add(type);
+      const affordable = new Set();
+      for (const d of TYPES.list()) {
+        for (const type of TYPES.types(d)) {
+          types.add(type);
+          if (d.adultPence <= TYPES.cap()) affordable.add(type);
+        }
+      }
       const chips = Array.from(document.querySelectorAll('input[name="destinationType"]'))
         .map((input) => input.value)
         .filter((value) => value !== "all");
       return {
         carried: [...types].sort(),
+        affordable: [...affordable].sort(),
         offered: chips.filter((value) => !document.querySelector(`input[name="destinationType"][value="${value}"]`).closest("label").hidden).sort(),
         rendered: chips.sort(),
       };
     });
-    // Both directions, because they are different promises: nothing is offered
-    // that no destination in this mode carries, and nothing carried is hidden.
-    // A type the template never renders is neither offered nor hidden, so it
-    // cannot fail the second half.
     check(
-      "the offered chips are the ones this mode's destinations carry",
+      "the offered chips are the ones this mode's budget can reach",
       carriedTypes.offered.every((type) => carriedTypes.carried.includes(type)) &&
         carriedTypes.rendered
-          .filter((type) => carriedTypes.carried.includes(type))
+          .filter((type) => carriedTypes.affordable.includes(type))
           .every((type) => carriedTypes.offered.includes(type)),
-      `offered ${carriedTypes.offered.join(", ")}; carried ${carriedTypes.carried.join(", ")}`
+      `offered ${carriedTypes.offered.join(", ")}; reachable ${carriedTypes.affordable.join(", ")}; carried ${carriedTypes.carried.join(", ")}`
     );
     await page.locator('.ticket-filter label').filter({ hasText: "Single" }).click();
     // An advance single is train-specific whatever the feed calls it, so the
@@ -375,20 +381,17 @@ async function driveTheFilters(world) {
         JSON.stringify(opened)
       );
       const chipValue = await page.evaluate(() => {
-        // A chip whose count is zero inside the current budget empties the
-        // list by design, and the page says so on the chip before the press.
-        // This check is about the disclosure keeping whatever the reader
-        // narrowed to, so it presses a chip that has something to narrow to;
-        // a page where no chip does is reported rather than failed.
+        // A chip is offered only when a destination of its type is inside the
+        // budget, so the visible chips are the ones with rows behind them. The
+        // budget is still opened to the ceiling before falling back: a page
+        // whose every destination carries no type at all offers no chip, and
+        // then the check reports that there was nothing to press rather than
+        // failing.
         const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
         const chipsWithRows = () => boxes.filter((box) => {
           const count = document.querySelector(`[data-count-for="${box.value}"]`);
           return count && Number(count.textContent.replace(/\D/g, "")) > 0;
         });
-        // The cheapest budget can leave every chip at (0): on Bentham the two
-        // rows under £5 are both "other", so the first chip was pressed with
-        // nothing behind it and the list emptied, as the chip had said it
-        // would. The budget is opened to the ceiling before falling back.
         let withRows = chipsWithRows();
         if (!withRows.length) {
           setBudget(budgetCeiling());
@@ -656,6 +659,14 @@ async function driveTheFilters(world) {
     if (chipInMode.length) {
       const chip = chipInMode[0];
       await page.locator(`input[name="ticketMode"][value="${chip.home}"]`).check({ force: true });
+      // The budget is this mode's own ceiling before the chip is pressed.
+      // A chip is offered on the budget on screen, and switching ticket mode
+      // re-clamps the budget to the new list, so the mode a facet belongs to is
+      // not necessarily a mode whose budget reaches it -- on the demo page
+      // `single` clamps to the cheapest singles and the small-town chip the
+      // payload carries is no longer offered, which makes pressing it a 30 s
+      // wait rather than a failure anybody can read (15 October 2026).
+      await page.evaluate(() => { setBudget(budgetCeiling()); render(); });
       await page.check(`input[name="destinationType"][value="${chip.value}"]`);
       await page.locator(`input[name="ticketMode"][value="${chip.away}"]`).check({ force: true });
       const notice = ((await page.textContent("#facetNotice").catch(() => "")) || "").trim();

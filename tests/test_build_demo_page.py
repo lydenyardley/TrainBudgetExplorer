@@ -21,6 +21,7 @@ import io
 from pathlib import Path
 import argparse
 import build_demo_page
+import build_state
 from atoc_fares import FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, explain_unpriced, render_page
@@ -978,17 +979,22 @@ class DemoPageTest(PageTestCase):
         # render, and it names the party that ceiling was resolved for, because
         # "£252.00" is not a budget until the page says whose it is.
         script = page_script(self.html)
-        render = js_function(script, "render")
-        self.assertIn("budgetCeilingNote", render)
-        # The note names whose budget the figure is: two words for the party
-        # the reader chose, on a sentence the build cannot write once because
-        # it does not know the party. Which one a reader sees, that the figure
-        # matches the control's own stop, and that the note is written after
-        # the ceiling is resolved rather than before an early return that would
-        # leave a stale figure on an emptied list, are read off the rendered
-        # page by the browser suite.
-        self.assertIn('"two adults"', render)
-        self.assertIn('"one adult"', render)
+        # The note is written where the ceiling is resolved, which is the
+        # budget's own clamp: the clamp is what sets the control's max, and the
+        # chip rule asks it for the same number, so a note in the render would
+        # be a second reader of a fact this panel already holds. The party
+        # wording is there with it, because £252.00 is not a budget until
+        # the page says whose it is.
+        clamp = js_function(script, "clampBudget")
+        self.assertIn("budgetCeilingNote", clamp)
+        self.assertIn('"two adults"', clamp)
+        self.assertIn('"one adult"', clamp)
+        # That the clamp runs on every render, ahead of the empty states, is a
+        # statement of the page's script and this suite does not assert those
+        # (`tests/test_test_suite_shape.py`): what a reader can lose is the
+        # sentence itself, and `tests/browser/station-filters.cjs` holds it,
+        # reading the stated stop against the control's own max in the empty
+        # state and again after the party changes.
         self.assertIn('id="budgetCeiling"', page_markup(self.html))
 
     def test_a_script_tag_in_the_data_cannot_close_the_script_early(self) -> None:
@@ -1381,7 +1387,38 @@ class TwoPartRowTest(unittest.TestCase):
         }
         texts = {payload["railcardRules"][rule]["text"] for rule in pair_ids}
         self.assertEqual(len(pair_ids), len(texts), "one record per distinct rule")
+
         self.assertLess(yng["pricePence"], leicester["adultPence"])
+
+    def test_the_page_carries_more_places_than_the_selectors_price(self) -> None:
+        # Two numbers, two questions. The index pass asks the fare selectors'
+        # union, which is whether an origin can answer at all and which stations
+        # the chooser offers (ADR-0019 decision 3); the chooser then *names* the
+        # places the page carries, and that is a bigger number here, because
+        # Leicester and Skegness are priced as two fares and no selector sees
+        # them (ADR-0061). Measured on the real feed on 15 October 2026, the gap
+        # was 50 places against 334 for Grantham -- a number a reader arriving
+        # from the chooser had been mis-told by a factor of seven.
+        payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
+        carries = {
+            row["crs"]
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in payload[key]
+        }
+        union = {
+            row.crs
+            for row in self.fares.priced_destinations_within(
+                "GRN", build_demo_page.EVERYTHING_PENCE, adults=1, day=self.MONDAY
+            )
+        }
+        self.assertEqual(build_demo_page.places_in_payload(payload), len(carries))
+        self.assertEqual(
+            build_demo_page._priced_destinations(self.fares, self.timetable, "GRN", self.MONDAY),
+            len(union),
+        )
+        # And the fixture is the shape that catches the two being confused,
+        # rather than a page whose numbers happened to agree.
+        self.assertLess(len(union), len(carries))
 
     def test_the_pair_is_the_journeys_own_and_not_the_cheapest(self) -> None:
         # Skegness's journey changes at Lincoln, so it is quoted the Lincoln
@@ -1495,7 +1532,7 @@ class TwoPartRowTest(unittest.TestCase):
             "--date", self.MONDAY.isoformat(), "--out", str(out),
         ]
         pages = []
-        with mock.patch.object(build_demo_page, "CACHE_DIR", cache):
+        with mock.patch.object(build_state, "CACHE_DIR", cache):
             for _ in range(2):
                 said = io.StringIO()
                 with contextlib.redirect_stdout(said):

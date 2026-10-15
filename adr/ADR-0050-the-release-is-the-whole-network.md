@@ -102,7 +102,7 @@ python _cache/origin_spread.py feeds/fares
 python run.py --all-origins
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
   --all-origins --workers 3 --out _cache/net_probe/index.html --notices nre,rdg,ogl,accuracy
-python tools/page_bytes.py --site _cache/net_probe
+python -m tools.page_bytes --site _cache/net_probe
 ```
 
 ## Amendment — 12 October 2026: the 498 MB figure is prices-only, and the build shards

@@ -22,16 +22,13 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from tools import measure_build_memory, measure_worker_pages  # noqa: E402
+from tools import measure_build_memory, measure_worker_pages
 
 
 class MemoryReadingTest(unittest.TestCase):

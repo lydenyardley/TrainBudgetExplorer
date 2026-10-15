@@ -91,7 +91,7 @@ a reviewed list, and only a person can say a reserve is worth a destination
 category.
 
 ```
-python tools/propose_nature_stations.py   --url https://www.wildlifetrusts.org/nature-reserves   --allow-host essexwt.org.uk --allow-host ywt.org.uk
+python -m tools.propose_nature_stations   --url https://www.wildlifetrusts.org/nature-reserves   --allow-host essexwt.org.uk --allow-host ywt.org.uk
 ```
 
 
@@ -122,7 +122,7 @@ zones, four coach stops — and it also reports the other direction, a reviewed
 code that no longer matches any name, which is what a withdrawn zone looks like.
 
 ```
-python tools/propose_fare_construction_stations.py --feed feeds/fares
+python -m tools.propose_fare_construction_stations --feed feeds/fares
 ```
 
 
@@ -291,7 +291,7 @@ download. `tools/inspect_knowledgebase.py` is how you check it:
 
 ```
 python dtd_download.py --output-root feeds --kb-only   # needs NRDP credentials
-python tools/inspect_knowledgebase.py feeds/knowledgebase
+python -m tools.inspect_knowledgebase feeds/knowledgebase
 ```
 
 It prints every element name in the feed with its count, depth and a sample of
@@ -574,7 +574,7 @@ Commits follow Conventional Commits 1.0.0. `CONTRIBUTING.md` holds the rules,
 and `tools/check_commit_message.py` checks a message against them.
 
 ```
-git log -1 --format=%B | python tools/check_commit_message.py
+git log -1 --format=%B | python -m tools.check_commit_message
 ```
 
 ## The demo page
@@ -771,8 +771,8 @@ Neither seller's link is currently known to land on a search. To see that stated
 rather than claimed:
 
 ```
-python tools/check_links.py --origin GRA --destination NOT
-python tools/check_links.py --provider trainline --mode fallback
+python -m tools.check_links --origin GRA --destination NOT
+python -m tools.check_links --provider trainline --mode fallback
 ```
 
 The checker can prove a link is broken and cannot prove one works, so a `blocked`
@@ -826,10 +826,10 @@ into the ADRs came with their command and keep it:
 
 | Figure | Command |
 |---|---|
-| a page split into stylesheet, script and inline payload, the bytes every page repeats, a folder totalled against the 800 MB target | `python tools/page_bytes.py --site _site` |
-| the whole network, measured against that target: 2,712 pages and 498 MB of 800 MB, or 583 MB before the stylesheet became a shared document | `python build_demo_page.py --feed feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html` then `python tools/page_bytes.py --site _cache/site_measure` |
+| a page split into stylesheet, script and inline payload, the bytes every page repeats, a folder totalled against the 800 MB target | `python -m tools.page_bytes --site _site` |
+| the whole network, measured against that target: 2,712 pages and 498 MB of 800 MB, or 583 MB before the stylesheet became a shared document | `python build_demo_page.py --feed feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html` then `python -m tools.page_bytes --site _cache/site_measure` |
 | unclassified destinations, the worst origins by share, and the rows the feed cannot name at all | `python destination_coverage.py --feed feeds/fares` |
-| what a new feed download changed against the one the published pages were built from | `python tools/feed_change_report.py --previous-feed feeds/previous --feed feeds/fares` |
+| what a new feed download changed against the one the published pages were built from | `python -m tools.feed_change_report --previous-feed feeds/previous --feed feeds/fares` |
 | the browser suite over the published routes, with its not-exercised count | `npx --yes --package playwright node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
 | which routes this release actually wrote | `_site/release-manifest.json` |
 | a station's own rows, its three lists and its prices | the payload in the built page, which the suite reads as `DATA` |
@@ -1130,11 +1130,17 @@ not read the record, so the real-feed path can be built, tested and opened
 locally with no clearance in sight.
 
 ```
-python tools/check_release_clearance.py --release fares   # what may be published
-python tools/check_release_clearance.py --print          # blocks to fill in
+python -m tools.check_release_clearance --release fares   # what may be published
+python -m tools.check_release_clearance --print          # blocks to fill in
 ```
 
 ## Run it
+
+**What it runs on:** Python 3, standard library only -- there is no
+`requirements.txt` and nothing to install. The version is pinned in
+`.python-version` (3.12, what every workflow uses), and the code is written to
+3.12: it also runs unchanged on 3.13 and 3.14, which is what a developer machine
+here has, but 3.12 is the version a change has to work on.
 
 **To open the app on this machine:** double-click `run.bat` (Windows), or run
 
@@ -1199,7 +1205,7 @@ it off for prices only.
 per-origin slices once and point builds at them:
 
 ```
-python tools/build_timetable_index.py --timetable feeds/timetable --origins GRA,NOT
+python -m tools.build_timetable_index --timetable feeds/timetable --origins GRA,NOT
 python build_stations.py GRN --timetable-index _cache/timetable-index
 ```
 
@@ -1263,8 +1269,8 @@ To question a count, and to break a feed on purpose:
 
 ```
 python sanity_report.py --feed _demo_feed --timetable _demo_feed --origin GRN --budget 20
-python tools/check_slice_equivalence.py --timetable _demo_feed --days 1 --probe 3
-python tools/check_slice_equivalence.py --timetable _demo_feed --days 1 --progress _cache/demo-equivalence.json --shard 1/4   # then --merge 4
+python -m tools.check_slice_equivalence --timetable _demo_feed --days 1 --probe 3
+python -m tools.check_slice_equivalence --timetable _demo_feed --days 1 --progress _cache/demo-equivalence.json --shard 1/4   # then --merge 4
 python damage_feed.py --list
 python damage_feed.py _demo_feed _damaged crlf
 python damage_feed.py _demo_feed _damaged truncated_record --target ffl

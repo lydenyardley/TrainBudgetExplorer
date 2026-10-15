@@ -31,7 +31,7 @@ checks the clearance digest against the manifest.
    PDF; for the DTD route it is the account subscription and the current DTD/NRE
    terms, neither of which is a file in this folder.
 2. Work through `docs/publish-checklist.md` §1 and record the answers here.
-3. `python tools/check_release_clearance.py --print` prints a block per product
+3. `python -m tools.check_release_clearance --print` prints a block per product
    with the licence digest already filled in. Paste it, change `state` from
    `excluded` to `cleared`, and answer `answer`, `read on`, `approved by`,
    `approved on` and `expires`.

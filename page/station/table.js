@@ -88,9 +88,14 @@ function render() {
   // is composed after this and not before it.
   syncRailcardParty();
   const available = activeDestinations();
+  // The budget's stop first, because a chip is offered only when this budget
+  // can reach a destination of its type. clampBudget returns the reader's own
+  // budget for an empty list, so the two empty states below still keep it.
+  const cap = clampBudget(available);
   // Before the filter is read, not after: a chip the active list cannot support
-  // must not be part of what the filter is asked to match.
-  syncDestinationTypeChips();
+  // inside this budget must not be part of what the filter is asked to match,
+  // and a chip that goes away must not stay checked halfway through the read.
+  syncDestinationTypeChips(available, cap);
   // An unpriced page has no budget conversation: provenance() has already
   // stood the controls and the table down, and anything this function wrote
   // ("Nothing inside this budget") would contradict the page's own first
@@ -121,17 +126,6 @@ function render() {
     renderShortlist();
     return;
   }
-  const ceiling = budgetCeiling();
-  budget.max = String(ceiling);
-  budgetNumber.max = String(ceiling);
-  // The stop is part of the budget's contract, so it is named where the
-  // reader is holding the control, and it is named as a figure rather
-  // than a rule: the sentence above the number is what changes, the number
-  // is what the reader can predict a boundary fare against.
-  budgetCeilingNote.textContent = money(ceiling * 100) + " for "
-    + (unit() === "party" ? "two adults" : "one adult");
-  if (Number(budget.value) > ceiling) setBudget(ceiling);
-  const cap = Number(budget.value) * 100;
   const wantedTypes = selectedDestinationTypes();
   // C17: the three fare arrays arrive sorted once by the standard fare. The
   // price on screen is not always that fare -- choosing two adults doubles it,
@@ -188,7 +182,11 @@ function render() {
   // stays empty rather than implying the budget filtered something out.
   summary.textContent = available.length && wanted.length
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + basis + order + mix
-    : available.length ? "No destinations for up to " + money(cap) + " " + basis : "";
+    // An empty list names what emptied it. The paragraph below the table has
+    // said so since S28; this line -- the first thing a reader reads after
+    // dragging the budget -- said only that there was nothing, while the chip
+    // that caused it sat inside the folded refinements.
+    : available.length ? "No destinations for up to " + money(cap) + " " + basis + typeLabel() : "";
   empty.hidden = wanted.length > 0;
   renderEmpty(available, wanted, cap, basis);
   more.hidden = true;

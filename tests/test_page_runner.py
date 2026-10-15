@@ -23,7 +23,10 @@ import io
 from pathlib import Path
 import argparse
 
+import build_assets
 import build_demo_page
+import build_pool
+import build_state
 import build_workers
 import run
 from atoc_fares import FLOW_T, FaresDb
@@ -391,8 +394,11 @@ class AllOriginsCliTest(unittest.TestCase):
         self.build()
         site = self.out.parent
         renamed = "station-feedfacecafe.js"
+        # Patched where the name is read: the asset name is a digest of the
+        # script's own bytes, and every module that names it asks build_assets
+        # for it, so one patch is the release's new name everywhere (ADR-0071).
         with mock.patch.object(
-            build_demo_page, "station_script_asset_name", return_value=renamed
+            build_assets, "station_script_asset_name", return_value=renamed
         ):
             second = self.build()
         self.assertNotIn("pages rewritten: 0", second)
@@ -450,7 +456,10 @@ class AllOriginsCliTest(unittest.TestCase):
         # The merge writes the assets of the code it runs; shards from another
         # revision name assets it never writes.
         shards = self._shards()
-        with mock.patch.object(build_demo_page, "source_fingerprint", return_value="0" * 16):
+        # `build_pool` is where the merge reads this name, so patching the
+        # module that defines it would leave the merge comparing the real
+        # fingerprint against itself and the test passing for no reason.
+        with mock.patch.object(build_pool, "source_fingerprint", return_value="0" * 16):
             code, said = self._merge(shards)
         self.assertEqual(code, 2)
         self.assertIn("different revision", said)
@@ -1058,8 +1067,10 @@ class WorkerBudgetTest(unittest.TestCase):
         by slicing the text, because the text of a 3,000-line module offers far
         too many places to start from and none of them are the right one.
         """
+        # `build_pool` is where the builder's phases live since the split
+        # (ADR-0071); the command above them is what build_demo_page.py holds.
         tree = ast.parse((pathlib.Path(__file__).resolve().parent.parent
-                          / "build_demo_page.py").read_text(encoding="utf-8"))
+                          / "build_pool.py").read_text(encoding="utf-8"))
         found = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.If)

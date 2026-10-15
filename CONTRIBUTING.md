@@ -76,7 +76,7 @@ command whose output a reviewer can reproduce.
 ## Check a message
 
 ```
-git log -1 --format=%B | python tools/check_commit_message.py
+git log -1 --format=%B | python -m tools.check_commit_message
 python -m unittest discover -s tools -p "test_commit_message*.py"
 ```
 
@@ -90,9 +90,9 @@ worse trade than a linter the older history is honestly outside of.
 ## Run the tests
 
 ```
-python tools/verify.py --fast      # the unit suites minus the feed-scale tests, and the page's JavaScript parsed
-python tools/verify.py --full      # every unit test, which is what the deploy workflow runs
-python tools/verify.py --browser   # the demo and shape builds, then the Playwright suite
+python -m tools.verify --fast      # the unit suites minus the feed-scale tests, and the page's JavaScript parsed
+python -m tools.verify --full      # every unit test, the type check, which is what the deploy workflow runs
+python -m tools.verify --browser   # the demo and shape builds, then the Playwright suite
 ```
 
 The two discoveries that make up the full run, which CI also runs:
@@ -101,3 +101,17 @@ The two discoveries that make up the full run, which CI also runs:
 python -m unittest discover -s tests -p "test_*.py"
 python -m unittest discover -s tools -p "test_*.py"
 ```
+
+`--full` also runs the type check, so it wants `mypy`
+(`python -m pip install mypy`); `--fast` does not, and reports the step as
+`not run` rather than failing when it is missing.
+
+## The annotations and the suppressions are checked
+
+`python -m tools.check_types` runs mypy over the files whose own type errors are
+already zero and fails on a new one, and `--all` prints the census (350 errors in
+29 of the 70 files, measured 15 October 2026) without failing on any of them.
+ADR-0072 says why it is a ratchet over the clean files rather than `--strict`
+over the tree. `tests/test_suppressions.py` holds the other half: every `# noqa`
+names its cause, on its own line or in the comment block above it, so a
+suppression nobody can explain fails the suite instead of living in a table.

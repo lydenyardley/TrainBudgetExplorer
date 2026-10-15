@@ -198,7 +198,7 @@ def one_round(feed: Path, work: Path, rng: random.Random, number: int, seed: int
     except KeyError:
         # The round removed the origin. That is a legitimate outcome, not a bug.
         return result
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001 - any escape is the finding
         result.violations.append(f"querying raised {type(error).__name__}: {error}")
         return result
 
@@ -308,7 +308,7 @@ def check_timetable(feed: str | Path) -> list[str]:
     db = TimetableDb()
     try:
         db.load_feed(feed)
-    except Exception as error:  # noqa: BLE001
+    except Exception as error:  # noqa: BLE001 - any escape is the finding
         return [f"loading the timetable raised {type(error).__name__}: {error}"]
     return timetable_violations(db)
 

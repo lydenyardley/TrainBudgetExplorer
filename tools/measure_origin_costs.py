@@ -9,7 +9,17 @@ the phases -- the slice cut, the day index, the reachability search -- per
 origin, through the functions the build calls, and prints the shape rather
 than the mean.
 
-    python tools/measure_origin_costs.py --origins AAT,ABA,AAP
+    python -m tools.measure_origin_costs --origins AAT,ABA,AAP
+
+With ``--priced-count`` it also builds one origin's page and prints the two
+numbers beside each other: the places the fare selectors price, which is the
+question the index pass asks (``_priced_destinations``), and the places the page
+carries, which is the number the chooser shows (``places_in_payload``). The gap
+between them is the places the feed prices as two fares (ADR-0061), and the page
+time is what closing that gap in the index pass would cost -- it does not, and
+this is the measurement behind that.
+
+    python -m tools.measure_origin_costs --origins GRA,KGX,MAN --priced-count
 """
 
 from __future__ import annotations
@@ -22,10 +32,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from atoc_timetable import TimetableDb  # noqa: E402
+import build_demo_page
+from atoc_timetable import TimetableDb
 
 #: The service week the build searches, as days past the service date. Eight
 #: days, because the build walks SERVICE_WEEK_HORIZON + 1 past its day, and a
@@ -67,6 +76,40 @@ def time_origin(timetable: TimetableDb, origin: str, days: list[date], max_chang
     }
 
 
+def time_count(fares, timetable, origin: str, day: date, max_changes: int) -> dict:
+    """The two numbers one origin has, and what each of them costs.
+
+    The index pass asks ``_priced_destinations`` -- the fare selectors' union --
+    to decide whether an origin can answer at all (ADR-0019 decision 3), and the
+    page the build writes carries more places than that: a place the feed prices
+    in two fares is a row the page has and no selector sees (ADR-0061). The
+    number the chooser shows is therefore read off the page
+    (``places_in_payload``), and this times the page to show what that reading
+    costs when it is done as a second pass instead. Measured 15 October 2026,
+    real feed: Grantham's union was **50** places and its page **334**, King's
+    Cross 206 and 535, Manchester Piccadilly 287 and 427 -- and the walk that
+    closes the gap costs 3.0s, 12.9s and 15.9s per origin, against a release
+    share of about 450 origins that already takes 87 to 114 minutes inside a
+    150-minute timeout. That is why the count comes from the page.
+    """
+    start = time.perf_counter()
+    union = fares.priced_destinations_within(
+        origin, build_demo_page.EVERYTHING_PENCE, adults=1, day=day
+    )
+    union_seconds = time.perf_counter() - start
+    start = time.perf_counter()
+    payload = build_demo_page.build_payload(
+        fares, timetable, origin, max_changes=max_changes, day=day
+    )
+    return {
+        "origin": origin,
+        "union": len(union),
+        "places": build_demo_page.places_in_payload(payload),
+        "union_seconds": union_seconds,
+        "page_seconds": time.perf_counter() - start,
+    }
+
+
 def distribution(rows: list[dict]) -> dict:
     """Mean, median, ninetieth percentile and maximum of the per-origin totals."""
     totals = sorted(row["total"] for row in rows)
@@ -93,6 +136,11 @@ def main(argv: list[str] | None = None) -> int:
                              "Defaults to today.")
     parser.add_argument("--max-changes", type=int, default=1,
                         help="the journey search's change limit, as the build takes it")
+    parser.add_argument("--priced-count", action="store_true",
+                        help="also build one page per origin, and print the places "
+                             "the selectors price beside the places the page carries")
+    parser.add_argument("--fares", default=None, type=Path,
+                        help="fares feed folder, for --priced-count; defaults to feeds/fares")
     args = parser.parse_args(argv)
 
     feed = args.feed or (ROOT / "feeds" / "timetable")
@@ -127,6 +175,26 @@ def main(argv: list[str] | None = None) -> int:
           f"max {shape['max']:.2f}s per origin for the timetable half")
     print(f"the most expensive origin costs "
           f"{shape['max'] / max(shape['mean'], 1e-9):.1f}x the mean")
+
+    if args.priced_count:
+        fares_folder = args.fares or (ROOT / "feeds" / "fares")
+        if not fares_folder.exists():
+            print(f"no fares feed at {fares_folder}", file=sys.stderr)
+            return 2
+        print("", flush=True)
+        for origin in origins:
+            # Loaded outside the timings: a page build loads the feed once for
+            # the whole run, so a load inside the timer would report a cost the
+            # index pass does not pay.
+            started = time.perf_counter()
+            fares = build_demo_page.load_page_fares(fares_folder, origin).fares
+            loaded = time.perf_counter() - started
+            row = time_count(fares, timetable, origin, day, args.max_changes)
+            print(f"  {row['origin']}: {row['union']} places from the selectors, "
+                  f"{row['places']} the page carries, "
+                  f"union {row['union_seconds']:.2f}s, "
+                  f"page {row['page_seconds']:.2f}s "
+                  f"(fares loaded in {loaded:.1f}s, outside the timings)", flush=True)
     return 0
 
 

@@ -69,7 +69,11 @@
      together. The destination chips take the full width under them,
      because half of that row wraps every chip onto two lines. */
   .more-filters[data-open="true"] .destination-filter { grid-column: 1 / -1; }
-  .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .72rem;
+  /* .75rem is the floor for type on this page: the uppercase labels were
+     .72rem (11.52px), the smallest text on a page whose body is 16px, and the
+     letter-spacing carries the small-caps effect without taking the size
+     below what a reader can comfortably read. */
+  .filter-bar legend, .filter-label { display: block; margin-bottom: .5rem; font-size: .75rem;
                                       text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .filter-options { display: flex; flex-wrap: wrap; gap: .45rem; }
   /* C23: these three families were 36px, below the 44px the row actions are
@@ -277,7 +281,7 @@
   #typeRule { display: block; margin: .35rem 0 0; }
   #clearTypes { margin-top: .35rem; }
   /* S19: the condition is the sentence; the record is folded under it. */
-  .feed-record { margin-top: .2rem; font-size: .72rem; }
+  .feed-record { margin-top: .2rem; font-size: .75rem; }
   .feed-record summary { display: inline-flex; align-items: center; min-height: 24px;
                          cursor: pointer; color: var(--muted); }
   .feed-record dl { margin: .2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 .4rem; }
@@ -297,7 +301,7 @@
      compare rather than a result set to scan, and it sits directly above the
      table so that the place a reader just added appears in the same view as
      the control they added it with. */
-  .shortlist-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+  .shortlist-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em;
                      color: var(--muted); font-weight: 700; }
   /* The hold column is one narrow cell at the left of the row, and it is
      deliberately not the last, so the rule that keeps the ticket action on one
@@ -367,7 +371,7 @@
      cells and a forced left alignment, so PRICE, TIME and CHANGES sat to
      the left of the figures underneath them. The shared rules already
      align a heading and a cell the same way, so the dock states neither. */
-  #shortlistDock th { font-size: .72rem; }
+  #shortlistDock th { font-size: .75rem; }
   #shortlistDock th, #shortlistDock td { padding: .28rem .4rem; }
   #shortlistDock td { border-bottom: 1px solid var(--line); }
   #shortlistDock td.num { text-align: right; }
@@ -403,7 +407,7 @@
      the heading's own measure and no wider: it is a list of names and codes,
      and a column of links 24rem wide in a 78rem page reads as a sidebar. */
   #originPicker { margin: .4rem 0 1rem; max-width: 34rem; }
-  .origin-picker-label { margin: 0 0 .3rem; font-size: .72rem;
+  .origin-picker-label { margin: 0 0 .3rem; font-size: .75rem;
                          text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   #originPicks { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto;
                  border-top: 1px solid var(--line); }

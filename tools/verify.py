@@ -9,10 +9,10 @@ checkout cannot run at all (F5 of the 8 October 2026 agent-efficiency audit).
 This is that entry point, written in Python so the same command covers a
 developer's machine and the release.
 
-    python tools/verify.py --fast      both unit suites minus the feed-scale tests, and the page's JavaScript parsed
-    python tools/verify.py --full      every unit test, and the page's JavaScript parsed
-    python tools/verify.py --browser   a synthetic feed, the demo and shape builds, then the browser suite
-    python tools/verify.py --all       --full, then --browser
+    python -m tools.verify --fast      both unit suites minus the feed-scale tests, and the page's JavaScript parsed
+    python -m tools.verify --full      every unit test, the type check, and the page's JavaScript parsed
+    python -m tools.verify --browser   a synthetic feed, the demo and shape builds, then the browser suite
+    python -m tools.verify --all       --full, then --browser
 
 `--browser` drives the pages CI drives, built from the synthetic feed with the
 same commands, and adds the pages a built site already has at `_site` when they
@@ -34,11 +34,6 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# `python tools/verify.py` puts tools/ on the path, not the directory this
-# repository's modules live in, and every test module under tests/ imports those
-# by bare name. Without this the whole suite loads as 16 failed imports.
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 #: The tests that read the licensed national feed. Two of them are 58 s and 49 s
 #: of the fares module's 200 s, measured on 8 October 2026 with `python -m
@@ -150,6 +145,23 @@ def javascript() -> Step:
     return step.done(True, f"{len(files)} file(s)")
 
 
+def types() -> Step:
+    """The type-check ratchet (item 4 of the 14 October 2026 engineering audit).
+
+    Run with `--full` and not with `--fast`: it needs mypy installed, and a
+    developer's fast loop should not stop on a dependency they have not
+    installed. CI installs it for the full run and for the check itself.
+    """
+    step = Step("types")
+    result = subprocess.run(
+        [sys.executable, "-m", "tools.check_types"], cwd=ROOT, capture_output=True, text=True
+    )
+    detail = (result.stdout + result.stderr).strip().splitlines()
+    if result.returncode == 2:
+        return step.done(None, detail[-1] if detail else "mypy is not installed")
+    return step.done(result.returncode == 0, detail[-1] if detail else "")
+
+
 def _run(command: list[str], what: str) -> bool:
     print(f"  $ {' '.join(command)}", flush=True)
     result = subprocess.run(command, cwd=ROOT)
@@ -228,7 +240,7 @@ def browser() -> Step:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fast", action="store_true", help="the unit suites minus the feed-scale tests")
-    parser.add_argument("--full", action="store_true", help="every unit test")
+    parser.add_argument("--full", action="store_true", help="every unit test, and the type check")
     parser.add_argument("--browser", action="store_true", help="the demo and shape builds, then the browser suite")
     parser.add_argument("--all", action="store_true", help="--full, then --browser")
     args = parser.parse_args(argv)
@@ -241,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.fast or args.full or args.all:
         steps.append(unit(fast=args.fast and not (args.full or args.all)))
         steps.append(javascript())
+        if not (args.fast and not (args.full or args.all)):
+            steps.append(types())
     if args.browser or args.all:
         steps.append(browser())
     for step in steps:

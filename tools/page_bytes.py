@@ -16,8 +16,8 @@ number is the one the release turns on: it is the ceiling on what a shared asset
 could ever save, and it is only real for parts that are equal in *every* page
 measured, so a stylesheet one page renders differently is that page's own.
 
-    python tools/page_bytes.py _site/index.html _site/from/grantham/index.html
-    python tools/page_bytes.py --site _site --budget-mb 800
+    python -m tools.page_bytes _site/index.html _site/from/grantham/index.html
+    python -m tools.page_bytes --site _site --budget-mb 800
 
 **What this tool cannot know.** It cannot measure a page that was never built,
 and it cannot see a host's own limit. `--budget-mb` is the number this project

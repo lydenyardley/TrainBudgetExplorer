@@ -14,9 +14,9 @@ memory for the national index needs: no parse, no 1.87 GB held beside the fares
 feed, and the same pages, because the slice is the same slice the feed would
 have been cut down to.
 
-    python tools/build_timetable_index.py --timetable feeds/timetable \\
+    python -m tools.build_timetable_index --timetable feeds/timetable \\
         --origins GRA,NOT
-    python tools/build_timetable_index.py --timetable feeds/timetable \\
+    python -m tools.build_timetable_index --timetable feeds/timetable \\
         --origins GRA,NOT --root _cache/timetable-index
 
 Exit codes: 0 every named origin is in the index now, 1 some could not be
@@ -44,15 +44,12 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-import time
 from pathlib import Path
+import time
 
-# Reach the project root whether run as `python tools/build_timetable_index.py`
-# (the README's way) or imported as tools.build_timetable_index (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex, TimetableDb  # noqa: E402
-from build_demo_page import (  # noqa: E402
+from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex, TimetableDb
+from build_demo_page import (
     TIMETABLE_INDEX_ROOT,
     timetable_index_location,
 )

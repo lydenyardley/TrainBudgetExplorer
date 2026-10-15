@@ -90,7 +90,7 @@ jobs:
           for sha in $(git rev-list "$BEFORE"..HEAD); do
             git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
             CHECKED=$((CHECKED + 1))
-            if ! python tools/check_commit_message.py "$RUNNER_TEMP/commit-message.txt"; then
+            if ! python -m tools.check_commit_message "$RUNNER_TEMP/commit-message.txt"; then
               echo "::error title=commit message::$(git log -1 --format=%s "$sha")"
               FAILED=1
             fi
@@ -112,7 +112,7 @@ jobs:
         # download, and the page's JavaScript parsed. A push that cannot pass
         # this should not spend five minutes downloading feeds to find out, and
         # the same command runs on a developer's machine (F5).
-        run: python tools/verify.py --fast
+        run: python -m tools.verify --fast
 
       - name: Restore the last successful feed manifest
         uses: actions/cache/restore@v4
@@ -168,7 +168,7 @@ jobs:
           # changed input of eight of the last 150 commits, so a fix could wait
           # for something else to trigger a rebuild (F4 of the 8 October 2026
           # agent-efficiency audit).
-          INPUTS=$(python tools/build_inputs.py --fingerprint)
+          INPUTS=$(python -m tools.build_inputs --fingerprint)
           # Compare what the feeds ARE, not the bytes of the manifest file. The
           # manifest also records when a download was last *checked*, and that
           # moves on every run -- including a run where the portal answered 304
@@ -252,7 +252,7 @@ jobs:
         # station count and fails here. That is the intended reading and not a
         # false alarm: the file describes the feed it was generated from, and a
         # station the file has never seen is a station the release tags from an
-        # older list. The fix is `python tools/regenerate_destination_facets.py`
+        # older list. The fix is `python -m tools.regenerate_destination_facets`
         # and a commit, in a pull request, with the per-facet counts in front of
         # a person.
         #
@@ -271,7 +271,7 @@ jobs:
             echo "::error title=facet reference::reference-data/destination-facets.json is not in this checkout"
             exit 1
           fi
-          python tools/check_facet_reference.py --feed feeds/fares/dtd-fares.zip
+          python -m tools.check_facet_reference --feed feeds/fares/dtd-fares.zip
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then
@@ -328,7 +328,7 @@ jobs:
         # real feed at this checkout, which is why it runs before the build
         # rather than after it -- a refusal here costs a parse and a refusal
         # after the build costs both.
-        run: python tools/check_fare_rate.py --feed feeds/fares/dtd-fares.zip --timetable feeds/timetable
+        run: python -m tools.check_fare_rate --feed feeds/fares/dtd-fares.zip --timetable feeds/timetable
 
 
   # The whole-network build, split across runners. One runner wrote 1,821 of
@@ -643,7 +643,7 @@ jobs:
         # counts routes, the journey check counts fields, and every one of
         # them is still satisfied by a release twice the size. This is the one
         # step that reads the bytes, and it refuses on its own.
-        run: python tools/page_bytes.py --site _site
+        run: python -m tools.page_bytes --site _site
 
       - name: Check the release manifest
         # S07: the release is a set of routes, written beside the pages and
@@ -703,7 +703,7 @@ jobs:
           echo "every station page carries journey times"
 
       - name: Test the build
-        # `tools/verify.py --full` is the whole suite in the same command a
+        # `python -m tools.verify --full` is the whole suite in the same command a
         # developer runs, so a green run here and a green run there mean the
         # same thing (F5 of the 8 October 2026 agent-efficiency audit).
         # Coverage runs with a floor, not a target (audit C5): unreachable
@@ -713,8 +713,8 @@ jobs:
         # lives here next to the number it holds, and lowering it needs a
         # reason.
         run: |
-          python -m pip install coverage
-          python -m coverage run tools/verify.py --full
+          python -m pip install coverage mypy
+          python -m coverage run -m tools.verify --full
           python -m coverage report --fail-under=79 --precision=1
 
       - name: Test the page in a real browser
@@ -864,7 +864,7 @@ jobs:
         run: |
           mkdir -p .feed-state
           cp feeds/download-manifest.json .feed-state/download-manifest.json
-          python tools/build_inputs.py --fingerprint > .feed-state/build-inputs.sha256
+          python -m tools.build_inputs --fingerprint > .feed-state/build-inputs.sha256
 
       - name: Save the successful feed manifest
         uses: actions/cache/save@v4
@@ -938,7 +938,7 @@ jobs:
         # `fares` here while the build loads a timetable would be a gate
         # declaring a narrower release than the one being published, which is
         # the exact failure this gate exists to make impossible.
-        run: python tools/check_release_clearance.py --release fares,timetable
+        run: python -m tools.check_release_clearance --release fares,timetable
 
   deploy:
     needs: [build, assemble, clearance]

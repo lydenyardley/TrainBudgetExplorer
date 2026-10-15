@@ -115,9 +115,9 @@ in its checkpoint; the merge reports what is left to compare.
 Read by running:
 
 ```bash
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+python -m tools.check_slice_equivalence --timetable feeds/timetable --date 2026-10-07 \
     --days 7 --progress _cache/slice-equivalence.json --shard 1/4
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+python -m tools.check_slice_equivalence --timetable feeds/timetable --date 2026-10-07 \
     --days 7 --progress _cache/slice-equivalence.json --merge 4
 python -m unittest tools.test_check_slice_equivalence
 ```

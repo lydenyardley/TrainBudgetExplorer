@@ -67,7 +67,7 @@ jobs:
           PY
           echo "station codes: $(wc -l < facet-review/station-codes.txt)"
       - name: Regenerate the facet reference data
-        run: python tools/regenerate_destination_facets.py --feed feeds/fares/dtd-fares.zip
+        run: python -m tools.regenerate_destination_facets --feed feeds/fares/dtd-fares.zip
 
       - name: Diff against the committed copy
         shell: bash

@@ -798,7 +798,9 @@ class TimetableFocusTest(unittest.TestCase):
     """
 
     def test_the_focus_set_covers_every_list_the_page_composes(self) -> None:
-        source = Path(__file__).resolve().parent.parent / "build_demo_page.py"
+        # The focus set is built where the timetable is loaded, which is
+        # build_pool.py's own phase since the split (ADR-0071).
+        source = Path(__file__).resolve().parent.parent / "build_pool.py"
         code = source.read_text(encoding="utf-8")
         start = code.index("focus_destinations: set[str] = set()")
         block = code[start:code.index("cache_path = (", start)]

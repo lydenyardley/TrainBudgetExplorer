@@ -85,7 +85,7 @@ and the payload 64% smaller than the morning's.
 - **`tools/page_bytes.py` is the instrument, and it is written down** (ADR-0032):
   it splits a page into stylesheet, script and inline payload, reports the bytes
   every measured page repeats word for word, and totals a built folder against
-  the 800 MB target. `python tools/page_bytes.py --site _site` is the command
+  the 800 MB target. `python -m tools.page_bytes --site _site` is the command
   that re-checks every number in this ADR.
 - **The payload is now the smallest part of a page and the shared blocks are the
   largest.** The real Grantham page today is 219 KB, of which 73 KB is the

@@ -30,9 +30,9 @@ matching is unsound -- ``BATHGATE`` is not Bath, ``BRADFORD`` is not Bradford on
 Avon -- which is why the reader matches whole names only, and why this output is
 a proposal list rather than a lookup. A person decides; nothing is pasted.
 
-    python tools/propose_reviewed_settlements.py
-    python tools/propose_reviewed_settlements.py --feed feeds/fares
-    python tools/propose_reviewed_settlements.py --only decide
+    python -m tools.propose_reviewed_settlements
+    python -m tools.propose_reviewed_settlements --feed feeds/fares
+    python -m tools.propose_reviewed_settlements --only decide
 """
 
 from __future__ import annotations
@@ -42,9 +42,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import (  # noqa: E402
+from atoc_fares import (
     LONDON_STATION_CRS,
     MAJOR_UK_STATION_FALLBACKS,
     ONS_BUILT_UP_AREAS_FILE_URL,
@@ -52,8 +51,8 @@ from atoc_fares import (  # noqa: E402
     REVIEWED_SETTLEMENT_FALLBACKS,
     FaresDb,
 )
-from feeds_cli import add_feed_args  # noqa: E402
-from tools.propose_fare_construction_stations import resolve_feed  # noqa: E402
+from feeds_cli import add_feed_args
+from tools.propose_fare_construction_stations import resolve_feed
 
 # A near miss needs a shared prefix long enough to be evidence of the same
 # settlement and an extension short enough to be a qualifier: "-on-Tweed",

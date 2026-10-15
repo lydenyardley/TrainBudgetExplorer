@@ -17,13 +17,13 @@ count and every leg's train, ends and times. It also compares `service_window()`
 and `stats()`, which the page carries and a reader reads as a claim about the
 feed.
 
-    python tools/check_slice_equivalence.py --timetable feeds/timetable --probe 5
-    python tools/check_slice_equivalence.py --timetable feeds/timetable \\
+    python -m tools.check_slice_equivalence --timetable feeds/timetable --probe 5
+    python -m tools.check_slice_equivalence --timetable feeds/timetable \\
         --date 2026-10-07 --days 7 --progress _cache/slice-equivalence.json
-    python tools/check_slice_equivalence.py --timetable feeds/timetable --origins GRA,NOT --limit 2
-    python tools/check_slice_equivalence.py --timetable feeds/timetable --shard 1/8
-    python tools/check_slice_equivalence.py --timetable feeds/timetable --merge 8
-    python tools/check_slice_equivalence.py --timetable feeds/timetable --shards auto
+    python -m tools.check_slice_equivalence --timetable feeds/timetable --origins GRA,NOT --limit 2
+    python -m tools.check_slice_equivalence --timetable feeds/timetable --shard 1/8
+    python -m tools.check_slice_equivalence --timetable feeds/timetable --merge 8
+    python -m tools.check_slice_equivalence --timetable feeds/timetable --shards auto
 
 The sweep is hours of CPU on the real feed, so it checkpoints every origin and
 resumes: run it again with the same `--progress` file and it skips the pairs it
@@ -84,12 +84,9 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 
-# Reach the project root whether run as `python tools/check_slice_equivalence.py`
-# (the README's way) or imported as tools.check_slice_equivalence (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_timetable import TimetableDb  # noqa: E402
-from build_workers import RESERVED_BYTES, free_memory_bytes  # noqa: E402
+from atoc_timetable import TimetableDb
+from build_workers import RESERVED_BYTES, free_memory_bytes
 
 #: The service week the harness compares unless told otherwise. The build's own
 #: date, so a failure names a day a page was actually assembled for.
@@ -850,9 +847,14 @@ def _shards(args, run_argv: list[str], count: int, free: int | None) -> int:
         )
     children: list[tuple[int, subprocess.Popen]] = []
     for index in range(1, count + 1):
+        # `-m`, not the script's path: a child started as `python tools/x.py`
+        # would have tools/ on its path rather than the project root, and every
+        # import of a project module would fail in it (the same reason the tool
+        # itself is run as `python -m tools.check_slice_equivalence`).
         command = [
             sys.executable,
-            str(Path(__file__).resolve()),
+            "-m",
+            "tools.check_slice_equivalence",
             *run_argv,
             "--shard",
             f"{index}/{count}",
@@ -863,6 +865,7 @@ def _shards(args, run_argv: list[str], count: int, free: int | None) -> int:
                 index,
                 subprocess.Popen(
                     command,
+                    cwd=Path(__file__).resolve().parents[1],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,

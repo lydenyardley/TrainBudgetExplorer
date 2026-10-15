@@ -18,10 +18,13 @@ import unittest
 from unittest import mock
 import contextlib
 import io
+import urllib.error
 from datetime import date
 from pathlib import Path
 
+import atoc_fares_loader
 import build_demo_page
+import build_state
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
@@ -42,7 +45,7 @@ class TimetableCachePruneTest(unittest.TestCase):
     def test_the_caches_in_use_survive_and_the_origin_is_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+            with mock.patch.object(build_state, "CACHE_DIR", root):
                 main = self.cache(
                     root, "timetable-GRA-11111111111111111111.pickle", 1000.0
                 )
@@ -68,7 +71,7 @@ class TimetableCachePruneTest(unittest.TestCase):
     def test_a_single_cache_keeps_one_newest_stale_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+            with mock.patch.object(build_state, "CACHE_DIR", root):
                 main = self.cache(
                     root, "timetable-GRA-aaaaaaaaaaaaaaaaaaaa.pickle", 1000.0
                 )
@@ -208,7 +211,7 @@ class TimetableCachePruneTest(unittest.TestCase):
             feed = build_synthetic_feed(root / "fares", include_restrictions=True)
             timetable = build_synthetic_timetable(root / "timetable")
             cache = root / "cache"
-            with mock.patch.object(build_demo_page, "CACHE_DIR", cache):
+            with mock.patch.object(build_state, "CACHE_DIR", cache):
                 said = []
                 for _ in range(2):
                     buffer = io.StringIO()
@@ -231,7 +234,7 @@ class TimetableCachePruneTest(unittest.TestCase):
         # the oldest on disk. It must not evict itself.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with mock.patch.object(build_demo_page, "CACHE_DIR", root):
+            with mock.patch.object(build_state, "CACHE_DIR", root):
                 hit = self.cache(
                     root, "timetable-GRA-dddddddddddddddddddd.pickle", 100.0
                 )
@@ -264,10 +267,23 @@ class FaresCacheTest(unittest.TestCase):
         self.cache = root / "cache"
         self.feed = build_synthetic_feed(root / "fares", include_restrictions=True)
         self.out = root / "site" / "index.html"
+        # These builds run the real ``main()``, so a classification pass that
+        # reached the network would make a test's outcome depend on the
+        # internet and on what the ONS server thought of this machine's cache --
+        # the suite was printing ``ResourceWarning: <HTTPError 304>`` from
+        # exactly that fetch (audit item 3, 14 October 2026). A refused request
+        # is what an offline machine gives the loader, and it is already a
+        # named, reported outcome rather than a failure.
+        self._offline = mock.patch.object(
+            atoc_fares_loader.urllib.request, "urlopen",
+            side_effect=urllib.error.URLError("the test suite does not fetch"),
+        )
+        self._offline.start()
+        self.addCleanup(self._offline.stop)
 
     def build(self) -> str:
         buffer = io.StringIO()
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
             with contextlib.redirect_stdout(buffer):
                 code = build_demo_page.main(
                     ["--feed", str(self.feed), "--origin", "GRN", "--out", str(self.out)]
@@ -279,15 +295,15 @@ class FaresCacheTest(unittest.TestCase):
         # The cache lives where the build puts it, so it is asked for from
         # there: a test that named the repository's own _cache would be reading
         # and writing the caches of whichever test ran before it.
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
             return build_demo_page.fares_index_cache_paths(self.feed)
 
     def load_fares(self, origin: str):
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
             return build_demo_page.load_page_fares(self.feed, origin)
 
     def prune(self, *used) -> int:
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
             return build_demo_page.prune_fare_index_caches(*used)
     def page(self) -> str:
         return station_page(self.out).read_text(encoding="utf-8")
@@ -371,6 +387,49 @@ class FaresCacheTest(unittest.TestCase):
         }
         return rows[crs]["destinationType"]
 
+    def test_the_cache_is_named_after_the_classification_pass_not_before_it(self) -> None:
+        # The classification pass writes ``fares.location-types.json`` beside the
+        # feed, and the cache identity hashes every file beside it, so a pair
+        # named *before* that write is one no later build can ask for: the next
+        # build hashes the file this one wrote, computes a different digest,
+        # misses, and pays the parse the cache exists to avoid -- 55.6s against
+        # 2.6s restored, measured on this repository's own machine (audit item 2,
+        # 14 October 2026). The pass is simulated by writing the file from inside
+        # the load, which is where it happens; what the test holds is the order,
+        # and the order is the whole of the fix.
+        unique = self.cache / "probe"
+        unique.mkdir(parents=True, exist_ok=True)
+        types = self.feed.parent / "fares.location-types.json"
+        content = types.read_bytes()
+        # A fresh download of this feed has no classification cache beside it yet.
+        types.unlink()
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
+            named_before = build_demo_page.fares_index_cache_paths(self.feed)[0]
+
+        real_load = FaresDb.load_feed
+
+        def load_and_classify(self, path, **kwargs):
+            fares = real_load(self, path, **kwargs)
+            types.write_bytes(content)
+            return fares
+
+        with mock.patch.object(FaresDb, "load_feed", load_and_classify):
+            first = self.load_fares("GRN")
+        self.assertFalse(first.restored)
+        self.assertTrue(first.common.is_file())
+        self.assertNotEqual(
+            named_before,
+            first.common,
+            "the file that appeared has to be in the key, or this test proves nothing",
+        )
+        self.assertEqual(
+            first.common,
+            self.cache_paths()[0],
+            "the pair is named by the bytes as they are after the pass",
+        )
+        second = self.load_fares("GRN")
+        self.assertTrue(second.restored, "the next build asks for the pair this one wrote")
+
     def test_an_index_filed_under_another_origin_is_not_served(self) -> None:
         # The path a build asks for is built from the origin it was asked for,
         # so a file under the wrong name is a hand-mixed cache. Serving it would
@@ -440,14 +499,36 @@ class FaresCacheTest(unittest.TestCase):
         self.build()
         previous = self.cache_pair("00000000000000000001", 5000.0)
         older = self.cache_pair("00000000000000000002", 1000.0)
+        before = self.cache_files()
 
         loaded = self.load_fares("GRN")
         removed = self.prune(loaded.common, loaded.index.parent)
-        self.assertEqual(removed, 2, "the oldest pair is two files: shared half and index")
+        # The claim is which files went, not how many: read as a count, the same
+        # assertion also failed whenever the directory happened to hold one pair
+        # more than this test put there -- the flake an audit found in one run of
+        # four, and the reason it is written as the set difference now.
+        gone = before - self.cache_files()
+        self.assertEqual(
+            gone,
+            {
+                "fare-index-v2-00000000000000000002.pickle",
+                "fare-index-v2-00000000000000000002-origins/GRN.pickle",
+            },
+            "the oldest pair goes and nothing else does",
+        )
+        self.assertEqual(removed, len(gone), "the number reported is the number deleted")
         self.assertFalse(older[0].exists() and older[1].exists(), "two revisions back goes")
         self.assertTrue(previous[0].exists() and previous[1].exists(), "one revision back stays")
         self.assertTrue(loaded.common.is_file(), "the pair in use survives")
         self.assertTrue(loaded.index.is_file())
+
+    def cache_files(self) -> set[str]:
+        """Every cache file on disk, named relative to the cache directory."""
+        return {
+            path.relative_to(self.cache).as_posix()
+            for path in self.cache.rglob("*")
+            if path.is_file()
+        }
 
     def test_a_cache_hit_is_never_the_file_the_tidy_would_delete(self) -> None:
         # The hit can be the oldest file on disk, because reading it does not
@@ -468,8 +549,8 @@ class FaresCacheTest(unittest.TestCase):
         common, origins = self.cache_paths()
         self.assertIn(f"-v{build_demo_page.FARE_INDEX_CACHE_VERSION}-", common.name)
         self.assertIn(f"-v{build_demo_page.FARE_INDEX_CACHE_VERSION}-", origins.name)
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
-            with mock.patch.object(build_demo_page, "FARE_INDEX_CACHE_VERSION", 99):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
+            with mock.patch.object(build_state, "FARE_INDEX_CACHE_VERSION", 99):
                 moved_common, moved_origins = build_demo_page.fares_index_cache_paths(self.feed)
         self.assertNotEqual(common, moved_common)
         self.assertNotEqual(origins, moved_origins)
@@ -483,7 +564,7 @@ class FaresCacheTest(unittest.TestCase):
         other = build_synthetic_feed(
             Path(self._tmp.name) / "other", include_restrictions=False
         )
-        with mock.patch.object(build_demo_page, "CACHE_DIR", self.cache):
+        with mock.patch.object(build_state, "CACHE_DIR", self.cache):
             second, _ = build_demo_page.fares_index_cache_paths(other)
         self.assertNotEqual(first, second)
 
