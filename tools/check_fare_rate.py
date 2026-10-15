@@ -13,9 +13,9 @@ are the page's, so a fare this tool calls publishable is a fare a page would
 show, and one it does not is one no page carries.
 
 Usage:
-    python tools/check_fare_rate.py --feed feeds/fares/dtd-fares.zip \\
+    python -m tools.check_fare_rate --feed feeds/fares/dtd-fares.zip \\
         --timetable feeds/timetable
-    python tools/check_fare_rate.py ... --report
+    python -m tools.check_fare_rate ... --report
 
 Exits 0 when every rate is inside the band, 1 with the offenders named, and 2
 when the feeds could not be read at all, which is a different failure from a
@@ -31,11 +31,9 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from atoc_fares import FaresDb  # noqa: E402
-from atoc_timetable import TimetableDb  # noqa: E402
+from atoc_fares import FaresDb
+from atoc_timetable import TimetableDb
 
 # The sentinel budget: what every origin can reach, so nothing is dropped for
 # price before the rate is measured.

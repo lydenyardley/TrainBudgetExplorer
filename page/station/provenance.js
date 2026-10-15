@@ -266,7 +266,12 @@ function provenance() {
   // footer, because where a number came from is part of the number.
   if (DATA.priceSource) {
     const line = document.getElementById("priceSource");
+    // The source names the feed and the download date is carried beside it as
+    // its own field, so the sentence is composed here from the pair. Reading
+    // the date out of the source sentence is the shape that had the chooser
+    // print it twice -- one date, one place it comes from.
     const parts = ["Prices from " + DATA.priceSource];
+    if (DATA.feedDate) parts.push("downloaded " + humanDate(DATA.feedDate));
     if (DATA.serviceDate) parts.push("feed dated " + humanDate(DATA.serviceDate));
     line.textContent = parts.join(", ") + ".";
     line.hidden = false;

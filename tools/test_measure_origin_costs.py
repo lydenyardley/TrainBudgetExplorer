@@ -12,17 +12,17 @@ from __future__ import annotations
 
 import contextlib
 import io
-import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from make_synthetic_feed import build_synthetic_timetable  # noqa: E402
-from tools import measure_origin_costs  # noqa: E402
+import build_demo_page
+import build_state
+from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from tools import measure_origin_costs
 
 
 class OriginCostTest(unittest.TestCase):
@@ -30,6 +30,19 @@ class OriginCostTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.timetable = build_synthetic_timetable(Path(self._tmp.name) / "timetable")
+        self.feed = Path(self._tmp.name) / "feed"
+        build_synthetic_feed(
+            self.feed, include_restrictions=True, include_return_network=True
+        )
+        build_synthetic_timetable(self.feed, include_return_network=True)
+        # The parsed-fares cache is the repository's own by default, and a test
+        # that wrote there would leave a pair of files per fixture behind for
+        # the next run to read (the same rule tests/page_harness.py states).
+        self._cache = mock.patch.object(
+            build_state, "CACHE_DIR", Path(self._tmp.name) / "cache"
+        )
+        self._cache.start()
+        self.addCleanup(self._cache.stop)
 
     def run_tool(self, *flags: str) -> tuple[int, str]:
         buffer = io.StringIO()
@@ -44,6 +57,21 @@ class OriginCostTest(unittest.TestCase):
         self.assertIn("NOT", said)
         for word in ("mean", "median", "p90", "max"):
             self.assertIn(word, said)
+
+    def test_the_priced_count_mode_names_both_numbers_and_what_the_page_cost(self) -> None:
+        # One origin has two numbers and they answer different questions: the
+        # fare selectors' union, which decides whether the origin can answer,
+        # and the places the page carries, which is what the chooser shows. A
+        # mode that printed one number could not say which of the two a reader
+        # was given, which is the whole reason this exists.
+        code, said = self.run_tool(
+            "--origins", "GRN", "--date", "2026-10-05",
+            "--priced-count", "--fares", str(self.feed),
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("places from the selectors", said)
+        self.assertIn("the page carries", said)
+        self.assertIn("page ", said, "the page's own cost is timed with the number")
 
     def test_a_missing_feed_is_refused_before_anything_is_timed(self) -> None:
         code, _ = self.run_tool("--feed", str(Path(self._tmp.name) / "absent"))

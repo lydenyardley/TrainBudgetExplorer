@@ -9,9 +9,9 @@ Only the station list is read from the feed. Fares, flows and restrictions are
 not needed to classify a settlement, and the national download has millions of
 them, so the tool reads the LOC file and stops.
 
-    python tools/regenerate_destination_facets.py
-    python tools/regenerate_destination_facets.py --feed feeds/fares/dtd-fares.zip
-    python tools/regenerate_destination_facets.py --keep-unavailable island
+    python -m tools.regenerate_destination_facets
+    python -m tools.regenerate_destination_facets --feed feeds/fares/dtd-fares.zip
+    python -m tools.regenerate_destination_facets --keep-unavailable island
 
 ``--keep-unavailable`` carries the existing value for the named facets instead
 of downloading them. That is how a source that is temporarily unreachable is
@@ -27,17 +27,14 @@ from pathlib import Path
 import sys
 import zipfile
 
-# Reach the project root whether run as `python tools/regenerate_destination_facets.py`
-# or imported as tools.regenerate_destination_facets (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import (  # noqa: E402
+from atoc_fares import (
     DESTINATION_FACET_SOURCES,
     LOCATION_TYPE_SOURCE,
     SUPPORTED_DESTINATION_FACETS,
     FaresDb,
 )
-from feeds_cli import add_feed_args  # noqa: E402
+from feeds_cli import add_feed_args
 
 DEFAULT_FEED = Path("feeds") / "fares" / "dtd-fares.zip"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "reference-data" / "destination-facets.json"

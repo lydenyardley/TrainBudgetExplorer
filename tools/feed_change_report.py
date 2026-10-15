@@ -37,10 +37,10 @@ operator's, so ``--fail-on-material`` exists as an opt-in refusal and is off by
 default: a tool that refused on its own authority would be inventing a policy,
 and a policy nobody chose is one nobody can argue with.
 
-    python tools/feed_change_report.py --previous-feed feeds/previous --feed feeds/fares
-    python tools/feed_change_report.py --previous-feed feeds/previous --feed feeds/fares \\
+    python -m tools.feed_change_report --previous-feed feeds/previous --feed feeds/fares
+    python -m tools.feed_change_report --previous-feed feeds/previous --feed feeds/fares \\
         --previous-timetable feeds/previous --timetable feeds/timetable --top 25
-    python tools/feed_change_report.py --previous-feed a --feed b --json change.json
+    python -m tools.feed_change_report --previous-feed a --feed b --json change.json
 """
 
 from __future__ import annotations
@@ -51,12 +51,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Reach the project root whether run as `python tools/feed_change_report.py` or
-# imported as tools.feed_change_report (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import FaresDb, format_pence  # noqa: E402
-from atoc_timetable import TimetableDb  # noqa: E402
+from atoc_fares import FaresDb, format_pence
+from atoc_timetable import TimetableDb
 
 # A move must clear both bars. The defaults are a starting point an operator can
 # move, not a judgement: 5% and a pound.

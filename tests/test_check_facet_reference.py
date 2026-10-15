@@ -251,7 +251,10 @@ class ReportTest(unittest.TestCase):
                     code = check_facet_reference.check(Path("no-such-feed"), reference, set())
         self.assertEqual(code, 1)
         self.assertIn(f"{expected} difference(s) against the registry", report.getvalue())
-        self.assertIn("tools/regenerate_destination_facets.py", report.getvalue())
+        # The tool's own name, in the form every command in this repository is
+        # run in: the path would send a reader to a script that no longer takes
+        # a `sys.path` insert (item 7 of the 14 October 2026 engineering audit).
+        self.assertIn("python -m tools.regenerate_destination_facets", report.getvalue())
         self.assertNotIn("0 facet(s) moved", report.getvalue())
 
 

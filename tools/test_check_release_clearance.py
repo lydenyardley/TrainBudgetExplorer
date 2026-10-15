@@ -479,7 +479,9 @@ class WorkflowTest(unittest.TestCase):
         # The national timetable is the only flag that widens what is
         # published, and it is the one this project's licence reading refuses.
         with_timetable = "--timetable" in run
-        declared = re.search(r"check_release_clearance\.py --release ([\w,]+)", self.workflow)
+        # `python -m tools.check_release_clearance`, the form the workflow runs
+        # (item 7 of the 14 October 2026 engineering audit).
+        declared = re.search(r"tools\.check_release_clearance --release ([\w,]+)", self.workflow)
         self.assertIsNotNone(declared, "the clearance step passes no --release")
         self.assertEqual(
             "timetable" in declared.group(1),

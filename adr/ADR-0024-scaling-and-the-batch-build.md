@@ -142,7 +142,7 @@ the replayed coverage reads exactly as the queried one, and the skipped
 write is proved by a masked comparison rather than trusted.
 
 The fixed-cost picture in the 1 October amendment is superseded by the
-distribution: `python tools/measure_origin_costs.py` times the slice cut,
+distribution: `python -m tools.measure_origin_costs` times the slice cut,
 the day index and the reachability search per origin, and a twelve-origin
 stride sample runs mean 19.37 s against median 4.74 s with a 105.17 s
 maximum (`docs/build-performance-findings.md`). Task ordering follows the

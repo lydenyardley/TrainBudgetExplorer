@@ -22,6 +22,7 @@ import tempfile
 import unittest
 
 import build_demo_page
+import build_state
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
@@ -228,14 +229,14 @@ _CACHE_DIR_PATCH: mock._patch | None = None
 def setUpModule() -> None:
     global _CACHE_DIR_PATCH
     _CACHE_DIR_PATCH = mock.patch.object(
-        build_demo_page, "CACHE_DIR", Path(tempfile.mkdtemp(prefix="page-cache-"))
+        build_state, "CACHE_DIR", Path(tempfile.mkdtemp(prefix="page-cache-"))
     )
     _CACHE_DIR_PATCH.start()
 
 
 def tearDownModule() -> None:
     if _CACHE_DIR_PATCH is not None:
-        cache = build_demo_page.CACHE_DIR
+        cache = build_state.CACHE_DIR
         _CACHE_DIR_PATCH.stop()
         shutil.rmtree(cache, ignore_errors=True)
 

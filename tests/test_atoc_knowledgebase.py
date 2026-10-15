@@ -473,11 +473,14 @@ class ParallelPathTest(unittest.TestCase):
         # several processes checked every one of them. Asserted on the source
         # because the failure is a missing call on one of two paths, which is
         # invisible to any test that builds a page one way.
-        import build_demo_page as bdp
+        import build_pool
         import build_workers
 
         worker_source = Path(build_workers.__file__).read_text(encoding="utf-8")
-        build_source = Path(bdp.__file__).read_text(encoding="utf-8")
+        # The two paths into a page are the pool initialiser and the in-process
+        # branch of the builder, and the builder's phases live in build_pool.py
+        # since the split (ADR-0071).
+        build_source = Path(build_pool.__file__).read_text(encoding="utf-8")
         self.assertIn("def configure_worker(shared: dict", worker_source)
         # The initialiser delegates to it rather than duplicating it...
         self.assertIn("configure_worker(shared, reference)", worker_source)
@@ -489,7 +492,7 @@ class ParallelPathTest(unittest.TestCase):
     def test_the_resumable_signature_distinguishes_two_different_answers(self) -> None:
         # Otherwise a resumed build could keep pages built against a reference
         # feed that has since changed, mixing two answers inside one release.
-        import build_demo_page as bdp
+        import build_state
 
         shared = {
             "max_changes": 1, "note": "", "attribution": None, "price_source": "x",
@@ -501,11 +504,13 @@ class ParallelPathTest(unittest.TestCase):
         differs = dict(shared, reference_fingerprint="2026-09-26|2026-09-26|abc123")
         again = dict(shared, reference_fingerprint="absent")
         self.assertNotEqual(
-            bdp.resumable_signature(absent, []), bdp.resumable_signature(differs, [])
+            build_state.resumable_signature(absent, []),
+            build_state.resumable_signature(differs, []),
         )
         # And the same answer twice is the same build, or nothing would resume.
         self.assertEqual(
-            bdp.resumable_signature(absent, []), bdp.resumable_signature(again, [])
+            build_state.resumable_signature(absent, []),
+            build_state.resumable_signature(again, []),
         )
 
     def test_the_fingerprint_is_stable_for_one_feed_and_moves_with_it(self) -> None:

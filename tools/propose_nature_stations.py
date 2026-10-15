@@ -22,9 +22,9 @@ What it will not do, deliberately:
 - It never says a match is correct. It says the page named this station, and
   shows the words.
 
-    python tools/propose_nature_stations.py --reserve-pages pages.txt
-    python tools/propose_nature_stations.py --url https://www.essexwt.org.uk/nature-reserves/thorndon
-    python tools/propose_nature_stations.py --reserve-pages pages.txt --emit-code
+    python -m tools.propose_nature_stations --reserve-pages pages.txt
+    python -m tools.propose_nature_stations --url https://www.essexwt.org.uk/nature-reserves/thorndon
+    python -m tools.propose_nature_stations --reserve-pages pages.txt --emit-code
 """
 
 from __future__ import annotations
@@ -38,13 +38,10 @@ import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
-# Reach the project root whether run as `python tools/propose_nature_stations.py`
-# or imported as tools.propose_nature_stations (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import NATURE_SITE_STATION_CRS  # noqa: E402
-from feeds_cli import add_feed_args  # noqa: E402
-from tools.regenerate_destination_facets import load_stations  # noqa: E402
+from atoc_fares import NATURE_SITE_STATION_CRS
+from feeds_cli import add_feed_args
+from tools.regenerate_destination_facets import load_stations
 
 # The hosts this tool will read without being told otherwise: the network's own
 # sites. Every member trust has its own domain (essexwt.org.uk,

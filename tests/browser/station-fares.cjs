@@ -247,7 +247,12 @@ async function checkTheFareDetails(world) {
     // is an inline-flex box and a flex container drops the whitespace-only
     // text between its items, so the rendered chip read "Small towns(0)".
     const chipGap = await page.evaluate(() => {
-      const count = document.querySelector(".choice-chip .chipcount");
+      // The first chip that is on screen: a chip the budget cannot reach is
+      // hidden now (filters.js), and a hidden label has no box for a gap to be
+      // measured across, so reading the first one in the DOM read "Cities(0)"
+      // at zero gap on the prices-only page (criteria item 3, 15 October 2026).
+      const count = Array.from(document.querySelectorAll(".choice-chip .chipcount"))
+        .find((node) => !node.closest("label").hidden);
       const name = count ? count.previousElementSibling : null;
       if (!count || !name) return null;
       return {

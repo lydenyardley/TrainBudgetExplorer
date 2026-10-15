@@ -22,7 +22,7 @@ gigabyte, which is the more dangerous direction of the two -- it looks safe.
 `init_worker` passes no cache path and a worker never gets one, so the number
 this tool prints is the number a worker pays.
 
-    python tools/measure_worker_pages.py --origins GRN,LCN
+    python -m tools.measure_worker_pages --origins GRN,LCN
 """
 
 from __future__ import annotations
@@ -35,10 +35,8 @@ from datetime import date, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from build_workers import WORKER_BYTES, _WORKER, build_page_job, init_worker  # noqa: E402
+from build_workers import WORKER_BYTES, _WORKER, build_page_job, init_worker
 
 MB = 1_000_000
 
@@ -181,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
                 "slug": code.lower(),
                 "origin_name": code,
             }
-            _slug, _name, html = build_page_job(job)
+            _slug, _name, html, _places = build_page_job(job)
             built += 1
             trace.say(f"{code} page {page + 1}: {len(html):,} bytes of HTML")
 

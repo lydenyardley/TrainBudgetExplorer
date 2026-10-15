@@ -38,13 +38,9 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import date
-from pathlib import Path
 
-# Reach the project root whether run as `python tools/check_links.py` (the
-# README's way) or imported as tools.check_links (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from retailer import PROVIDERS, ticket_link  # noqa: E402
+from retailer import PROVIDERS, ticket_link
 
 TIMEOUT_SECONDS = 20
 # Identifies the check so a seller's logs say what knocked.

@@ -104,7 +104,7 @@ Check that **Settings → Pages → Source** is **GitHub Actions**, then inspect
 That is the clearance gate, not a broken workflow. Run
 
 ```
-python tools/check_release_clearance.py --release fares,timetable
+python -m tools.check_release_clearance --release fares,timetable
 ```
 
 and read `docs/publish-checklist.md` §1. The build and its tests are expected to be green while this refuses.

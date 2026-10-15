@@ -17,6 +17,7 @@ import io
 from pathlib import Path
 import argparse
 import build_demo_page
+import build_release
 from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 from atoc_timetable import TimetableDb
 from build_demo_page import nre_attribution, wants_nre_credit, build_payload, render_chooser, render_page, render_privacy
@@ -444,9 +445,14 @@ class ProvenanceTest(PageTestCase):
                 encoding="utf-8",
             )
             metadata = build_demo_page.read_feed_metadata([Path(feed)])
+        # The feed's name, and nothing else: the download date travels beside it
+        # as a value of its own (`feed_date_from`), because every route that
+        # names both has to compose one sentence from the pair. While the date
+        # lived inside this string the chooser appended its own copy of it and
+        # printed the same date twice.
         self.assertEqual(
             build_demo_page.price_source_from_metadata(metadata),
-            "the RSP fares feed, downloaded 3 October 2026",
+            "the RSP fares feed",
         )
 
     def test_a_source_without_a_download_date_still_speaks(self) -> None:
@@ -496,8 +502,12 @@ class ProvenanceTest(PageTestCase):
                 )
             self.assertEqual(code, 0)
             page = station_page(out).read_text(encoding="utf-8")
-            self.assertIn("the National Rail Data Portal DTD fares feed", page)
-            self.assertIn("downloaded 23 September 2026", page)
+            # The page carries the name and the date as two values, and its own
+            # script composes the sentence from them (the browser suite reads
+            # the rendered `#freshness` and `#priceSource` lines; this holds the
+            # pair the build wrote).
+            self.assertIn('"priceSource":"the National Rail Data Portal DTD fares feed"', page)
+            self.assertIn('"feedDate":"2026-09-23"', page)
             self.assertNotIn("Synthetic demo data", page)
             self.assertIn("price line read from the download manifest", buffer.getvalue())
 
@@ -567,7 +577,22 @@ class ProvenanceTest(PageTestCase):
                     ]
                 }
             ),
-            "the National Rail Data Portal DTD fares feed, downloaded 23 September 2026",
+            "the National Rail Data Portal DTD fares feed",
+        )
+        # The date is the fares entry's own, and the fares entry's alone: a
+        # newer timetable download must not make the prices look fresher than
+        # they are (`feed_date_from` has that test).
+        self.assertEqual(
+            build_demo_page.feed_date_from(
+                None,
+                {
+                    "downloads": [
+                        {"name": "fares", "source": "dtd", "downloaded_at": "2026-09-23T14:02:11Z"},
+                        {"name": "timetable", "source": "dtd", "downloaded_at": "2026-09-24T03:00:00Z"},
+                    ]
+                },
+            ),
+            "2026-09-23",
         )
         # A knowledgebase entry is reference data, not what the page is built
         # from, so it cannot supply the price line.
@@ -670,7 +695,7 @@ class ProvenanceTest(PageTestCase):
         # This is the one thing in the footer the licence names, so a build that
         # cannot find it stops rather than publishing a page with the credit
         # quietly absent.
-        with mock.patch.object(build_demo_page, "NRE_LOGO", Path("no-such-mark.svg")):
+        with mock.patch.object(build_release, "NRE_LOGO", Path("no-such-mark.svg")):
             with self.assertRaises(SystemExit):
                 nre_attribution()
 

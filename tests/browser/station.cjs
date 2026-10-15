@@ -166,6 +166,23 @@ async function runPage(browser, index, given, file, body, base) {
   // TYPES.dearest reduce rather than spread, because a station with thousands
   // of destinations would spill the argument list.
   const installReader = () => page.evaluate(() => {
+    // The price the page shows for a row: the price for the party on screen, or
+    // the chosen card's for it, whichever is less (page/station/railcards.js's
+    // priceOf). One reader of it, because every expectation about a budget here
+    // is about the number on screen -- reading adultPence instead reported a
+    // correctly-offered chip as a broken control on eight pages, where an
+    // outbound single was inside the budget the return was not (15 October
+    // 2026). Q2: the card is resolved from the row's own entry, not from a
+    // railcardPence the page no longer carries.
+    const priceOfRow = (destination) => {
+      const party = document.querySelector('input[name="unit"]:checked').value === "party";
+      const base = party ? destination.partyPence : destination.adultPence;
+      const select = document.getElementById("railcardSelect");
+      if (!select || !select.value) return base;
+      const card = (destination.railcards || {})[select.value];
+      if (!card || card.pricePence === null) return base;
+      return Math.min(base, card.pricePence * (party ? 2 : 1));
+    };
     // Q4: the page opens on the cheapest fare of any ticket type, which is not
     // one of the three payload lists, so the reader composes that list the way
     // the rule says -- one row per destination, the cheaper of the fares on
@@ -173,23 +190,13 @@ async function runPage(browser, index, given, file, body, base) {
     // that is behaving correctly to fail every chip check. Written here, from
     // the payload, so the check that the page agrees with it is not circular.
     window.cheapestOfEveryList = () => {
-      // Q2: the railcard is one of a collection the reader picks from, so the
-      // reader resolves the chosen card against the row's own entry rather than
-      // reading a single railcardPence the page no longer carries.
-      const price = (destination) => {
-        const party = document.querySelector('input[name="unit"]:checked').value === "party";
-        const base = party ? destination.partyPence : destination.adultPence;
-        const select = document.getElementById("railcardSelect");
-        if (!select || !select.value) return base;
-        const card = (destination.railcards || {})[select.value];
-        if (!card || card.pricePence === null) return base;
-        return Math.min(base, card.pricePence * (party ? 2 : 1));
-      };
       const cheapest = new Map();
       for (const list of [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]) {
         for (const destination of list || []) {
           const held = cheapest.get(destination.crs);
-          if (!held || price(destination) < price(held)) cheapest.set(destination.crs, destination);
+          if (!held || priceOfRow(destination) < priceOfRow(held)) {
+            cheapest.set(destination.crs, destination);
+          }
         }
       }
       return cheapest;
@@ -203,6 +210,7 @@ async function runPage(browser, index, given, file, body, base) {
       },
       types: (destination) => destination.destinationTypes || [destination.destinationType],
       cap: () => Number(document.getElementById("budgetNumber").value) * 100,
+      priceOf: priceOfRow,
       price: (destination) =>
         document.querySelector('input[name="unit"]:checked').value === "party"
           ? destination.partyPence : destination.adultPence,
@@ -238,25 +246,41 @@ async function runPage(browser, index, given, file, body, base) {
     if (budget !== undefined) await page.fill("#budgetNumber", String(budget));
   };
   // What a type means on this page, in the mode and at the budget on screen:
-  // which rows it leaves, and whether it is worth offering at all.
+  // which rows it leaves, whether the mode's list carries it at any price, and
+  // whether it is worth offering at all -- the last is the second read against
+  // the budget, and it is the one the page's own chip rule uses. The price is
+  // the one the page shows, so a chip's own count and this expectation are the
+  // same arithmetic.
   const expectedFor = (type) =>
     page.evaluate((wanted) => ({
       carried: TYPES.list().some((d) => TYPES.types(d).includes(wanted)),
-      rows: TYPES.list().filter((d) => TYPES.types(d).includes(wanted) && d.adultPence <= TYPES.cap()),
+      rows: TYPES.list().filter(
+        (d) => TYPES.types(d).includes(wanted) && TYPES.priceOf(d) <= TYPES.cap()
+      ),
     }), type);
   // One type per call, checked in both directions: the rows it leaves come
-  // from the payload, and a type no destination in this mode carries must not
-  // be offered, because a chip that can only ever return nothing reads as a
-  // broken control rather than an empty result.
+  // from the payload, and a chip must be offered exactly when this mode's list
+  // has a destination of that type **inside the budget on screen**. A chip that
+  // can only ever return nothing reads as a broken control rather than an empty
+  // result, so the page does not offer one -- which makes the budget half of the
+  // rule, the same half the count beside the chip is counting.
   const checkChip = async (type, offered, matched) => {
     const expected = await expectedFor(type);
     const chip = `input[name="destinationType"][value="${type}"]`;
-    if (!expected.carried) {
-      check(offered, !(await page.locator(chip).isVisible()), `${type} chip on a page with no ${type} destination in this mode`);
+    if (!expected.rows.length) {
+      check(
+        offered,
+        !(await page.locator(chip).isVisible()),
+        `${type} chip ${expected.carried ? "carried only above this budget" : "carried by nothing"} in this mode`
+      );
       return expected;
     }
     if (!(await page.locator(chip).isVisible())) {
-      check(offered, false, `${type} chip hidden although a destination carries it in this mode`);
+      check(
+        offered,
+        false,
+        `${type} chip hidden although ${expected.rows.length} destinations inside the budget carry it`
+      );
       return expected;
     }
     await page.check(chip);
@@ -280,18 +304,22 @@ async function runPage(browser, index, given, file, body, base) {
     const byCrs = new Map(expected.rows.map((d) => [d.crs, d]));
     const fits = Math.min(expected.rows.length, world.pageSize);
     // A row the payload does not carry is a defect this check has to be able to
-    // report, not a crash. `byCrs.get(crs).adultPence` on one throws before the
+    // report, not a crash. `byCrs.get(crs).price` on one would throw before the
     // membership test below can say so, and a suite that dies on a regression
-    // reports the exception instead of the thing that is wrong.
-    const prices = rendered
-      .filter((crs) => byCrs.has(crs))
-      .map((crs) => byCrs.get(crs).adultPence);
+    // reports the exception instead of the thing that is wrong. The prices are
+    // read in the page, because that is where the reader of them lives -- the
+    // number on screen is the party's and the chosen card's, not adultPence.
+    const prices = await page.evaluate((crses) => {
+      const carried = new Map(TYPES.list().map((d) => [d.crs, d]));
+      return crses.map((crs) => (carried.has(crs) ? TYPES.priceOf(carried.get(crs)) : null));
+    }, rendered);
     check(
       matched,
       shown === fits &&
         shown === rendered.length &&
         rendered.every((crs) => byCrs.has(crs)) &&
         rendered.every((crs) => text.includes(byCrs.get(crs).name)) &&
+        prices.every((pence) => pence !== null) &&
         prices.every((pence, i) => i === 0 || prices[i - 1] <= pence),
       `${shown} rows of ${expected.rows.length} ${type} (${fits} fit a page); shown ${rendered.join(" ")}`
     );
@@ -303,7 +331,8 @@ async function runPage(browser, index, given, file, body, base) {
   // which is a fact about the feed rather than a reason to skip the check.
   const budgetFor = (type) =>
     page.evaluate((wanted) => {
-      const dearest = TYPES.dearest((d) => (TYPES.types(d).includes(wanted) ? d.adultPence : 0));
+      const dearest = TYPES.dearest((d) =>
+        (TYPES.types(d).includes(wanted) ? TYPES.priceOf(d) : 0));
       return dearest ? Math.max(1, Math.ceil(dearest / 100)) : null;
     }, type);
   const world = {

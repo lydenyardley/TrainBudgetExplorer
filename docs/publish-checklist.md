@@ -13,7 +13,7 @@ answer, and "I think that's fine" is not an answer.
 the deploy workflow refuses to publish anything it does not clear. Run
 
 ```
-python tools/check_release_clearance.py --release fares,timetable
+python -m tools.check_release_clearance --release fares,timetable
 ```
 
 to see where the project stands today. It currently fails, which is correct: §1
@@ -121,7 +121,7 @@ answered, and answered as nil.
       project's reading of that schedule as "internal business purposes only" is
       no longer a description of something the site does not publish — it is
       the answer that has to change, or the decision that the published times
-      stay switched off. `python tools/check_release_clearance.py --release
+      stay switched off. `python -m tools.check_release_clearance --release
       fares,timetable` names it as outstanding.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
@@ -289,7 +289,7 @@ on an assumption is worse than no checklist at all.
 1. Work §1–§5 above. Every answer lands in the matching block of
    `licences/release-clearance.md`, with `state: cleared`, `answer: yes`, the
    date the terms were read, who approved it, when, and when it expires.
-2. `python tools/check_release_clearance.py --print` prints the blocks with each
+2. `python -m tools.check_release_clearance --print` prints the blocks with each
    licence's SHA-256 already filled in, from the PDF when it is on disk and
    from `licences/licence-manifest.json` otherwise (ADR-0067). The digest is
    what stops a clearance outliving the licence it was made from: change the

@@ -79,6 +79,10 @@ function typeLabel() {
 // inside the budget and carry this type. A chip that can only ever return
 // nothing is a broken control; a chip that says it would return nothing is a
 // decision the reader gets to make.
+//
+// The count is what the chip is offered on: syncDestinationTypeChips() hides the
+// chips whose count is zero, and this only writes the numbers, so the two
+// cannot disagree about a chip's own count.
 function updateChipCounts(available, cap) {
   for (const input of destinationTypeInputs) {
     if (input.value === "all") continue;
@@ -100,16 +104,22 @@ function clearDestinationTypes() {
   writeUrl();
 }
 // A chip is offered when a destination in the list the reader is looking at
-// carries it. The build offers one from the union of the three ticket modes,
-// because it cannot know which a reader will pick, and a chip that can only
-// ever return nothing reads as a broken control: on the real Grantham page every
-// heritage destination was an outbound single, so return mode offered a
-// heritage chip that filtered to no rows at all. So the chips are narrowed to
-// the active list, and a chip that disappears takes its selection with it --
-// a hidden chip left checked keeps filtering with nothing to show for it.
-function syncDestinationTypeChips() {
+// carries it and is inside the budget. The build offers one from the union of
+// the three ticket modes, because it cannot know which a reader will pick, and a
+// chip that can only ever return nothing reads as a broken control: on the real
+// Grantham page every heritage destination was an outbound single, so return mode
+// offered a heritage chip that filtered to no rows at all. The same rule then
+// narrows the chips to the budget: three of the fourteen type chips on the real
+// Grantham page sat at (0) at the opening budget, each of them selecting an empty
+// list, and the count beside a chip is already the number of destinations inside
+// the budget, so a zero is the chip saying it cannot succeed here. A chip that
+// disappears takes its selection with it -- a hidden chip left checked keeps
+// filtering with nothing to show for it -- and a hidden chip is announced, so a
+// filter that emptied itself is never silent.
+function syncDestinationTypeChips(available, cap) {
   const offered = new Set();
-  for (const destination of activeDestinations()) {
+  for (const destination of available) {
+    if (priceOf(destination) > cap) continue;
     for (const type of destination.destinationTypes || [destination.destinationType || "other"]) {
       offered.add(type);
     }
@@ -119,10 +129,13 @@ function syncDestinationTypeChips() {
   // it in showed "All" and no explanation. Each mode now keeps its own
   // selection, and switching restores it, so intent survives the round trip.
   const mode = ticketMode();
-  // syncDestinationTypeChips() runs on every render, not only on a mode
-  // change, so "the mode changed" is decided once here and the announcement
-  // below is tied to it. Without this the same message would be re-announced
-  // on every budget drag.
+  // Whether the mode moved is decided once here, because this runs on every
+  // render rather than only on a mode change. What it decides is the per-mode
+  // memory of what the reader selected, and the name the notice below speaks in.
+  // The notice itself is not tied to it: a chip the budget takes away is
+  // announced too, and only a chip that was actually selected is announced at
+  // all -- so a drag that merely hides the chips already sitting at (0) stays
+  // quiet.
   const modeChanged = lastSyncedMode !== null && lastSyncedMode !== mode;
   if (modeChanged) {
     typeSelectionsByMode[lastSyncedMode] = Array.from(selectedDestinationTypes());
@@ -160,7 +173,11 @@ function syncDestinationTypeChips() {
     if (!selected && all) all.checked = true;
   }
   lastSyncedMode = mode;
-  if (modeChanged) announceFacetChange(dropped, restored, mode);
+  // Announced whenever something changed, not only on a mode change: the budget
+  // can take a chip away too, and a filter that changed the result set without
+  // saying so is indistinguishable from a broken one. Nothing is said when
+  // nothing changed, so a budget drag that moves no chip's zero stays quiet.
+  if (dropped.length || restored.length) announceFacetChange(dropped, restored, mode);
 }
 const typeSelectionsByMode = Object.create(null);
 let lastSyncedMode = null;
@@ -178,9 +195,13 @@ function announceFacetChange(dropped, restored, mode) {
   const modeName = modeLabels()[mode] || "this ticket type";
   const parts = [];
   if (dropped.length) {
+    // "Inside your budget" rather than "from this station": the chip left
+    // because no destination of that type is inside the budget in this list,
+    // which is the rule the chip was offered on, and the budget is the half of
+    // it the reader can act on.
     parts.push("Cleared " + listWords(dropped) + " — " + modeName +
       " has no destination of " + (dropped.length === 1 ? "that type" : "those types") +
-      " from this station.");
+      " inside your budget.");
   }
   if (restored.length) {
     parts.push("Restored your " + listWords(restored) + " filter from " + modeName + ".");

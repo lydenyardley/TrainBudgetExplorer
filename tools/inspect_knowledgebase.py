@@ -20,9 +20,9 @@ It reads only the local file and never writes to the reader, so running it
 against the real feed is safe even when the reader is wrong. Nothing here is a
 claim the build makes; it is evidence for a person deciding what to change.
 
-    python tools/inspect_knowledgebase.py feeds/knowledgebase
-    python tools/inspect_knowledgebase.py feeds/knowledgebase/ticket-restrictions.xml
-    python tools/inspect_knowledgebase.py feeds/knowledgebase --json
+    python -m tools.inspect_knowledgebase feeds/knowledgebase
+    python -m tools.inspect_knowledgebase feeds/knowledgebase/ticket-restrictions.xml
+    python -m tools.inspect_knowledgebase feeds/knowledgebase --json
 """
 
 from __future__ import annotations
@@ -35,11 +35,8 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Reach the project root whether run as `python tools/inspect_knowledgebase.py`
-# or imported as tools.inspect_knowledgebase (the tests' way).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_knowledgebase import (  # noqa: E402
+from atoc_knowledgebase import (
     CODE_NAMES,
     DESCRIPTION_NAMES,
     OUTWARD_NAMES,

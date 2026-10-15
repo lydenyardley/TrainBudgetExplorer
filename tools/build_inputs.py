@@ -11,8 +11,8 @@ unpublished until something else happened to trigger a rebuild (F4 of the 8
 October 2026 agent-efficiency audit). The page's CSS and JS moved into `page/`
 since, which such a list would have missed for the same reason.
 
-    python tools/build_inputs.py --fingerprint   one digest, for the workflow
-    python tools/build_inputs.py --list          every file it hashed
+    python -m tools.build_inputs --fingerprint   one digest, for the workflow
+    python -m tools.build_inputs --list          every file it hashed
 
 Exit codes: 0 a digest was printed, 2 the arguments named no work to do.
 """

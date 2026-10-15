@@ -72,7 +72,7 @@ is still projected over budget, which is why this is a P1 rather than a footnote
 
 **What would close it.** One of three, in an order a reader of the numbers would
 take. First, measure first: run a whole-network build in the release's own shape
-and let `python tools/page_bytes.py --site _site --budget-mb 800` refuse it, so
+and let `python -m tools.page_bytes --site _site --budget-mb 800` refuse it, so
 the projection is replaced by a figure. Second, the pair rules: they are a code
 plus a price, and the pair's own minimum-fare behaviour is derivable from the
 rule's components rather than carried as a record per pair — an encoding change
@@ -90,6 +90,54 @@ byte cost is now a function of how many two-ticket combinations the feed allows
 rather than of how many destinations it prices. Until the encoding changes, the
 whole-network byte figure cannot be reasoned about, only measured — which is the
 state the audit's projection came from.
+
+### A station page is 354 KB, and nobody has decided whether that is the payload
+
+**Severity:** P2. **Route:** the station page's payload and its shared script.
+**Raised:** item 6 of the 14 October 2026 engineering audit
+(`docs/audits/2026-10-14-app-engineering-audit.md` — the whole-app audit's own file
+was pruned to what it still asks for).
+
+**Evidence, measured 14 October 2026** on a fresh real-feed build served from
+`127.0.0.1:8899`: a station page is **354 KB raw, 53 KB gzip**, of which the
+route's own CSS is 54 KB (17 KB gzip) and its script 149 KB (45 KB gzip); the
+chooser is 28 KB and the privacy page 26 KB. The site budget is not the
+constraint here — 2,712 such pages are — so this is per-page parse and paint on a
+phone rather than the 800 MB question above.
+
+**What would close it: a measurement, then a decision, in that order.** The audit
+asked for the figure before the change (ADR-0032): split the payload by ticket
+mode, time first paint on a 4x-throttled connection, and compare that against the
+cost of the split — a page whose payload becomes three fetches learns a waterfall
+and can paint its list no sooner. If the measurement says the script or the CSS is
+the half that matters, the cheaper change is a smaller shared asset rather than a
+split payload, and `page/station/*` is already one file per panel, so the split
+is a build decision and not a rewrite.
+
+### The critique's small remaining asks: the chip arrangement, the fare vocabulary, and an accelerator
+
+**Severity:** P2 for the first, P3 for the other two. **Route:** the station
+page.
+**Raised:** the 14 October 2026 critique, recommendations 3's second half, 7 and
+8. That file is `docs/audits/2026-10-14-impeccable-critique.md`, pruned to those
+three and to its recommendation 5, which is question 1 above and route audit
+items [20] and [21]. Its other five recommendations landed on 15 October 2026,
+held by the tests named in that file's own table.
+
+- **The chip arrangement (3, second half).** The three chips that could only ever
+  select an empty list are no longer offered, so the dead ends are gone; what is
+  left is that `All` plus fourteen chips sit at one decision point. What would
+  close it: the four settlement bands ahead of the ten thematic facets, behind one
+  "More types" disclosure.
+- **The fare vocabulary (7).** "Regular", "Restricted", "Advance", "changes",
+  "two tickets" and the minimum-fare note are explained one disclosure at a time,
+  inside a row's own panel, so a reader comparing six rows holds words nobody has
+  given them. What would close it: one short block beside the provenance, or a
+  definitions list the row links to.
+- **An accelerator for the page's one job (8).** Setting the budget is reachable
+  only by tabbing through the heading controls or grabbing the slider. What would
+  close it: `/` or `b` to focus the budget field, `n`/`p` to page, and the folded
+  bar saying so.
 
 ### C27 — the chooser requires a known station name or a code prefix
 
@@ -155,8 +203,8 @@ limit rather than an open sweep, recorded under "What this does not cover" in
 `docs/build-performance-findings.md`.
 
 ```
-python tools/check_slice_equivalence.py --timetable feeds/timetable --shards 4
-python tools/check_slice_equivalence.py --merge 4   # the verdict again, reading no feed
+python -m tools.check_slice_equivalence --timetable feeds/timetable --shards 4
+python -m tools.check_slice_equivalence --merge 4   # the verdict again, reading no feed
 ```
 
 ### The checked-in facet reference data lags the registry (closed 7 October 2026)
@@ -359,19 +407,27 @@ The two findings, and what holds them:
   `atoc_fares.urllib.request`; the readers live in the loader and the tests patch
   that now.
 
-**What the tree holds, measured 14 October 2026, and what it must stay.** From the
-54 the audit first counted, **40 suppressions remain**, and each names its cause:
+**What the tree holds, measured 15 October 2026, and what it must stay.** The
+audit counted 54 suppressions on 14 October 2026, 34 of them the same
+`# noqa: E402`: a root-reaching `sys.path` insert that every import after it had
+to be excused for. Those inserts are gone — each tool is run as
+`python -m tools.<name>`, which is what the package's `tools/__init__.py` was
+always for, and the tests already imported them that way — so the suppression and
+its cause were deleted together (item 7 of the 14 October 2026 engineering audit).
+**Six suppressions remain**, each naming its cause:
 
-| Cause | Count | Where |
-|---|---|---|
-| a root-reaching `sys.path` insert before the imports, because the tool is run as `python tools/<name>.py` | 34 | 16 modules under `tools/` |
-| an intentional catch-all whose escape *is* the finding | 6 | `fuzz_feed.py` (3), `tools/check_slice_equivalence.py`, `tools/easy_fares_check.py`, `tools/propose_nature_stations.py` |
+| Cause | Where |
+|---|---|
+| an intentional catch-all whose escape *is* the finding | `fuzz_feed.py` (3), `tools/check_slice_equivalence.py`, `tools/easy_fares_check.py`, `tools/propose_nature_stations.py` |
 
 The fares declaration cycle's two are gone (ADR-0070), and no module under
-`tests/` reaches for the project root before importing its siblings. The tree
-also holds **16 `# type: ignore`** comments. A `# noqa` without a comment naming
-its cause is indistinguishable from a silenced lint, so the comment is the
-permitted form and its absence would be the finding.
+`tests/` reaches for the project root before importing its siblings. A count
+written into a document went stale within the hour, so the rule is a check and not
+a table now: `tests/test_suppressions.py` walks the tree and fails on a `# noqa`
+whose own line, or the comment block above it, does not name what it suppresses
+(item 8). The tree also holds **16 `# type: ignore`** comments, and those are read
+by `tools/check_types.py`, which fails on a new type error in a module that has
+none today (item 4, ADR-0072).
 
 ## Suggestions not yet taken up
 
@@ -592,7 +648,7 @@ four rejected designs are under "Rejected designs, with the reason" above.
 | F2, there was no agent entry point and the README's file table had drifted to omit 26 tracked files | `AGENTS.md` is the entry point: the map, both verify commands, and a rule table naming each rule's enforcer | `tests/test_agents_map.py` checks the map in both directions, so a module, page asset or operator tool that is not on it fails the suite |
 | F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
 | F4, the CI rebuild fingerprint was a hand-kept three-file list, written twice, and eight of the last 150 commits had changed only unlisted inputs | one script hashes every build input and both workflow steps call it | `tools/build_inputs.py`, held by `tools/test_build_inputs.py`, which fails on a transitively imported module that is not covered |
-| F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--fast` is the two feed-scale tests its docstring names, and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
+| F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--full` adds the two feed-scale tests its docstring names (and, since 15 October 2026, the type check), and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
 | F6, the two hot test files were the biggest in the repository | the Python half moved out by feature seam over the fixture in `tests/page_harness.py`, and the JavaScript half was split on 11 October 2026 | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; and the browser suite is one module per route and section under `tests/browser/`, with `tests/browser_test.cjs` as the entry point. **Landed 14 October 2026:** those 163 methods are one class per subject over `PageTestCase` in `tests/page_harness.py` -- `DemoPageTest` keeps 52, and `tests/test_build_fares.py` (43), `tests/test_build_provenance.py` (33), `tests/test_build_chooser.py` (19) and `tests/test_build_links.py` (16) took the rest -- the same 180 tests with 179 of their 180 names unchanged (the contact test is rewritten, because route audit item [15] landed in the same pass), and `python -m unittest tests.test_build_demo_page tests.test_build_fares tests.test_build_provenance tests.test_build_chooser tests.test_build_links` green on the 180 in 28 s (14 October 2026) |
 | F7, fixture-versus-real-feed gaps recurred | the rule is in `AGENTS.md`: a real-feed defect fix adds the minimal synthetic record with the fixing commit named | the passing-stop record in `make_synthetic_feed.py`, held by a test in `tests/test_atoc_timetable.py` |
 | F8, measured figures lived in the README and were withdrawn rather than corrected | the README's measured section is a summary that links | `docs/build-performance-findings.md`, which holds "The whole network, measured" behind the README's link |
@@ -677,14 +733,14 @@ pair-rule encoding and the sharded release build.
 
 | Task | What it asked | What landed | Command whose output a reviewer can reproduce |
 |---|---|---|---|
-| T1 | the station script out of every page | `station-<digest>.js` beside the stylesheet; each page inlines only its own `DATA` | `python tools/page_bytes.py --site _bytes_site` on a controlled two-build comparison; 261,362 → 112,885 bytes on one station |
+| T1 | the station script out of every page | `station-<digest>.js` beside the stylesheet; each page inlines only its own `DATA` | `python -m tools.page_bytes --site _bytes_site` on a controlled two-build comparison; 261,362 → 112,885 bytes on one station |
 | T2 | search the service week once for the network, write the facts | the facts store exists and is keyed per origin; the *national* single-pass search was not built, because it would hold the national timetable for the whole build | `python -m unittest tests.test_page_caches.PageFactsTest` |
 | T3 | a rebuild keyed per origin | one origin's priced counts and journey weeks keyed by feed; a masked payload comparison skips unchanged writes | `python -m unittest tests.test_page_runner.AllOriginsCliTest` |
 | T4 | build in shards and merge | `--shard N/M` and `--merge`, with a merge that proves the partition | the same `AllOriginsCliTest` module's shard cases |
-| T5 | measure the release against its budget | measured in the release's own shape: 24 major stations average 2.73 MB a page, a stride sample 806 KB; the with-week shape projects to ~2.2 GB against 800 MB, which is the P1 finding above | `python tools/page_bytes.py --site _stride_site` |
+| T5 | measure the release against its budget | measured in the release's own shape: 24 major stations average 2.73 MB a page, a stride sample 806 KB; the with-week shape projects to ~2.2 GB against 800 MB, which is the P1 finding above | `python -m tools.page_bytes --site _stride_site` |
 | T6 | fold the pricing pre-pass into the facts pass | the pre-pass replays the counts it already priced; the station index is built from the facts | `python -m unittest tests.test_destination_coverage.ReportTest` |
 | T7 | decide what the local default build is | the default is the fast single-origin page again; `--all-origins` requires its acknowledgement | `python -m unittest tests.test_page_runner.RunnerBuildOrServeTest` |
-| T8 | publish the per-origin cost distribution | `tools/measure_origin_costs.py`: mean 19.37 s against median 4.74 s, max 105.17 s | `python tools/measure_origin_costs.py --origins AAT,ABA,AAP` |
+| T8 | publish the per-origin cost distribution | `tools/measure_origin_costs.py`: mean 19.37 s against median 4.74 s, max 105.17 s | `python -m tools.measure_origin_costs --origins AAT,ABA,AAP` |
 | T9 | reuse the timetable-derived facts across releases | a fares-only refresh of the network build reuses every journey fact; the store is keyed by feed content, and a single-origin build neither reads nor writes it | the sweep-reuse case in `PageFactsTest` |
 | T10 | the same shared-asset treatment for the chooser | `chooser-<digest>.js` beside the release | `python -m unittest tests.test_page_output.SharedStationAssetTest` |
 | T11 | check whether hashed assets accumulate | a rebuild removes the hashed files no file in the folder names | `...SharedStationAssetTest.test_a_rebuild_removes_the_hashed_assets_no_page_names` |
@@ -759,9 +815,14 @@ were removed on 14 October 2026, in the commit that settled their findings here;
 their rejections are under "Rejected designs, with the reason" and their figures
 are in `docs/build-performance-findings.md`.
 
-The one review still in `docs/audits/` is
-`2026-10-09-impeccable-route-audit.md`, pruned to items [20] and [21], which are
-question 1 above. A review with nothing open does not keep a file.
+Four reviews are still in `docs/audits/`, each pruned to what it still asks for.
+`2026-10-09-impeccable-route-audit.md` is items [20] and [21], which are question
+1 above. `2026-10-14-impeccable-critique.md` is recommendations 3's second half,
+5, 7 and 8, which are the entry above and question 1. The app-engineering audit
+of the same date is its recommendation 6, the entry above. And
+`2026-10-14-impeccable-clarify.md` is a clarity reading of every route, fifty
+findings, none of them applied: it is the one review here whose items have not
+been through a pass yet. A review with nothing open does not keep a file.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in

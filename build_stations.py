@@ -40,7 +40,7 @@ one.
 **What it costs with an index.** `--timetable-index` drops the timetable load
 entirely: the fares feed plus one page's slice is the whole footprint, and no
 process parses the national timetable -- not this one, and not a pool worker.
-`python tools/build_timetable_index.py --timetable feeds/timetable --origins
+`python -m tools.build_timetable_index --timetable feeds/timetable --origins
 GRA,NOT` writes those slices from a single parse, and every build after that
 starts where the parse would have ended. Measured on 8 October 2026, this command
 with the index on those two stations **finished, exit 0, in 3 min 44 s** with

@@ -5,7 +5,7 @@ This re-derives the three that matter -- what the parent holds before the pool
 starts, what one worker's initialiser costs, and what the machine can hand a
 build at all -- by doing the build's own work and watching its own memory.
 
-    python tools/measure_build_memory.py --workers 4
+    python -m tools.measure_build_memory --workers 4
 
 Two figures are measured here and one is read. The parent's peak and a single
 worker's initialiser cost come from doing that work in this process; free
@@ -29,17 +29,15 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
-from atoc_fares import FaresDb  # noqa: E402
-from atoc_timetable import TimetableDb  # noqa: E402
-from build_demo_page import (  # noqa: E402
+from atoc_fares import FaresDb
+from atoc_timetable import TimetableDb
+from build_demo_page import (
     _priced_destinations,
     fares_index_cache_paths,
     is_pseudo_station,
 )
-from build_workers import (  # noqa: E402
+from build_workers import (
     ONE_WORKER_FLOOR,
     PARENT_BYTES,
     RESERVED_BYTES,
@@ -47,7 +45,7 @@ from build_workers import (  # noqa: E402
     free_memory_bytes,
     worker_budget,
 )
-from destination_coverage import UnsourcedReport  # noqa: E402
+from destination_coverage import UnsourcedReport
 
 MB = 1_000_000
 

@@ -8,7 +8,8 @@ Every number here was measured on this repository's own machine, on 7 and
 8 October 2026 against the feeds downloaded 24 September 2026
 (`feeds/fares/dtd-fares.zip`, `feeds/timetable/dtd-timetable.zip`), and on the
 later dates named by the sections that carry them: 12 October 2026 for the
-build-cost audit's figures, 14 October 2026 for the page write.
+build-cost audit's figures, 14 October 2026 for the page write, and 15 October
+2026 for the verify suite's own runtime and the type-check census.
 
 Each figure is labelled measured or
 extrapolated, and the reproduction command is beside it. Where a figure is an
@@ -430,7 +431,7 @@ sweep is not a turn's work, which is why the tool stops and resumes instead of
 being trimmed to a question it could finish:
 
 ```
-python tools/check_slice_equivalence.py --timetable feeds/timetable \
+python -m tools.check_slice_equivalence --timetable feeds/timetable \
     --date 2026-10-07 --days 7 --progress _cache/slice-equivalence.json
 ```
 
@@ -465,9 +466,9 @@ so the projections are:
 
 ```
 # shard i of 4, in four shells, then one verdict over all of them
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+python -m tools.check_slice_equivalence --timetable feeds/timetable --date 2026-10-07 \
     --days 7 --progress _cache/slice-equivalence.json --shard 1/4
-python tools/check_slice_equivalence.py --timetable feeds/timetable --date 2026-10-07 \
+python -m tools.check_slice_equivalence --timetable feeds/timetable --date 2026-10-07 \
     --days 7 --progress _cache/slice-equivalence.json --merge 4
 ```
 
@@ -600,7 +601,7 @@ on-disk timetable index would, and that is the work left in `docs/open-work.md`.
    The one-station path (`run.py --origin GRA`) worked this way all along, which
    is why it was fast; the whole-network path now does too.
 8. **Fixed, 8 October 2026, and the cheapest thing to do next: write the slices
-   down.** `python tools/build_timetable_index.py --timetable feeds/timetable
+   down.** `python -m tools.build_timetable_index --timetable feeds/timetable
    --origins GRA,NOT` cuts those slices once and leaves them on disk, and a build
    given `--timetable-index` reads its page's own slice in 4-6 s instead of
    parsing the national index in 56 s and holding 1.87 GB of it. When the index
@@ -643,7 +644,7 @@ download (419,589 schedules, 7,818,772 fares). The audit's own task list is
 settled in `docs/open-work.md` under "The 12 October 2026 build-cost audit";
 what landed is in the ADRs it names, and this section holds only the figures.
 
-**The spread, not the mean (T8).** `python tools/measure_origin_costs.py`
+**The spread, not the mean (T8).** `python -m tools.measure_origin_costs`
 times the slice cut, the day index and the reachability search per origin
 through the functions the build calls. The audit's three sampled origins
 reproduce on this machine (1.43 s, 8.66 s, 41.76 s against its 1.17 s,
@@ -699,7 +700,7 @@ to, the with-week shape projects to roughly **2.2 GB** (10-page stride mean
 × 2,712, with wide error bars at n=10) — over budget, and driven by the
 pair-rule encoding rather than by the script T1 removed (2,712 × 149 KB ≈
 385 MB saved, the remainder still over). The next real release settles it
-with `python tools/page_bytes.py --site _site --budget-mb 800`, which refuses
+with `python -m tools.page_bytes --site _site --budget-mb 800`, which refuses
 on its own; until then the projection above is the standing estimate.
 
 **The page write, measured (14 October 2026).** The audit's argument against a
@@ -755,3 +756,56 @@ origin to a single station and neither fixture build carried a service date.
 `tools/verify.py` now builds both fixtures for `SERVICE_DATE` and passes
 `--third-origin --return-network`, and the shape route is `one-page`, because what
 fits on one page is a list rather than a row.
+
+## The verify suite's own runtime, measured
+
+The figures in `AGENTS.md` and `README.md` said `--fast` was "about three
+minutes" and `--full` "about fifteen". Both were wrong by a wide margin, and a
+figure nobody dated is how they stayed wrong: the three-minute claim was written
+when the suite was a third of its size and nothing measured the command again.
+
+Measured 14 October 2026, twice, on this machine by the whole-app audit:
+**780 seconds** for the `--fast` suite on an otherwise idle machine and **1,017
+seconds** while a second suite ran alongside, for the same 1,120 tests in one
+process. That is thirteen minutes idle and seventeen under load, and the load was
+worth naming: the difference is the whole margin, so a figure quoted without it is
+half a figure.
+
+Measured again 15 October 2026, dated here rather than in a document that
+promises it, because item 9 of that audit is the correction:
+
+| Command | Wall clock | Load |
+|---|---|---|
+| `python -m tools.verify --fast` (1,137 tests) | **1,275 s** (21 min 15 s) | this machine, one suite at a time |
+| `python -m tools.verify --full` (1,139 tests, the type check and the JavaScript parse) | **2,118 s** (35 min 18 s) | the same |
+
+The `--full` figure breaks down as 2,116.1 s for the unit tests, 12.3 s for the
+JavaScript parse and 9.8 s for the type check. So this machine is slower than the
+machine the audit measured on -- 1,275 s against its 780 s for the same suite two
+days earlier -- and neither figure is a property of the tests. The `--fast` run
+above was taken while it was still red, reporting 11 failures that the same pass
+fixed; failing tests do not shorten a run, so the figure stands, and the later
+green run of the same command is what a reader should time their own against.
+
+The suite is I/O- and CPU-bound in turn -- the feed-scale tests parse both
+licensed feeds and the page tests write pages -- so these are wall-clock figures
+for one machine and not a benchmark of the tests. What they are good for is the
+question a reader actually has: whether to run the whole thing or one module.
+Run one module.
+
+## The type-check census, measured
+
+Measured 15 October 2026 with mypy 2.4.0, on this machine, `--no-incremental`, one
+process. The command is the census `tools/check_types.py --all` prints:
+
+| Command | Result | Wall clock |
+|---|---|---|
+| `python -m mypy --no-incremental` over every root module and tool | **350 errors in 29 of the 70 files** | **7 seconds** |
+| the same, `--strict`, over the build's own ten modules | **132 errors in those ten** (287 in the 17 files the check pulled in) | **4 seconds** |
+
+The cost of the check that landed is the second row's shape over the 27 files
+their own errors are zero in: **7 seconds**, which is why it runs with `--full`
+and not with `--fast`. `atoc_fares_loader.py` alone is **108** of the 350 -- the
+`FaresLoader` mixin sets attributes its subclass reads -- and `feed_audit.py`
+(42) and `sanity_report.py` (23) are the next two. Nothing smaller than those
+three is worth a pass of its own, which is what ADR-0072's ratchet is for.

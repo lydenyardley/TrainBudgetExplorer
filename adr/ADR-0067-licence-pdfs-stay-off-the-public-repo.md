@@ -57,5 +57,5 @@ run the suite; the publish path checks the manifest.
 The pushed history still contains the PDFs. Removing them from the public
 history means a history rewrite and a force-push. This change does not do that.
 
-`python tools/check_release_clearance.py --print` still prints each product's
+`python -m tools.check_release_clearance --print` still prints each product's
 digest: from the PDF when the file is there, otherwise from the manifest.

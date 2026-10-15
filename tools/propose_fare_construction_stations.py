@@ -21,9 +21,9 @@ nothing: a proposed list is not a reviewed one, and pasting one into
 ``atoc_fares`` as if a person had checked each entry is the same false claim
 as the unreviewed shortcuts this project has already removed.
 
-    python tools/propose_fare_construction_stations.py
-    python tools/propose_fare_construction_stations.py --feed feeds/fares
-    python tools/propose_fare_construction_stations.py --emit-code
+    python -m tools.propose_fare_construction_stations
+    python -m tools.propose_fare_construction_stations --feed feeds/fares
+    python -m tools.propose_fare_construction_stations --emit-code
 """
 
 from __future__ import annotations
@@ -32,15 +32,14 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from atoc_fares import (  # noqa: E402
+from atoc_fares import (
     FARE_CONSTRUCTION_CRS,
     FARE_CONSTRUCTION_NAME_MARKERS,
     looks_like_fare_construction,
 )
-from feeds_cli import add_feed_args  # noqa: E402
-from tools.regenerate_destination_facets import load_stations  # noqa: E402
+from feeds_cli import add_feed_args
+from tools.regenerate_destination_facets import load_stations
 
 
 def resolve_feed(feed: Path) -> Path:

@@ -16,139 +16,61 @@ computed styles, geometry, accessible names and console output. **No screenshots
 the preview webview produced no composited frames in this environment, so every
 finding below is measured from the live DOM rather than seen. A visual pass with a
 screenshot-capable browser is still owed.
+**Pruned:** 15 October 2026. Recommendations 1, 2, 4 and 6 are implemented, and
+3's first half with them; each is held by the test named beside it in the table
+below, and the commits that carry them are found with
+`git log --grep="critique item"`. The numbers keep their original values, so a gap
+in the sequence is deliberate, and what is left is what still asks for something:
+3's second half, 5, 7 and 8.
 
-## Design health score
+## Still open
 
-| # | Heuristic | Score | Key issue |
-|---|---|---|---|
-| 1 | Visibility of system status | 4 | Count line is `aria-live`, the pager says `1 of 5 pages`, the day is named, the folded bar carries what is currently narrowed. |
-| 2 | Match between system and real world | 3 | "53 destinations" is counting fare rows, and the chooser answers the same question with 50 (recommendation 2). |
-| 3 | User control and freedom | 4 | Budget, day, ticket type, party, chips, station picker, shortlist clear — every choice is reversible in place. |
-| 4 | Consistency and standards | 3 | One shared stylesheet and one component per job, but the station route carries licence notices and the other two carry none (register item [20]). |
-| 5 | Error prevention | 4 | The budget clamps, the picker only offers stations the build has pages for, and a build refuses rather than publishing a page without its notices. |
-| 6 | Recognition rather than recall | 3 | The destination-type group is 15 options at one decision point, three of them dead ends (recommendation 3). |
-| 7 | Flexibility and efficiency | 3 | No keyboard accelerator for the primary action; paging is one page at a time. |
-| 8 | Aesthetic and minimalist design | 4 | The refinements fold away by default and the default view is almost entirely the answer. |
-| 9 | Error recovery | 3 | The empty state names the budget and not the refinement that emptied it (recommendation 4). |
-| 10 | Help and documentation | 3 | The provenance, the address-bar notice and the feed record are excellent; the three fare words are explained only inside a row's panel. |
-| **Total** | | **34/40** | Good — 85% of the scale, with the gaps concentrated in wording, not in structure. |
+- **[3, second half] [P2] A 15-option decision point.** The dead ends are gone
+  (each of the three chips that selected an empty list is no longer offered), but
+  the group is still `All` plus fourteen chips at one decision point, well past
+  the four a reader holds at once. What is left of the fix is the arrangement:
+  group the four settlement bands ahead of the ten thematic facets behind one
+  "More types" disclosure.
+- **[5] [P2] The routes that show no fares carry no licence notices.**
+  `--notices nre,rdg,ogl,accuracy` reaches `render_page` only, so the built
+  chooser and the privacy page carry no licence or attribution wording at all
+  while the station page carries NRE and the Open Government Licence. Held open
+  deliberately, not overlooked: whether the obligation rides on a page that shows
+  no fare is a reading of the licence terms, and it is question 1 under "What is
+  waiting on a person" in `docs/open-work.md`, together with route audit items
+  [20] and [21]. This pass adds no new item to it.
+- **[7] [P3] The fare vocabulary has no home.** "Regular", "Restricted",
+  "Advance", "changes", "two tickets" and the minimum-fare note are explained
+  inside a row's own panel, one disclosure at a time, so a reader comparing six
+  rows is holding words they have not been given. Fix: one short "what these
+  words mean" block beside the provenance, or a definitions list the row links
+  to.
+- **[8] [P3] No accelerator for the page's one job.** The primary action is
+  setting the budget, and it is reachable only by tabbing through the heading
+  controls or grabbing the slider. Fix: `/` or `b` to focus the budget field,
+  `n`/`p` for the next and previous page, and say so in the folded bar's summary
+  line.
 
-## Design specificity verdict
+## What landed
 
-**Authored for this product, not for the category.** Three things could not be
-lifted onto another site unchanged: the heading *is* the query (the budget field
-and the station slot are words inside the sentence, with a dashed underline
-instead of a label), a row's price is stated with its ticket type and its
-condition, and the page refuses to imply a recommendation — no "best" tint, no
-sorted-by-our-opinion badge, the order is stated in words in the count line. The
-palette and the component vocabulary are quiet and consistent across routes.
+| Recommendation | Closed by | Held by |
+|---|---|---|
+| [1] [P1] the chooser printed the download date twice | the provenance is a structured pair — the source names the feed, the date travels beside it, and each route composes one sentence from the two | `tests/test_build_chooser.py`'s entry-provenance test, `build_demo_page.dtd_download_entry`, `page/station/provenance.js` |
+| [2] [P1] two counts for one question | the count is the places the page carries, two-ticket rows included: measured on the real feed, Grantham's 50 became 334, and the number a reader arriving from the chooser sees is now the page's own set | `tests/test_build_demo_page.py`'s `test_the_count_is_every_place_this_page_carries`, `tests/test_page_caches.py`'s timetable-key test, `build_demo_page._priced_destinations` |
+| [3, first half] [P2] three of fourteen chips could not succeed | a chip is offered only when a destination of its type is inside the budget on screen, which is the same rule the count beside it already stated | `tests/browser/station-filters.cjs`'s chip checks, both directions, `page/station/filters.js`'s `syncDestinationTypeChips` |
+| [4] [P2] the empty state named the budget and not the cause | the count line names the active refinement in the same words the paragraph below the table uses, and the empty state's own "Clear the destination type" is one press away | `tests/browser/station-filters.cjs`, `page/station/table.js`'s `render` |
+| [6] [P3] the smallest type on the page was 11.52px | `.75rem` is the floor for type on this route, and the letter-spacing carries the small-caps effect | `tests/test_page_assets.py`, `page/station.css` |
 
-**Deterministic scan.** `impeccable detect --json` over the built chooser, station
-page and privacy page returns **one** finding: `cramped-padding` on
-`.origin-slot-wrap` (children flush against a `border-bottom`). This is the false
-positive the 9 October route audit already recorded — that border is the dashed
-underline that is the slot's whole affordance — and it should not be re-filed.
-Nothing else was detected, including on the real-feed build (354 KB station page).
+## The detector's one finding, and why it is not one
 
-## What's working
-
-- **The heading as a sentence.** Measured on the real Grantham page, the budget
-  field is `2ch` wide with a `1.5rem` floor and the station field is
-  content-sized — a word in a sentence, not a form control. This is the page's
-  whole idea and it survives contact with real data.
-- **Accessibility is measured, not asserted.** Every text element sampled in both
-  colour schemes came back at **8.25:1 or better** (body 14.89, muted tag 8.29,
-  station code 8.29, interchange 8.29, restricted fare 9.59, footer 8.29), and no
-  control among the 34 on the station page fell below 44px in either dimension. At
-  390px the table becomes stacked cards and the document does not scroll sideways
-  (`scrollWidth` 374 of 390); at 615px it does not either (598 of 615).
-- **Nothing hides without saying so.** The refinements fold, and the toggle
-  carries a live summary — "Filter this list · Ticket: Cheapest of any type ·
-  Travellers: One adult, 0 railcard · Destination: All" — so a folded bar is
-  never a hidden filter.
-
-## Numbered recommendations
-
-Deduplicated against the open register. Items [20] and [21] of the 9 October
-route audit are *not* repeated here; they are still open and this pass found them
-still present (see item 5).
-
-1. **[P1] The chooser prints the download date twice.** Built bytes, real-feed
-   build: `Prices from the National Rail Data Portal DTD fares feed, downloaded
-   24 September 2026 downloaded 24 September 2026.` The station page prints it
-   once. Cause: `render_chooser` appends `downloaded {feed_date}` to a
-   `price_source` that already ends in its own download date (both
-   `price_source_from_metadata` and `price_source_from_manifest` return the date
-   inside the sentence). Fix: give the provenance a *structured* pair — source,
-   date — and let each route compose one sentence from it. This is the first
-   sentence a reader arriving from a community post sees.
-2. **[P1] Two counts, one question.** The chooser says `50 destinations` for
-   Grantham; its own station page says `53 destinations for up to £20.00 each,
-   cheapest first: 47 singles, 6 returns`. They are computed by different paths
-   (`build_station_index` over `priced_destinations_within(…, EVERYTHING_PENCE)`
-   against the page's own rows), and the split suggests the page is counting
-   *fare rows* under the word "destinations". For a product whose promise is a
-   number, a reader who notices has lost the number. Fix: either make them the
-   same count, or word them as what they are — "50 places this site prices" and
-   "53 fares under £20" — and let the count line's own split match its noun.
-3. **[P2] A 15-option decision point, three options of which cannot succeed.**
-   The open destination-type group is `All` plus 14 chips; on this origin
-   `Coastal & seaside (0)`, `Islands (0)` and `National parks and landscapes (0)`
-   select an empty list. Fifteen visible options is well past the four a reader
-   holds at once. Fix, cheapest first: the count is already in the label, so hide
-   (or disable) chips with no matches for this origin; group the four settlement
-   bands ahead of the ten thematic facets behind one "More types" disclosure.
-4. **[P2] The empty state names the budget and not the cause.** After choosing
-   `Coastal & seaside (0)` the line reads `No destinations for up to £20.00
-   each`, the pager reads `1 of 1 page · 0 destinations`, and the control that
-   would recover it (`Clear destination types`) is back inside the folded panel.
-   Fix: name the active refinement in the empty state ("No coastal & seaside
-   destinations from Grantham within £20") and put the clearing action in it.
-5. **[P2] Still open from the register, verified live.** The station page carries
-   the NRE credit, the Open Government Licence and the Knowledgebase credit; the
-   chooser and the privacy page carry none — the privacy page's footer is a
-   single "Station list" link. This is items [20] and [21] of
-   `docs/audits/2026-10-09-impeccable-route-audit.md`, held open in
-   `docs/open-work.md` pending a reading of the licence terms. No new item.
-6. **[P3] The smallest type on the page is 11.52px.** The uppercase filter-group
-   labels (`0.72rem` with `.08em` letter-spacing) are the hardest text to read on
-   a page whose body is 16px. Fix: raise the floor to `0.75rem` and let the
-   letter-spacing carry the small-caps effect.
-7. **[P3] The fare vocabulary has no home.** "Regular", "Restricted", "Advance",
-   "changes", "two tickets" and the minimum-fare note are explained inside a
-   row's own panel, one disclosure at a time. A reader comparing six rows is
-   holding words they have not been given. Fix: one short "what these words mean"
-   block beside the provenance, or a definitions list the row links to.
-8. **[P3] No accelerator for the page's one job.** The primary action is setting
-   the budget, and it is reachable only by tabbing through the heading controls or
-   grabbing the slider. Fix: `/` or `b` to focus the budget field, `n`/`p` for the
-   next and previous page, and say so in the folded bar's summary line.
-
-## Persona red flags
-
-**Jordan (first-timer)**: the three words that decide which rows are cheap —
-"Regular", "Restricted", "Advance" — appear in a column with no definition above
-them (recommendation 7); the chooser sentence that should orient them repeats
-itself (recommendation 1).
-
-**Sam (accessibility-dependent)**: the sampled contrast and the 44px floors are
-genuinely good, and the count line is announced politely. The gap is the chips: 15
-choices in one fieldset with the dead ends offering a result the page cannot
-produce (recommendation 3).
-
-**Riley (stress tester)**: a chip with `(0)` is the visible edge case, and choosing
-it yields a correct but unhelpful state (recommendation 4). The 50-versus-53
-disagreement between two routes is the hidden one (recommendation 2).
-
-## Minor observations
-
-- The station page's own lede honestly states a single-origin build ("This is the
-  only station this build has pages for, so the name above is not a link") — good,
-  and the same honesty is why the counts in recommendation 2 stand out.
-- The day control offers two days from the timetable window; the label row reads
-  "Times for", which is the right register for a table whose times are one day's.
-- The privacy page is 402 words across five headings and states the build date it
-  describes — unusually good for the genre.
+`impeccable detect --json` over the built chooser, station page and privacy page
+returned one finding, `cramped-padding` on `.origin-slot-wrap` (children flush
+against a `border-bottom`). It is a **false positive**: that border is the dashed
+underline that is the station slot's whole affordance, chosen in
+`page/shared.css` precisely because a text field's underline is the one shape a
+reader already reads as "this part of the sentence is yours". The 9 October route
+audit recorded the same finding and reached the same verdict, and a later pass
+should not re-file it.
 
 ## Run notes
 

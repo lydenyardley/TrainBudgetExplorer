@@ -59,7 +59,7 @@ declaration is free to import `atoc_fare_declarations` directly.
 - A scan of every `.py` file in the tree for `from atoc_fares import ...` and for
   `atoc_fares.<name>` attribute use finds **56 distinct names, none missing** on
   the new module.
-- `python tools/verify.py --fast` and the fares modules' own suites pass with the
+- `python -m tools.verify --fast` and the fares modules' own suites pass with the
   declarations in the new file; `tools/build_inputs.py` fingerprints `*.py`, so
   the new module re-triggers a rebuild without being named in the workflow.
 
