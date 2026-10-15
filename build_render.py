@@ -180,10 +180,9 @@ def origin_control(payload: dict) -> str:
 # The first-use note for a build with nowhere to change to. It is a constant
 # because the page ships it twice: as the text in the document, and as the
 # sentence the script falls back to if the shared picker list did not arrive.
-ONE_STATION_FIRST_USE = (
-    "This is the only station this build has pages for, so the name above "
-    "is not a link."
-)
+# The document's own copy names the station; this fallback cannot, because it is
+# also the sentence for a build whose shared list failed to load.
+ONE_STATION_FIRST_USE = "The station name in the heading is not a link."
 
 
 def first_use_sentence(payload: dict) -> str:
@@ -204,6 +203,12 @@ def first_use_sentence(payload: dict) -> str:
     """
 
     if not picker_has_options(payload):
+        name = (payload.get("origin") or {}).get("name")
+        if name:
+            return (
+                f"This site covers {html.escape(name)} only, so the name in the "
+                "heading is not a link."
+            )
         return ONE_STATION_FIRST_USE
     return "Click the <b>station name</b> to start from somewhere else."
 
@@ -377,13 +382,13 @@ def render_privacy(
             + features.get("measurement", "has none recorded, which should not "
               "happen -- a build cannot inject a snippet without one (ADR-0032).")
             if features.get("analytics")
-            else "No analytics run. If the operator later adds analytics, this page will name them here first."
+            else "No analytics run. If analytics are ever added to this site, this page will name them here first."
         ),
         (
             "Ticket buttons carry a tracked link, so the seller is told which page sent "
             "the reader. The fare pages say so in their footer."
             if features.get("trackedLinks")
-            else "The site code does not intentionally collect visit data."
+            else "This site does not collect visit data."
         ),
     ]
     if features.get("affiliate"):
@@ -483,8 +488,8 @@ def render_chooser(
             f'{html.escape(only["name"])}</span></span>'
         )
         intro = (
-            '<p class="sub">This site was built for one station: open it below for '
-            "every destination your budget reaches from there.</p>"
+            f'<p class="sub">This site covers {html.escape(only["name"])} only. Open its '
+            "row below for every destination your budget reaches from there.</p>"
         )
         # Nothing is ordered, so the page makes no ranking claim: an ordering
         # note over one row describes a choice the reader does not have.
@@ -499,13 +504,12 @@ def render_chooser(
             'aria-controls="picks"></span></span>'
         )
         intro = (
-            '<p class="sub">Type the station you are leaving from, then pick it '
+            '<p class="sub">Type the station you are starting from, then pick it '
             "from the list.</p>"
         )
         ordering = (
-            '<p class="sub" id="orderingNote">Ordered by how many destinations this '
-            "download prices from each station &mdash; not by how busy it is, and not by "
-            "how near it is.</p>"
+            '<p class="sub" id="orderingNote">Every station this page prices journeys '
+            "from, most first &mdash; not by how busy it is, and not by how near it is.</p>"
         )
         title_suffix = "pick your station"
     return (

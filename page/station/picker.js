@@ -51,8 +51,8 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     if (wanted.length) {
       originNomatch.hidden = true;
     } else {
-      originNomatch.textContent = "We don't have prices from '" + originSearch.value.trim() +
-        "'. Try the station's name or its three-letter code.";
+      originNomatch.textContent = "We don’t have a page for ‘" + originSearch.value.trim() +
+        "’. Try the station’s name or its three-letter code.";
       originNomatch.hidden = false;
     }
     // Said on the page rather than in a screen-reader-only status, because the

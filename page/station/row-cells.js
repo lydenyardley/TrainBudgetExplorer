@@ -190,7 +190,8 @@ function fareSentence(destination) {
     // that does change keeps the change wording.
     if ((destination.changes || 0) === 0) {
       return "Two tickets, priced via " + via +
-        " (stay on the train): the price is the two fares added together.";
+        " (a through train, so you stay on the train the whole way): the price is the two fares " +
+        "added together.";
     }
     return "Two tickets, changing at " + via +
       ": the price is the two fares added together.";
@@ -198,7 +199,15 @@ function fareSentence(destination) {
   if (destination.isAdvance) {
     return "Advance single: you choose the train, and the price and availability can change.";
   }
-  if (destination.restrictionCode) return "Restricted fare — the condition is below.";
+  if (destination.restrictionCode) {
+    // The feed either describes the code or says it cannot, and the paragraph
+    // below is the one that says which. The lead sentence promised a condition
+    // either way, so on a code the feed cannot describe it sent the reader down
+    // for something that was not there (audit item 25).
+    return destination.restrictionDescribed
+      ? "Restricted fare — the condition is below."
+      : "Restricted fare — the fare's own condition is not in this feed, so check the seller's terms.";
+  }
   if (destination.quality === "outbound single") return "Standard outbound single, with no conditions in the feed.";
   if (destination.quality === "unrestricted Anytime Day Return") {
     return "Unrestricted Anytime Day Return: valid on any train on the route.";
@@ -212,12 +221,13 @@ function fareSummary(destination) {
   if (destination.tickets) {
     const via = destination.tickets[0].toName;
     if ((destination.changes || 0) === 0) {
-      return "Two tickets, bought separately, priced via " + via + " (stay on the train).";
+      return "Two tickets, bought separately, priced via " + via +
+        " (a through train, so you stay on the train the whole way).";
     }
     return "Two tickets, bought separately, changing at " + via + ".";
   }
   if (destination.isAdvance) return "Advance single: valid only on a qualifying train, and the price and availability can change.";
-  if (destination.restrictionCode) return destination.restrictionDescription || "This fare has a restriction code; the condition is in this row's details.";
+  if (destination.restrictionCode) return destination.restrictionDescription || "Restricted fare: the fare's own condition is not in this feed, so check the seller's terms.";
   return "No fare restriction code is attached to this fare.";
 }
 

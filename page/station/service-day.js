@@ -50,17 +50,20 @@ function chooseServiceDay(index) {
 // the row next runs; nothing here can be worded without them.
 //
 // A cell is narrow and a copied line is not, so each entry says both: the
-// short form goes in the column and the long form in the record. They are two
-// lengths of one sentence rather than two sentences, and both name the day.
+// short form goes in the column, where the table's own day is the day it means,
+// and the long form in the record, which names the date because that text
+// travels away from the page. They are two lengths of one sentence rather than
+// two sentences.
 const JOURNEY_ABSENCE = {
   no_timetable: (day, later) => ({
     brief: day.short ? "No timetable " + day.short : "No timetable",
     full: day.long ? "no timetable in this build for " + day.long : "no timetable in this build",
   }),
   no_service: (day, later) => ({
-    brief: later
-      ? "No service " + day.short + ", runs " + shortDay(later)
-      : "No service " + (day.short ? day.short + " " : "") + "any day this week",
+    // The cell holds a short state and the day it means is in the row's own
+    // details: a clause in a column of durations reads as a duration, and this
+    // one was ungrammatical on top of that (audit item 22).
+    brief: "No service that day",
     full: later
       ? "no service on " + day.long + ", and it runs on " + humanDate(later)
       : "no service on " + (day.long || "the day this build asked about") +

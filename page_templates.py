@@ -104,16 +104,16 @@ __BUILT_LINE__
 <ul>
 __PRACTICES__</ul>
 <h2>What stays in the address bar</h2>
-<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, the day the times are for, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
+<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, which railcard you chose, the day the times are for, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
 <ul>
 <li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
-<li>if you share or bookmark such an address, the whole search travels with it, so a shortlist you share carries your budget and party size to whoever opens the link.</li>
+<li>if you share or bookmark such an address, the whole search travels with it, so a link you hand to somebody carries your budget, any railcard you chose and the places you shortlisted to whoever opens it.</li>
 </ul>
 <p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
 <h2>Ticket links</h2>
-<p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the footer of the fare pages says so plainly.</p>
+<p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the fare pages will say so in their footer.</p>
 <h2>Hosting</h2>
-<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy. The site code itself does not set cookies or intentionally collect visit data.</p>
+<p>The site is static files served by the operator's chosen host. That host may process ordinary server logs, such as an IP address and requested pages, under its own privacy and retention policy.</p>
 <h2>Contact</h2>
 <p class="muted">__CONTACT__</p>
 </main>
@@ -140,7 +140,7 @@ __STATION_STYLE__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
-<h1 id="pageHeading">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
+<h1 id="pageHeading" aria-label="Train fares up to &pound;__BUDGET__ from __ORIGIN__">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- C04: the opening sentence is written by renderIntro() once the build has
      said whether a timetable was loaded. The static text below is the
      fares-only sentence, because that is the one that cannot overstate what a
@@ -183,7 +183,7 @@ __THEME_TOGGLE__
     <legend class="sr-only">Budget</legend>
     <label class="sr-only" for="budget">Budget in pounds</label>
     <input id="budget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
-    <span class="tag" id="budgetHint">Drag to change the budget in the heading. It stops at the highest fare in the ticket type you are looking at — <span id="budgetCeiling">__CEILING_NOTE__</span>.</span>
+    <span class="tag" id="budgetHint">Drag to change the budget in the heading. It stops at the highest fare <span id="budgetHintMode">in the list on screen</span> — <span id="budgetCeiling">__CEILING_NOTE__</span>.</span>
   </fieldset>
   <div class="more-filters" id="moreFilters" data-open="false">
     <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
@@ -196,7 +196,7 @@ __THEME_TOGGLE__
   <fieldset class="ticket-filter">
     <legend>Ticket type</legend>
     <div class="filter-options segmented">
-      <label><input type="radio" name="ticketMode" value="cheapest" checked> Cheapest of any type</label>
+      <label><input type="radio" name="ticketMode" value="cheapest" checked> Cheapest available</label>
       <label><input type="radio" name="ticketMode" value="anytime"> Anytime Day Return</label>
       <label><input type="radio" name="ticketMode" value="return"> Any return</label>
       <label><input type="radio" name="ticketMode" value="single"> Single</label>
@@ -222,9 +222,9 @@ __THEME_TOGGLE__
   <fieldset class="destination-filter">
     <legend>Destination type</legend>
     <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
-  <span class="tag" id="typeRule">More than one type shows destinations of any of them. The count on each is how many are inside the budget now.</span>
+  <span class="tag" id="typeRule">Each count is how many destinations of that type are inside the budget now.</span>
   <p id="facetNotice" class="tag" role="status" hidden></p>
-  <button id="clearTypes" class="toggle" type="button" hidden>Clear destination types</button>
+  <button id="clearTypes" class="toggle" type="button" hidden>Show all destination types</button>
   </fieldset>
     </div>
   </div>
@@ -294,7 +294,7 @@ __THEME_TOGGLE__
      gives its rows the whole window. The row headings name the four facts
      because a reader comparing two places is reading columns, and the
      columns need the same names the results table gives them. -->
-<aside class="shortlist-dock" id="shortlistDock" hidden aria-label="Shortlisted places">
+<aside class="shortlist-dock" id="shortlistDock" hidden aria-label="Shortlisted destinations">
   <div class="shortlist-dock-head">
     <span class="shortlist-label">Shortlist</span>
     <span class="tag" id="shortlistDockCount"></span>

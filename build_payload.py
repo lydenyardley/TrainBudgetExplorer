@@ -445,6 +445,25 @@ def describe_restriction(context: PageContext, code: str) -> str:
     return ""
 
 
+def restriction_has_wording(context: PageContext, code: str) -> bool:
+    """Whether the feed holds any wording at all for a restriction code.
+
+    A record with the code and an empty description, outward text and return text
+    describes nothing, and the row's lead sentence must not send a reader down
+    for a condition the page cannot show (audit item 25, 14 October 2026). What
+    counts as holding a description is the rule the reference note already uses:
+    the description, or either restriction text (atoc_knowledgebase).
+    """
+    header = context.fares.restrictions.headers.get(code) if code else None
+    if header is None:
+        return False
+    return bool(
+        header.description.strip()
+        or header.outward_text.strip()
+        or header.return_text.strip()
+    )
+
+
 def destination_row(
     context: PageContext,
     pool: RulePool,
@@ -570,6 +589,11 @@ def destination_row(
         # fallback says plainly that the feed has none, so a reader is
         # never told to "check the seller" as if that were a decoded rule.
         "restrictionDescription": describe_restriction(context, restriction_code),
+        # Whether the feed holds any wording for this code at all. The row's
+        # lead sentence says where the condition is and must not promise one the
+        # page cannot show, and the fallback description is a sentence rather
+        # than a fact to branch on (audit item 25, 14 October 2026).
+        "restrictionDescribed": restriction_has_wording(context, restriction_code),
         "minutes": journey.duration if journey else None,
         "changes": journey.changes if journey else None,
         # One entry per leg boundary, so a one-change journey carries the
@@ -1150,7 +1174,7 @@ def build_payload(
         # row repeating the same strings.
         "restrictionValidity": restriction_validity,
         "restrictionReference": restriction_reference_note,
-        "pricingBasis": "cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
+        "pricingBasis": "Each price is the cheapest displayable standard-class fare found in the feed, in the ticket mode the page opens in; each mode names above the table what its fares are, with ITX placeholders excluded and Advance singles labelled as train-specific",
         "serviceDate": day.isoformat() if day else None,
         # The span the sweep asked, so the page can say which days a row with
         # no next service was actually checked for rather than saying "no
@@ -1209,7 +1233,7 @@ def build_payload(
         "railcardNote": (
             (
                 "No railcard is selected, so the prices shown are standard fares. Choose the "
-                "card you hold and each displayed fare is repriced from that card's own "
+                "card you hold and the fares it lowers are repriced from that card's own "
                 "minimum-fare table, discounted by a third and rounded down to the nearest 5p. "
                 "Current DTD RR route, ticket, location and total-ban rules are checked for "
                 "every destination and every card; matching restriction codes are retained as "
@@ -1220,6 +1244,19 @@ def build_payload(
                 "No reviewed railcard is present in this feed. The prices shown are standard fares."
             )
         ),
+        # The half of the paragraph that is true whichever card is chosen. The
+        # page rewrites the opening sentence from the state on screen, because a
+        # paragraph about the numbers has to agree with the numbers (audit item
+        # 24).
+        "railcardMethod": (
+            "The card's own fare is repriced from its minimum-fare table, "
+            "discounted by a third and rounded down to the nearest 5p. Current DTD RR route, "
+            "ticket, location and total-ban rules are checked for every destination and every "
+            "card; matching restriction codes are retained as travel conditions rather than "
+            "treated as bans."
+        )
+        if railcards
+        else None,
         # Without a date every schedule in the feed is read, so a train that has
         # a change of plan appears as its permanent and its covering version.
         "dateNote": (

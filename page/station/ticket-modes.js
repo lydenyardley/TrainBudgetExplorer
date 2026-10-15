@@ -59,6 +59,23 @@ function modeCount(mode) {
   if (mode === CHEAPEST_MODE) return cheapestDestinations().length;
   return (DATA[MODE_LISTS[mode]] || []).length;
 }
+// The empty state may offer another set, and its button names what the button
+// does with the count as the object of the verb -- "Show the 7 Anytime Day
+// Returns", not the fragment "Anytime Day Return has 7" (audit item 32).
+const SHOW_NOUNS = {
+  cheapest: ["cheapest fare", "cheapest fares"],
+  anytime: ["Anytime Day Return", "Anytime Day Returns"],
+  return: ["return", "returns"],
+  single: ["single", "singles"],
+};
+function countWord(count) {
+  return count === 1 ? "one" : String(count);
+}
+function showLabel(mode) {
+  const count = modeCount(mode);
+  const nouns = SHOW_NOUNS[mode] || [modeLabels()[mode], modeLabels()[mode] + "s"];
+  return "Show the " + countWord(count) + " " + nouns[count === 1 ? 0 : 1];
+}
 // The fare a row is priced as, in the words the build's own price-quality
 // phrases use. The cheapest list holds one fare per place, so this is what
 // names the ticket on a row the reader chose by price rather than by type.
@@ -83,7 +100,7 @@ function fareName(destination) {
 // The mix of ticket types in a list, for the count line. A list of one kind is
 // the case this exists for rather than the case it stays quiet about: on the
 // real Grantham page every one of the 101 opening rows is a single, and "cheapest
-// first" beside a control named "Cheapest of any type" does not tell a reader
+// first" beside a control named "Cheapest available" does not tell a reader
 // why no return is on the page.
 const MIX_WORDS = {
   "outbound single": "single",
@@ -137,14 +154,14 @@ const MODE_WHY = {
 // compare two numbers in it, so the note sits above the table rather than
 // inside the methodology accordion, and is read at the moment the comparison
 // is made. Q4 then changed which set is open: the page opens on the cheapest
-// fare of any type, whose caveats are the mix itself and the advance single
-// inside it, and the reviewed set this note was written for is now one of the
-// filters beside it. The wider "any return" set is offered for the same reason
+// fare of any type, whose caveats are the advance single and the restricted
+// fare inside it, and the reviewed set this note was written for is now one of
+// the filters beside it. The wider "any return" set is offered for the same reason
 // it always was -- a restricted off-peak fare is a real price a reader can buy
 // -- and whichever set is open, a restricted fare is not interchangeable with
 // an unrestricted one, and the page cannot decode the feed's own validity text.
 const MODE_NOTE = {
-  cheapest: "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns. An advance fare needs a chosen train; a restricted fare's condition is in the row's details.",
+  cheapest: "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; a restricted fare's condition is in the row's details.",
   anytime: "Unrestricted Anytime Day Returns: valid on any train on the route, so these prices compare with each other directly.",
   return: "Every standard-class return the feed prices, restricted off-peak and advance included. A restricted fare is not valid on every train or at every time — its condition is in the row's details.",
   single: "Outbound singles rather than returns. An advance single needs a chosen train, and is labelled where it appears.",
@@ -153,6 +170,12 @@ function renderModeNote() {
   const note = document.getElementById("modeNote");
   if (!note) return;
   note.textContent = MODE_NOTE[ticketMode()] || "";
+  // The budget hint names the ticket mode the ceiling belongs to, because the
+  // mode control is inside the folded refinements and "the ticket type you are
+  // looking at" named nothing on screen (audit item 12). It is written in the
+  // control's own words, so renaming the option renames this too.
+  const hintMode = document.getElementById("budgetHintMode");
+  if (hintMode) hintMode.textContent = "in " + (modeLabels()[ticketMode()] || "the list on screen");
 }
 function emptyModeMessage() {
   const labels = modeLabels();
@@ -173,13 +196,13 @@ function renderEmptyMode() {
   empty.append(why);
   const actions = document.createElement("p");
   actions.className = "empty-actions";
-  for (const [mode, label] of Object.entries(modeLabels())) {
+  for (const mode of Object.keys(modeLabels())) {
     if (mode === ticketMode() || !modeCount(mode)) continue;
     const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "toggle";
-    button.textContent = label + " has " + modeCount(mode);
+    button.textContent = showLabel(mode);
     button.addEventListener("click", () => {
       input.checked = true;
       currentPage = 1;
@@ -220,7 +243,7 @@ function renderEmpty(available, wanted, cap, what) {
     (low, destination) => Math.min(low, priceOf(destination)), Infinity);
   if (Number.isFinite(cheapest) && cheapest > cap) {
     const enough = Math.ceil(cheapest / 100);
-    offer("Show everything up to " + money(enough * 100), () => {
+    offer("Raise the budget to " + money(enough * 100), () => {
       setBudget(enough);
       currentPage = 1;
       render();
@@ -228,7 +251,7 @@ function renderEmpty(available, wanted, cap, what) {
     });
   }
   if (selectedDestinationTypes().size) {
-    offer("Clear the destination type", clearDestinationTypes);
+    offer("Show all destination types", clearDestinationTypes);
   }
   // A pair's price is a different number, so a party the reader has not chosen
   // yet is a real way out of an empty list rather than advice.
@@ -244,10 +267,10 @@ function renderEmpty(available, wanted, cap, what) {
     }
   }
   // Another ticket type on this origin, with its own count.
-  for (const [mode, label] of Object.entries(modeLabels())) {
+  for (const mode of Object.keys(modeLabels())) {
     if (mode !== ticketMode() && modeCount(mode)) {
       const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
-      offer(label + " has " + modeCount(mode), () => {
+      offer(showLabel(mode), () => {
         input.checked = true;
         currentPage = 1;
         render();

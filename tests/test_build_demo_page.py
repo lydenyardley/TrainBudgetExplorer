@@ -187,14 +187,14 @@ class DemoPageTest(PageTestCase):
         # comparison is of the price on screen: the browser suite drives the
         # dock, the copied text, the shared link and the refresh that brings
         # the list back.
-        self.assertIn("A shortlist of places, not a booking", page_script(self.html))
+        self.assertIn("A shortlist of destinations, not a booking", page_script(self.html))
         # The limit is said, not silently applied.
         # Said on the page as well as to the status region: a control that
         # stops responding with no explanation is the one thing a reader
         # cannot act on, and the strip is where they are already looking. The
         # figure is the page's own cap, written into the sentence it shows.
         self.assertIn('"The shortlist holds "', page_script(self.html))
-        self.assertIn('" places. Remove one to add another."', page_script(self.html))
+        self.assertIn('" destinations. Remove one to add another."', page_script(self.html))
     def test_a_published_page_survives_a_moment_s_locked_by_a_reader(self) -> None:
         # A full-network build is hours long and publishes thousands of
         # files. Windows refuses to replace a file anything else holds open,
@@ -263,7 +263,7 @@ class DemoPageTest(PageTestCase):
         # read off a rendered row, so the browser suite reads the opened
         # panel's colSpan against the table's own heading count.
         # And the footer still says what the page is missing.
-        self.assertIn("no timetable loaded", page_script(html))
+        self.assertIn("no timetable was supplied", page_script(html))
 
     def test_a_page_with_times_keeps_all_six_columns(self) -> None:
         # The columns are shipped as headings, so the page counts the table it
@@ -329,7 +329,7 @@ class DemoPageTest(PageTestCase):
         # built with a timetable.
         self.assertTrue(self.payload["hasJourneys"])
         self.assertFalse(build_payload(self.fares, None, "GRN")["hasJourneys"])
-        self.assertIn("no times are shown", page_script(self.html))
+        self.assertIn("no times or changes are shown", page_script(self.html))
         self.assertIn("with the fastest time and the fewest changes", page_script(self.html))
         # The static text is the fares-only sentence, so a page that has not
         # run this script yet cannot be promising times it will not show.
@@ -376,6 +376,13 @@ class DemoPageTest(PageTestCase):
         self.assertIn("Train fares", heading)
         self.assertIn("up to", heading)
         self.assertNotIn("under", heading)
+        # Items 9 and 13 of the 14 October 2026 clarity audit: the heading holds
+        # the budget field and the station control, so its own accessible name is
+        # the whole sentence rather than the controls' text run together. The
+        # document ships it, so a page whose script never runs still names the
+        # heading. That the script rewrites it from the tab title on every render,
+        # so the two cannot disagree, is the browser suite's to prove.
+        self.assertIn('aria-label="Train fares up to &pound;20 from GRANTHAM"', heading)
         # The other two places that name the cap. "Within" is not "under", but
         # it reads the same way beside a fare that lands exactly on the ceiling,
         # and a summary saying "3 destinations within £20" under a heading that
@@ -695,7 +702,7 @@ class DemoPageTest(PageTestCase):
         # C07: the condition is still on the same row, one disclosure away, so
         # the pointer is kept rather than dropped -- and it now points at the
         # thing it names instead of at a column that no longer exists.
-        self.assertIn('Restricted fare — the condition is below.', page_script(self.html))
+        self.assertIn("Restricted fare — the fare's own condition is not in this feed", page_script(self.html))
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
@@ -922,7 +929,7 @@ class DemoPageTest(PageTestCase):
         # no-match wording quotes the reader's own input, so it is written with
         # single quotes inside double-quoted literals and must arrive intact.
         script = page_script(self.html)
-        self.assertIn("We don't have prices from '", script)
+        self.assertIn("We don’t have a page for ‘", script)
         self.assertNotIn('from \\"', script)
 
     def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
@@ -1021,16 +1028,22 @@ class DemoPageTest(PageTestCase):
         # rendered row and follows.
         self.assertIn('", opens in a new tab"', page_script(self.html))
 
-    def test_the_page_says_how_many_journeys_it_is_hiding(self) -> None:
+    def test_the_row_expander_carries_one_name_on_every_row(self) -> None:
         # The toggle exists on every row now, because the row's fare and its
         # condition are in the panel it opens and a prices-only build has no
         # times to hang a toggle on (finding, 29 September 2026). The control is
-        # the page's own chevron rather than a word, so the count no longer has
-        # anywhere visible to go; it stays in the accessible name, which is
-        # where the word used to be, and the panel still lists the times. The
-        # browser suite drives the toggle and the name it carries.
-        self.assertIn('" times and fare details for "', page_script(self.html))
-        self.assertIn('"Fare details for "', page_script(self.html))
+        # the page's own chevron rather than a word, so the count it used to show
+        # had nowhere visible to go and went into the accessible name. That made
+        # the name two shapes -- "<n> times and fare details for X" on a timed
+        # row and "Fare details for X" on one the build could not price times
+        # for -- and a screen reader's list of controls read as two families
+        # (audit item 27, 14 October 2026). One shape is kept: the shape is the
+        # copy asserted here, and that each row's own name is appended to it is
+        # the browser suite's, as are the times the panel lists.
+        script = page_script(self.html)
+        self.assertIn('"Fare details for "', script)
+        self.assertNotIn("times and fare details for", script)
+        self.assertIn("departures and the fare for ", script)
 
     def test_the_row_expander_is_a_chevron_that_keeps_its_words(self) -> None:
         # The control used to read "5 times" or "Fare details" in the last
@@ -1094,7 +1107,7 @@ class DemoPageTest(PageTestCase):
         script = page_script(self.html)
         row_cell = js_function(script, "cellWithLinks")
         self.assertIn("Tickets", row_cell)
-        for moved in ("Card details", "Copy the journey details for "):
+        for moved in ("Card details", "Copy journey for "):
             self.assertNotIn(moved, row_cell)
         # The shortlist is a column of its own rather than a third control in
         # this one, so it is named by its own heading and not by a word the
@@ -1104,12 +1117,12 @@ class DemoPageTest(PageTestCase):
         actions = js_function(script, "rowActions")
         self.assertNotIn("Card details", actions)
         self.assertIn("Copy", actions)
-        # The Copy control names its row, and when the clipboard is refused the
-        # text is shown in a box the reader is told about rather than left to
-        # guess. That the button is inside the panel, that it copies that row,
-        # and what lands in the box when the copy fails is driven by the
-        # browser suite.
-        self.assertIn("Copy the journey details for ", script)
+        # The Copy control names its row and says what it copies in the visible
+        # word, and when the clipboard is refused the text is shown in a box the
+        # reader is told about rather than left to guess. That the button is
+        # inside the panel, that it copies that row, and what lands in the box
+        # when the copy fails is driven by the browser suite.
+        self.assertIn("Copy journey for ", script)
         self.assertIn("Could not copy automatically", script)
         self.assertIn("Select below", script)
         self.assertIn("Journey details to copy", script)
@@ -1136,7 +1149,7 @@ class DemoPageTest(PageTestCase):
         payload = build_payload(self.fares, None, "GRN")
         self.assertFalse(payload["hasJourneys"])
         self.assertTrue(all(row["minutes"] is None for row in payload["destinations"]))
-        self.assertIn("no timetable loaded", page_script(render_page(payload, budget_pounds=20)))
+        self.assertIn("no timetable was supplied", page_script(render_page(payload, budget_pounds=20)))
 
 
 class ExplainUnpricedTest(unittest.TestCase):
@@ -1474,12 +1487,13 @@ class TwoPartRowTest(unittest.TestCase):
         shown = json.loads(result.stdout)
         self.assertEqual(
             shown["throughSentence"],
-            "Two tickets, priced via NOTTINGHAM (stay on the train): "
-            "the price is the two fares added together.",
+            "Two tickets, priced via NOTTINGHAM (a through train, so you stay on the train the "
+            "whole way): the price is the two fares added together.",
         )
         self.assertEqual(
             shown["throughSummary"],
-            "Two tickets, bought separately, priced via NOTTINGHAM (stay on the train).",
+            "Two tickets, bought separately, priced via NOTTINGHAM (a through train, so you stay "
+            "on the train the whole way).",
         )
         self.assertNotIn("changing at", shown["throughSentence"])
         self.assertNotIn("changing at", shown["throughSummary"])

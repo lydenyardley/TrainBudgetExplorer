@@ -609,6 +609,41 @@ on a tool.
    2026**: is there community traction, and is the thing worth keeping. S44 is the
    argument about what to measure before that date, and it is measured at the
    community posts rather than on the page. Nothing is built for this.
+8. **Why does the release chooser count 50 where its own page counts 53?**
+   Clarity audit item 3's data half, and the last of that audit's P1 findings. The
+   copy half landed, so no count is bare any more: a chooser row says "destinations
+   this feed prices" and a count line says "destinations for up to £20.00 per
+   adult", and the index behind the first is every priced destination at any
+   budget (`_priced_destinations`, the union over the three modes at
+   `EVERYTHING_PENCE`). The synthetic build's 5 against 4 is exactly that
+   difference; the release's 50 against 53 is three more than it explains. Whoever
+   can query the release index has to say which number the index is meant to be
+   and whether the page or the index is the one that is wrong.
+9. **Which destination-type names can a reader read as themselves?** Clarity audit
+   item 17. "Cities" and "Villages" are Census 2021 built-up-area size bands, so
+   the meaning a reader brings to either word is not the one the chip applies; the
+   rule line under the chips counts them and does not name the bands. Two ways out,
+   and both are yours: one line saying where the bands come from ("size of the
+   place, from the 2021 census"), or renaming the four in
+   `DESTINATION_TYPE_FILTERS` in `atoc_fare_declarations.py`, which is the reviewed
+   table the payload's types are keyed by, so a rename is one registry edit.
+10. **What may the built line claim about publication?** Clarity audit item 42.
+    The privacy page's first line describes "the build published on 14 October
+    2026", and nothing has been published: `licences/release-clearance.md` is
+    still open. The sentence has to stay, because the analytics bullets below it
+    are claims about one build; whether it may use the verb is the decision of
+    whoever clears the release, so it is recorded beside that file rather than
+    changed now.
+11. **Which trade terms does this audience know?** Clarity audit item 44. ITX,
+    DTD, RR, "flow", "NRE", "Priced as" and "feed" itself are quoted on the routes
+    the release serves and glossed on none of them. The audit asks for one short
+    glossary inside the method disclosure and a first-use gloss for the two or
+    three terms that appear above the table; the brief asks for plain language
+    without flattening real terminology, so which of these a rail reader already
+    knows is a judgement about the audience rather than a style rule. Three of the
+    terms the audit listed moved in the clarity pass rather than here: "walk-up
+    fare" is glossed where it is met, the row's own disclosure says it is
+    technical, and "feed dated" became "downloaded" (items 30, 26 and 45).
 
 Three questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
@@ -746,6 +781,37 @@ pair-rule encoding and the sharded release build.
 | T11 | check whether hashed assets accumulate | a rebuild removes the hashed files no file in the folder names | `...SharedStationAssetTest.test_a_rebuild_removes_the_hashed_assets_no_page_names` |
 | T12 | record what this changes in the registers | ADR-0033, ADR-0047, ADR-0019, ADR-0024, ADR-0050, ADR-0055 and ADR-0032 amended; the findings hold the measurements | `python -m unittest tests.test_agents_map` |
 
+### The 14 October 2026 clarity audit
+
+The audit file is pruned rather than removed, because five of its fifty findings
+are still open: four of them need a person (3's data question, 17, 42 and 44) and
+one has not been taken up (23). The other forty-four landed on 15 October 2026 in
+one commit, because the payload keys and the page's reads had to move together
+and the templates and their tests carry items from more than one route; item 1
+had already landed in `e20582d` with the rest of that day's critiques, and
+`git log --grep="audit item"` reads any of them back. Item 8 read a sentence that
+was worth leaving as it was, and item 5 offered a warm and a blunt wording, so
+this pass chose one (warm) rather than splitting the difference.
+
+Two of the findings were the same fault twice, and they are the ones worth
+remembering: a paragraph written from build-time constants while the rows beside
+it are written from the state on screen (items 20 and 24), so a railcard holder
+was told "No railcard is selected" while every row showed a card price.
+
+| Item | What it asked | What landed | Held by |
+|---|---|---|---|
+| 1 | the chooser printed the feed's download date twice | one date, composed once | `e20582d`; `tests/test_build_chooser.py` |
+| 2, 3, 4, 5, 6, 7 | the chooser's words: what the list is before how it is ordered, a count that names its scope, an intro that says what the site covers, an empty state that helps, "a page for", one "starting from" | all seven | `tests/test_build_chooser.py`; `tests/browser/chooser.cjs`, "the chooser says what its order is, and what it is not" |
+| 9, 10, 11, 13, 38, 39 | the station page's opening: the heading's own name, one promise, the first-use note, the no-timetable fact stated once | the heading's accessible name is the whole sentence, written from the tab title on every render; one promise with the timetable clause composed onto it; the note names the station; "no timetable was supplied" said once | `tests/browser/station-render.cjs`, "the heading's own name is the whole sentence, and the same one as the tab title" and "the times columns exist exactly when the sentence promises times"; `tests/test_build_demo_page.py` |
+| 12, 14, 15, 18, 19, 32 | the controls' own words: the budget hint, the unit, the mode's name, the chip rule, the clear control, the empty-state buttons | the hint names the mode it clamps in; "per adult"; "Cheapest available"; the chip rule says only what a count is; "Show all destination types"; "Show the 7 Anytime Day Returns" and "Raise the budget to £7.00" | `tests/test_build_fares.py`; `tests/browser/station-fares.cjs`, "the chips say what the count beside each one is"; `tests/browser/station-picker.cjs` |
+| 16, 24, 26, 29, 31 | the railcard and the fare's own panel: the help, the method note, the card sentences, the feed's ban vocabulary, one voice | the help says where the choice travels; the note is written from the card the rows read and claims the card only where it lowers the fare; the sentences are one voice; the ban vocabulary sits in the feed record | `tests/browser/station-fares.cjs` (the railcard help); `tests/test_build_fares.py`; `tests/browser/station-rows.cjs` |
+| 20, 21, 22, 33, 34 | the count, the day and the pagination | "shown" is reserved for the table, so the cover line counts what the feed prices at any budget; the count line states the breakdown once; an absence in the Time cell is a short state and the row's own details name the day; an empty list carries no page number | `tests/browser/station-fares.cjs`, "and the status re-announces the page, without repeating the count"; `tests/browser/station-shortlist.cjs`, "and every absence on every day names the day it is about" |
+| 25, 27, 28, 30 | a row and its own details | the restricted-fare sentence promises a condition only when the feed describes the code, from a payload fact rather than from reading the fallback text; one shape of disclosure name; "Copy journey"; the walk-up fare glossed where it is met | `restrictionDescribed` in `build_payload.destination_row`; `tests/test_build_fares.py`; `tests/browser/station-rows.cjs` |
+| 35, 36, 37 | the shortlist dock | the live region says what changed rather than the count; the share line names what the link carries beside a real link; the list noun is "destination" | `tests/browser/station-shortlist.cjs`, "and the change to the list is announced, not just drawn" and "and the shared link names exactly the places the list holds" |
+| 40, 41, 43 | the privacy page | the contact is a sentence with a real link; the hosting paragraph no longer restates the bullets above it; one actor name and one tense across the conditional promises | `tests/test_build_provenance.py` (the contact and its issue tracker); `DEFAULT_PRIVACY_CONTACT` in `build_release.py` |
+| 45, 46, 47, 48, 49, 50 | the provenance block | the price line tells the two dates apart ("downloaded", "fares and times read for"); the build stamp is named and dated in the page's own words; each method sentence has a subject; the destination-type source sits with the attribution; the timetable verdict names the day the times are for | `tests/test_build_provenance.py` (the two clauses, the type source's place); `tests/browser/station-fares.cjs`, "and judges that window against the reader's today" |
+| 23 | the price cell's three facts with no words between them | not taken up; the recommendation stands in the audit file | the audit file, still open |
+
 ### The measurements three ADRs lean on
 
 ADR-0040, ADR-0041 and ADR-0043 were settled from a rendered-page audit of the
@@ -819,10 +885,11 @@ Four reviews are still in `docs/audits/`, each pruned to what it still asks for.
 `2026-10-09-impeccable-route-audit.md` is items [20] and [21], which are question
 1 above. `2026-10-14-impeccable-critique.md` is recommendations 3's second half,
 5, 7 and 8, which are the entry above and question 1. The app-engineering audit
-of the same date is its recommendation 6, the entry above. And
-`2026-10-14-impeccable-clarify.md` is a clarity reading of every route, fifty
-findings, none of them applied: it is the one review here whose items have not
-been through a pass yet. A review with nothing open does not keep a file.
+of the same date is its recommendation 6, the entry above.
+`2026-10-14-impeccable-clarify.md` is the clarity reading of every route: its
+forty-four applied findings are the entry above, its four for-a-person findings
+are questions 8 to 11 above, and its last one (item 23) is a wording nobody has
+asked for yet. A review with nothing open does not keep a file.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in

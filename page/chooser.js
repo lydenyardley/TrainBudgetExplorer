@@ -49,6 +49,26 @@ function resolvedBudget() {
 function syncChooserBudget() {
   const value = resolvedBudget();
   document.title = "Train fares up to £" + value + " · " + TITLE_SUFFIX;
+  // The heading is a sentence with a control inside it, so its own name is
+  // written here as the whole sentence rather than left to the fields' text run
+  // together. With a station to pick it ends "from your starting station", which
+  // is the station field's job in the reader's words; on a one-station build the
+  // clause is the name the title already carries (audit items 9 and 13). Each
+  // field keeps its own name: the budget input and the station slot are separate
+  // stops under the heading, not words inside it.
+  const heading = document.getElementById("pageHeading");
+  if (heading) {
+    // A build that priced no station has no clause to promise: render() takes
+    // the whole "from ..." out of the heading when the station list is empty,
+    // so the name states the budget and stops there rather than describing a
+    // station slot this page has just taken away.
+    const clause = !STATIONS.length
+      ? ""
+      : document.getElementById("originField")
+        ? " from your starting station"
+        : " from " + TITLE_SUFFIX;
+    heading.setAttribute("aria-label", "Train fares up to £" + value + clause);
+  }
   return value;
 }
 
@@ -60,8 +80,8 @@ function render() {
   if (!STATIONS.length) {
     if (originClause) originClause.hidden = true;
     picks.replaceChildren();
-    nomatch.textContent = "Nothing is priced from any station in this build, so there is nothing to explore yet. " +
-      "When the build prices journeys, this page lists every station it can start from.";
+    nomatch.textContent = "There is nothing here yet. This page lists every station you can " +
+      "start a journey from, so please check back once the fares are available.";
     nomatch.hidden = false;
     status.textContent = "0 stations listed";
     return;
@@ -94,7 +114,8 @@ function render() {
     code.textContent = station.crs;
     const count = document.createElement("span");
     count.className = "count";
-    count.textContent = station.destinations + (station.destinations === 1 ? " destination" : " destinations");
+    count.textContent = station.destinations + (station.destinations === 1 ? " destination" : " destinations") +
+      " this feed prices";
     link.append(name, code, count);
     item.append(link);
     picks.append(item);
@@ -113,8 +134,8 @@ function render() {
   if (wanted.length) {
     nomatch.hidden = true;
   } else if (needle) {
-    nomatch.textContent = "We don't have prices from '" + typedQuery.trim() +
-      "'. Try the station's name or its three-letter code.";
+    nomatch.textContent = "We don’t have a page for ‘" + typedQuery.trim() +
+      "’. Try the station’s name or its three-letter code.";
     nomatch.hidden = false;
   } else {
     nomatch.hidden = true;

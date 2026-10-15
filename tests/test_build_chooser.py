@@ -20,7 +20,7 @@ class ChooserTest(PageTestCase):
         # recommendation, and priced-destination count is not popularity.
         index = build_demo_page.build_station_index({"GRN": 5, "NOT": 2}, self.fares.locations_by_crs)
         chooser = build_demo_page.render_chooser(index, budget_pounds=20)
-        self.assertIn("Ordered by how many destinations", chooser)
+        self.assertIn("Every station this page prices journeys from", chooser)
         self.assertIn("not by how busy it is", chooser)
 
     def test_the_entry_route_carries_the_same_provenance_the_station_pages_do(self) -> None:
@@ -84,7 +84,7 @@ class ChooserTest(PageTestCase):
     # -- the layout: budget leads, the rest refines ------------------------
 
     def test_the_no_match_wording_names_what_was_tried(self) -> None:
-        self.assertIn("We don't have prices from", page_script(self.html))
+        self.assertIn("We don’t have a page for", page_script(self.html))
         self.assertIn("three-letter code", page_script(self.html))
 
     def test_the_chooser_budget_is_carried_into_station_links(self) -> None:
@@ -125,10 +125,10 @@ class ChooserTest(PageTestCase):
         self.assertNotIn('id="originSearch"', chooser)
         self.assertNotIn('class="origin-slot"', chooser)
         self.assertIn('<span class="origin-name">CARK &amp; CARTMEL</span>', chooser)
-        self.assertIn("built for one station", chooser)
+        self.assertIn("This site covers CARK &amp; CARTMEL only", chooser)
         # Nothing is ordered over one row, so the page makes no ranking claim.
         self.assertNotIn('id="orderingNote"', chooser)
-        self.assertNotIn("Ordered by how many destinations", chooser)
+        self.assertNotIn("Every station this page prices journeys from", chooser)
         # The tab title names the station, and the script keeps it named as the
         # budget changes rather than falling back to asking where to leave from.
         self.assertIn("&middot; CARK &amp; CARTMEL</title>", chooser)
@@ -235,7 +235,7 @@ class ChooserTest(PageTestCase):
             {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5},
         ]
         html = render_chooser(index, budget_pounds=20)
-        self.assertIn("Type the station you are leaving from", html)
+        self.assertIn("Type the station you are starting from", html)
         # No fares payload on the chooser: the reader has not chosen a station
         # yet, so the page carries the index and nothing the station pages read.
         with self.assertRaises(AssertionError):
@@ -308,7 +308,7 @@ class ChooserTest(PageTestCase):
         from page_templates import CHOOSER_SCRIPT
 
         html = render_chooser([], budget_pounds=20)
-        self.assertIn("Nothing is priced from any station in this build", CHOOSER_SCRIPT)
+        self.assertIn("There is nothing here yet", CHOOSER_SCRIPT)
         # The station list the page is built from is empty, so the field has
         # nothing to search and the page says so rather than offering a search
         # that cannot answer.

@@ -115,9 +115,8 @@ ISSUE_TRACKER = "https://github.com/lydenyardley/TrainBudgetExplorer/issues"
 
 
 DEFAULT_PRIVACY_CONTACT = (
-    "the deployment operator via its public repository issue tracker ("
-    + ISSUE_TRACKER
-    + ")"
+    "To report a problem with this site, open an issue in the deployment "
+    f'operator\'s public repository: <a href="{ISSUE_TRACKER}">{ISSUE_TRACKER}</a>.'
 )
 
 

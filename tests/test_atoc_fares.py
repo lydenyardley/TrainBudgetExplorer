@@ -1831,11 +1831,12 @@ class FeedBoundaryClassificationTest(unittest.TestCase):
         self.assertIn("a scratch probe", accepted.location_type_sources)
 
     def test_a_build_names_every_source_that_classified_the_feed(self) -> None:
-        # The page's provenance line is where a reader learns where a
-        # destination's type comes from. London is classified by the reviewed
-        # list before the workbook is read at all, and the build used to publish
-        # that class as the workbook's own work -- so a build with both names
-        # both, and the reviewed floor is named last.
+        # A reader learns where a destination's type comes from in the page's
+        # attribution block (audit item 48 moved it there from the provenance
+        # line). London is classified by the reviewed list before the workbook
+        # is read at all, and the build used to publish that class as the
+        # workbook's own work -- so a build with both names both, and the
+        # reviewed floor is named last.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             feed = _first_build(root, ("ANC", "ANCASTER"))

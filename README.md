@@ -1013,7 +1013,7 @@ button that cannot work without JavaScript is a control that lies
 slider and its note share a line under the heading whose budget it is, and the
 results stay beneath it, so the page's own question is never behind a control.
 The three refinements — ticket type, party, destination type — fold behind one
-control whose label states what is currently narrowed ("Cheapest of any type ·
+control whose label states what is currently narrowed ("Cheapest available ·
 One adult · all types"), so a reader who has not opened it can still see that a
 filter is on. The fold is the reader's at *every* width rather than a phone
 behaviour: one control, one `data-open`, no media query and no resize listener,

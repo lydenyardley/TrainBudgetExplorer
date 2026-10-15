@@ -610,7 +610,7 @@ class AllOriginsCliTest(unittest.TestCase):
             match = re.search(r'<script src="([^"]*chooser-[0-9a-f]+\.js)"', chooser)
             self.assertIsNotNone(match, "the chooser names no shared script")
             script = (out.parent / match.group(1).rsplit("/", 1)[-1]).read_text(encoding="utf-8")
-            self.assertIn("Nothing is priced from any station in this build", script)
+            self.assertIn("There is nothing here yet", script)
 
 class FreshOutputFolderTest(unittest.TestCase):
     """The README tells the operator to delete a stale _site/, so the build must
