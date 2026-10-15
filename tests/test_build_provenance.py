@@ -57,6 +57,29 @@ class ProvenanceTest(PageTestCase):
         self.assertIn('id="priceSource" hidden', self.html)
         self.assertIn("DATA.priceSource", page_script(self.html))
 
+    def test_the_price_line_tells_the_two_dates_apart_and_names_the_build(self) -> None:
+        # Item 45 of the 14 October 2026 clarity audit: the second date is the
+        # day the build asked about, not a date on the feed, and the sentence has
+        # to say which is which -- "feed dated" read as "the feed is dated
+        # today", which is the age the freshness line is warning about. Items 46
+        # and 49: the build stamp is named for what it is and dated in the page's
+        # own words rather than as the one ISO date on the page.
+        script = page_script(self.html)
+        self.assertIn('", downloaded "', script)
+        self.assertIn('"; fares and times read for "', script)
+        self.assertNotIn("feed dated ", script)
+        self.assertIn("from this revision of the code", script)
+
+    def test_the_destination_type_source_sits_with_the_attribution(self) -> None:
+        # Item 48: the provenance line carries the reader's own facts -- the
+        # origin, the count and the day -- and where a destination's type came
+        # from is a source, so it is said with the licence text rather than
+        # among the numbers.
+        self.assertTrue(self.payload["locationTypeSource"])
+        script = page_script(self.html)
+        self.assertIn('"Destination types from: "', script)
+        self.assertNotIn('"destination types: "', script)
+
     def test_the_page_states_how_old_its_numbers_are(self) -> None:
         # S33: the age of the prices and the window of the times, beside the
         # numbers, judged against the reader's clock rather than the build's.

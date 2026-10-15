@@ -443,7 +443,7 @@ async function checkTheFareDetails(world) {
     check(
       "and no railcard is selected by default, so the prices are standard fares",
       cardChoice
-        ? menu.value === "" && /No railcard selected/.test(menu.help)
+        ? menu.value === "" && /standard fare/.test(menu.help)
         : notExercised("this feed prices no reviewed railcard"),
       `value=${menu.value} help=${menu.help}`
     );
@@ -1240,14 +1240,12 @@ function saysMoreThan(condition, code) {
         marked: Boolean(toggle && toggle.querySelector(".chevron")),
       };
     });
-    // A no-service row carries the day the page is about when the week reaches
-    // the station on another day, so the cell is either the bare words or those
-    // words and a weekday. Both are checked against the page's own date rather
-    // than against a fixed phrase.
-    // The cell is the bare words, or those words and the weekday the page is
-    // about, so the allowance is the page's own date rather than a fixed
-    // phrase. A row that names a day it runs on is checked against that date
-    // below rather than accepted here on the strength of a prefix.
+    // Item 22, 14 October 2026: a no-service row's Time cell holds the short
+    // state on every row it applies to, and the day it means is in the row's
+    // own record rather than in the cell -- a clause in a column of durations
+    // was read as a duration. So this reads the state and the record together.
+    // serviceWeekday is the page's own day, read out of the page rather than
+    // fixed here.
     const serviceWeekday = await page.evaluate(() => {
       if (!DATA.serviceDate) return "";
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1338,8 +1336,11 @@ function saysMoreThan(condition, code) {
       JSON.stringify(facets)
     );
     check(
-      "the chips say that more than one means any of them",
-      /any of them/.test((await page.textContent("#typeRule")) || "")
+      "the chips say what the count beside each one is",
+      // Audit item 18, 14 October 2026: the line stands on the useful half.
+      // The plural-selection sentence described a state a reader holding one
+      // chip is not in, and the list itself shows what two chips mean.
+      /inside the budget now/.test((await page.textContent("#typeRule")) || "")
     );
     const cleared = await page.evaluate(() => {
       const all = document.querySelector('input[name="destinationType"][value="all"]');
@@ -1379,10 +1380,11 @@ function saysMoreThan(condition, code) {
       JSON.stringify(reset)
     );
     check(
-      "and the status re-announces the page and the count",
-      // Audit item 12, 9 October 2026: "Page 1 of 2 of 30 results" was two
-      // facts sharing one "of" twice, so the page and the count keep one each.
-      /^1 of \d+ pages? · \d+ destinations?$/.test(reset.status.trim()),
+      "and the status re-announces the page, without repeating the count",
+      // Audit item 21, 14 October 2026: the count is stated once, in the
+      // summary line above the table; the pager says which page of how many,
+      // and an empty list narrates no page at all (item 34).
+      /^1 of \d+ pages?$/.test(reset.status.trim()),
       reset.status
     );
     // S28: an empty list offers the moves that would fill it, and the first
@@ -1425,7 +1427,7 @@ function saysMoreThan(condition, code) {
     const coverage = (await page.textContent("#feedCoverage")) || "";
     const coverageMode = await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value);
     const COVERAGE_LEAD = {
-      cheapest: /each on the cheapest fare of any ticket type the feed prices for it/,
+      cheapest: /each on its cheapest fare of any ticket type/,
       anytime: /reviewed unrestricted Anytime Day Return fares are available in this mode/,
       single: /displayable outbound single fares are available in this mode/,
       return: /standard-return destinations were found in the feed/,
@@ -1485,7 +1487,7 @@ function saysMoreThan(condition, code) {
             ? /has not started yet/.test(line.textContent)
             : days(DATA.timetableTo) > 0
               ? /has ended/.test(line.textContent)
-              : /includes today/.test(line.textContent))
+              : /covers the day these times are for/.test(line.textContent))
           : /prices fares only/.test(line.textContent),
         // Finding, 29 September 2026: the count line now sits directly on its
         // table, so the age of the numbers is stated above the count rather

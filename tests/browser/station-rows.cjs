@@ -31,9 +31,9 @@ async function checkTheRowActions(world) {
     // reaches through a disclosure is still a control, and this is where the
     // suite meets it.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
-    const adultButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
+    const adultButton = page.locator("#rows button[aria-label^='Copy journey']").first();
     const journey = await page.evaluate((label) => {
-      const name = label.replace("Copy the journey details for ", "");
+      const name = label.replace("Copy journey for ", "");
       const destination = TYPES.list().find((d) => d.name === name) || {};
       return {
         origin: DATA.origin.name + " (" + DATA.origin.crs + ")",
@@ -113,8 +113,8 @@ async function checkTheRowActions(world) {
     // reaches through a disclosure is still a control, and this is where the
     // suite meets it.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
-    const copyButton = page.locator("#rows button[aria-label^='Copy the journey details']").first();
-    const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy the journey details for ", "");
+    const copyButton = page.locator("#rows button[aria-label^='Copy journey']").first();
+    const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy journey for ", "");
     // The railcard note is owed only where the feed prices one, so what the
     // copy should say is read off the row it is about to copy: a page with no
     // eligible fare must stay quiet rather than name a discount that is not there.

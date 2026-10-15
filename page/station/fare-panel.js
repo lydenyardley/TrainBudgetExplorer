@@ -100,7 +100,7 @@ function feedRecord(destination) {
   const details = document.createElement("details");
   details.className = "feed-record";
   const summary = document.createElement("summary");
-  summary.textContent = "Feed record";
+  summary.textContent = "Feed record (technical details)";
   const list = document.createElement("dl");
   const add = (term, value) => {
     if (value === null || value === undefined || value === "") return;

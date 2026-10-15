@@ -33,9 +33,10 @@ function cellWithLinks(row, destination, wanted) {
   // build had times, which left a fare's condition unreachable on a
   // prices-only page. The control is now the page's own chevron rather than a
   // word, so the visible label is a mark and the accessible name is what
-  // carries the words: the count where there is one, the destination either
-  // way, and the fact that a fare is behind it at all. Dropping the word from
-  // the face of the button is only safe because the name below keeps all of it.
+  // carries the words: the destination and the fact that a fare is behind it,
+  // which is the one shape true on a row with times and one without (audit
+  // item 27). Dropping the word from the face of the button is only safe
+  // because the name below keeps that much.
   const times = destination.departures.length;
   const toggle = document.createElement("button");
   toggle.className = "toggle row-expand";
@@ -46,8 +47,10 @@ function cellWithLinks(row, destination, wanted) {
   // label being inside the accessible name, and a drawn mark is not one, so
   // what matters here is that a screen reader still says what the control is
   // and which row it belongs to.
-  toggle.setAttribute("aria-label",
-    (times ? times + " times and fare details for " : "Fare details for ") + destination.name);
+  // One shape for every row (audit item 27): the count was a second name for
+  // the same control, and the panel behind it holds the fare and its condition
+  // whether or not the build found times.
+  toggle.setAttribute("aria-label", "Fare details for " + destination.name);
   toggle.title = times
     ? times + " departures and the fare for " + destination.name
     : "Fare details for " + destination.name;
@@ -84,28 +87,28 @@ function cardNote(destination) {
     const pair = (destination.railcards || {})[card.key];
     if (!pair) {
       note.dataset.state = "unavailable";
-      note.textContent = "This feed prices no " + card.label + " fare for this two-ticket " +
-        "journey, so the row shows the two standard fares.";
+      note.textContent = "The " + card.label + " has no fare for this two-ticket journey in " +
+        "this feed, so the row shows the two standard fares.";
       return note;
     }
     note.dataset.state = pair.state;
     if (pair.pricePence === null || pair.pricePence === undefined) {
-      note.textContent = card.label + " cannot be applied to this journey, because a current DTD " +
-        "RR rule bans it on one of the two tickets, so the row shows both standard fares.";
+      note.textContent = "The " + card.label + " is refused on one of the two tickets by the " +
+        "feed's own rule, so the row shows both standard fares.";
       return note;
     }
     if (pair.pricePence >= destination.adultPence) {
       // The figure first is the row's own, the same rule as a single-ticket row:
       // opening with the larger card price makes the reader hunt for theirs.
-      note.textContent = "This journey is " + money(priceOf(destination)) + " per adult, and " +
-        card.label + " does not reduce it. The card's own price for the two tickets is " +
+      note.textContent = "The " + card.label + " does not reduce this journey's " +
+        money(priceOf(destination)) + " per adult. The card's own price for the two tickets is " +
         money(pair.pricePence) + " per adult" + (pair.minimumFarePence === null
           ? "."
           : ", because the minimum fare the feed applies to these tickets is " +
             money(pair.minimumFarePence) + ".");
       return note;
     }
-    note.textContent = "Two tickets, and " + card.label + " applies to each one: " +
+    note.textContent = "The " + card.label + " applies to each of the two tickets: " +
       money(pair.pricePence) + " per adult is the two card fares added together" +
       (pair.minimumFarePence === null
         ? "."
@@ -119,9 +122,12 @@ function cardNote(destination) {
   const details = (destination.railcards || {})[card.key];
   if (!details) {
     note.dataset.state = "unavailable";
+    // The card is the subject of every other sentence in this panel, including
+    // the two-ticket one above, so the same news -- no card fare here -- is
+    // told in the same voice (audit item 31).
     note.textContent =
-      "This feed prices no " + card.label + " fare to " + destination.name + ", so there is " +
-      "nothing to compare it against.";
+      "The " + card.label + " has no fare to " + destination.name + " in this feed, so there " +
+      "is nothing to compare it against.";
     return note;
   }
 
@@ -150,10 +156,12 @@ function cardNote(destination) {
   // cards at the build's own wording measured 2,598 bytes a row against 433
   // for one, on a page that already carries 411KB; the facts cost 98.
   if (details.state === "blocked") {
+    // Price first, then the reason, and the feed record below carries the
+    // "total ban" vocabulary the rule itself uses (audit items 26, 29).
     note.textContent =
-      card.label + " cannot be applied to this fare. A current DTD RR rule matches this ticket, " +
-      "route or endpoint and records a total ban, so the standard fare is the only price the feed " +
-      "offers here.";
+      "This fare is " + money(priceOf(destination)) + ", and " + card.label +
+      " cannot be applied to this fare. The feed's own rule refuses the card on this ticket, " +
+      "route or endpoint, so the standard fare is the only price the feed offers here.";
   } else if (!cardBeatsStandard) {
     // The three numbers the build already sent are enough to say this. The
     // discounted price before the minimum is not one of them, and recomputing it
@@ -172,16 +180,16 @@ function cardNote(destination) {
       ". This row is priced at the cheaper of the two, so travelling without the card would " +
       "cost the same.";
   } else if (condition) {
+    // The reader's own price first, one qualifier, then the rule (audit item
+    // 29): the discount figure used to be the third sentence.
     note.textContent =
-      card.label + " is available for this fare, subject to condition " + condition + ". No " +
-      "matching total ban applies; the restriction is a travel condition rather than a card ban. " +
-      "The feed’s one-third discount gives " + money(details.pricePence) + " per adult" +
-      minimumClause;
+      "The feed’s one-third discount gives " + money(details.pricePence) +
+      " per adult for this fare, subject to condition " + condition +
+      ", a travel condition rather than a card ban" + minimumClause;
   } else {
     note.textContent =
-      card.label + " is available for this fare. No current RR rule matches this ticket, route or " +
-      "either endpoint. The feed’s one-third discount gives " + money(details.pricePence) +
-      " per adult" + minimumClause;
+      "The feed’s one-third discount gives " + money(details.pricePence) +
+      " per adult for this fare" + minimumClause;
   }
   return note;
 }
@@ -196,9 +204,11 @@ function rowActions(row, destination) {
   const copy = document.createElement("button");
   copy.className = "toggle";
   copy.type = "button";
-  copy.textContent = "Copy";
-  copy.setAttribute("aria-label", "Copy the journey details for " + destination.name);
-  copy.title = "Copy the from, to, date and party size for this row";
+  // One sentence, and it is the visible one: "Copy" on its own left the reader
+  // to guess what reached the clipboard, and the answer was in a title no touch
+  // reader sees (audit item 28).
+  copy.textContent = "Copy journey";
+  copy.setAttribute("aria-label", "Copy journey for " + destination.name);
   copy.addEventListener("click", () => copyJourney(destination, copy, tools));
   tools.append(copy);
   return tools;
@@ -256,7 +266,7 @@ async function copyJourney(destination, button, host) {
   const done = () => {
     button.textContent = "Copied";
     status.textContent = "Journey details copied: " + text.split("\n").join(". ");
-    window.setTimeout(() => { button.textContent = "Copy"; }, 2000);
+    window.setTimeout(() => { button.textContent = "Copy journey"; }, 2000);
   };
   // Never claim a copy that did not happen. Clipboard access is refused when a
   // page is opened from a file or served without a secure context, so the

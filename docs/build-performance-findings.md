@@ -757,6 +757,15 @@ origin to a single station and neither fixture build carried a service date.
 `--third-origin --return-network`, and the shape route is `one-page`, because what
 fits on one page is a list rather than a row.
 
+Measured again 15 October 2026, after the clarity pass changed the copy the
+checks read and added a heading-name check to each route: **841 checks passed of
+841, none failed, 26 skipped (3.1%), exit 0** -- demo station 260/260 (3
+skipped), chooser 74/74 (1), privacy 31/31, one-page station 256/256 (6),
+prices-only 220/220 (16). The checks the pass added are the heading's own name --
+one on the chooser, one on every station page -- and the four it renamed (the
+chip rule, the pager, the shortlist announcement and the no-service row) ran
+under their new names.
+
 ## The verify suite's own runtime, measured
 
 The figures in `AGENTS.md` and `README.md` said `--fast` was "about three
@@ -784,8 +793,12 @@ JavaScript parse and 9.8 s for the type check. So this machine is slower than th
 machine the audit measured on -- 1,275 s against its 780 s for the same suite two
 days earlier -- and neither figure is a property of the tests. The `--fast` run
 above was taken while it was still red, reporting 11 failures that the same pass
-fixed; failing tests do not shorten a run, so the figure stands, and the later
-green run of the same command is what a reader should time their own against.
+fixed;failing tests do not shorten a run, so the figure stands, and the later green run
+of the same command is what a reader should time their own against. That run was
+measured on 15 October 2026 as well: **`--fast`, 1,140 tests in 1,624 s** (27 min
+4 s) on this machine, one suite at a time. Its three extra tests are the ones the
+same pass added, so the two rows above carry the earlier revision's count while
+these are the figures that describe the green tree.
 
 The suite is I/O- and CPU-bound in turn -- the feed-scale tests parse both
 licensed feeds and the page tests write pages -- so these are wall-clock figures

@@ -37,7 +37,8 @@ function inShortlist(crs) {
   return shortlistCodes.includes(crs);
 }
 function toggleShortlist(crs) {
-  if (inShortlist(crs)) {
+  const added = !inShortlist(crs);
+  if (!added) {
     shortlistCodes = shortlistCodes.filter((code) => code !== crs);
     if (shortlistLimit) shortlistLimit.textContent = "";
   } else {
@@ -45,7 +46,7 @@ function toggleShortlist(crs) {
       // Said on the page rather than to a screen reader alone: a control that
       // stops responding with no explanation is the one thing a reader cannot
       // act on, and the strip is where they are already looking.
-      const message = "The shortlist holds " + SHORTLIST_LIMIT + " places. Remove one to add another.";
+      const message = "The shortlist holds " + SHORTLIST_LIMIT + " destinations. Remove one to add another.";
       setShortlistStatus(message);
       if (shortlistLimit) shortlistLimit.textContent = message;
       return;
@@ -53,9 +54,22 @@ function toggleShortlist(crs) {
     shortlistCodes = [...shortlistCodes, crs];
     if (shortlistLimit) shortlistLimit.textContent = "";
   }
-  setShortlistStatus("");
+  announceShortlist(crs, added);
   renderShortlist();
   writeUrl();
+}
+// The live region says what changed, not how many there are: the dock's own
+// header already carries the count, and the two said the same thing in two
+// words (audit item 35).
+function announceShortlist(crs, added) {
+  const destination = activeDestinations().find((place) => place.crs === crs);
+  // A name is always found -- every caller is a row or a dock row of this list
+  // -- but the sentence has to read if one is not, rather than saying "Removed
+  // from the shortlist." with the place left out.
+  const name = destination ? destination.name : "that destination";
+  setShortlistStatus(added
+    ? "Added " + name + " to the shortlist."
+    : "Removed " + name + " from the shortlist.");
 }
 function setShortlistStatus(text) {
   if (shortlistStatus) shortlistStatus.textContent = text;
@@ -163,7 +177,7 @@ function renderShortlist() {
     shortlistDock.hidden = kept.length === 0;
     shortlistDockList.replaceChildren(...kept.map(dockRow));
     if (shortlistDockCount) {
-      shortlistDockCount.textContent = kept.length + (kept.length === 1 ? " place" : " places");
+      shortlistDockCount.textContent = kept.length + (kept.length === 1 ? " destination" : " destinations");
     }
     padForDock();
   }
@@ -172,23 +186,35 @@ function renderShortlist() {
     if (control) control.hidden = empty;
   }
   if (shortlistShare) {
-    shortlistShare.textContent = empty
-      ? ""
-      : "Shortlist of " + kept.length + (kept.length === 1 ? " place" : " places") + " from " +
-        DATA.origin.name + ". " + window.location.href;
+    // The address carries the search, and saying so beside it is the point:
+    // the privacy page's claim and the share control were never in the same
+    // place. It is a real link, so a reader can open or copy it in one action
+    // (audit item 36).
+    shortlistShare.replaceChildren();
+    if (!empty) {
+      // The card is a key in the address only when one is chosen (stateQuery),
+      // so the list of what the link carries is built from that rather than
+      // naming a railcard a reader without one did not send.
+      const carried = "budget, ticket type, party size" + (noCard() ? "" : ", railcard") +
+        " and shortlist";
+      shortlistShare.append(
+        "Shortlist of " + kept.length + (kept.length === 1 ? " destination" : " destinations") + " from " +
+        DATA.origin.name + ". This link carries your " + carried + " to whoever opens it: ");
+      const link = document.createElement("a");
+      link.href = window.location.href;
+      link.textContent = window.location.href;
+      shortlistShare.append(link, ".");
+    }
   }
   if (shortlistBox) {
     shortlistBox.hidden = true;
     if (shortlistShareBox) shortlistShareBox.open = false;
   }
-  if (shortlistStatus && !shortlistStatus.textContent) {
-    shortlistStatus.textContent = kept.length ? kept.length + " shortlisted." : "";
-  }
 }
 
 function shortlistText() {
   const kept = shortlisted();
-  const what = unit() === "party" ? "for the two of us" : "each";
+  const what = unit() === "party" ? "for the two of us" : "per adult";
   const lines = [
     "Shortlist from " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     "Budget: £" + budgetNumber.value + " " + what,
@@ -208,7 +234,7 @@ function shortlistText() {
     lines.push("- " + destination.name + " (" + destination.crs + "): " + money(priceOf(destination)) +
       " " + what + ", " + fareName(destination) + ", " + time + ", " + changes);
   }
-  lines.push("A shortlist of places, not a booking: no train is chosen and no ticket is held.");
+  lines.push("A shortlist of destinations, not a booking: no train is chosen and no ticket is held.");
   return lines.join("\n");
 }
 if (shortlistCopy) {

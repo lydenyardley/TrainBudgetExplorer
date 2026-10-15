@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from atoc_fares import FLOW_F, FaresDb
@@ -202,10 +203,14 @@ class FaresPayloadTest(PageTestCase):
         # note above the table and the line beside the prices each say which
         # list this is, and half a sentence names nothing.
         self.assertIn(
-            "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns.",
+            "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; "
+            "a restricted fare's condition is in the row's details.",
             page_script(self.html),
         )
-        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", page_script(self.html))
+        self.assertIn(
+            "destinations the feed prices, at any budget, each on its cheapest fare of any ticket type",
+            page_script(self.html),
+        )
         self.assertIn(
             "destinations, each on its cheapest fare of any ticket type, in the feed", page_script(self.html)
         )
@@ -217,10 +222,14 @@ class FaresPayloadTest(PageTestCase):
         self.assertIn("MIX_WORDS", page_script(self.html))
         self.assertIn('"for the two of us, two of the fare each row names"', page_script(self.html))
         self.assertIn(
-            "Each row is the cheapest fare of any ticket type, so this list mixes singles and returns.",
+            "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; "
+            "a restricted fare's condition is in the row's details.",
             page_script(self.html),
         )
-        self.assertIn("each on the cheapest fare of any ticket type the feed prices for it", page_script(self.html))
+        self.assertIn(
+            "destinations the feed prices, at any budget, each on its cheapest fare of any ticket type",
+            page_script(self.html),
+        )
         self.assertIn(
             "destinations, each on its cheapest fare of any ticket type, in the feed", page_script(self.html)
         )
@@ -243,6 +252,9 @@ class FaresPayloadTest(PageTestCase):
         # C08: the description is now the feed's own wording for the code
         # rather than a placeholder, so it is judged against that.
         self.assertEqual(rows["NOT"]["restrictionDescription"], "NOT VALID AT WEEKENDS")
+        # The page's lead sentence says where the condition is, so it has to
+        # know whether the feed has one (audit item 25, 14 October 2026).
+        self.assertTrue(rows["NOT"]["restrictionDescribed"])
         self.assertEqual(rows["SLP"]["restrictionCode"], "")
         self.assertIn("restrictionCode", self.html)
         self.assertIn("restrictionDescription", self.html)
@@ -293,8 +305,33 @@ class FaresPayloadTest(PageTestCase):
         rows = {row["crs"]: row for row in payload["destinations"]}
         self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
         self.assertIn("does not describe", rows["NOT"]["restrictionDescription"])
+        self.assertFalse(rows["NOT"]["restrictionDescribed"])
         # Nothing to show is the honest outcome, and the map says so by
         # leaving the code out rather than by carrying an empty pair.
+        self.assertNotIn("1A", payload["restrictionValidity"])
+
+    def test_a_restriction_record_with_no_words_at_all_is_not_a_condition(self) -> None:
+        # The other half of the same rule (audit item 25, 14 October 2026): a
+        # record can hold the code and no description, outward text or return
+        # text, which is what a damaged download leaves behind. It describes
+        # nothing, so the lead sentence must not send the reader down for a
+        # condition the page cannot show. The synthetic feed's records all carry
+        # words, so the blank one is built here from its own header.
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(
+                Path(tmp) / "fares", include_restrictions=True
+            )
+            fares = FaresDb().load_feed(feed)
+            fares.restrictions.headers["1A"] = replace(
+                fares.restrictions.headers["1A"],
+                description="",
+                outward_text="",
+                return_text="",
+            )
+            payload = build_payload(fares, None, "GRN")
+        rows = {row["crs"]: row for row in payload["destinations"]}
+        self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
+        self.assertFalse(rows["NOT"]["restrictionDescribed"])
         self.assertNotIn("1A", payload["restrictionValidity"])
 
     def test_a_railcard_is_a_constraint_on_the_party_not_a_discount(self) -> None:
@@ -373,8 +410,14 @@ class FaresPayloadTest(PageTestCase):
         # S28: advice a reader cannot act on is a dead end, so each move is a
         # control and each is offered only when it is true for this page. The
         # browser suite drives the empty state and the buttons in it.
-        self.assertIn("Show everything up to ", page_script(self.html))
-        self.assertIn("Clear the destination type", page_script(self.html))
+        # Item 32: each ticket-type suggestion is the verb, the count and the
+        # noun -- "Show the 7 Anytime Day Returns" -- rather than a fragment
+        # ending in "has 7". The verb and the count order, and the button the
+        # reader presses, are the browser suite's.
+        self.assertIn('"Show the "', page_script(self.html))
+        self.assertIn('"Anytime Day Returns"', page_script(self.html))
+        self.assertIn("Raise the budget to ", page_script(self.html))
+        self.assertIn("Show all destination types", page_script(self.html))
         self.assertIn("toggle", self.html)
 
     def test_the_facets_count_what_they_would_show_and_can_be_cleared(self) -> None:
@@ -382,7 +425,7 @@ class FaresPayloadTest(PageTestCase):
         # The counts and the clear are driven by the browser suite.
         self.assertIn('class="chipcount"', self.html)
         self.assertIn('id="clearTypes"', self.html)
-        self.assertIn("More than one type shows destinations of any of them", self.html)
+        self.assertIn("Each count is how many destinations of that type are inside the budget now.", self.html)
 
     def test_a_narrowed_search_returns_to_the_first_page(self) -> None:
         # S22: the cheapest rows are what a narrowed search wants first, and the
@@ -549,7 +592,7 @@ class FaresPayloadTest(PageTestCase):
         # and a sentence on every expanded row repeating the page's default
         # is the noise this replaced.
         self.assertIn(
-            "This feed prices no ", page_script(self.html)
+            "has no fare to ", page_script(self.html)
         )
 
     def test_a_card_whose_minimum_is_higher_shows_the_standard_fare(self) -> None:
@@ -627,7 +670,7 @@ class FaresPayloadTest(PageTestCase):
         self.assertEqual("cheapest", checked.group(1))
         self.assertIn("> Anytime Day Return</label>", self.html)
         self.assertIn("> Any return</label>", self.html)
-        self.assertIn("> Cheapest of any type</label>", self.html)
+        self.assertIn("> Cheapest available</label>", self.html)
         # Each set says what its fares are, above the table rather than inside
         # the methodology accordion, so a reader meets the caveat at the moment
         # they compare two prices.

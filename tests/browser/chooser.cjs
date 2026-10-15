@@ -37,6 +37,9 @@ async function checkChooser(page, url, check) {
     };
     return {
       text: seen(el).replace(/\u2060/g, "").replace(/\s+/g, " ").trim(),
+      // The heading's own name, which is what a screen reader announces for it
+      // (audit items 9 and 13).
+      name: el.getAttribute("aria-label") || "",
       field: (document.getElementById("budgetNumber") || {}).value || "",
       // The shared slot class, which is what a station page's slot wears too: the
       // chooser's field is that slot with nothing in it yet.
@@ -56,6 +59,18 @@ async function checkChooser(page, url, check) {
   check(
     "and the station it has no answer for is a field holding the word station",
     heading.slot && heading.placeholder === "station",
+    JSON.stringify(heading)
+  );
+  check(
+    "and the heading carries that sentence as its own name",
+    // Items 9 and 13, 14 October 2026: the heading holds the budget field and
+    // the station field, so a name computed from its contents was the two
+    // controls run together. It is written as the whole sentence, with the
+    // station clause in the reader's words where there is a station to pick and
+    // the name the title already carries where there is one station.
+    new RegExp("^Train fares up to £" + heading.field + " from ").test(heading.name) &&
+      (!heading.slot ||
+        heading.name === "Train fares up to £" + heading.field + " from your starting station"),
     JSON.stringify(heading)
   );
   // The chooser's field is the same control as a station page's, so the three
@@ -332,11 +347,13 @@ async function checkChooser(page, url, check) {
   check("the station field takes focus on arrival", (await page.evaluate(() => document.activeElement && document.activeElement.id)) === "originSearch");
   // S10: a cold-start order that does not say what it is looks like a
   // recommendation. The page has to name the measure and deny the two things
-  // a reader would otherwise assume it means.
+  // a reader would otherwise assume it means (audit item 2, 14 October 2026:
+  // the measure is "how many journeys this page prices from the station", in
+  // the reader's words rather than the build's).
   const ranking = await page.textContent("body");
   check(
     "the chooser says what its order is, and what it is not",
-    /how many destinations/i.test(ranking) && /not by how busy/i.test(ranking),
+    /most first/i.test(ranking) && /not by how busy/i.test(ranking) && /not by how near/i.test(ranking),
     (await page.textContent("#orderingNote")) || ""
   );
   // The route has no filter bar, and that is a design decision rather than an

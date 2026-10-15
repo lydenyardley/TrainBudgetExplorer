@@ -116,6 +116,26 @@ function priceCell(destination) {
 // The number is the feed's own record for each card rather than a rule this
 // page invented, and a card that cannot cover the party on screen is taken out
 // of the list rather than left there to be picked and then ignored.
+function renderRailcardNote() {
+  const note = document.getElementById("railcardNote");
+  if (!note) return;
+  // The page's own explanation of its numbers, written from the state the rows
+  // read rather than from a build-time constant: a railcard holder used to be
+  // told no card was selected while every row showed a card price (audit item
+  // 24). With no card the payload's paragraph stands, because that one is
+  // written for exactly this state.
+  if (noCard() || !DATA.railcardMethod) {
+    note.textContent = DATA.railcardNote;
+    return;
+  }
+  const chosen = railcards[railcardSelect.value];
+  // "Wherever it lowers the fare", not "every price includes it": a card whose
+  // minimum fare is above the standard one leaves that row at the standard
+  // fare, and the paragraph explaining the numbers cannot be false about a row
+  // the reader is looking at (audit item 24).
+  note.textContent = "The prices shown apply the " + chosen.label +
+    " wherever it lowers the fare. " + DATA.railcardMethod;
+}
 function syncRailcardParty() {
   const help = document.getElementById("railcardHelp");
   if (!railcardKeys.length) {
@@ -180,8 +200,14 @@ function syncRailcardParty() {
   railcardSelect.disabled = offered.length === 0;
   if (!help) return;
   if (noCard()) {
-    help.textContent = "No railcard selected, so these are standard fares. Choose the card you " +
-      "hold to price the journey with it; this browser will remember your choice.";
+    // The action and the memory come first: which card is held changes every
+    // price on the page, and what happens to the choice is the fact a reader
+    // wants before making it (audit item 16). It says where the choice goes
+    // rather than that it goes nowhere, because the card is one of the keys in
+    // the address (stateQuery) and the address is read by the host.
+    help.textContent = "Choose the card you hold and the fares it lowers are repriced for it. " +
+      "This browser remembers your choice and, like the rest of your search, it travels in " +
+      "the page's address; until then, every price is a standard fare.";
     return;
   }
   const chosen = railcards[railcardSelect.value];

@@ -41,8 +41,8 @@ LINK_NOTE_FALLBACK = (
     # own accessible name says it too (audit item 11, 9 October 2026).
     "The ticket link opens the seller's own search page in a new tab, so the journey is not "
     "filled in for you: enter the origin, the destination, the date, and how many of you are "
-    "travelling. The price above is the railway's own walk-up fare, so it is the same "
-    "whichever seller you buy it from."
+    "travelling. Each row's price is the railway's own walk-up fare — the fare you can buy on "
+    "the day — so it is the same whichever seller you buy it from."
 )
 
 

@@ -62,7 +62,7 @@ function renderFreshness() {
       ? "which has not started yet"
       : ends > 0
         ? "which has ended, so these times describe services that no longer run"
-        : "which includes today";
+        : "which covers the day these times are for";
     parts.push("Times are from a timetable covering " + humanDate(DATA.timetableFrom) + " to " +
       humanDate(DATA.timetableTo) + ", " + verdict + ".");
   }
@@ -152,9 +152,13 @@ function renderIntro() {
   // along with the old one, and a station page with no sentence saying what the
   // station name does is exactly the page the note exists to prevent.
   const first = intro.firstChild;
-  const text = DATA.hasJourneys
-    ? "Every place you can reach from the station above, inside the budget, with the fastest time and the fewest changes."
-    : "Every place this feed prices from the station above, inside the budget. This build has no timetable, so no times are shown.";
+  // One promise, written once, with the timetable clause composed onto it
+  // (audit item 10). The fares-only case adds no clause of its own: the
+  // freshness line above the table is the one place that says a timetable was
+  // not supplied, so a reader meets that fact once rather than three times
+  // (audit item 38).
+  const text = "Every destination this feed prices from the station above, inside the budget" +
+    (DATA.hasJourneys ? ", with the fastest time and the fewest changes." : ".");
   if (first && first.nodeType === 3) first.nodeValue = text + " ";
   else intro.insertBefore(document.createTextNode(text + " "), intro.firstChild);
 }
@@ -206,12 +210,15 @@ function provenance() {
     "Origin " + DATA.origin.name + " (" + DATA.origin.crs + ")",
     available.length + " " + (listed[ticketMode()] || "destinations in the feed"),
   ];
+  // The reader's facts only: which origin, what the count is, and which day the
+  // times are for. The no-timetable fact is said once, in the freshness line
+  // above the table (audit item 38), and the destination-type source is a
+  // source, so it sits in the attribution block (audit item 48). The day is
+  // written in the page's own date words, so no ISO date reaches the reader
+  // (audit item 49).
   if (DATA.hasJourneys) {
-    parts.push(DATA.serviceDate ? "services on " + DATA.serviceDate : "typical services in the feed");
-  } else {
-    parts.push("no timetable loaded, so no times are shown");
+    parts.push(DATA.serviceDate ? "times for " + humanDate(DATA.serviceDate) : "typical services in the feed");
   }
-  if (DATA.locationTypeSource) parts.push("destination types: " + DATA.locationTypeSource);
   document.getElementById("provenance").textContent = parts.join(" · ");
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
     ? DATA.pricingBasis + ". Use the ticket-type control to change which fares are listed, then use the budget filter to narrow the list."
@@ -221,7 +228,7 @@ function provenance() {
   renderFreshness();
   renderRestrictionReference();
   renderIntro();
-  document.getElementById("railcardNote").textContent = DATA.railcardNote;
+  renderRailcardNote();
   // C03: what the reader has to do for themselves when the link is the plain
   // one, and what the link earns the site. Both sit above the table now, so
   // they are read before the first ticket action rather than after a click has
@@ -262,6 +269,16 @@ function provenance() {
     }
     attribution.hidden = false;
   }
+  // The destination-type source is a source, not a reader's fact, so it sits
+  // here with the other licence text rather than in the provenance line
+  // (audit item 48).
+  if (DATA.locationTypeSource) {
+    const attribution = document.getElementById("attribution");
+    const p = document.createElement("p");
+    p.textContent = "Destination types from: " + DATA.locationTypeSource + ".";
+    attribution.append(p);
+    attribution.hidden = false;
+  }
   // Where the numbers came from, stated beside the prices rather than in the
   // footer, because where a number came from is part of the number.
   if (DATA.priceSource) {
@@ -270,16 +287,22 @@ function provenance() {
     // its own field, so the sentence is composed here from the pair. Reading
     // the date out of the source sentence is the shape that had the chooser
     // print it twice -- one date, one place it comes from.
-    const parts = ["Prices from " + DATA.priceSource];
-    if (DATA.feedDate) parts.push("downloaded " + humanDate(DATA.feedDate));
-    if (DATA.serviceDate) parts.push("feed dated " + humanDate(DATA.serviceDate));
-    line.textContent = parts.join(", ") + ".";
+    let text = "Prices from " + DATA.priceSource;
+    if (DATA.feedDate) text += ", downloaded " + humanDate(DATA.feedDate);
+    if (DATA.serviceDate) text += "; fares and times read for " + humanDate(DATA.serviceDate);
+    line.textContent = text + ".";
     line.hidden = false;
   }
   if (DATA.builtAt) {
     const line = document.getElementById("buildMetadata");
-    line.textContent = "Site built " + DATA.builtAt.replace("T", " ").replace("Z", " UTC") +
-      (DATA.sourceFingerprint ? " · source " + DATA.sourceFingerprint : "") + ".";
+    // Named for what it is (audit item 46) and dated in the page's own words, so
+    // the build stamp is not the one ISO date on the page (audit item 49). The
+    // digest stays: it is the citation a person debugging the site looks for.
+    const clock = DATA.builtAt.slice(11, 16);
+    line.textContent = "Site built " + humanDate(DATA.builtAt.slice(0, 10)) +
+      (clock ? " at " + clock + " UTC" : "") +
+      " from this revision of the code" +
+      (DATA.sourceFingerprint ? ", source " + DATA.sourceFingerprint : "") + ".";
     line.hidden = false;
   }
   if (DATA.tracked && DATA.disclosure) {

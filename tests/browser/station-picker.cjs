@@ -107,7 +107,7 @@ async function checkTheOriginPicker(world) {
       );
       check(
         "the summary names what is narrowed, counts the railcard and says All",
-        /^Ticket: Cheapest of any type \u00b7 Travellers: One adult, 0 railcard \u00b7 Destination: All$/.test(
+        /^Ticket: Cheapest available \u00b7 Travellers: One adult, 0 railcard \u00b7 Destination: All$/.test(
           filterBar.state
         ),
         JSON.stringify(filterBar.state)

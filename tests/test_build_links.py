@@ -87,8 +87,11 @@ class TicketHandoffTest(PageTestCase):
         self.assertLess(html.index('id="disclosure"'), html.index("<table>"))
 
     def test_every_row_offers_to_copy_its_journey_details(self) -> None:
-        self.assertIn("Copy", self.html)
-        self.assertIn("Copy the journey details for ", page_script(self.html))
+        # The visible word carries what the control does now, so the test names
+        # it the way the reader sees it and the accessible name adds only the row
+        # it belongs to (audit item 28, 14 October 2026).
+        self.assertIn('"Copy journey"', page_script(self.html))
+        self.assertIn("Copy journey for ", page_script(self.html))
         # Which row's control copies which row's journey is the browser suite's
         # to answer: it presses the control on a row and reads the clipboard.
 

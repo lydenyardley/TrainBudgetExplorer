@@ -787,7 +787,7 @@ async function driveTheFilters(world) {
       .catch(() => {});
     // Q4: in the cheapest list the reader chose a price rather than a ticket
     // type, so the handoff text has to name the fare the row is priced as --
-    // "Ticket: Cheapest of any type" is what they picked, and it is not what a
+    // "Ticket: Cheapest available" is what they picked, and it is not what a
     // seller needs to hear. Driven from the page's opening mode, which is the
     // one this is about: the check above left the page in a named set.
     const cheapestCopy = await page.evaluate(() => {

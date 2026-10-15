@@ -38,7 +38,7 @@ function renderCoverage() {
       // Q4: the cheapest list is not one of the three sets, so it has a lead of
       // its own rather than borrowing a set's sentence and counting its fares.
       : mode === CHEAPEST_MODE
-        ? modeCount(CHEAPEST_MODE) + " destinations are shown, each on the cheapest fare of any ticket type the feed prices for it" + droppedFromFeed() + "."
+        ? modeCount(CHEAPEST_MODE) + " destinations the feed prices, at any budget, each on its cheapest fare of any ticket type" + droppedFromFeed() + "."
       : DATA.rawFareDestinationCount + " standard-return destinations were found in the feed" + droppedFromFeed() + "." +
         (DATA.destinations.length
           ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
@@ -52,7 +52,7 @@ function droppedFromFeed() {
   // so a reader never sees it stated twice in one line.
   const dropped = [];
   if (DATA.excludedItxCount) dropped.push(DATA.excludedItxCount + " had only ITX placeholder fares");
-  return dropped.length ? "; " + dropped.join(" and ") + ", and are not shown" : ", and all are shown";
+  return dropped.length ? "; " + dropped.join(" and ") + ", so they are not in this list" : "";
 }
 function classifiedNote() {
   if (DATA.unclassifiedDestinationCount) {
@@ -74,7 +74,7 @@ function unnameableNote() {
     (DATA.unnameableFareCount === 1 ? "flow had" : "flows had") +
     " no station name in the feed, so " +
     (DATA.unnameableFareCount === 1 ? "it is" : "they are") +
-    " not shown here; that is a gap in the feed's names, not a place with no fare.";
+    " not shown here; that is a gap in the feed's names, not a destination with no fare.";
 }
 function render() {
   // The tab title is the same sentence as the heading, and a reader who
@@ -82,11 +82,20 @@ function render() {
   // searches apart. Before the early returns, because a page with nothing
   // priced still names its origin and its budget.
   document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;
+  // The heading holds the budget field and the station control, so its own name
+  // is the whole sentence rather than the controls' text run together. It is the
+  // same sentence as the tab title, so the two cannot disagree (audit item 13).
+  const heading = document.getElementById("pageHeading");
+  if (heading) heading.setAttribute("aria-label", document.title);
   // Before any price is read: the railcard changes the price of every row, and
   // a card ticked for a party of one is a number no reader could buy. It also
   // decides which row the cheapest list keeps for a destination, so that list
   // is composed after this and not before it.
   syncRailcardParty();
+  // The paragraph about the prices is written from the state the rows are in:
+  // with a card chosen it says so, and with none it is the feed's own
+  // standard-fare paragraph (audit item 24).
+  renderRailcardNote();
   const available = activeDestinations();
   // The budget's stop first, because a chip is offered only when this budget
   // can reach a destination of its type. clampBudget returns the reader's own
@@ -170,7 +179,7 @@ function render() {
   // Q4: in the cheapest list every row names its own fare, so the count line
   // names the mix rather than implying one ticket type, and the party figure
   // says what it is two of -- on a single row, two singles, not two returns.
-  const what = unit() === "party" ? "for the two of us" : "each";
+  const what = unit() === "party" ? "for the two of us" : "per adult";
   const basis = ticketMode() === CHEAPEST_MODE && unit() === "party"
     ? "for the two of us, two of the fare each row names"
     : what;
@@ -195,9 +204,12 @@ function render() {
   // (audit item 12, 9 October 2026). The page and the count keep one each:
   // "1 of 2 pages · 30 destinations". The singular is spelled rather than
   // left to read "1 pages" on a page whose list happens to fit one.
-  pageStatus.textContent = currentPage + " of " + pageCount +
-    (pageCount === 1 ? " page · " : " pages · ") + wanted.length +
-    (wanted.length === 1 ? " destination" : " destinations");
+  // The count lives in one line, the summary above the table, which the reader
+  // meets as their own search. The page indicator below does not repeat it
+  // (audit item 21), and an empty list narrates no page at all (audit item 34).
+  pageStatus.textContent = wanted.length
+    ? currentPage + " of " + pageCount + (pageCount === 1 ? " page" : " pages")
+    : "";
   previousPage.disabled = currentPage === 1;
   nextPage.disabled = currentPage === pageCount;
   renderShortlist();

@@ -128,10 +128,10 @@ async function checkTheShortlist(world) {
         "a shortlisted place is listed as its name and the price beside it",
         "and each chip is a way back to the row it came from",
         "and a place leaves the list when its fare is no longer on the page",
-        "and the list is a list of places, not a booking",
+        "and the list is a list of destinations, not a booking",
         "every row carries a box, and a held place's box is ticked",
         "and a box is named for the place it holds",
-        "and the held places are announced, not just drawn",
+        "and the change to the list is announced, not just drawn",
         "the shortlist is in the address, so it can be shared",
         "a refresh brings the shortlist back",
         "and it follows the party the reader has chosen",
@@ -180,7 +180,7 @@ async function checkTheShortlist(world) {
         url: location.href,
       }));
       check(
-        "and the list is a list of places, not a booking",
+        "and the list is a list of destinations, not a booking",
         // The count is read from the list rather than fixed at two. A place
         // whose fare the mode cannot price leaves the shortlist by design, so
         // after the mode change the list may hold one place, and the share
@@ -188,7 +188,7 @@ async function checkTheShortlist(world) {
         // the reader changed their mind about the ticket type.
         /not a booking/i.test(shared.text) &&
           new RegExp(
-            "^Shortlist of " + shared.held + " place" + (shared.held === 1 ? "" : "s")
+            "^Shortlist of " + shared.held + " destination" + (shared.held === 1 ? "" : "s")
           ).test(shared.share) &&
           shared.share.includes(shared.origin),
         JSON.stringify(shared).slice(0, 300)
@@ -233,8 +233,8 @@ async function checkTheShortlist(world) {
         JSON.stringify({ pair: shortlist.asPair, solo: shortlist.asSolo })
       );
       check(
-        "and the held places are announced, not just drawn",
-        /2 shortlisted/.test(await page.textContent("#shortlistStatus")),
+        "and the change to the list is announced, not just drawn",
+        /Added .+ to the shortlist\./.test(await page.textContent("#shortlistStatus")),
         (await page.textContent("#shortlistStatus")) || ""
       );
       // A shared link is the whole point, so it is opened, not assumed.
@@ -395,15 +395,15 @@ async function checkTheShortlist(world) {
     });
     if (noService) {
       check(
-        "a row with no service on the page's day but service in the week names that day",
-        noService.rows.later.time === "No service " + noService.weekday + ", runs " + noService.nextWeekday &&
+        "a row with no service on the page's day says so, and its details name that day",
+        noService.rows.later.time === "No service that day" &&
           noService.rows.later.changes === "Unknown" &&
           /it runs on/.test(noService.rows.later.record),
         JSON.stringify({ ...noService.rows.later, weekday: noService.weekday })
       );
       check(
         "and a row the week never reaches says which days it was checked for",
-        noService.rows.never.time === "No service " + noService.weekday + " any day this week" &&
+        noService.rows.never.time === "No service that day" &&
           noService.rows.never.changes === "Unknown" &&
           /nor on the \d+ days after it/.test(noService.rows.never.record) &&
           !/it runs on/.test(noService.rows.never.record),
@@ -411,7 +411,7 @@ async function checkTheShortlist(world) {
       );
     } else {
       check(
-        "a row with no service on the page's day but service in the week names that day",
+        "a row with no service on the page's day says so, and its details name that day",
         notExercised("this page lists no destination to clone, or carries no service date")
       );
       check(
@@ -467,17 +467,36 @@ async function checkTheShortlist(world) {
       const baseline = new Map(before.map((cell) => [cell.crs, cell]));
       const movedPerDay = [];
       const unnamed = [];
+      // Audit item 22, 14 October 2026: a cell in a column of durations holds
+      // the short state, and the day it is about is in the row's own details.
+      // Both are read here: no cell may hold a clause, and the row behind one
+      // of them must name the day the reader chose.
+      const SHORT_ABSENCE = "No service that day";
       for (let index = 1; index < days.length; index += 1) {
         pick(index);
         let moved = 0;
+        let sample = null;
         for (const cell of cells()) {
           const was = baseline.get(cell.crs);
           if (was && (was.time !== cell.time || was.changes !== cell.changes)) moved += 1;
-          if (
-            /^No service/.test(cell.time) &&
-            !/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/.test(cell.time)
-          ) {
-            unnamed.push({ day: days[index], crs: cell.crs, time: cell.time });
+          if (!/^No service/.test(cell.time)) continue;
+          if (cell.time === SHORT_ABSENCE) {
+            if (!sample) sample = cell.crs;
+            continue;
+          }
+          unnamed.push({ day: days[index], crs: cell.crs, time: cell.time, where: "the Time cell" });
+        }
+        if (sample) {
+          const row = document.querySelector(`#rows tr[data-crs="${sample}"]`);
+          const toggle = row && row.querySelector(".row-expand");
+          if (toggle) {
+            if (toggle.getAttribute("aria-expanded") === "false") toggle.click();
+            const panel = document.getElementById(toggle.getAttribute("aria-controls"));
+            const text = panel ? panel.textContent : "";
+            if (!text.includes(humanDate(days[index]))) {
+              unnamed.push({ day: days[index], crs: sample, where: "the row's details", text: text.slice(0, 140) });
+            }
+            if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
           }
         }
         movedPerDay.push(moved);

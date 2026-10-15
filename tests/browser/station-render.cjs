@@ -180,6 +180,8 @@ async function renderThePage(world) {
     // hardcoded sentence.
     const opening = await page.evaluate(() => ({
       intro: (document.getElementById("pageIntro") || {}).textContent || "",
+      heading: (document.getElementById("pageHeading") || {}).getAttribute("aria-label") || "",
+      title: document.title,
       hasJourneys: DATA.hasJourneys,
       timeColumns: document.querySelectorAll("thead th[data-label='Time']").length,
       // The results table only. The shortlist dock is a second table with its
@@ -194,9 +196,11 @@ async function renderThePage(world) {
     }));
     check(
       "the opening sentence matches whether a timetable was loaded",
-      opening.hasJourneys
-        ? /fastest time/.test(opening.intro)
-        : !/fastest time/.test(opening.intro) && /no timetable/i.test(opening.intro),
+      // The no-timetable fact is not this sentence's to state: it is said once,
+      // in the freshness line above the table, so the promise is the same one
+      // either way with the times clause composed onto it (audit item 38).
+      /inside the budget/.test(opening.intro) &&
+        /fastest time/.test(opening.intro) === opening.hasJourneys,
       JSON.stringify(opening)
     );
     check(
@@ -205,6 +209,15 @@ async function renderThePage(world) {
         ? opening.headers.includes("Time") && opening.headers.includes("Changes")
         : !opening.headers.includes("Time") && !opening.headers.includes("Changes"),
       opening.headers.join(" ")
+    );
+    check(
+      "the heading's own name is the whole sentence, and the same one as the tab title",
+      // Items 9 and 13, 14 October 2026: the heading holds the budget field and
+      // the station control, so a name computed from its contents was those
+      // controls run together in reading order. It is written as the sentence
+      // the title already carries, on every render.
+      opening.heading === opening.title && /^Train fares up to £/.test(opening.heading),
+      JSON.stringify({ heading: opening.heading, title: opening.title })
     );
     // Finding, 29 September 2026: on the real page the Price column measured
     // 56px and 13 of the first 20 prices painted as two lines -- £10.10 read as
