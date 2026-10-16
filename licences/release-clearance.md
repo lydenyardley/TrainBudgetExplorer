@@ -127,6 +127,29 @@ on this release, and the fee is nil by a published document:
   downloads two static ZIPs a day and makes no Webservice enquiry, so no fee
   applies. That is a published document rather than a conclusion from volume.
 
+**Which pages carry the acknowledgement.** The guidelines place the mark where
+the feed is the product's predominant information, and that is the station
+route: the only page carrying the feed's own answer (`window.TBE_DATA`, written
+by `render_page`), and the page the placement above is stated for. The chooser
+at `/` shows the feed's station index and the count of destinations it prices,
+and the privacy notice shows no fare and no station; the reading is that an
+index is not the feed's predominant information and the fares are, so neither
+route carries the credit and neither is obliged to. That reading is checked
+rather than assumed: `tools/check_source_credit.py` fails a release route that
+carries the feed's answer without **both** halves of the acknowledgement — the
+mark the guidelines name and the source sentence in the terms' own words — and
+the assemble job runs it over the built site. It also closes a gap the build
+could not: the build's own gate refuses a public release with *no* notice, so a
+notice set that dropped `nre` would ship station pages with no acknowledgement
+and nothing would say so. Recorded 16 October 2026, the day this route was
+cleared.
+
+Rendering the credit on the other two routes is the alternative reading, and it
+is a build change rather than a flag: only the station template carries the two
+slots today. It costs one inlined mark on the two routes and ends the question
+instead of holding a reading about it. Anyone who would rather not hold the
+reading should take that option and delete this paragraph.
+
 **What this clearance does not cover.** Times. A page that showed arrival or
 departure times would raise the "forecasted" question, and whether a static
 scheduled time is "forecasted" in the terms' sense is a reading this project has

@@ -679,6 +679,17 @@ jobs:
           fi
           echo "no station page carries journey times, as the fares-only release declares"
 
+      - name: Check the fare pages carry the source credit
+        # The terms require the publisher to acknowledge NRE as the source, and
+        # the build's own gate would not catch a notice set that dropped `nre`:
+        # `release_gate_problems` refuses a public build with *no* notice, not
+        # one missing this one. So this reads the built site rather than the
+        # flags, and asks only the pages that carry the feed's answer -- the
+        # chooser's station index and the privacy notice carry no fare, and the
+        # reading that they need no credit is recorded in
+        # licences/release-clearance.md (tools/check_source_credit.py).
+        run: python -m tools.check_source_credit --site _site
+
       - name: Test the build
         # `python -m tools.verify --full` is the whole suite in the same command a
         # developer runs, so a green run here and a green run there mean the
