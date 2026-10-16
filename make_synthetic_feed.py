@@ -7,6 +7,7 @@ real fares or real services.
 
 from __future__ import annotations
 
+import gzip
 import random
 import json
 from pathlib import Path
@@ -843,6 +844,174 @@ def build_synthetic_timetable(
     (path / "timetable.mca").write_text("\n".join(cif_lines) + "\n", encoding="utf-8")
     (path / "stations.msn").write_text("\n".join(station_lines) + "\n", encoding="utf-8")
     return path
+
+
+# The name Network Rail's own schedule feed gives the whole CIF, and the reason
+# there is a fixture for this shape: it is one gzipped file holding every record
+# type, with no station names file beside it and nothing filtered out of it.
+WHOLE_CIF_NAME = "CIF_ALL_FULL_DAILY_toc-full.CIF.gz"
+
+
+def build_synthetic_whole_cif(
+    path: str | Path,
+    *,
+    gzipped: bool = True,
+    with_station_names: bool = False,
+    with_non_passenger: bool = True,
+) -> Path:
+    """Write one whole CIF in the shape Network Rail's own feed has.
+
+    The DTD timetable product ships a folder of record-type files with a station
+    names file beside them, and it is filtered to passenger services before it is
+    published. Network Rail's own CIF -- the file the Open Government Licence
+    route reads -- is one gzipped file, unfiltered, with no station names file at
+    all. A test built only the DTD way cannot see either difference, which is how
+    a page could answer "nowhere" for a station the feed does serve while also
+    being able to offer a journey on an empty-stock move.
+
+    Three invented services, one per case: a passenger train (status P, category
+    OO), a freight path (status F, no public calling times), and an empty-stock
+    move (status P -- it is a passenger train -- with the category that says it
+    carries nobody). The empty-stock move carries public times on purpose: the
+    test is that the code table drops it, not that a missing public time does.
+    """
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    lines = [
+        _line(
+            {
+                "record_type": "HD",
+                "file_identity": "SYNTHETIC",
+                # A weekly full extract is written on a Friday, which is the only
+                # thing about this date that is real: 9 October 2026 is one.
+                "extract_date": "261009",
+                "extract_time": "0130",
+            },
+            CIF_HEADER,
+        )
+    ]
+    lines.extend(
+        _whole_cif_train(
+            train_uid="W10001",
+            origin=("GRNT", "0900", "0900"),
+            intermediates=[("NWRK", "0925", "0930", "0925", "0930")],
+            terminus=("NOTT", "0955", "0955"),
+            status="P",
+            category="OO",
+        )
+    )
+    if with_non_passenger:
+        lines.extend(
+            _whole_cif_train(
+                train_uid="W10002",
+                origin=("GRNT", "2300", "0000"),
+                intermediates=[],
+                terminus=("NOTT", "2345", "0000"),
+                status="F",
+                category="",
+            )
+        )
+        lines.extend(
+            _whole_cif_train(
+                train_uid="W10003",
+                origin=("NOTT", "0600", "0600"),
+                intermediates=[],
+                terminus=("GRNT", "0650", "0650"),
+                status="P",
+                category="EE",
+            )
+        )
+    for tiploc, crs in TIPLOC_INSERTS:
+        lines.append(_line({"record_type": "TI", "tiploc": tiploc, "crs": crs}, CIF_TIPLOC_INSERT))
+    lines.append(_line({"record_type": "ZZ"}, CIF_HEADER))
+
+    target = path / (WHOLE_CIF_NAME if gzipped else WHOLE_CIF_NAME[: -len(".gz")])
+    body = ("\n".join(lines) + "\n").encode("utf-8")
+    if gzipped:
+        with gzip.open(target, "wb") as handle:
+            handle.write(body)
+    else:
+        target.write_bytes(body)
+    if with_station_names:
+        station_lines = [
+            _line(
+                {
+                    "record_type": "A",
+                    "name": name,
+                    "category": "0",
+                    "tiploc": tiploc,
+                    "crs": crs,
+                    "change_time": change_time,
+                },
+                MSN_STATION,
+            )
+            for tiploc, crs, name, change_time in TIMETABLE_STATIONS
+        ]
+        (path / "stations.msn").write_text("\n".join(station_lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _whole_cif_train(
+    *,
+    train_uid: str,
+    origin: tuple[str, str, str],
+    intermediates: list[tuple[str, str, str, str, str]],
+    terminus: tuple[str, str, str],
+    status: str,
+    category: str,
+) -> list[str]:
+    """One schedule's records, in the order the CIF writes them."""
+    lines = [
+        _line(
+            {
+                "record_type": "BS",
+                "transaction_type": "N",
+                "train_uid": train_uid,
+                "date_runs_from": "260921",
+                "date_runs_to": "261211",
+                "days": "1111110",
+                "status": status,
+                "category": category,
+                "stp_indicator": "P",
+            },
+            CIF_SCHEDULE,
+        ),
+        _line(
+            {
+                "record_type": "LO",
+                "location": origin[0],
+                "scheduled_departure": origin[1],
+                "public_departure": origin[2],
+            },
+            CIF_ORIGIN,
+        ),
+    ]
+    for tiploc, arrival, departure, public_arrival, public_departure in intermediates:
+        lines.append(
+            _line(
+                {
+                    "record_type": "LI",
+                    "location": tiploc,
+                    "scheduled_arrival": arrival,
+                    "scheduled_departure": departure,
+                    "public_arrival": public_arrival,
+                    "public_departure": public_departure,
+                },
+                CIF_INTERMEDIATE,
+            )
+        )
+    lines.append(
+        _line(
+            {
+                "record_type": "LT",
+                "location": terminus[0],
+                "scheduled_arrival": terminus[1],
+                "public_arrival": terminus[2],
+            },
+            CIF_TERMINUS,
+        )
+    )
+    return lines
 
 
 def _clock(minutes: int) -> str:

@@ -413,14 +413,15 @@ Two sources, read 16 October 2026:
   in compliance with the terms of the Open Government Licence." No internal-use
   clause appears in it.
 
-So the schedule is not the restricted thing — the DTD licence's Schedule 1 §5 is.
+So the schedule is not the restricted thing - the DTD licence's Schedule 1 §5 is.
 That makes a publishable timetable a *sourcing* change rather than a rewrite:
 `atoc_timetable.py` already reads CIF (`CIF_SCHEDULE`, `CIF_ORIGIN`,
 `CIF_INTERMEDIATE`, `CIF_TERMINUS`, and the `.cif`/`.mca`/`.cfa`/`.ztr`
-extensions), so the work is getting the file to the machine (below), a filter for
-the freight, empty-stock and non-public calls a raw CIF carries — the BS record's
-`status` and `category` are read into offsets today and nothing drops a schedule
-on them — and the OGL attribution the product page supplies:
+extensions), and the two differences a whole CIF brings are now read for it -
+the `.gz` it arrives as, and the freight, empty-stock and parcels schedules a
+raw CIF carries that the DTD product filters out before publication (ADR-0073).
+What remains is getting the file to the machine (below) and the OGL attribution
+the product page supplies:
 
 > Contains public sector information licensed under the Open Government Licence v3.0.
 
@@ -468,12 +469,11 @@ factor when it has one. So the routes are:
    consumers, and it is a front end to keep up with.
 
 Which of these is the owner's, and nothing publishes times until one is chosen.
-The build's own side of it is small and in one file: the RDM extract is gzipped
-and `read_feed_files` accepts a folder or a ZIP rather than a `.gz`; a raw CIF
-carries every schedule and nothing filters on `status`/`category` yet; and the
-DTD download ships an `.msn` station-name file beside its CIF records where a
-single whole-CIF file does not, so where the CIF-to-CRS mapping comes from on
-this route has to be settled against the real file.
+The build's own side of it is already read for it (ADR-0073): the gzipped file,
+the freight and empty-stock schedules a raw CIF carries, and the focus a feed
+with no station-name file cannot apply. `schedule_download.py` fetches from a URL
+with an optional credential, so whichever route is chosen above is a value to
+fill in rather than code to write.
 
 What it needs before any of it ships: the licence filed with its product id like
 every other RDM document (ADR-0067) — **done, 16 October 2026** — the delivery

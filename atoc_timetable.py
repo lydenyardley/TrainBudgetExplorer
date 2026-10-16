@@ -209,6 +209,50 @@ CIF_RECORD_TYPES = frozenset(
 CIF_EXTENSIONS = frozenset({"mca", "cfa", "ztr", "cif"})
 MSN_EXTENSIONS = frozenset({"msn"})
 
+# What a schedule is, from the CIF's own code tables (Open Rail Data Wiki, "CIF
+# Codes"): the two fields a whole-CIF feed fills and the DTD timetable product
+# never makes a reader look at, because it is filtered to passenger services
+# before it is published.
+#
+# A blank or unrecognised value is kept. A synthetic feed does not fill every
+# field, and one blank field must not empty a page; a code these tables do not
+# name is a reason to read the record rather than to drop it.
+NON_PASSENGER_STATUS = frozenset(
+    {
+        "B",  # bus
+        "F",  # freight
+        "S",  # ship
+        "T",  # trip
+        "2",  # freight, short-notice plan
+        "3",  # trip, short-notice plan
+        "4",  # ship, short-notice plan
+        "5",  # bus, short-notice plan
+    }
+)
+NON_PASSENGER_CATEGORY = frozenset(
+    {
+        "EE",  # empty coaching stock
+        "EL",  # empty coaching stock, London Underground / metro
+        "ES",  # empty coaching stock and staff
+        "JJ",  # postal
+        "PM",  # post office controlled parcels
+        "PP",  # parcels
+        "PV",  # empty NPCCS
+    }
+)
+
+
+def is_passenger_service(status: str, category: str) -> bool:
+    """Whether a CIF schedule is one a passenger can take.
+
+    The status is what the train is and the category is what it carries, and
+    either can disqualify it: an empty-stock move is a passenger train (status
+    ``P``) that carries nobody, which is why the status alone is not the test.
+    """
+    if status.strip().upper() in NON_PASSENGER_STATUS:
+        return False
+    return category.strip().upper() not in NON_PASSENGER_CATEGORY
+
 
 def _minutes(value: str) -> int | None:
     """Read a CIF time as minutes past midnight. Blank means the train does not stop.
@@ -338,10 +382,18 @@ class _CifState:
     date_to: str = ""
     days: str = ""
     stp_indicator: str = ""
+    # The two fields that decide whether a passenger can take the service. Held
+    # on the schedule under construction because the calling points arrive
+    # after the record that carries them, so the decision cannot be made where
+    # they are read.
+    status: str = ""
+    category: str = ""
 
     def reset(self) -> None:
         self.train_uid = ""
         self.stops = []
+        self.status = ""
+        self.category = ""
 
 
 @dataclass(frozen=True)
@@ -468,6 +520,21 @@ class TimetableDb:
             for station in self.stations_by_tiploc.values()
             if station.crs in focus_crs
         }
+        if not self._focus_tiplocs:
+            # An empty focus is not a small focus, it is an empty feed: every
+            # schedule that names no station in the set is dropped, one at a
+            # time, while the whole file is read to do it. A whole-CIF feed has
+            # no station names file beside its records -- the DTD archive has
+            # `.msn`, Network Rail's CIF is one gzipped file -- so asking it to
+            # focus itself answered "nowhere" to every page and looked like a
+            # station with no journeys. The focus decides how much is held, not
+            # whether an answer exists, so the feed is read unfocused instead
+            # and the report says which feed and why.
+            self._focus_tiplocs = None
+            self.report.skip_file(
+                f"{Path(path).name}: no station names, so the focus {sorted(focus_crs)} is "
+                "not applied and the whole feed is held"
+            )
 
     def load_feed(
         self,
@@ -739,6 +806,8 @@ class TimetableDb:
             state.date_to = _text(line, CIF_SCHEDULE_OFFSETS, "date_runs_to")
             state.days = _text(line, CIF_SCHEDULE_OFFSETS, "days")
             state.stp_indicator = _text(line, CIF_SCHEDULE_OFFSETS, "stp_indicator").upper()
+            state.status = _text(line, CIF_SCHEDULE_OFFSETS, "status").upper()
+            state.category = _text(line, CIF_SCHEDULE_OFFSETS, "category").upper()
             if _text(line, CIF_SCHEDULE_OFFSETS, "transaction_type").upper() == "D":
                 return
             state.train_uid = self._require(line, CIF_SCHEDULE_OFFSETS, "train_uid")
@@ -813,6 +882,13 @@ class TimetableDb:
 
     def _commit(self, state: _CifState) -> None:
         if state.train_uid and len(state.stops) >= 2:
+            if not is_passenger_service(state.status, state.category):
+                # Counted rather than dropped in silence: a feed with no freight
+                # in it and a feed whose freight was filtered out look the same
+                # from every page, so nothing else in the build could say which
+                # one this was.
+                self.report.non_passenger_schedules += 1
+                return
             if self._focus_tiplocs is not None and not any(
                 stop.tiploc in self._focus_tiplocs for stop in state.stops
             ):

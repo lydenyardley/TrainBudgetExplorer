@@ -471,14 +471,18 @@ script against the dashboard's own endpoints with a bearer token from a scripted
 login. `docs/dtd-licensing-and-data-access.md` holds the detail, and question 11
 below is the decision.
 
-On the build's side the work is small and all of it in `atoc_timetable.py`'s
-reader: `.gz`, which the reader does not take (a folder or a ZIP, not a gzipped
-file); the passenger-only filter, because the BS record's `status` and `category`
-are parsed into offsets and nothing drops a schedule on them; and where the
-CIF-to-CRS mapping comes from when no `.msn` file ships beside the CIF. Then the
-OGL line on the page, the `timetable` glob in
-`tools/check_release_clearance.py` pointed at this product rather than Darwin's,
-and the owner's approval line.
+**The build's side of it is done, 16 October 2026** (ADR-0073).
+`schedule_download.py` fetches a gzipped whole CIF from a URL with an optional
+Basic credential, drops the credential across the redirect, and refuses anything
+that is not a schedule before it becomes the feed. The reader takes a `.gz` file,
+drops freight, empty-stock and parcels schedules on the CIF's own code tables,
+and reads a feed that names no stations unfocused rather than emptily -- that
+last one answered "nowhere" for every station, silently, while reading the whole
+file to do it. `make_synthetic_feed.build_synthetic_whole_cif` writes the shape
+those tests are built on. What is left is the OGL line on the page, the
+`timetable` glob in `tools/check_release_clearance.py` pointed at this product
+rather than Darwin's, and the owner's approval line -- none of which can move
+before a file is actually arriving.
 
 ## Suggestions not yet taken up
 
@@ -705,7 +709,9 @@ on a tool.
     open-data page now pointing at the marketplace; or (c) a script against the
     dashboard's own endpoints, which is an undocumented front end to keep up
     with. Until one is chosen the release publishes prices only, which is a shape
-    it is entitled to publish rather than a fault.
+    it is entitled to publish rather than a fault. The code no longer depends on
+    the answer: `schedule_download.py` takes a URL, so whichever route is chosen
+    is a value to fill in rather than a change to make.
 
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard

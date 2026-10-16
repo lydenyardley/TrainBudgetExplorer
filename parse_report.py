@@ -7,6 +7,7 @@ traced to a file, a line, or an encoding instead of guessed at.
 
 from __future__ import annotations
 
+import gzip
 import itertools
 import zipfile
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from typing import BinaryIO, Callable, Iterator
 
 MAX_SKIPPED_EXAMPLES = 5
 ARCHIVE_SUFFIXES = (".zip",)
+GZIP_SUFFIXES = (".gz",)
 
 
 @dataclass
@@ -49,6 +51,13 @@ class ParseReport:
     #: away before it is applied, so a stale entry changes nothing at runtime
     #: and only silence would let the list rot unnoticed.
     reviewed_railcard_codes_absent: list[str] = field(default_factory=list)
+    # CIF schedules a whole-CIF feed carries that no passenger can take:
+    # freight, trip, bus, ship, empty coaching stock and parcels moves. The DTD
+    # timetable product is filtered to passenger services before it is
+    # published, so nothing had to count these; Network Rail's own CIF is not
+    # filtered, and a schedule the loader drops is one no page can reach a
+    # journey through -- the same silence as a feed that never carried it.
+    non_passenger_schedules: int = 0
 
     def skip_file(self, message: str) -> None:
         """Record a whole file the loader chose not to read.
@@ -78,6 +87,7 @@ class ParseReport:
             "skipped": self.records_skipped,
             "encoding_fallbacks": self.encoding_fallback_lines,
             "skipped_files": len(self.skipped_files),
+            "non_passenger_schedules": self.non_passenger_schedules,
         }
 
 
@@ -132,10 +142,16 @@ def read_feed_files(
             if child.suffix.lower() in ARCHIVE_SUFFIXES:
                 _read_archive(child, report, consume)
                 continue
+            if child.suffix.lower() in GZIP_SUFFIXES:
+                _read_gzip(child, report, consume)
+                continue
             consume(child.name, iter_lines(child, report))
         return
     if path.suffix.lower() in ARCHIVE_SUFFIXES:
         _read_archive(path, report, consume)
+        return
+    if path.suffix.lower() in GZIP_SUFFIXES:
+        _read_gzip(path, report, consume)
         return
     consume(path.name, iter_lines(path, report))
 
@@ -153,7 +169,54 @@ def _read_archive(
                 report.skip_file(f"{path.name}: {name} is an archive inside an archive, not opened")
                 continue
             with archive.open(name) as handle:
+                if Path(name).suffix.lower() in GZIP_SUFFIXES:
+                    _gzip_feed(handle, name, report, consume)
+                    continue
                 consume(name, decode_lines(handle, report))
+
+
+def _without_gzip(name: str) -> str:
+    """The name a feed file would have if it were not compressed.
+
+    The name is what the loader classifies a file by, and a whole-CIF feed
+    arrives as ``...toc-full.CIF.gz``: the suffix saying what it holds sits
+    under the one saying how it was compressed, so a name that keeps both
+    reaches the loader as a file of unknown kind.
+    """
+    lowered = name.lower()
+    for suffix in GZIP_SUFFIXES:
+        if lowered.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _read_gzip(
+    path: Path,
+    report: ParseReport,
+    consume: Callable[[str, Iterator[str]], None],
+) -> None:
+    with path.open("rb") as handle:
+        _gzip_feed(handle, path.name, report, consume)
+
+
+def _gzip_feed(
+    handle: BinaryIO,
+    name: str,
+    report: ParseReport,
+    consume: Callable[[str, Iterator[str]], None],
+) -> None:
+    """Stream a compressed feed file as if it had not been compressed.
+
+    Damage is raised, not skipped. A gzip that cannot be read is a download
+    that failed, and a skipped download answers every question the feed is
+    asked with the answer an empty one gives -- which is how a page comes to
+    say "nowhere" with confidence.
+    """
+    try:
+        with gzip.GzipFile(fileobj=handle) as stream:
+            consume(_without_gzip(name), decode_lines(stream, report))
+    except (OSError, EOFError) as error:
+        raise ValueError(f"{name} is not readable as gzip ({type(error).__name__}: {error})") from error
 
 
 def peek(lines: Iterator[str]) -> tuple[str | None, Iterator[str]]:

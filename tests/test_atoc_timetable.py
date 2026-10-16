@@ -25,7 +25,12 @@ from atoc_timetable import (
     TimetableDb,
     format_minutes,
 )
-from make_synthetic_feed import _line, build_synthetic_timetable
+from make_synthetic_feed import (
+    WHOLE_CIF_NAME,
+    _line,
+    build_synthetic_timetable,
+    build_synthetic_whole_cif,
+)
 
 SUNDAY = date(2026, 9, 27)
 TUESDAY = date(2026, 9, 29)
@@ -1165,6 +1170,63 @@ class SliceIndexTest(unittest.TestCase):
         self.assertEqual(entry["window"], list(self.db.service_window()))
         self.assertEqual(self.index.totals()["origins"], 1)
         self.assertIn("1 slice(s)", self.index.describe())
+
+
+class WholeCifFeedTest(unittest.TestCase):
+    """The shape Network Rail's own feed has: one gzipped file, nothing filtered.
+
+    The DTD timetable product arrives as a folder of record-type files with a
+    station names file beside them, already filtered to passenger services. The
+    file the Open Government Licence route reads is one gzipped CIF holding every
+    record type, including the freight and empty-stock schedules, and no station
+    names at all. Every one of those three differences is a way a page goes
+    wrong quietly, which is why the fixture exists.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def test_a_gzipped_whole_cif_is_read_under_the_name_it_holds(self) -> None:
+        feed = build_synthetic_whole_cif(self.root / "timetable")
+        timetable = TimetableDb().load_feed(feed)
+        # The name is `...toc-full.CIF.gz` and the loader classifies a file by
+        # its name: read as a file of unknown kind it would be sniffed and could
+        # be declined, and read as a `.gz` it would be decoded as text.
+        self.assertEqual([record for record in timetable.report.files_read], [WHOLE_CIF_NAME[:-3]])
+        self.assertEqual([schedule.train_uid for schedule in timetable.schedules], ["W10001"])
+        self.assertEqual(timetable.report.encoding_fallback_lines, 0)
+
+    def test_a_freight_or_empty_stock_schedule_is_not_a_journey(self) -> None:
+        feed = build_synthetic_whole_cif(self.root / "timetable", gzipped=False)
+        timetable = TimetableDb().load_feed(feed)
+        # W10002 is a freight path (status F) and W10003 an empty-stock move
+        # (status P, category EE). The freight has no public times, so a filter
+        # on those would catch it too; the ECS carries public times on purpose,
+        # and only the code table can drop it.
+        self.assertEqual([schedule.train_uid for schedule in timetable.schedules], ["W10001"])
+        self.assertEqual(timetable.report.non_passenger_schedules, 2)
+        self.assertEqual(timetable.report.summary()["non_passenger_schedules"], 2)
+
+    def test_a_feed_with_no_station_names_is_read_unfocused_rather_than_emptily(self) -> None:
+        folder = self.root / "timetable"
+        build_synthetic_whole_cif(folder)
+        # A focus is derived from the station names file, and a whole CIF has
+        # none. The empty set that falls out of that dropped every schedule --
+        # every station would have answered "nowhere" while the whole file was
+        # read to do it -- so the load is unfocused instead, and says so.
+        unfocused = TimetableDb().load_feed(folder, focus_origin="GRN")
+        self.assertEqual(unfocused.stats()["schedules"], 1)
+        self.assertTrue(
+            any("no station names" in message for message in unfocused.report.skipped_files)
+        )
+
+    def test_the_same_feed_with_station_names_focuses_as_usual(self) -> None:
+        feed = build_synthetic_whole_cif(self.root / "timetable", with_station_names=True)
+        focused = TimetableDb().load_feed(feed, focus_origin="NOT")
+        self.assertEqual(focused.stats()["schedules"], 1)
+        self.assertEqual(focused.report.skipped_files, [])
 
 
 if __name__ == "__main__":
