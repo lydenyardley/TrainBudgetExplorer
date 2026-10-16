@@ -628,13 +628,13 @@ on a tool.
    `DESTINATION_TYPE_FILTERS` in `atoc_fare_declarations.py`, which is the reviewed
    table the payload's types are keyed by, so a rename is one registry edit.
 10. **What may the built line claim about publication?** Clarity audit item 42.
-    The privacy page's first line describes "the build published on 14 October
-    2026", and no build has been served: `licences/release-clearance.md` clears
-    only a prices-only `fares` release. The sentence has to stay, because the
-    analytics bullets below it
-    are claims about one build; whether it may use the verb is the decision of
-    whoever clears the release, so it is recorded beside that file rather than
-    changed now.
+    The privacy page's first line reads "the build published on" and then the
+    build's own timestamp (`builtAt`, set in `build_payload.py`). The
+    sentence has to stay, because the analytics bullets below it are claims about
+    one build; whether it may use the verb "published" is the decision of whoever
+    clears the release. The fares-only release is cleared and a push deploys, so
+    the verb becomes true when a run reaches the deploy job — not before, and not
+    for a build that is only ever built locally.
 11. **Which trade terms does this audience know?** Clarity audit item 44. ITX,
     DTD, RR, "flow", "NRE", "Priced as" and "feed" itself are quoted on the routes
     the release serves and glossed on none of them. The audit asks for one short
