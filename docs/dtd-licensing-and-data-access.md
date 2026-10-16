@@ -398,9 +398,13 @@ Two sources, read 16 October 2026:
   internal business purposes only, §8 names no attribution statement so the OGL
   fallback above is the required one, and §7 permits exercise of the rights
   **within the UK**. `licences/README.md` carries the row and
-  `licences/release-clearance.md` the section; the file list the account shows
-  includes the full CIF (`CIF_ALL_FULL_DAILY_toc-full.CIF.gz`) beside the JSON,
-  which is the format `atoc_timetable.py` already reads;
+  `licences/release-clearance.md` the section. The account's list carries CIF as
+  well as JSON — `CIF_ALL_UPDATE_DAILY_toc-update-<day>.CIF.gz` among the daily
+  updates — which is the format `atoc_timetable.py` already reads, and the full
+  JSON extract is confirmed as `CIF_ALL_FULL_DAILY_toc-full.json.gz` (139.95 MB);
+  whether the weekly full extract is also offered as CIF
+  (`CIF_ALL_FULL_DAILY_toc-full.CIF.gz`) is the one line of that page still to be
+  read;
 - **Network Rail's own open data feeds** (`datafeeds.nationalrail.co.uk`) — the
   **Schedule** feed, "daily extracts and updates of train schedules from the
   Integrated Train Planning System, in CIF and JSON formats", under the "Network
@@ -413,9 +417,10 @@ So the schedule is not the restricted thing — the DTD licence's Schedule 1 §5
 That makes a publishable timetable a *sourcing* change rather than a rewrite:
 `atoc_timetable.py` already reads CIF (`CIF_SCHEDULE`, `CIF_ORIGIN`,
 `CIF_INTERMEDIATE`, `CIF_TERMINUS`, and the `.cif`/`.mca`/`.cfa`/`.ztr`
-extensions), so the work is a downloader for the NR feed's account, a filter for
-the freight, empty-stock and non-public calls a raw CIF carries, and the OGL
-attribution the product page supplies:
+extensions), so the work is getting the file to the machine (below), a filter for
+the freight, empty-stock and non-public calls a raw CIF carries — the BS record's
+`status` and `category` are read into offsets today and nothing drops a schedule
+on them — and the OGL attribution the product page supplies:
 
 > Contains public sector information licensed under the Open Government Licence v3.0.
 
@@ -434,14 +439,49 @@ Two conditions ride with it, and neither is a reason not to:
   construction; a page that shows no time at all meets the same condition, which is
   what the prices-only release does today.
 
+**How the file reaches the build, which is a separate question from the
+licence.** Read 16 October 2026, and it is the harder half. The Rail Data
+Marketplace's file products have no pull API: the platform's own guide ("Access
+file data and automate transfers") offers the dashboard's Download button and a
+*file transfer* the platform pushes to a destination the consumer owns — AWS S3,
+Google Cloud Storage, Azure Blob or SFTP — so there is no key that fetches these
+files, and the community's own summary of it is that this "is a regression
+compared to the pull option we currently have with the NRDP". The Download button
+is an authenticated call to the dashboard's own endpoints with a bearer token
+from the browser login flow; public scrapers do exist, but that flow needs an
+AES-CBC decryption the standard library does not have, and the account's second
+factor when it has one. So the routes are:
+
+1. **A destination the owner sets up, read over plain HTTPS.** RDM pushes the
+   file to a bucket or an SFTP location; the workflow fetches it from there. The
+   cost is a cloud account and a one-off setup, and it needs no credential in CI
+   at all if the object is readable.
+2. **Network Rail's own feed, which still answers HTTP Basic.**
+   `datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full`
+   returns a 302 to a signed S3 URL for an account subscribed to the feed; the
+   redirect must not carry the `Authorization` header, which is what S3's "Only
+   one auth mechanism allowed" is complaining about when it appears. It is the
+   same CIF under the OGL again, and the catch is admission: NR caps the feed at
+   1,000 accounts and now sends readers to the marketplace.
+3. **Driving the dashboard from a script.** A bearer token from a scripted
+   login, then the cloudstore endpoints. Nothing about it is documented for
+   consumers, and it is a front end to keep up with.
+
+Which of these is the owner's, and nothing publishes times until one is chosen.
+The build's own side of it is small and in one file: the RDM extract is gzipped
+and `read_feed_files` accepts a folder or a ZIP rather than a `.gz`; a raw CIF
+carries every schedule and nothing filters on `status`/`category` yet; and the
+DTD download ships an `.msn` station-name file beside its CIF records where a
+single whole-CIF file does not, so where the CIF-to-CRS mapping comes from on
+this route has to be settled against the real file.
+
 What it needs before any of it ships: the licence filed with its product id like
-every other RDM document (ADR-0067) — **done, 16 October 2026** — the download
-account itself (a person; the old NR feeds site was capped at 1,000 users and
-reported full, and the RDM route is the one that replaced it), the `timetable`
-shape's glob in `tools/check_release_clearance.py` pointed at this product rather
-than at Darwin's, and a cleared section in `licences/release-clearance.md` — a
-person's reading, on the same gate the fares route went through, with the §7
-UK-territory condition read rather than waved through.
+every other RDM document (ADR-0067) — **done, 16 October 2026** — the delivery
+route above, which is the owner's to pick, the `timetable` shape's glob in
+`tools/check_release_clearance.py` pointed at this product rather than at
+Darwin's, and a cleared section in `licences/release-clearance.md` — a person's
+reading, on the same gate the fares route went through, with the §7 UK-territory
+condition read rather than waved through.
 
 ### RSP Data Licence and Easy Fares: rejected for the zero-cost build
 

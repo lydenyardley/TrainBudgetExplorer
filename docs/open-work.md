@@ -449,17 +449,36 @@ construction), and what it needs are in `docs/dtd-licensing-and-data-access.md`,
 "NWR Schedule and the Network Rail open data feeds".
 
 **Where this stands, 16 October 2026.** The licence is filed (NWR Schedule,
-read 16 October 2026, `licences/README.md`) and its file list confirmed: the
-account offers the full CIF (`CIF_ALL_FULL_DAILY_toc-full.CIF.gz`, the format
-`atoc_timetable.py` reads) beside the JSON, and daily CIF *update* extracts. The
-reading that matters is now in the record rather than in this paragraph: §5
+read 16 October 2026, `licences/README.md`) and its file list read: the account
+offers a full JSON extract (`CIF_ALL_FULL_DAILY_toc-full.json.gz`, 139.95 MB) and
+daily CIF *update* extracts (`CIF_ALL_UPDATE_DAILY_toc-update-<day>.CIF.gz`), so
+the CIF format `atoc_timetable.py` reads is in the product; whether the weekly
+full extract is offered as CIF too is the one line of that page still to read.
+The reading that matters is in the record rather than in this paragraph: §5
 permits distribution where Darwin's forbids it, §8 names no attribution
 statement so the OGL fallback wording is the required one, and §7 confines
 exercise of the rights to the UK — the one condition here a public page does not
-meet automatically, and a person's to read. What is left is the downloader, the
-passenger-only filter, the OGL line on the page, the `timetable` glob in
-`tools/check_release_clearance.py` pointed at this product, and the owner's
-approval line.
+meet automatically, and a person's to read.
+
+**How the file arrives is not settled, and it is the harder half.** The
+marketplace's file products have no pull API — its own guide offers the
+dashboard's Download button and a file transfer it *pushes* to a destination the
+consumer owns — so the choice is a bucket or an SFTP destination that CI reads
+over plain HTTPS, Network Rail's own feed at
+`datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full`
+(HTTP Basic, a 302 to a signed S3 URL, admission capped at 1,000 accounts), or a
+script against the dashboard's own endpoints with a bearer token from a scripted
+login. `docs/dtd-licensing-and-data-access.md` holds the detail, and question 11
+below is the decision.
+
+On the build's side the work is small and all of it in `atoc_timetable.py`'s
+reader: `.gz`, which the reader does not take (a folder or a ZIP, not a gzipped
+file); the passenger-only filter, because the BS record's `status` and `category`
+are parsed into offsets and nothing drops a schedule on them; and where the
+CIF-to-CRS mapping comes from when no `.msn` file ships beside the CIF. Then the
+OGL line on the page, the `timetable` glob in
+`tools/check_release_clearance.py` pointed at this product rather than Darwin's,
+and the owner's approval line.
 
 ## Suggestions not yet taken up
 
@@ -669,6 +688,24 @@ on a tool.
     terms the audit listed moved in the clarity pass rather than here: "walk-up
     fare" is glossed where it is met, the row's own disclosure says it is
     technical, and "feed dated" became "downloaded" (items 30, 26 and 45).
+11. **How does the timetable file reach the build?** The licence is filed and the
+    file list is read; the delivery is not settled, and it is the one thing
+    between this licence and a build that reads it. The Rail Data Marketplace's
+    file products have **no pull API** — the guide offers the dashboard's
+    Download button and a *file transfer* it pushes to a destination the consumer
+    owns (S3, Google Cloud Storage, Azure Blob, SFTP) — and the button is behind
+    the browser login flow, whose client secret is AES-encrypted (not in the
+    standard library) and whose account may carry a second factor. Three routes,
+    and the choice is the owner's: (a) an RDM file transfer into a bucket or
+    SFTP location that CI reads over plain HTTPS, which needs no credential in CI
+    at all; (b) Network Rail's own feed at
+    `datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full`,
+    which answers HTTP Basic and redirects to a signed URL and is the same CIF
+    under the same licence, with admission capped at 1,000 accounts and NR's
+    open-data page now pointing at the marketplace; or (c) a script against the
+    dashboard's own endpoints, which is an undocumented front end to keep up
+    with. Until one is chosen the release publishes prices only, which is a shape
+    it is entitled to publish rather than a fault.
 
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
