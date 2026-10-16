@@ -448,6 +448,19 @@ implied, and the "consistent with Darwin" clause the CIF satisfies by
 construction), and what it needs are in `docs/dtd-licensing-and-data-access.md`,
 "NWR Schedule and the Network Rail open data feeds".
 
+**Where this stands, 16 October 2026.** The licence is filed (NWR Schedule,
+read 16 October 2026, `licences/README.md`) and its file list confirmed: the
+account offers the full CIF (`CIF_ALL_FULL_DAILY_toc-full.CIF.gz`, the format
+`atoc_timetable.py` reads) beside the JSON, and daily CIF *update* extracts. The
+reading that matters is now in the record rather than in this paragraph: §5
+permits distribution where Darwin's forbids it, §8 names no attribution
+statement so the OGL fallback wording is the required one, and §7 confines
+exercise of the rights to the UK — the one condition here a public page does not
+meet automatically, and a person's to read. What is left is the downloader, the
+passenger-only filter, the OGL line on the page, the `timetable` glob in
+`tools/check_release_clearance.py` pointed at this product, and the owner's
+approval line.
+
 ## Suggestions not yet taken up
 
 From the re-envision pass of 27 September 2026. Each carries the benefit it was

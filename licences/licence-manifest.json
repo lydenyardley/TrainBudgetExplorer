@@ -36,6 +36,11 @@
       "product_id": null
     },
     {
+      "filename": "NWR-Schedule-P-dbd92416-2f09-4f72-ad42-d53bbfec50f3.pdf",
+      "sha256": "da1281583a1b383c459cc07177d89bc7f24a67a7d97e5cf645b826562fd7c0a6",
+      "product_id": "P-dbd92416-2f09-4f72-ad42-d53bbfec50f3"
+    },
+    {
       "filename": "Ticket-Restrictions-data-feed-P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e.pdf",
       "sha256": "ea0f4989dc335c6966e6e0bf810069a4d23a3a7ed0c80f81a4b0ccdb58e0a6b8",
       "product_id": "P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e"

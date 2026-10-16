@@ -9,7 +9,8 @@ Schedule 1 §3 `LICENCED DATA`, so the file and the entry can always be matched 
 A local copy that does not match the manifest fails `tests/test_licences.py` and
 the release gate.
 
-**Read date for every licence below: 22 September 2026.**
+**Read date: 22 September 2026 for every licence below except NWR Schedule, read on
+16 October 2026.**
 
 Legend for the `§5 permitted purposes` column: `internal only` means the licence
 forbids publication; `distribute` means it permits it. That single distinction decides
@@ -18,18 +19,25 @@ whether a product can appear on a public page (ADR-0021).
 | product | id | agreement | §5 permitted purposes | §8 attribution | fee | update |
 |---|---|---|---|---|---|---|
 | Darwin Timetable Files | `P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8` | OGL v3.0 | **internal only** — "may be copied and used by Data Consumer for internal business purposes only" | list empty, no statement given | nil, `Open (OGL3)` | daily |
+| NWR Schedule | `P-dbd92416-2f09-4f72-ad42-d53bbfec50f3` | OGL v3.0 | **distribute** — "The raw data may be made freely available or otherwise distributed to third parties" | list empty, no statement given, so the OGL fallback wording applies | nil, `Open (OGL3)` | daily |
 | Knowledgebase Ticket Types data feed | `P-51e17973-7327-4735-a7ca-d2a484a56065` | Data Sharing Agreement | **distribute** — "may be made freely available or otherwise distributed to third parties" | list empty; T&Cs cl. 3.3.1 still requires crediting the Data Publisher | nil, `Open` | other or unknown |
 | Knowledgebase Ticket Restrictions data feed | `P-2d177d2e-dcb8-43dc-ac4d-3a967dd35c5e` | Data Sharing Agreement | **distribute** — same wording | list empty; same cl. 3.3.1 obligation | nil, `Open` | other or unknown |
 | Fare Locations Reference Data v1.3 | `P-4f4a90ff-d4e2-442e-93b3-07121430f303` | Data Sharing Agreement | **distribute** — same wording | list empty; same cl. 3.3.1 obligation | nil, `Open` | daily |
 | Easy Fares API (Demo Version) | `P-37faed36-518a-4870-b1bd-b675461fb72e` | Data Sharing Agreement, `Bespoke` | **distribute** — "may be **sold or otherwise distributed to third parties for commercial gain**" | RSP and NRE, per the licensing document (§8 defers to it) | free to **100 hits**, then access ceases | daily |
 
-The first four share a Data Publisher: **Rail Delivery Group** (2nd Floor, 1 Puddledock,
-London EC4V 3DS). The Easy Fares demo's publisher is **BR Fares Ltd** (Quadrant House,
-20 Broad Street Mall, Reading RG1 7QE), and its §10 adds one special condition: the
-information **must not be changed or misrepresented**.
+The Darwin product, the three Data Sharing Agreement feeds and the Easy Fares demo share
+a Data Publisher: **Rail Delivery Group** (2nd Floor, 1 Puddledock, London EC4V 3DS).
+The Easy Fares demo's publisher is **BR Fares Ltd** (Quadrant House, 20 Broad Street
+Mall, Reading RG1 7QE), and its §10 adds one special condition: the information **must
+not be changed or misrepresented**. **NWR Schedule's is Network Rail** (The Quadrant,
+Elder Gate, Milton Keynes MK9 1EN), and its §7 is the one territorial restriction in the
+table: exercise of the licensed rights is permitted in the **UK** only.
 
-Common to all five: the term is **1 year, renewing automatically**; data received may be
+Common to all six: the term is **1 year, renewing automatically**; data received may be
 **retained** after the term; the Data Consumer field is blank on every export.
+NWR Schedule also reports its permitted recipients as "All registered users", and its
+Schedule 2 states no fair-usage policy and no non-chargeable limit — the two fields
+where a licence would impose a volume ceiling are the ones it leaves blank.
 
 The NRE terms, brand guidelines, developer pack and charging document are
 supporting evidence, not per-product Marketplace licences, so they do not have a
@@ -54,13 +62,20 @@ the mark the page inlines, byte for byte.
 
 Differences worth knowing:
 
-| | Darwin Timetable Files | the three Data Sharing Agreement feeds |
-|---|---|---|
-| agreement body | none — OGL head plus Schedules | contractual T&Cs (clauses 1–8) plus Schedules |
-| order of precedence | n/a | T&Cs, then Schedule 1 excluding Special Conditions, then Special Conditions (cl. 8.8) |
-| territory | Global, with a prohibited-country list | **UK** |
-| notice to terminate for convenience | 1 month | 1 week |
-| prohibition on publication | cl. none stated, but §5 restricts use to internal business purposes | none — cl. 2.3 forbids publication *except* as the Agreement allows, and §5 allows it |
+| | Darwin Timetable Files | NWR Schedule | the three Data Sharing Agreement feeds |
+|---|---|---|---|
+| agreement body | none — OGL head plus Schedules | none — OGL head plus Schedules, on the same form | contractual T&Cs (clauses 1–8) plus Schedules |
+| order of precedence | n/a | n/a | T&Cs, then Schedule 1 excluding Special Conditions, then Special Conditions (cl. 8.8) |
+| territory | Global, with a prohibited-country list | **UK**, and no prohibited-country list | **UK** |
+| notice to terminate for convenience | 1 month | 1 month | 1 week |
+| prohibition on publication | cl. none stated, but §5 restricts use to internal business purposes | none — §5 permits it outright, and §8 names no attribution statement | none — cl. 2.3 forbids publication *except* as the Agreement allows, and §5 allows it |
+
+The two OGL products are the same document with one field changed, and that field is the
+whole difference between a timetable this project may publish and one it may not. Both
+heads grant use "worldwide, royalty-free, perpetual, non-exclusive"; Darwin's §7 then
+lists prohibited countries, and NWR Schedule's permits exercise **within the UK**. That
+is the one condition on the publishable timetable that is not a formality, so it is
+recorded rather than assumed away (ADR-0021).
 
 ## What the register is used for
 

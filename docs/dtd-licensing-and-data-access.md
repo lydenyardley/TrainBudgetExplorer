@@ -391,8 +391,16 @@ Two sources, read 16 October 2026:
 
 - the **NWR Schedule product** on the Rail Data Marketplace — a point-in-time copy
   of Network Rail's own CIF schedule, published free, daily, under the Open
-  Government Licence v3, with no fair-use limit and raw redistribution permitted
-  (the product page named among the sources at the top of this file);
+  Government Licence v3, with no fair-use limit and raw redistribution permitted.
+  Its licence is **filed in `licences/` on 16 October 2026**, with its product id,
+  and read the same day: §5 `PERMITTED PURPOSES` says "The raw data may be made
+  freely available or otherwise distributed to third parties" where Darwin's says
+  internal business purposes only, §8 names no attribution statement so the OGL
+  fallback above is the required one, and §7 permits exercise of the rights
+  **within the UK**. `licences/README.md` carries the row and
+  `licences/release-clearance.md` the section; the file list the account shows
+  includes the full CIF (`CIF_ALL_FULL_DAILY_toc-full.CIF.gz`) beside the JSON,
+  which is the format `atoc_timetable.py` already reads;
 - **Network Rail's own open data feeds** (`datafeeds.nationalrail.co.uk`) — the
   **Schedule** feed, "daily extracts and updates of train schedules from the
   Integrated Train Planning System, in CIF and JSON formats", under the "Network
@@ -426,12 +434,14 @@ Two conditions ride with it, and neither is a reason not to:
   construction; a page that shows no time at all meets the same condition, which is
   what the prices-only release does today.
 
-What it needs before any of it ships: an account on the NR feeds site (a person —
-first come first served, access capped at 1,000 users), the licence filed with its
-product id like every other RDM document (ADR-0067) and matched by the
-`timetable` shape's glob in `tools/check_release_clearance.py`, and a cleared
-section in `licences/release-clearance.md` — a person's reading, on the same gate
-the fares route went through.
+What it needs before any of it ships: the licence filed with its product id like
+every other RDM document (ADR-0067) — **done, 16 October 2026** — the download
+account itself (a person; the old NR feeds site was capped at 1,000 users and
+reported full, and the RDM route is the one that replaced it), the `timetable`
+shape's glob in `tools/check_release_clearance.py` pointed at this product rather
+than at Darwin's, and a cleared section in `licences/release-clearance.md` — a
+person's reading, on the same gate the fares route went through, with the §7
+UK-territory condition read rather than waved through.
 
 ### RSP Data Licence and Easy Fares: rejected for the zero-cost build
 

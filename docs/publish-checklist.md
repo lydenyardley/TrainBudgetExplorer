@@ -94,14 +94,16 @@ selection. The endpoint examples and the current terms are recorded in
       a matching restriction code is retained as the discounted fare's travel
       condition
 
-The first four rows are marketplace products whose §5 fill controls use. The
-DTD row is a separate portal subscription and must be checked against the
-current NRE/DTD terms; it must not be treated as an OGL or RSP product by
-analogy.
+The marketplace rows are products whose §5 fill controls use. The two timetable
+rows are the same form with that fill set opposite ways, which is the whole
+reason one of them may be published from and one may not. The DTD row is a
+separate portal subscription and must be checked against the current NRE/DTD
+terms; it must not be treated as an OGL or RSP product by analogy.
 
 | product | agreement | §5 permits publication? | attribution required | licence fee | read |
 |---|---|---|---|---|---|
 | Darwin Timetable Files | OGL v3.0 | **no** — "internal business purposes only" | OGL fallback wording (§8 gives none) | nil | 22 Sep 2026 |
+| NWR Schedule | OGL v3.0 | **yes** — "The raw data may be made freely available or otherwise distributed to third parties" | OGL fallback wording (§8 names none) | nil, `Open (OGL3)` | 16 Oct 2026 |
 | Knowledgebase Ticket Types data feed | Data Sharing Agreement | **yes** — "freely available or otherwise distributed to third parties" | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Knowledgebase Ticket Restrictions data feed | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
 | Fare Locations Reference Data v1.3 | Data Sharing Agreement | **yes** — same wording | credit Rail Delivery Group (cl. 3.3.1) | nil | 22 Sep 2026 |
@@ -137,6 +139,12 @@ the account holder can see the registered purpose.
       and the clearance it needs, is in `docs/dtd-licensing-and-data-access.md`
       ("NWR Schedule and the Network Rail open data feeds") and in
       `docs/open-work.md`.
+- [x] **The publishable timetable's licence is filed and read — 16 October 2026.**
+      NWR Schedule, Network Rail, OGL v3.0, §5 permitting distribution and §7
+      confining exercise to the UK; the PDF is in `licences/`, the row is in
+      `licences/README.md` and the section is in `licences/release-clearance.md`.
+      It is filed as `excluded` because nothing publishes from it yet. Its
+      **account** is the user's to add, and the build still reads the DTD URL.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
       `docs/dtd-licensing-and-data-access.md`

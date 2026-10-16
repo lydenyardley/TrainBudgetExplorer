@@ -247,6 +247,46 @@ boilerplate, because the neighbouring products say the opposite. This exclusion
 is the reason the fares-only build exists, and the reason the page has a
 prices-only mode that says so.
 
+## P-dbd92416-2f09-4f72-ad42-d53bbfec50f3
+
+- state: excluded
+- reason: filed 16 October 2026 and not published from yet — the build still reads the DTD timetable and the pages carry no times, so nothing needs this product cleared and nothing may publish it on the strength of a reading alone
+# once cleared, also add: - licence digest: da1281583a1b383c459cc07177d89bc7f24a67a7d97e5cf645b826562fd7c0a6
+
+NWR Schedule, Network Rail's own CIF timetable, filed in this folder on 16 October
+2026 and read the same day. It is the counterpart to the exclusion above: the same
+document, with the §5 field saying the opposite.
+
+- **Publication is permitted, in terms.** Schedule 1 §5 `PERMITTED PURPOSES`: "The raw
+  data may be made freely available or otherwise distributed to third parties." Where
+  Darwin's §5 restricts use to internal business purposes, this one names distribution
+  as the purpose. ADR-0021's finding was that the restrictive wording is a per-product
+  choice; this is the product that chose the other way, and it is why the times have a
+  route back at all.
+- **Attribution is the OGL fallback.** §8 says "The following organisations must be
+  attributed if the data is subsequently published" and then names none. Under the OGL
+  head that means the fallback wording is the required statement:
+  `Contains public sector information licensed under the Open Government Licence v3.0.`
+  Nothing stops the page crediting Network Rail by name as well, but the licence asks
+  for the OGL line, not for a source line of this project's own writing.
+- **Territory is the UK.** §7 permits exercise of the licensed rights "within the
+  territories selected below", and the selected territory is **UK**, with an empty
+  prohibited-country list. The head grants a "worldwide" licence and §7 confines its
+  exercise, which is the same head-against-schedule tension the Darwin product has —
+  pointing the other way, and the only condition here that a public page does not meet
+  automatically.
+- **The fee is nil and volume is not the term.** Schedule 2 is `Open (OGL3)`, "The Data
+  Consumer can access the Licensed Data without charge", with the fair-usage policy and
+  the non-chargeable limit both blank and the update frequency daily. Permitted
+  recipients are "All registered users".
+
+**What clearing it would take.** Three things, and none of them is this paragraph:
+the build reading this product instead of the DTD timetable URL, a filter for the
+freight, empty-stock and non-public calls that a raw Network Rail CIF carries and the
+DTD feed arrives without, and the OGL line on the page. Then `state` becomes `cleared`
+with the digest above, `read on`, `approved by` and `approved on` filled in — those
+fields are the owner's, and no tool or agent in this repository can supply them.
+
 ## P-51e17973-7327-4735-a7ca-d2a484a56065
 
 - state: excluded
