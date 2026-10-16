@@ -424,24 +424,14 @@ jobs:
         # bytes read as the same feed, and nothing else.
         run: find feeds -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
 
-      - name: Restore the timetable index
-        # The timetable parse is the expensive part of this build, and it is
-        # skipped entirely when the focused index is already on disk: measured
-        # on the real feed at Grantham, 1m36s to parse and 11s to read the
-        # index back. The cache file is named after a digest of the feed bytes
-        # and the stations it serves, so a cache from a different timetable is
-        # a different filename and is simply never opened -- a stale restore is
-        # a miss, not a wrong answer. Keyed on the interpreter because a pickle
-        # is not portable across Python versions.
-        uses: actions/cache/restore@v4
-        with:
-          path: _cache
-          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-
-
       - name: Build the site from audited fares
-        # Times and changes, not just prices. The national timetable is what
-        # the page's journey columns are computed from, and a build without it
-        # publishes prices that a reader cannot plan around.
+        # Prices and conditions, not journey times. The national timetable is
+        # not loaded: publishing times computed from a static schedule raises
+        # the "forecasted arrival and departure times" condition in the portal
+        # terms, and this project has not taken the reading that a scheduled
+        # time is "forecasted" (licences/release-clearance.md, ADR-0021). So
+        # the release is prices-only, and the page's own opening sentence says
+        # so rather than promising times it cannot show.
         #
         # A real-feed build is refused unless it carries a licence notice and a
         # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit).
@@ -515,10 +505,12 @@ jobs:
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
           fi
-          # The fares feed is the public price source. The national timetable
-          # is what supplies the journey times, so it is loaded for the date
-          # being published rather than left out: without it the page's own
-          # opening sentence would promise times it cannot show.
+          # The fares feed is the public price source, and it is the only feed
+          # this release publishes from. The national timetable stays out, so
+          # the pages carry prices and no journey times, and there is no --date
+          # either: a build with no times has no service day to report, and a
+          # date would be a claim it cannot back (the prices-only shape build
+          # below is built the same way).
           # Every priced station, not one of them. The release answers the
           # product's premise -- where can we go from anywhere -- so a reader
           # who arrives from any station finds a page there. The root is the
@@ -536,9 +528,7 @@ jobs:
           # and caps the answer at the largest count measured to finish.
           python build_demo_page.py \
             --feed feeds/fares \
-            --timetable feeds/timetable \
             --knowledgebase feeds/knowledgebase \
-            --date "$(date -u +%Y-%m-%d)" \
             --all-origins \
             --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
             --shard "$SHARD" \
@@ -546,15 +536,6 @@ jobs:
             --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
-
-      - name: Save the timetable index
-        # From one share only: every share builds the same index from the same
-        # feed, and a cache key can be written once.
-        if: matrix.shard == 1
-        uses: actions/cache/save@v4
-        with:
-          path: _cache
-          key: timetable-index-py312-${{ hashFiles('atoc_timetable.py', 'build_demo_page.py') }}-${{ needs.build.outputs.fingerprint }}
 
       - name: Hand the share to the assemble job
         # Pages only, never the feeds. A day is enough: the assemble job runs
@@ -651,12 +632,11 @@ jobs:
         # or a host would read, so a manifest that went missing between the
         # build and the publish cannot pass unnoticed.
         #
-        # And it checks the page kept the promise the timetable was loaded for.
-        # A build that quietly lost its journeys -- a date outside the feed's
-        # window, a feed that stopped parsing -- would still write a manifest,
-        # still pass every test below, and publish a prices-only page under a
-        # workflow that says it publishes times. A reader would have no way to
-        # tell that from a deliberate change.
+        # And it checks the page is the shape this workflow declares. The
+        # release is prices-only, so no station page may carry journey times: a
+        # build that quietly loaded a timetable -- or a `--timetable` left in
+        # the flags -- would ship times under a clearance that names `fares`
+        # alone, which is the one thing the clearance gate itself cannot see.
         run: |
           if [ ! -s _site/release-manifest.json ]; then
             echo "::error title=release manifest::the build wrote no _site/release-manifest.json, so the routes this release serves are not stated anywhere"
@@ -669,14 +649,11 @@ jobs:
             echo "::error title=release manifest::the manifest names $ROUTES route(s) but the folder holds $PAGES page(s), so the release and the artifact disagree"
             exit 1
           fi
-          # The workflow publishes times, so the page must carry them. A build
-          # that lost its journeys would otherwise pass every other gate here
-          # and ship a prices-only page under a workflow that promises otherwise.
-          #
-          # Read as JSON rather than grepped, because the payload is minified
-          # and a pattern written with a space after the colon would match
-          # nothing at all. And the empty case fails: a glob that matches no
-          # page would otherwise report nothing missing and pass, which is the
+          # The workflow publishes prices only, so no station page may carry
+          # journey times. Read as JSON rather than grepped, because the payload
+          # is minified and a pattern written with a space after the colon would
+          # match nothing at all. And the empty case fails: a glob that matches
+          # no page would otherwise report nothing wrong and pass, which is the
           # one outcome a gate must never produce.
           JOURNEYS=$(python - <<'PY'
           import glob, re, sys
@@ -685,22 +662,22 @@ jobs:
           if not pages:
               print("no station pages were written, so there is nothing to check")
               sys.exit(2)
-          missing = []
+          carrying = []
           for path in pages:
               text = open(path, encoding="utf-8").read()
               found = re.search(r'"hasJourneys":\s*(true|false)', text)
               if not found:
-                  missing.append(path + " (no hasJourneys field at all)")
-              elif found.group(1) != "true":
-                  missing.append(path + " (hasJourneys is false)")
-          print(" ".join(missing))
+                  carrying.append(path + " (no hasJourneys field at all)")
+              elif found.group(1) != "false":
+                  carrying.append(path + " (hasJourneys is true)")
+          print(" ".join(carrying))
           PY
-          ) || { echo "::error title=journeys::the journey check could not run, so this build's times are unverified"; exit 1; }
+          ) || { echo "::error title=journeys::the journey check could not run, so this build's shape is unverified"; exit 1; }
           if [ -n "$JOURNEYS" ]; then
-            echo "::error title=journeys::these station pages carry no journey times, so this build published prices without the times the workflow loads the timetable for: $JOURNEYS. Check that the date is inside the feed's window, which the page prints as timetableFrom/timetableTo."
+            echo "::error title=journeys::these station pages carry journey times, so this build published a timetable under a workflow cleared for fares alone: $JOURNEYS. The release is prices-only; loading the timetable again needs a Darwin clearance first."
             exit 1
           fi
-          echo "every station page carries journey times"
+          echo "no station page carries journey times, as the fares-only release declares"
 
       - name: Test the build
         # `python -m tools.verify --full` is the whole suite in the same command a
@@ -924,21 +901,23 @@ jobs:
           python-version: "3.12"
 
       - name: Check the release clearance
-        # `fares,timetable`, because the build above now loads the national
-        # timetable to publish times and changes. That is the shape the Darwin
-        # product schedule governs, and this project reads that schedule as
-        # internal business purposes only -- so this command now demands a
-        # clearance nobody holds, and the publish path stops until someone has
-        # answered the question in docs/publish-checklist.md §1. It now also
-        # demands the privacy contact (§1's last row): a page can clear every
-        # licence and still publish an address nobody has vouched for.
+        # `fares`, because the build above loads only the fares feed: the pages
+        # are prices-only, so no journey times are published and the Darwin
+        # product schedule -- which this project reads as internal business
+        # purposes only -- is never exercised. It is excluded in the record,
+        # not cleared: nothing is published from it, and its §5 question is what
+        # returning the times would have to answer first.
         #
-        # That refusal is the point of the gate, not an obstacle to it: the
-        # build and its tests stay green, and only publication waits. Passing
-        # `fares` here while the build loads a timetable would be a gate
-        # declaring a narrower release than the one being published, which is
-        # the exact failure this gate exists to make impossible.
-        run: python -m tools.check_release_clearance --release fares,timetable
+        # The command also demands the privacy contact (§1's last row): a page
+        # can clear every licence and still publish an address nobody has
+        # vouched for.
+        #
+        # The shape here and the build step's own flags have to agree, and a
+        # test holds them together: `--release fares` while the build passed
+        # `--timetable` would be a gate declaring a narrower release than the
+        # one being published, the exact failure this gate exists to make
+        # impossible.
+        run: python -m tools.check_release_clearance --release fares
 
   deploy:
     needs: [build, assemble, clearance]

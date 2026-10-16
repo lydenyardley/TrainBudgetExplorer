@@ -19,24 +19,32 @@ rather than assumed, and both were re-read on 28 September 2026:
   subscription is **£0 for this project on a published document**, not on a
   working assumption.
 
-What is still open is compliance with the terms' three requirements, and none of
-it is a question a footer can answer. Before a public page goes live:
+What is open is compliance with the terms' requirements, and the shape of the
+release settles most of it. Before a fares-only page goes live:
 
 1. [x] the account holds the separate **Fares, Routeing Guide and Timetable
    data** selection — evidenced by the two static-feed downloads recorded in
    `feeds/download-manifest.json`, not by the Knowledgebase feeds;
-2. [x] the current DTD/NRE terms have been read; the Developer Guidelines and
-   brand pack they name return 404, so the mandated wording and logo treatment
-   are unverified;
-3. [ ] whether a **static computed time** is a "forecasted" time the terms
-   require to stay consistent with Darwin, and how Time-Bound Data must be
-   displayed — both are answered by the unpublished guidelines;
-4. [x] the National Rail Enquiries source acknowledgement is on every page
+2. [x] the current DTD/NRE terms have been read, and the Developer Guidelines
+   and brand pack the terms name — served from `nationalrail.co.uk/developers/`
+   rather than from the URL the terms give, which 404s — were found and read on
+   28 September 2026;
+3. [x] **Time-Bound Data** has no subject on a prices-only page: the terms define
+   it as "any data … provided in conjunction with instruction for the timeliness
+   of its display; platform numbers for example", and the static fares feed
+   carries neither;
+4. [x] a prices-only page provides no **forecasted arrival and departure times**,
+   so the requirement to keep them consistent with Darwin has nothing to bite
+   on. A page that *does* show times raises it, and whether a static scheduled
+   time is "forecasted" in the terms' sense is a reading this project has not
+   taken (ADR-0021) — which is why the release is prices-only;
+5. [x] the National Rail Enquiries source acknowledgement is on every page
    (`--notices nre`), and the Knowledgebase data is credited to the Rail
    Delivery Group (`--notices rdg`) — a third credit, not a replacement;
-5. [ ] obtain written clarification from RDG on anything the guidelines or the
+6. [ ] obtain written clarification from RDG on anything the guidelines or the
    account screen says differently. The letter to send is drafted in
-   `docs/rdg-licence-enquiry.md`.
+   `docs/rdg-licence-enquiry.md`. It is no longer on the publish path for a
+   fares-only release; it is the answer that would put times back.
 
 The project will not use Easy Fares, an RSP Data Licence fee, or any other paid
 API as its production data source.
@@ -230,11 +238,19 @@ suggests official status or NRE endorsement, which the page's wording avoids.
 3. "All forecasted arrival and departure times, provided by Your End User
    Product(s), are consistent with Darwin forecasts", and "all Time-Bound Data
    … are displayed as directed in the Information, as per the Developer
-   Guidelines". This build computes its times from the static timetable
-   download rather than from Darwin, so whether a static computed time is a
-   "forecasted" time in the terms' sense is the question that decides whether
-   times may be published at all. It is not a footer question, and no footer
-   can answer it.
+   Guidelines". Both conditions name something the page must actually carry,
+   and the licence defines the second: "**'Time-Bound Data' means any data
+   within the Information that is provided in conjunction with instruction for
+   the timeliness of its display; platform numbers for example.**" A page that
+   shows fares and no platform numbers therefore carries no Time-Bound Data and
+   the display requirement has nothing to bite on, and a page that shows no
+   times provides no forecasted times to keep consistent. The definition does
+   not settle a page that *does* show times: this build computes them from the
+   static timetable download rather than from Darwin, and whether a static
+   scheduled time is a "forecasted" time in the terms' sense is a reading of the
+   terms, not something the Developer Guidelines supply. That reading is the
+   question that decides whether times may be published at all, and it is why
+   the release this project ships is prices-only (ADR-0021).
 
 The warranty position is as expected and is what the accuracy notice says: the
 Information is provided as is, with no representation or warranty and no
@@ -297,13 +313,21 @@ footer, directly underneath the results, with the link to NRE beside it. The
 `Powered by` mark is used, not the National Rail wordmark, because the
 wordmark is the brand's own and this page is not National Rail's.
 
-Two things the guidelines do not answer, and which no attribution can: whether
-a static computed time is a "forecasted" time under the terms, and how
-Time-Bound Data must be displayed. The Developer Pack is evidence on the first
-— it describes the Darwin Timetable feed as republished schedules that "do not
-include any information about live train movements or delays", and separately
-describes Darwin as *forecasting* the remainder of each schedule from matched
-external forecasts — which is an argument, not an answer.
+The guidelines settle the logo's colour: "The National Rail logo should only be
+used in blue, black or white", and "our wordmark can be used both positively (in
+our brand blue) and negatively (white out of a colour or image)". That answers
+the dark-theme question — a white rendering is one the guidelines name rather
+than a reversal that needs NRE's permission — and the page paints the mark
+white on its dark plate. The `#cdd6ff` pale blue it used before was none of the
+three colours, which is why it stood in the record as an open question.
+
+One thing the guidelines do not answer, and which no attribution can: whether a
+static computed time is a "forecasted" time under the terms. (How Time-Bound
+Data must be displayed is *not* open — the terms define what Time-Bound Data is,
+and a fares-only page carries none.) The Developer Pack is evidence on the
+first — the Darwin Timetable feed "do[es] not include any information about live
+train movements or delays", and Darwin *forecasts* the remainder of each
+schedule from matched external forecasts — which is an argument, not an answer.
 
 ## The charging document, read 28 September 2026
 
@@ -395,7 +419,10 @@ Before a real-data page is published:
       footer of every generated route, unprompted and without a click.
 - [x] The **Powered by National Rail Enquiries** logo is in the page, inlined
       from the file NRE supplies, linked to NRE's site, placed underneath the
-      information the feed supplied, and legible in both palettes.
+      information the feed supplied, and legible in both palettes — painted
+      white, one of the three colours the brand guidelines allow ("blue, black
+      or white"), so the rendering is one they name rather than one awaiting
+      NRE's permission.
 - [x] KB-derived station/ticket-reference data is credited to **Rail Delivery
       Group, via Rail Data Marketplace** — `--notices rdg`, worded to the
       Knowledgebase and fare-locations products it actually covers.

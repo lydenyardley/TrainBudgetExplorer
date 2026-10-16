@@ -458,12 +458,12 @@ time. A response that is the wrong shape — an HTML error page behind a `200` �
 is not retried either, because that is a fault to be read, not weather to wait
 out.
 
-**The published build loads the national timetable, so pages carry times and
-changes.** The deploy workflow passes `--timetable feeds/timetable` and the
-date being published. The journey columns and the changes column are computed
-from it, and a run whose station pages come out without journeys fails the
-release-manifest check rather than publishing a prices-only page under a
-workflow that promises times.
+**The published build is prices-only, so pages carry prices and conditions and
+no journey times.** The deploy workflow loads the fares feed and no timetable and
+passes no `--date`. The journey columns are absent and the page's own opening
+sentence says so, which is the shape `licences/release-clearance.md` clears; a
+run whose station pages come out carrying journeys fails the release-manifest
+check rather than publishing times under a workflow cleared for `fares` alone.
 
 That step is measured rather than assumed, and the release is the **whole
 network**, so it is measured on the whole network. One origin against the real
@@ -1111,9 +1111,11 @@ a red licence gate on every push would only teach people to ignore red. The
 decision itself lives in `licences/release-clearance.md`: which licensed products
 may be published, each answered `cleared` or `excluded` with a reason, a named
 approver, a date and an expiry, changed in a pull request so the review *is* the
-approval. The record is currently all exclusions, which is the project's true
-position, so the workflow will not publish until someone answers §1 of
-`docs/publish-checklist.md`.
+approval. The record clears the DTD fares route against the filed portal terms
+and excludes the Darwin timetable schedule, so the release it authorises is
+`fares` alone — prices and conditions, no journey times. That exclusion is the
+project's reading of Schedule 1 §5 as internal-use-only, and the answer that
+would put the times back is the RDG letter at `docs/rdg-licence-enquiry.md`.
 
 Two things that gate deliberately is not:
 

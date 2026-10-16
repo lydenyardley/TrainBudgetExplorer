@@ -1,12 +1,13 @@
 """Tests for the release clearance gate.
 
-The gate's whole job is to refuse, so the tests are about refusal. The one
-that matters most is the shipped record: `licences/release-clearance.md` is
-written today with no licence cleared, and a test that let it drift into a pass
-would turn a documented refusal into a silent one -- which is the exact shape of
-the finding this gate closes. The record does clear one product, the privacy
-contact, and that one is not a licence: the tests below hold that clearing it
-did not clear a release.
+The gate's whole job is to refuse, so the tests are about refusal. The one that
+matters most is the shipped record: `licences/release-clearance.md` clears the
+DTD fares route and refuses the Darwin timetable schedule, and a test that let
+its shape drift -- a wider `--release` quietly passing, or a narrower one refused
+-- would turn a documented decision into a silent one, which is the exact shape
+of the finding this gate closes. The record also clears the privacy contact,
+which is not a licence, and the tests below hold that clearing it alone never
+cleared a release.
 
 The other tests are the ways a clearance might be faked, each asked of the same
 function: an answer that is not a yes, a clearance that has expired, one dated in
@@ -47,9 +48,10 @@ RECORD = ROOT / "licences" / "release-clearance.md"
 #: The day the shipped record is read. It is frozen rather than `date.today()`, so
 #: a run six months from now does not read a record whose clearances have quietly
 #: expired, and it has to be at or after every date the record itself carries or
-#: the record's own clearance reads as future-dated. The privacy contact's
-#: confirmation is dated this day.
-TODAY = date(2026, 10, 14)
+#: the record's own clearance reads as future-dated. The privacy contact is dated
+#: 14 October 2026 and the DTD fares clearance 16 October 2026, so this day is the
+#: later of the two.
+TODAY = date(2026, 10, 16)
 DARWIN = "P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8"
 
 
@@ -66,17 +68,16 @@ class ShippedRecordTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = RECORD.read_text(encoding="utf-8")
 
-    def test_the_shipped_record_still_refuses_both_build_shapes(self) -> None:
-        # No licence is cleared, and the publish checklist is explicit that the
-        # DTD route is unresolved, so a release that publishes fares is refused
-        # whichever shape it asks for. The one product the record does clear is
-        # the privacy contact, which is a promise a person keeps rather than a
-        # licence anyone read, and clearing it must not be enough.
-        for release in (["fares"], ["fares", "timetable"]):
-            with self.subTest(release=release):
-                problems = clearance_problems(self.text, releasing=release, today=TODAY)
-                self.assertTrue(problems)
-                self.assertTrue(any(DTD in problem for problem in problems), problems)
+    def test_the_shipped_record_clears_fares_and_refuses_the_timetable(self) -> None:
+        # The record's shape is a decision: the DTD fares route is cleared
+        # against the filed portal terms, and the Darwin timetable schedule is
+        # excluded, so a release that publishes fares passes and one that also
+        # publishes times is refused. Both halves are asserted, because a record
+        # that passed the wider shape would publish the times the exclusion
+        # exists to hold back.
+        self.assertEqual(clearance_problems(self.text, releasing=["fares"], today=TODAY), [])
+        wider = clearance_problems(self.text, releasing=["fares", "timetable"], today=TODAY)
+        self.assertTrue(any(DARWIN in problem for problem in wider), wider)
 
     def test_the_report_only_mode_needs_nothing_cleared(self) -> None:
         # The shape of the question matters: a run that publishes nothing is
@@ -167,7 +168,7 @@ class ClearanceTest(unittest.TestCase):
     def test_a_clearance_dated_in_the_future_is_a_refusal(self) -> None:
         # A decision that has not happened yet is not a decision.
         problems = clearance_problems(
-            self._record(**{"approved on": "2026-10-15"}), releasing=["fares"], today=TODAY
+            self._record(**{"approved on": "2026-10-17"}), releasing=["fares"], today=TODAY
         )
         self.assertTrue(any("future" in p for p in problems))
 
@@ -360,8 +361,13 @@ class RecordShapeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(main(["--record", str(Path(tmp) / "nope.md"), "--release", "fares"]), 1)
 
-    def test_the_shipped_record_fails_the_publish_gate(self) -> None:
-        self.assertEqual(main(["--record", str(RECORD), "--release", "fares"]), 1)
+    def test_the_shipped_record_passes_fares_and_refuses_the_timetable(self) -> None:
+        # `main` runs against `date.today()`, so this is the record read as a
+        # publish job reads it. The fares shape is cleared and the wider shape is
+        # not: the Darwin schedule is excluded, and the shape the workflow
+        # publishes is the one that must match it.
+        self.assertEqual(main(["--record", str(RECORD), "--release", "fares"]), 0)
+        self.assertEqual(main(["--record", str(RECORD), "--release", "fares,timetable"]), 1)
 
     def test_a_missing_release_shape_does_not_clear_anything(self) -> None:
         # The dangerous flag is the absent one. An empty scope requires nothing
@@ -388,9 +394,10 @@ class RecordShapeTest(unittest.TestCase):
             self.assertEqual(main(["--record", str(RECORD), "--report-only"]), 0)
         said = out.getvalue()
         self.assertIn("outstanding", said)
-        self.assertIn(DTD, said)
-        # The privacy contact is the one product this record clears, so it is no
-        # longer outstanding; every licence product still is.
+        self.assertIn(DARWIN, said)
+        # The DTD fares route and the privacy contact are cleared, so neither is
+        # outstanding; the Darwin schedule and the four marketplace products are.
+        self.assertNotIn(DTD, said)
         self.assertNotIn(PRIVACY, said)
         self.assertNotIn("cleared for the record as it stands", said)
         # A product with no section at all is outstanding too: unrecorded is
