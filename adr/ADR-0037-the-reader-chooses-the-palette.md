@@ -76,8 +76,14 @@ unless the reader says otherwise.**
    instead of at whatever the page behind it happens to be, and it reads as
    part of the design rather than as a hole in the footer. It is the one pair of
    colours in the palette that is deliberately not a `light-dark()` pair, and the
-   test says so. The mark is reversed to achieve it (ADR-0036, amended twice),
-   which is an open question with NRE rather than a settled one.
+   test says so. The mark was reversed to achieve it (ADR-0036, amended twice),
+   which stood as an open question with NRE rather than a settled one.
+
+   **Amended 16 October 2026.** The ink is white, not the pale blue (ADR-0036,
+   amended a third time). The guidelines permit three colours — blue, black and
+   white — so `#cdd6ff` was none of them and the reversal was never needed to
+   be an open question: `--nre-ink` is `#ffffff`, still one fixed chip in both
+   palettes, and the legibility check now measures white against the plate.
 
 ## Consequences
 

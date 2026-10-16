@@ -127,3 +127,13 @@ white page is not a plate at all, and the plate measured 1.00:1 against the
 background, which the new legibility check caught — so it carries a 1px edge.
 What the guidelines ask, legible in both palettes, is now measured rather than
 argued: 3:1 between the mark's ink and its plate, in each scheme.
+
+**Amended 16 October 2026.** The ink is white. The guidelines permit three
+colours for the logo — "The National Rail logo should only be used in blue,
+black or white" — and the pale blue this record had settled on was none of them,
+so the rendering was never one that needed NRE's permission. White is the
+guidelines' own negative form ("our wordmark can be used both positively (in our
+brand blue) and negatively (white out of a colour or image) just make sure it is
+always legible"), so `--nre-ink` is `#ffffff` and the file is still NRE's, byte
+for byte. The open question in `licences/release-clearance.md` is answered by
+the guidelines rather than referred to NRE.

@@ -481,10 +481,10 @@ class DemoPageTest(PageTestCase):
             with self.subTest(token=token):
                 self.assertIn(f"{token}: ", SHARED_CSS)
                 self.assertIn(f"{token}: light-dark(", SHARED_CSS, f"{token} has no dark counterpart")
-        # The NRE credit is dark in both palettes on purpose -- the mark is a
-        # light rendering of NRE's blue -- so its two colours are fixed rather
-        # than a light-dark pair, and the mark looks the same either way.
-        self.assertIn("--nre-plate: #141b3d; --nre-ink: #cdd6ff;", SHARED_CSS)
+        # The NRE credit is dark in both palettes on purpose -- the mark is
+        # painted white -- so its two colours are fixed rather than a
+        # light-dark pair, and the mark looks the same either way.
+        self.assertIn("--nre-plate: #141b3d; --nre-ink: #ffffff;", SHARED_CSS)
         # !important is load-bearing, and the browser suite is what proves it:
         # the mark's shapes each carry fill in a style attribute, which
         # outranks a stylesheet rule, so a rule without it would leave the mark
