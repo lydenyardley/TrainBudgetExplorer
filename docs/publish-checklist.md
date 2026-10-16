@@ -130,14 +130,24 @@ the account holder can see the registered purpose.
       times.** The daily build no longer loads the national timetable, so the
       published pages carry prices only and Schedule 1 §5's "internal business
       purposes only" reading is never exercised. `licences/release-clearance.md`
-      excludes the product with that reason rather than clearing it; putting the
-      times back means answering §5, not re-ticking this box.
+      excludes the product with that reason rather than clearing it. Putting the
+      times back means either answering §5 or sourcing the schedule under a licence
+      that carries no such restriction — Network Rail's own CIF schedule is
+      published under the Open Government Licence, and that path, with the account
+      and the clearance it needs, is in `docs/dtd-licensing-and-data-access.md`
+      ("NWR Schedule and the Network Rail open data feeds") and in
+      `docs/open-work.md`.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
       `docs/dtd-licensing-and-data-access.md`
-- [x] **NRE is acknowledged as source** in the footer of every generated route,
-      in the terms' own words (`--notices nre`), in the template so no
-      regeneration can drop it
+- [x] **NRE is acknowledged as source** in the footer of every route that shows a
+      fare, in the terms' own words (`--notices nre`), in the template so no
+      regeneration can drop it. The station route is that page; the chooser
+      shows the feed's station index and the privacy notice shows no fare, and
+      the reading that neither needs the credit is recorded in
+      `licences/release-clearance.md` and enforced by
+      `tools/check_source_credit.py`, which fails a release route showing a fare
+      without the mark and the words
 - [x] The required **Powered by National Rail Enquiries** treatment/logo is
       visible in the generated page. The Developer Guidelines are published
       from `nationalrail.co.uk/developers/` — not from the URL the terms name,

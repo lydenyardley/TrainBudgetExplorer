@@ -99,7 +99,12 @@ or supporting document):
 - [UK2GTFS ATOC documentation](https://itsleeds.github.io/UK2GTFS/articles/ATOC.html)
   — DTD ZIP contents (`.MCA`, `.MSN`, and ancillary files) and fares format.
 - [NWR Schedule product](https://raildata.org.uk/dataProduct/P-dbd92416-2f09-4f72-ad42-d53bbfec50f3/termsAndConditions)
-  — free OGL3 fallback, daily update, and UK territory.
+  — free, daily, OGL3, raw redistribution permitted, UK territory: the route back
+  to publishable times.
+- [Network Rail open data feeds](https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/)
+  and their [Data Feeds Licence](https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/network-rail-infrastructure-limited-data-feeds-licence/)
+  — the Schedule feed (ITPS extracts, CIF and JSON, daily) under an OGL-based
+  licence with a branding restriction; registered access, capped at 1,000 users.
 - [Darwin Timetable Files product](https://raildata.org.uk/dataProduct/P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8/termsAndConditions)
   — the product-specific internal-use restriction discussed below.
 - [RSP Data Licence template v07-00](https://raildata.org.uk/dataProduct/P-37faed36-518a-4870-b1bd-b675461fb72e/termsAndConditions)
@@ -375,18 +380,58 @@ data may be copied and used for **internal business purposes only**. The project
 will not publish Darwin-derived output without written permission or a suitable
 variation. The OGL3 head is not being used as a shortcut around that fill.
 
-### NWR Schedule: free fallback, not first choice
+### NWR Schedule and the Network Rail open data feeds: the route back to times
 
-The NWR Schedule product is documented as free, daily, OGL3, with no fair-use
-limit and permission for raw data to be distributed. It is a useful fallback if
-DTD access is unavailable, but it is a single gzip CIF rather than the DTD ZIP
-shape, has UK rather than worldwide territory, and can contain freight,
-empty-stock, and non-public calls. The current parser is not yet a drop-in
-replacement. If used, the page should carry the exact fallback attribution:
+This section used to call NWR Schedule a fallback for when DTD access was
+unavailable. The question is now "under what licence can times be published",
+and for that it is the first choice: the same CIF the DTD timetable product ships
+is published under a licence with no internal-business-purposes limit.
+
+Two sources, read 16 October 2026:
+
+- the **NWR Schedule product** on the Rail Data Marketplace — a point-in-time copy
+  of Network Rail's own CIF schedule, published free, daily, under the Open
+  Government Licence v3, with no fair-use limit and raw redistribution permitted
+  (the product page named among the sources at the top of this file);
+- **Network Rail's own open data feeds** (`datafeeds.nationalrail.co.uk`) — the
+  **Schedule** feed, "daily extracts and updates of train schedules from the
+  Integrated Train Planning System, in CIF and JSON formats", under the "Network
+  Rail Infrastructure Limited – Data Feeds Licence", which is the OGL again:
+  "We encourage the innovative use of these specific data feeds provided that it's
+  in compliance with the terms of the Open Government Licence." No internal-use
+  clause appears in it.
+
+So the schedule is not the restricted thing — the DTD licence's Schedule 1 §5 is.
+That makes a publishable timetable a *sourcing* change rather than a rewrite:
+`atoc_timetable.py` already reads CIF (`CIF_SCHEDULE`, `CIF_ORIGIN`,
+`CIF_INTERMEDIATE`, `CIF_TERMINUS`, and the `.cif`/`.mca`/`.cfa`/`.ztr`
+extensions), so the work is a downloader for the NR feed's account, a filter for
+the freight, empty-stock and non-public calls a raw CIF carries, and the OGL
+attribution the product page supplies:
 
 > Contains public sector information licensed under the Open Government Licence v3.0.
 
-Filtering and parser work would be required before using NWR output publicly.
+Two conditions ride with it, and neither is a reason not to:
+
+- **Branding.** The NR licence says a product using the feeds "may not use our
+  brand or logo or those of any of our partners including National Rail and the
+  train companies", and may not be called "official". The NRE mark is a different
+  licence's requirement for the fares, and the page's source line already says NRE
+  does not endorse the site. The NR restriction is about implying NR's endorsement,
+  not about a required attribution, but where the two sit on one page is worth
+  stating once in the clearance rather than discovering later.
+- **"Consistent with Darwin forecasts".** The NRE fares terms ask that times the
+  product provides are consistent with Darwin's forecasts. The CIF schedule is the
+  input Darwin forecasts from, so a schedule-derived time is consistent with it by
+  construction; a page that shows no time at all meets the same condition, which is
+  what the prices-only release does today.
+
+What it needs before any of it ships: an account on the NR feeds site (a person —
+first come first served, access capped at 1,000 users), the licence filed with its
+product id like every other RDM document (ADR-0067) and matched by the
+`timetable` shape's glob in `tools/check_release_clearance.py`, and a cleared
+section in `licences/release-clearance.md` — a person's reading, on the same gate
+the fares route went through.
 
 ### RSP Data Licence and Easy Fares: rejected for the zero-cost build
 

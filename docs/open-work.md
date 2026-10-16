@@ -120,9 +120,11 @@ is a build decision and not a rewrite.
 page.
 **Raised:** the 14 October 2026 critique, recommendations 3's second half, 7 and
 8. That file is `docs/audits/2026-10-14-impeccable-critique.md`, pruned to those
-three and to its recommendation 5, which is question 1 above and route audit
-items [20] and [21]. Its other five recommendations landed on 15 October 2026,
-held by the tests named in that file's own table.
+three. Its recommendation 5 — the licence notices on the routes that show no
+fare — was settled on 16 October 2026 by the reading in
+`licences/release-clearance.md` and `tools/check_source_credit.py`, which closed
+the route audit's items [20] and [21] with it. Its other five recommendations
+landed on 15 October 2026, held by the tests named in that file's own table.
 
 - **The chip arrangement (3, second half).** The three chips that could only ever
   select an empty list are no longer offered, so the dead ends are gone; what is
@@ -429,6 +431,23 @@ whose own line, or the comment block above it, does not name what it suppresses
 by `tools/check_types.py`, which fails on a new type error in a module that has
 none today (item 4, ADR-0072).
 
+### The journey times are dropped from the release, and the source that brings them back
+
+The prices-only release clears the fares licence by not exercising the Darwin
+timetable's Schedule 1 §5, so the published page carries no times at all. That is
+a deliberate shape, not a defect, and the way back is a *sourcing* change rather
+than a licence request: the same CIF Network Rail's ITPS produces is published
+under the Open Government Licence, both as the Rail Data Marketplace's NWR
+Schedule product (free, daily) and as Network Rail's own Schedule feed (CIF and
+JSON, daily). `atoc_timetable.py` already reads CIF, so the work is a downloader
+for that feed, a filter for the freight, empty-stock and non-public calls a raw
+CIF carries, the OGL attribution, and a filed licence with a cleared `timetable`
+section in `licences/release-clearance.md` — the last two a person's. The licence
+basis, the two conditions that ride with it (no NR or National Rail branding
+implied, and the "consistent with Darwin" clause the CIF satisfies by
+construction), and what it needs are in `docs/dtd-licensing-and-data-access.md`,
+"NWR Schedule and the Network Rail open data feeds".
+
 ## Suggestions not yet taken up
 
 From the re-envision pass of 27 September 2026. Each carries the benefit it was
@@ -439,7 +458,7 @@ argued for, because a suggestion without one is a wish.
 | | Suggestion | What it is for | Lyden's comment | Where it stands |
 |---|---|---|---|---|
 | **S08** | An opt-in "find my station" path, backed by a reviewed coordinate source, keeping manual name/code search as the default and explaining exactly what the permission does before asking | A traveller who knows their town but not the station's CRS code can still start, without silently collecting location data | | Open. It is the same data question as C27, and it is gated on the same named source. |
-| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open. The whole network now publishes with the national timetable, which is the aggregate case this is about. |
+| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open, and moved: the prices-only release publishes no times at all, so this waits on the timetable returning from the Open Government Licence source in "The journey times are dropped from the release" above. |
 | **S25** | Calendar handling, but only where the source supports it: bank holidays and service exceptions as first-class inputs, with a clear fallback where they are not | Fewer "typical" schedules are mistaken for holiday-specific service | | Open, and downstream of S24. A service-date label is what makes a fallback honest. |
 | **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right | **Implement** | Queued next. The railcard work it waited on is landed, so the party a link is built for is now whichever the reader chose. |
 
@@ -536,6 +555,13 @@ otherwise re-derive, and each carries the reason it was rejected.
   (14 October 2026). Those comments are the "why" this repository asks for, and a
   parametrized id cannot carry the paragraph that names the real-feed shape a
   case came from.
+- **`cramped-padding` on `.origin-slot-wrap`, as `impeccable detect` reads it**
+  (9 October 2026). A false positive, kept so a later pass does not re-file it:
+  the border it flags is the dashed underline that is the station slot's whole
+  affordance, chosen in `page/shared.css` because a text field's underline is the
+  shape a reader already reads as "this part of the sentence is yours". The
+  detector reported it on the station route only; the chooser and the privacy page
+  scanned clean.
 
 Five comments were seen and deliberately kept, each for the same shape of reason:
 
@@ -564,52 +590,37 @@ Everything else in this file is work. These are decisions, and each one changes
 what gets built, so each is written as the choice it is. None of them is blocked
 on a tool.
 
-1. **Do the two routes that show no fares have to carry the licence notices?** A
-   build is given its notices (`--notices nre,rdg,ogl,accuracy`), and those words
-   appear on the station page only, which is the one route that shows a price.
-   The chooser at `/` and the privacy page at `/privacy/` carry none, and a
-   released site serves all three. Route audit items [20] and [21].
-   - *Record the position* that the notices travel with the pages that show
-     fares, and write the check that fails when a release route shows a fare
-     without them. That is a dated line in `licences/release-clearance.md` and
-     one build check, and it is the half that fits this project's habit of
-     proving its own claims.
-   - *Or render the notices on every route*, so the chooser and the privacy page
-     carry the same attribution the station page does.
-   Why it is not the project's call alone: the licences and attributions the
-   operator supplies say who the fares and times come from, and whether that
-   obligation rides on a page that shows no fare is a reading of the terms. The
-   first time this came up it was filed as a question, not a defect, for the same
-   reason.
-2. **Where would a "find my station" answer come from, if anywhere?** C27 and S08.
+1. **Where would a "find my station" answer come from, if anywhere?** C27 and S08.
    A traveller who knows their town but not the station's name or three-letter
    code cannot start, and "nearest station" is not derivable from this feed. A
    second path needs a named, reviewed coordinate source, its licence and
    provenance recorded beside the station index, and the location permission
    explained in full before it is asked for. Manual name and code search stays
    the default whichever way this goes.
-3. **Is a service date a product mode?** S24 and S25. Today's times are aggregate
-   schedules and the day control is a filter. A date-specific snapshot, labelled
-   beside the times and carrying bank holidays and service exceptions where the
-   source supports them, is a product decision rather than a data one, and S25
-   sits downstream of whatever this answer is.
-4. **Which byte-budget path first?** The P1 finding above lists three ways the
+2. **Is a service date a product mode?** S24 and S25. When times are published they
+   are aggregate schedules and the day control is a filter. A date-specific
+   snapshot, labelled beside the times and carrying bank holidays and service
+   exceptions where the source supports them, is a product decision rather than a
+   data one, and S25 sits downstream of whatever this answer is. The release
+   currently publishes no times at all, so this waits on the timetable returning
+   from the Open Government Licence source in the findings above.
+3. **Which byte-budget path first?** The P1 finding above lists three ways the
    release gets back inside its 800 MB budget: measure the real release first,
    change the pair-rule encoding, or shard the build. The order is a judgement
    about what to spend time on: the first replaces a projection with a figure,
    the second is the one that actually removes the bytes, and the third only makes
    an over-budget release affordable to publish.
-5. **Does the site get a public name?** S40. A shortlist is in
+4. **Does the site get a public name?** S40. A shortlist is in
    `docs/name-ideas.md`, and nothing in the code is named until one is chosen.
-6. **Are the traveller sessions run?** S43. Short, task-focused sessions with
+5. **Are the traveller sessions run?** S43. Short, task-focused sessions with
    someone who has a price ceiling and no destination, before the next round of
    polish, so the next changes come from interpretation failures rather than from
    features that were possible.
-7. **The stop rule's own date.** ADR-0004 sets a written review for **21 October
+6. **The stop rule's own date.** ADR-0004 sets a written review for **21 October
    2026**: is there community traction, and is the thing worth keeping. S44 is the
    argument about what to measure before that date, and it is measured at the
    community posts rather than on the page. Nothing is built for this.
-8. **Why does the release chooser count 50 where its own page counts 53?**
+7. **Why does the release chooser count 50 where its own page counts 53?**
    Clarity audit item 3's data half, and the last of that audit's P1 findings. The
    copy half landed, so no count is bare any more: a chooser row says "destinations
    this feed prices" and a count line says "destinations for up to £20.00 per
@@ -619,7 +630,7 @@ on a tool.
    difference; the release's 50 against 53 is three more than it explains. Whoever
    can query the release index has to say which number the index is meant to be
    and whether the page or the index is the one that is wrong.
-9. **Which destination-type names can a reader read as themselves?** Clarity audit
+8. **Which destination-type names can a reader read as themselves?** Clarity audit
    item 17. "Cities" and "Villages" are Census 2021 built-up-area size bands, so
    the meaning a reader brings to either word is not the one the chip applies; the
    rule line under the chips counts them and does not name the bands. Two ways out,
@@ -627,7 +638,7 @@ on a tool.
    place, from the 2021 census"), or renaming the four in
    `DESTINATION_TYPE_FILTERS` in `atoc_fare_declarations.py`, which is the reviewed
    table the payload's types are keyed by, so a rename is one registry edit.
-10. **What may the built line claim about publication?** Clarity audit item 42.
+9. **What may the built line claim about publication?** Clarity audit item 42.
     The privacy page's first line reads "the build published on" and then the
     build's own timestamp (`builtAt`, set in `build_payload.py`). The
     sentence has to stay, because the analytics bullets below it are claims about
@@ -635,7 +646,7 @@ on a tool.
     clears the release. The fares-only release is cleared and a push deploys, so
     the verb becomes true when a run reaches the deploy job — not before, and not
     for a build that is only ever built locally.
-11. **Which trade terms does this audience know?** Clarity audit item 44. ITX,
+10. **Which trade terms does this audience know?** Clarity audit item 44. ITX,
     DTD, RR, "flow", "NRE", "Priced as" and "feed" itself are quoted on the routes
     the release serves and glossed on none of them. The audit asks for one short
     glossary inside the method disclosure and a first-use gloss for the two or
@@ -646,10 +657,12 @@ on a tool.
     fare" is glossed where it is met, the row's own disclosure says it is
     technical, and "feed dated" became "downloaded" (items 30, 26 and 45).
 
-Three questions this file used to carry are answered and their answers are in the
+Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
-is one of a collection with none selected by default (ADR-0052), and the runner
-serves while the build builds (ADR-0051, amended by ADR-0055).
+is one of a collection with none selected by default (ADR-0052), the runner
+serves while the build builds (ADR-0051, amended by ADR-0055), and the source
+credit travels with the pages that show a fare (the reading recorded in
+`licences/release-clearance.md`).
 ---
 
 ## Settled in this pass, and where the record is
@@ -671,6 +684,7 @@ because a reader checking a closure wants the ADR and the test.
 | The row names its fare in a word; the feed's code waits in the row's disclosure | ADR-0053, superseding decision 2 of ADR-0040 | `test_result_changes_and_mobile_cells_are_accessible` and `test_table_headers_name_their_columns_and_scope`, and the browser suite's fare-type and Feed-record readings |
 | The shortlist is one select and one strip above the table, not a button on every row | ADR-0054 | the browser suite's five shortlist checks, and the select's change listener's tests in `tests/test_build_demo_page.py` |
 | The station name in the heading is the field you type into | ADR-0056 | the heading-picker checks, including Escape pressed in the field rather than in the panel |
+| The licence notices on the routes that show no fare (route audit items [20] and [21]) — whether the chooser and the privacy notice have to carry the NRE credit | recorded rather than assumed: the credit travels with the page that shows a fare, the chooser's station index and the privacy notice show none, and the alternative reading (render it on every route) is named with the reading | the section "Which pages carry the acknowledgement" in `licences/release-clearance.md`, and `tools/check_source_credit.py` — held by `tools/test_check_source_credit.py`, run over the built site by the assemble job |
 
 ### The 8 October 2026 agent-efficiency audit
 
@@ -724,12 +738,13 @@ against the table's own heading count).
 
 ### The 10 October 2026 whole-app audit
 
-The audit file was removed on 14 October 2026: its one open recommendation is the
-notices question, which is question 1 under "What is waiting on a person" above
-and route audit items [20] and [21]. Its thirteen closed recommendations landed on
-11 October 2026; each is held by an artifact, and the two audits agree: the
-route audit's items [3], [4], [6], [10], [16], [18] and [22] are closed by them.
-Its browser-suite coverage figures are in `docs/build-performance-findings.md`.
+The audit file was removed on 14 October 2026. Its thirteen closed
+recommendations landed on 11 October 2026; each is held by an artifact, and the
+two audits agree: the route audit's items [3], [4], [6], [10], [16], [18] and
+[22] are closed by them. Its one open recommendation was the notices question,
+settled on 16 October 2026 as the source-credit reading and check in the settled
+table above, together with the route audit's items [20] and [21]. Its
+browser-suite coverage figures are in `docs/build-performance-findings.md`.
 
 | Recommendation | Closed by | Held by |
 |---|---|---|
@@ -757,6 +772,18 @@ a `RulePool`. `page/station.js` became one file per panel under `page/station/`,
 and `tests/browser_test.cjs` became one module per route and section under
 `tests/browser/`. `FaresDb` keeps its state and its queries, and the loader it
 used to hold beside them is `atoc_fares_loader.FaresLoader`, mixed in.
+
+### The 9 October 2026 non-dev route audit
+
+The audit file was removed on 16 October 2026, when its last two items were
+settled: [20] and [21], the notices on the routes that show no fare and the build
+check for them, are the settled-table entry above. Twenty of its twenty-two items
+are implemented, each held by the commit that carries it
+(`git log --grep="audit item"`); the group-to-commit mapping for the first twelve
+is in `1ecd719`, and its items [3], [4], [6], [10], [16], [18] and [22] are also
+closed by the 10 October 2026 work above. Its detector's one finding,
+`cramped-padding` on the station slot, is under "Rejected designs, with the
+reason".
 
 ### The 12 October 2026 build-cost audit
 
@@ -865,32 +892,33 @@ rather than fixed at the time, because the tint was also the only visual
 grouping of the sort order; ADR-0041 is that decision, and the order is now
 stated in words in the count line instead.
 
-**Not a design fix.** The deploy workflow publishes a single origin
-(`--origin GRA`), so the published artefact has one station page, no Change
-chevron in the heading and only Privacy in the footer. That is a coverage fact
-about the release command — see question 1 above — and it is measured so the
-next reader does not file it as a defect.
+**Not a design fix.** The page measured above was the single origin the deploy
+workflow then published (`--origin GRA`): one station page, no Change chevron in
+the heading and only Privacy in the footer. That is a coverage fact about the
+release command of the time rather than a defect in it, and the release has since
+become the whole network — the settled entry "Question 1, the release coverage"
+above (ADR-0050).
 
 ---
 
 ## Where this came from
 
-All ten files below are gone from the working tree; each was removed by the
+All eleven files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
-above. `git show <commit>` reads one back. The four dated 8 to 14 October 2026
-were removed on 14 October 2026, in the commit that settled their findings here;
-their rejections are under "Rejected designs, with the reason" and their figures
-are in `docs/build-performance-findings.md`.
+above. `git show <commit>` reads one back. Most were removed on 14 October 2026,
+in the commit that settled their findings here; the route audit below was removed
+on 16 October 2026, with the reading that closed its last two items. Their
+rejections are under "Rejected designs, with the reason" and their figures are in
+`docs/build-performance-findings.md`.
 
-Four reviews are still in `docs/audits/`, each pruned to what it still asks for.
-`2026-10-09-impeccable-route-audit.md` is items [20] and [21], which are question
-1 above. `2026-10-14-impeccable-critique.md` is recommendations 3's second half,
-5, 7 and 8, which are the entry above and question 1. The app-engineering audit
-of the same date is its recommendation 6, the entry above.
-`2026-10-14-impeccable-clarify.md` is the clarity reading of every route: its
-forty-four applied findings are the entry above, its four for-a-person findings
-are questions 8 to 11 above, and its last one (item 23) is a wording nobody has
-asked for yet. A review with nothing open does not keep a file.
+Three reviews are still in `docs/audits/`, each pruned to what it still asks for.
+`2026-10-14-impeccable-critique.md` is recommendations 3's second half, 7 and 8,
+which are the entry above. The app-engineering audit of the same date is its
+recommendation 6, the entry above. `2026-10-14-impeccable-clarify.md` is the
+clarity reading of every route: its forty-four applied findings are the entry
+above, its four for-a-person findings are questions 7 to 10 above, and its last
+one (item 23) is a wording nobody has asked for yet. A review with nothing open
+does not keep a file.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in
@@ -914,8 +942,9 @@ asked for yet. A review with nothing open does not keep a file.
   are above, and the F7 rule it left is in `AGENTS.md`. Removed on 14 October
   2026.
 - `docs/audits/2026-10-10-four-dimension-app-audit.md` — the whole-app review. Its
-  thirteen closed recommendations are in the table above, its one open one is
-  question 1, and its browser-suite coverage figures are in
+  thirteen closed recommendations are in the table above, its one open one was the
+  notices question, settled on 16 October 2026 by the source-credit reading and
+  check, and its browser-suite coverage figures are in
   `docs/build-performance-findings.md`. Removed on 14 October 2026.
 - `docs/audits/2026-10-12-build-cost-and-data-architecture.md` — the build-cost and
   data-architecture review. Its twelve tasks are in the table above, its figures
@@ -926,3 +955,7 @@ asked for yet. A review with nothing open does not keep a file.
   the suppression census are in the closed entry above, its rejected ideas are
   above, and no `# noqa` in the tree is left with a cause the audit could not name.
   Removed on 14 October 2026.
+- `docs/audits/2026-10-09-impeccable-route-audit.md` — the non-dev route audit. Its
+  twenty-two items settle in the tables above, the last two ([20] and [21]) closing
+  with the source-credit reading, and its detector's one finding is a rejected
+  design above. Removed on 16 October 2026.

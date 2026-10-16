@@ -26,7 +26,7 @@ taken up yet (23).
   and the synthetic site behaves exactly as that predicts (chooser "5
   destinations", page "4 destinations for up to £20.00 per adult"). The release's 50
   against 53 cannot come from that difference alone, so it is a data question for
-  whoever owns the index, and it is question 8 under "What is waiting on a
+  whoever owns the index, and it is question 7 under "What is waiting on a
   person" in `docs/open-work.md`.
 - **[17] [P2] The destination-type chips are ONS bands wearing everyday words.**
   Rendered: *All / Cities (2) / Small towns (1) / Coastal & seaside (1) /
@@ -40,7 +40,7 @@ taken up yet (23).
   *Needs a person:* the labels are a product decision, and the chips are written
   from `DESTINATION_TYPE_FILTERS` in `atoc_fare_declarations.py`, the same
   reviewed table the payload's types are keyed by, so a rename is one registry
-  edit. Question 9 under "What is waiting on a person".
+  edit. Question 8 under "What is waiting on a person".
 - **[23] [P2] The price cell packs three facts with no words between them.** With
   a 16-25 card chosen: *"£4.65 £7.00 standard"*. Visually this is a price, a
   struck price and a label; in text order it is three numbers and a word. The word
@@ -49,13 +49,14 @@ taken up yet (23).
   pass was asked for items 1-7, 9-16, 18-22, 24-41 and 43-50, and 23 was not
   among them. The recommendation stands as written.
 - **[42] [P2] The built line promises a publication that has not happened.**
-  *"This notice describes the build published on 14 October 2026."* Nothing has
-  been published — `licences/release-clearance.md` is still open — and "the build"
-  is the pipeline's word. Recommendation: "the build dated …", or state the date
-  without the verb, and keep the sentence because the analytics bullets below it
-  are claims about one build. *Needs a person:* the clearance file is a person's
-  decision, so the wording that describes publication should be theirs. Question
-  10 under "What is waiting on a person".
+  *"This notice describes the build published on 14 October 2026."* Nothing had
+  been published when this was read, and `licences/release-clearance.md` was still
+  open; the fares route was cleared on 16 October 2026, so the verb becomes true
+  when a run reaches the deploy job rather than at build time. The sentence stays
+  — the analytics bullets below it are claims about one build — so what is left is
+  the wording: "the build dated …", the date without the verb, or the verb kept.
+  *Needs a person:* a build that is only ever built locally is not published.
+  Question 9 under "What is waiting on a person".
 - **[44] [P1] Nothing defines the trade vocabulary the page quotes.** ITX (footer,
   `#feedCoverage`), DTD (provenance, method), RR (the railcard note and rule),
   "feed", "this download", "feed dated", "flow" (`#feedCoverage`: *"140 priced
@@ -70,4 +71,4 @@ taken up yet (23).
   *"downloaded"* where the audit read "feed dated" (item 45). The rest still needs
   a person: which terms the audience genuinely knows (the brief says plain language
   without flattening real terminology) is a judgement about rail readers, not a
-  style rule. Question 11 under "What is waiting on a person".
+  style rule. Question 10 under "What is waiting on a person".
