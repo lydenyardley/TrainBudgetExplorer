@@ -96,9 +96,10 @@ conversion would not make those moves.
   measurement, an affiliate application only once the licence is read and there is
   traffic, and the 21 October review tripwire.
 - **Hosting is chosen but not switched on.** The deploy workflow targets GitHub
-  Pages, builds the whole network from the licensed feeds, and refuses to publish
-  until `licences/release-clearance.md` clears the release, which today it does
-  not, so nothing has been served publicly
+  Pages, builds the whole network from the licensed fares feed as a prices-only
+  release, and is cleared to publish that shape by `licences/release-clearance.md`
+  — which clears `fares` against the filed portal terms and excludes the Darwin
+  timetable schedule — so nothing has been served publicly yet
   (`docs/github-pages-deployment.md`, ADR-0010).
 
 ## Capabilities and Constraints

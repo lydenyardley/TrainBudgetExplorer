@@ -629,8 +629,9 @@ on a tool.
    table the payload's types are keyed by, so a rename is one registry edit.
 10. **What may the built line claim about publication?** Clarity audit item 42.
     The privacy page's first line describes "the build published on 14 October
-    2026", and nothing has been published: `licences/release-clearance.md` is
-    still open. The sentence has to stay, because the analytics bullets below it
+    2026", and no build has been served: `licences/release-clearance.md` clears
+    only a prices-only `fares` release. The sentence has to stay, because the
+    analytics bullets below it
     are claims about one build; whether it may use the verb is the decision of
     whoever clears the release, so it is recorded beside that file rather than
     changed now.

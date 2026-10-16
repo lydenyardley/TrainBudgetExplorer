@@ -1,8 +1,8 @@
 # Release clearance
 
-**No licence here is cleared, and the deploy workflow is gated on that.** The one
-product this record clears is the privacy contact, which is not a licence: it is
-a promise a person keeps rather than a term anyone read, and the [section
+**The DTD fares route is cleared and the Darwin timetable schedule is not, and
+the deploy workflow is gated on both.** The privacy contact — a promise a person
+keeps rather than a term anyone read — is cleared too, and the [section
 below](#privacy-contact) holds the date it was confirmed and by whom. This file
 is the record the gate reads, and it is edited in a pull request by a person who
 has read the actual terms — which is the point, because no tool here can read a
@@ -67,11 +67,16 @@ either:
 
 ## dtd
 
-- state: excluded
-- reason: permission is not the open question — the current terms grant publication and commercial exploitation, and the fee is nil by a published charging document — but two of the terms' requirements are unanswered, and neither is a footer
+- state: cleared
+- answer: yes
+- read on: 2026-10-16
+- approved by: Lyden Yardley
+- approved on: 2026-10-16
+- expires: 2027-10-16
 
-The terms were read on 28 September 2026, from the copy filed in this folder,
-whose footer is dated 24/09/2026 and names `opendata.nationalrail.co.uk/terms`.
+The terms were first read on 28 September 2026 and re-read on 16 October 2026,
+from the copy filed in this folder, whose footer is dated 24/09/2026 and names
+`opendata.nationalrail.co.uk/terms`.
 They are not ambiguous about permission: "You are free to: copy, publish,
 distribute and transmit the Information", and to "exploit the Information
 commercially ... by including it in Your own product or application ("End User
@@ -82,81 +87,93 @@ the Fares, Routeing Guide and Timetable selection
 (`feeds/download-manifest.json`). The Knowledgebase feeds the user downloaded on
 28 September are a separate entitlement and are not evidence of this one.
 
-What is open is compliance, and none of it can be written in a footer. One of
-the three requirements is met — the acknowledgement, by `--notices nre` — and the
-other two are not:
+**Why it is cleared.** Publication of fares from the DTD static fares feed, on a
+public page whose ticket links may earn affiliate commission, is inside the grant
+in the filed terms. The conditions the grant comes with are met or have no subject
+on this release, and the fee is nil by a published document:
 
-- The terms require the publisher to "acknowledge NRE as the source of
-  Information in accordance with this agreement and the Developer Guidelines".
-  The URL the terms give for those guidelines 404s, but the document is
-  published from `nationalrail.co.uk/developers/` and was read on 28 September
+- **Acknowledgement** — the terms require the publisher to "acknowledge NRE as
+  the source of Information in accordance with this agreement and the Developer
+  Guidelines". The URL the terms give for those guidelines 404s, but the document
+  is published from `nationalrail.co.uk/developers/` and was read on 28 September
   2026. It requires "a link to the NRE website for more information and ...
-  displaying the 'Powered by National Rail Enquiries' logo", placed
-  "directly alongside, above or underneath the Information derived from the
-  feed" where that feed is the product's predominant information. `--notices
-  nre` carries the acknowledgement, the logo and the link, and the page's
-  placement is underneath the results. Nothing here is invented.
-- The terms require that "all forecasted arrival and departure times, provided by
-  Your End User Product(s), are consistent with Darwin forecasts". The page
-  computes its times from the static timetable download, not from Darwin. Whether
-  a published static time is a "forecasted" time in the terms' sense is the
-  question, and it is the one that decides whether times may go out at all.
-- The terms require that "all Time-Bound Data, used in Your End User Product(s),
-  are displayed as directed in the Information, as per the Developer Guidelines",
-  and the guidelines are the same unpublished document.
-- Charges arise only above NRE's High Volume Usage threshold, and the Usage
-  Charging Document (v06-01, read 28 September 2026) confines that model to the
-  Darwin **Webservice** feeds: 5 million enquiries per user per 28-day railway
+  displaying the 'Powered by National Rail Enquiries' logo", placed "directly
+  alongside, above or underneath the Information derived from the feed" where
+  that feed is the product's predominant information. `--notices nre` carries the
+  acknowledgement, the logo and the link, and the page's placement is underneath
+  the results. The logo is painted white, one of the three colours the guidelines
+  permit ("blue, black or white"), so its rendering is one they name rather than
+  one awaiting permission.
+- **Forecasted times** — the terms require that "all forecasted arrival and
+  departure times, provided by Your End User Product(s), are consistent with
+  Darwin forecasts". This release is **prices-only** (`--release fares`): the
+  build does not load the national timetable, so the pages provide no arrival or
+  departure times and the condition has nothing to apply to.
+- **Time-Bound Data** — the terms require that "all Time-Bound Data, used in Your
+  End User Product(s), are displayed as directed in the Information, as per the
+  Developer Guidelines", and the licence **defines** the term: "'Time-Bound Data'
+  means any data within the Information that is provided in conjunction with
+  instruction for the timeliness of its display; platform numbers for example."
+  The static fares feed carries neither platform numbers nor a display-timeliness
+  instruction, so a fares page carries none. Earlier readings of this record
+  treated this as answered only by the unpublished guidelines; it is the term's
+  own definition that decides it, and the trigger is absent.
+- **Fee** — charges arise only above NRE's High Volume Usage threshold, and the
+  Usage Charging Document (v06-01, read 28 September 2026) confines that model to
+  the Darwin **Webservice** feeds: 5 million enquiries per user per 28-day railway
   period at 0.042p each, with Darwin **Push** feeds `N/A` throughout. This build
   downloads two static ZIPs a day and makes no Webservice enquiry, so no fee
-  applies to it. That is a published document rather than a conclusion from
-  volume, and it is the one requirement of these terms this release answers
-  outright.
+  applies. That is a published document rather than a conclusion from volume.
 
-The registration is in scope too. The portal asks what the data is for and where
-it will be used, and the terms require that information to be true: if the
-registered purpose does not name a public page carrying an affiliate link, that
-is a defect in the account rather than in this build.
+**What this clearance does not cover.** Times. A page that showed arrival or
+departure times would raise the "forecasted" question, and whether a static
+scheduled time is "forecasted" in the terms' sense is a reading this project has
+not taken. The national timetable is not published, and the Darwin timetable
+product schedule is excluded below for that reason. Putting the times back means
+answering that question, or RDG's §5.
+
+The registration is in scope too, and it is the one thing no document here can
+show. The portal asks what the data is for and where it will be used, and the
+terms require that information to be true: if the registered purpose does not
+name a public page carrying an affiliate link, that is a defect in the account
+rather than in this build. Only the account holder can see it.
 
 This is the source the published build actually reads, and it is the one the
 audit found the workflow downloading with no licence decision anywhere near it.
-It is a portal subscription rather than a marketplace product schedule, so it
-has no PDF in this folder and no product id — which is precisely why it needed a
-section of its own.
+It is a portal subscription rather than a marketplace product schedule, so it has
+no PDF in this folder and no product id — which is precisely why it needed a
+section of its own, and why the gate cannot pin it to a digest.
 
-The register records a documented zero-cost working conclusion from the public
-charging material, not a signed entitlement, and the letter to RDG is drafted at
-`docs/rdg-licence-enquiry.md` and unanswered.
+The register records a documented, dated reading of the published terms and
+charging material, not a signed entitlement. The letter to RDG at
+`docs/rdg-licence-enquiry.md` is unanswered, and that answer is what would put the
+times back rather than what lets the fares out.
 
-## the NRE mark is reversed
+## the NRE mark is white
 
-- state: open question, not a product decision
-- reason: NRE's brand pack ships no reversed asset, so the mark on every page is a rendering they have not approved
+- state: answered by the brand guidelines, not a product decision
+- reason: the guidelines permit blue, black or white, so the white mark the page paints is a rendering they name rather than one awaiting permission
 
 The Developer Brand Guidelines (September 2026, filed in this folder, read 28
-September 2026) require the logo to be "legible to viewers". The mark is
-`#2E2D7F`, which is invisible on this page's dark palette, so the page reverses
-it: a light rendering of NRE's blue on a dark plate of the same blue. The file
-in `assets/powered-by-national-rail.svg` is NRE's, byte for byte, and the page
-inlines it unchanged; the reversal is applied by the page's own stylesheet at
-paint time (ADR-0036).
+September 2026) require the logo to be "legible to viewers" and fix its colours:
+"The National Rail logo should only be used in blue, black or white", and "our
+wordmark can be used both positively (in our brand blue) and negatively (white
+out of a colour or image) just make sure it is always legible". The mark is
+`#2E2D7F`, invisible on this page's dark palette, so the page paints it white on
+a dark plate (`--nre-ink: #ffffff`; ADR-0036, amended a third time). The file in
+`assets/powered-by-national-rail.svg` is NRE's, byte for byte, and the page
+inlines it unchanged; the colour is applied by the page's own stylesheet at paint
+time.
 
-Nothing in the pack permits or forbids it. The ZIP holds one #2E2D7F `Powered by
-National Rail.svg` and one #2e2d7f wordmark, and no reversed variant of either,
-so a dark page has two options: this, or a logo the guidelines say is not
-legible. The developer page says brand materials are subject to NRE's
-permission, and the guidelines name the address to ask
-(`NationalRailDatafeeds@raildeliverygroup.com`) for an exemption.
-
-Asking is one email, and the answer is one of two: a reversed asset, which
-replaces the stylesheet rule with a file; or written permission for the
-reversed rendering, which turns this paragraph into a decision. Until one
-arrives the page carries an edited logo, and this is where that is recorded.
-It is deliberately not a gated pseudo-product like `privacy contact`: the credit
-itself is required and satisfied, the question is about the rendering, and
-making it block publication would gate the whole site on an unanswered email.
-Turn it into one by adding it to `products_needed()` in
-`tools/check_release_clearance.py`.
+The pale blue this section used to describe (`#cdd6ff`) was none of the three
+permitted colours, which is why it stood here as an open question: it was a
+rendering NRE had not approved. White is one they name, so the question is settled
+by the guidelines rather than by an email, and the file was never edited. It is
+deliberately not a gated pseudo-product like `privacy contact`: the credit itself
+is required and satisfied, and this was a rendering question rather than a right
+to publish. `NationalRailDatafeeds@raildeliverygroup.com` remains the route if a
+different rendering is ever wanted — a reversed asset, say, which would replace
+the stylesheet rule with a file.
 
 ## privacy contact
 
@@ -188,9 +205,10 @@ different route: record that override here and clear the route it names instead.
 Anyone who stops reading the tracker sets `state: excluded` again, and the gate
 refuses a release on the line, because refusing is the safe direction.
 
-This is the second of the two products that are not a filed licence.
-[`dtd`](#dtd) is still excluded, so clearing this one does not by itself let
-anything publish.
+This is one of the two products that are not a filed licence. [`dtd`](#dtd) is
+the other, and it is cleared against the filed portal terms — but only for a
+prices-only release, so this section and that one together clear `--release
+fares` and nothing wider.
 
 ## P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8
 

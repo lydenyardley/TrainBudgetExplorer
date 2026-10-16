@@ -49,17 +49,17 @@ You can still run the application locally with the synthetic feed, but a public 
    ```text
    check the commit messages → download → detect whether the feed changed
    → audit → gate the unsourced count → gate the price per minute
-   → build the site → hold the bytes → check the manifest and journeys
+   → build the site → hold the bytes → check the manifest and the shape
    → tests → browser test → clearance → publish
    ```
 
-5. The site is published only when every gate before the publish step passes. Two of them are not optional and not softer than they look. `licences/release-clearance.md` must clear the shape the build publishes, which is `fares,timetable` because the build loads the national timetable, and the `github-pages` environment can require a person to approve the run. Until that clearance is written, the build, the tests and the browser run stay green and only publication waits.
+5. The site is published only when every gate before the publish step passes. Two of them are not optional and not softer than they look. `licences/release-clearance.md` must clear the shape the build publishes, which is `fares`: the build publishes prices and no journey times, because the Darwin timetable schedule is read as internal-use-only and is therefore excluded rather than cleared. The `github-pages` environment can require a person to approve the run, which is the other half of the gate.
 
 The workflow also runs on every push to `main` and daily at 03:17 UTC. GitHub may delay scheduled jobs, so the date shown on the deployed site may be slightly behind the scheduled time.
 
-**What the build step publishes.** The build runs `build_demo_page.py` with `--feed feeds/fares`, `--timetable feeds/timetable`, `--knowledgebase feeds/knowledgebase`, `--all-origins`, the licence notices the terms require, and `--require-live-reviewed-codes`. So the release is the whole network with journey times: a chooser at the root and one page per priced station under `/from/<slug>/`, each carrying its times and changes. The step's `timeout-minutes` is 300, which is sized for the slowest runner the workflow can land on at the worker count that runner's free memory allows.
+**What the build step publishes.** The build runs `build_demo_page.py` with `--feed feeds/fares`, `--knowledgebase feeds/knowledgebase`, `--all-origins`, the licence notices the terms require, and `--require-live-reviewed-codes`. It loads no timetable and passes no `--date`, so the release is the whole network as **prices and conditions only**: a chooser at the root and one page per priced station under `/from/<slug>/`, each carrying its fare and its terms but no journey times. That is the shape `--release fares` clears. The step's `timeout-minutes` is 300, which is sized for the slowest runner the workflow can land on at the worker count that runner's free memory allows.
 
-**What runs before it, and why.** The downloaded feeds are audited, the checked-in destination facet data is regenerated into a temporary file and compared with the registry (`tools/check_facet_reference.py`, so a facet source that shipped without the reference file being rebuilt fails the run rather than classifying stations from an older registry), the unsourced-destination count is held under a ceiling that falls as reviewed settlement classes land, and `tools/check_fare_rate.py` prices what the page's own selectors publish, so an implausible price per minute fails the run before a page is written rather than after. After the build, `tools/page_bytes.py` holds the release against its byte budget, and the manifest check reads the release's own manifest against the folder and refuses if the route count and the page count disagree or if any station page is missing its journeys. Then the Python suite runs under a coverage floor, and the browser suite drives the demo site, the site that ships, and two shape pages.
+**What runs before it, and why.** The downloaded feeds are audited, the checked-in destination facet data is regenerated into a temporary file and compared with the registry (`tools/check_facet_reference.py`, so a facet source that shipped without the reference file being rebuilt fails the run rather than classifying stations from an older registry), the unsourced-destination count is held under a ceiling that falls as reviewed settlement classes land, and `tools/check_fare_rate.py` prices what the page's own selectors publish, so an implausible price per minute fails the run before a page is written rather than after. After the build, `tools/page_bytes.py` holds the release against its byte budget, and the manifest check reads the release's own manifest against the folder and refuses if the route count and the page count disagree or if any station page carries journey times, since the release is prices-only. Then the Python suite runs under a coverage floor, and the browser suite drives the demo site, the site that ships, and two shape pages.
 
 **Unchanged feeds skip the work.** The workflow compares a fingerprint of what the feeds *are*, plus a digest of the builder's own source files, against the last successful build. When neither moved, it says so, keeps the existing site, skips the audit, the build and everything that reads the built site, and still runs the commit message check, the Python suite and the browser suite. A failed download, audit, build, gate or test never replaces the previous deployment.
 
@@ -104,10 +104,12 @@ Check that **Settings → Pages → Source** is **GitHub Actions**, then inspect
 That is the clearance gate, not a broken workflow. Run
 
 ```
-python -m tools.check_release_clearance --release fares,timetable
+python -m tools.check_release_clearance --release fares
 ```
 
-and read `docs/publish-checklist.md` §1. The build and its tests are expected to be green while this refuses.
+and read `docs/publish-checklist.md` §1. The shipped record clears the fares
+shape, so a refusal here means the record or the build's flags have changed —
+check that the two agree.
 
 ### The build step times out
 

@@ -13,21 +13,26 @@ answer, and "I think that's fine" is not an answer.
 the deploy workflow refuses to publish anything it does not clear. Run
 
 ```
-python -m tools.check_release_clearance --release fares,timetable
+python -m tools.check_release_clearance --release fares
 ```
 
-to see where the project stands today. It currently fails, which is correct: §1
-below is unfinished, and the shape the workflow now publishes is `fares,timetable`
-because the daily build loads the national timetable to show times and changes.
-Two things are therefore not cleared — the DTD fares product, and the Darwin
-timetable product schedule, which this project reads as internal business
-purposes only. A third gate sits on the same shape, the privacy contact, and it
-**was cleared on 14 October 2026** when the owner confirmed that the issue
-tracker's notifications reach an address they read; the record dates it and
-expires it a year later. Nothing in `build_demo_page.py` or `run.py` reads the
-record, so a contributor can still build, test and open a real-feed page locally
-with no clearance in sight, and the two licence refusals above are what still
-stand in the way of a published release.
+to see where the project stands today. The shape the workflow publishes is
+**`fares` only**: the daily build no longer loads the national timetable, so the
+pages carry prices and conditions and no journey times. That keeps the Darwin
+timetable product schedule — which this project reads as internal business
+purposes only — **excluded rather than cleared**, because nothing is published
+from it. It is the degradable half the project designed for: `--timetable` is
+optional and the builder renders a prices-only page that says so, so the strict
+reading stays binding rather than becoming a note somebody skips (ADR-0020,
+ADR-0021).
+
+The **DTD fares route is cleared** in the record against the filed portal terms
+(§1 below), and the privacy contact on the same shape **was cleared on 14
+October 2026** when the owner confirmed that the issue tracker's notifications
+reach an address they read; the record dates it and expires it a year later.
+Nothing in `build_demo_page.py` or `run.py` reads the record, so a contributor
+can still build, test and open a real-feed page locally with no clearance in
+sight.
 
 The shape is not chosen by hand. `tools/check_release_clearance.py` refuses a
 `--release` it does not recognise, and a test compares the shape the workflow
@@ -105,24 +110,28 @@ analogy.
 The licences themselves are in `licences/`, one PDF per product, with the register that
 these rows are drawn from and a test that keeps the two in step.
 
-Still to answer for the DTD route: the three requirements the permission comes
-with, none of which a footer can satisfy. The acknowledgement is done; what
-remains is whether a **static computed time** is a "forecasted" time that must
-stay consistent with Darwin, and how **Time-Bound Data** must be displayed —
-both answered by the Developer Guidelines, which are not published. The fee is
-answered, and answered as nil.
+The requirements the permission comes with, and how a prices-only page meets
+them: the acknowledgement is done (`--notices nre`, a link and the mark); the fee
+is nil on a published document; and the two time conditions have no subject on a
+page that shows no times and carries no platform numbers. **Time-Bound Data** is
+defined by the licence — "any data … provided in conjunction with instruction for
+the timeliness of its display; platform numbers for example" — so the display
+requirement has nothing to bite on. The **static computed time** question stays
+open only for a page that shows times, and this project has not taken the reading
+that a scheduled time is "forecasted"; that is why the release is prices-only.
+One thing no document can answer: the portal registration must be true, and only
+the account holder can see the registered purpose.
 
 - [x] Researched the DTD/NRE route and recorded the source links and caveats in
       `docs/dtd-licensing-and-data-access.md`
 - [ ] Confirmed that the account subscription includes **Fares, Routeing Guide and
       Timetable data**, not only the Knowledgebase feeds
-- [ ] **The Darwin timetable product schedule is read for the pages that now
-      show times.** The daily build loads the national timetable, so this
-      project's reading of that schedule as "internal business purposes only" is
-      no longer a description of something the site does not publish — it is
-      the answer that has to change, or the decision that the published times
-      stay switched off. `python -m tools.check_release_clearance --release
-      fares,timetable` names it as outstanding.
+- [x] **The Darwin timetable product schedule is read, and the pages do not show
+      times.** The daily build no longer loads the national timetable, so the
+      published pages carry prices only and Schedule 1 §5's "internal business
+      purposes only" reading is never exercised. `licences/release-clearance.md`
+      excludes the product with that reason rather than clearing it; putting the
+      times back means answering §5, not re-ticking this box.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
       `docs/dtd-licensing-and-data-access.md`
@@ -135,13 +144,16 @@ answered, and answered as nil.
       which 404s — and were read on 28 September 2026. The mark is the file they
       supply, inlined so the self-contained page still shows it, linked to
       NRE's site, and placed underneath the information, which is what they
-      require where the feed is the page's predominant information
-- [ ] The **Darwin-consistency** requirement is still unanswered. The
-      guidelines do not define a "forecasted" time for a licensee, and the terms
-      require published times to be consistent with Darwin forecasts while this
-      page computes them from a static schedule. The Developer Pack is evidence
-      that the static feed carries no live movements and that Darwin's forecasts
-      are something it computes, which is an argument rather than an answer
+      require where the feed is the page's predominant information. The mark is
+      painted white — one of the three colours the guidelines permit ("blue,
+      black or white") — so the rendering is theirs rather than a reversal
+      awaiting permission; the pale blue it replaced was none of the three
+- [x] The **Darwin-consistency** requirement has no subject on a prices-only
+      page: no arrival or departure times are provided, so nothing has to stay
+      consistent with Darwin forecasts. It stays a reading rather than an answer,
+      which is why times are switched off — the guidelines do not define a
+      "forecasted" time for a licensee, and any times this page showed would be
+      computed from a static schedule rather than from Darwin
 - [x] **A monitored contact route exists.** The privacy page names the public
       issue tracker (`https://github.com/lydenyardley/TrainBudgetExplorer/issues`,
       `DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py`, ADR-0068) and prints no
@@ -303,9 +315,11 @@ on an assumption is worse than no checklist at all.
    `--release` is allowed to claim, and the Darwin clearance this project does not
    hold is what stops the times going out under a fares-only decision.
 
-The build loads the national timetable, so the clearance that matches it is
-`fares,timetable` — deliberately wider than a fares-only decision, because the
-pages now show times and changes. If §5 of the Darwin schedule is confirmed to
-forbid publishing the timetable, the fix is to stop loading it and clear `fares`
-alone: `--timetable` is optional, the builder already renders a prices-only page
-that says so, and the journey columns go while the product stays (ADR-0021).
+The build no longer loads the national timetable, so the clearance that matches
+it is `fares`. That was the deliberate choice the fares-only shape exists for: if
+§5 of the Darwin schedule is read as forbidding publication — which is this
+project's reading, and the safe one until RDG answers in writing — the fix is to
+stop loading the timetable and clear `fares` alone. `--timetable` is optional,
+the builder renders a prices-only page that says so, and the journey columns go
+while the product stays (ADR-0021). Putting the times back means answering §5
+first, which is what the RDG letter at `docs/rdg-licence-enquiry.md` asks.
