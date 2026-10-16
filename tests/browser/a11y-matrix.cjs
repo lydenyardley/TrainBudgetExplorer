@@ -227,15 +227,15 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       scheme === "light" ? isLight(painted) : !isLight(painted),
       painted
     );
-    // The credit is NRE's mark reversed onto a dark plate, painted by the
+    // The credit is NRE's mark painted white onto a dark plate, painted by the
     // page's own stylesheet rather than by editing the artwork, and the plate is
     // the same in both palettes. Legibility is therefore not a thing to argue
     // from the CSS: the guidelines require the logo to be legible, so the
     // painted ink is measured against the plate it is painted on, in each
     // scheme, and the plate is measured against the page it sits on. Reading it
     // off the computed style is what makes this a check of the page: drop the
-    // rule that reverses the mark and the ink falls back to the file's own
-    // #2E2D7F, which on a dark plate is 1.4:1 and fails here.
+    // rule that sets the ink and it falls back to the file's own #2E2D7F, which
+    // on a dark plate is 1.4:1 and fails here.
     // Read from the page rather than from the credit read further down, so
     // this does not depend on which half of the matrix runs first.
     if (await page.locator(".nre-credit").count()) {
@@ -245,7 +245,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         // whatever is behind it. Not a regex over the computed string, because
         // the border here is a color-mix() with an alpha in it, and the browser
         // reports such a colour in a notation whose numbers are not channels --
-        // color(srgb .8 .84 1 / .22) rather than rgba(205, 214, 255, .22). A
+        // color(srgb 1 1 1 / .22) rather than rgba(255, 255, 255, .22). A
         // checker that reads the numbers out of that string reads 0.8 as a
         // channel and measures a colour nobody is looking at.
         const probe = document.createElement("canvas");
@@ -727,7 +727,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   // Rail Enquiries" logo and a link to NRE's site, placed underneath the
   // information the feed supplied, so all three are read here rather than
   // assumed from the markup: the mark must be visible, must be legible (it is
-  // dark blue on a fixed fill, so the dark palette could swallow it), and must
+  // white on a fixed dark fill, so the light palette could swallow it), and must
   // carry a name a screen reader reads, because the mark is paths.
   const credit = await page.evaluate(() => {
     const node = document.querySelector(".nre-credit");

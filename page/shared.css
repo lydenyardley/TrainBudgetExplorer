@@ -37,22 +37,18 @@
        kind of text to 4.5:1; #8f5f00 is 4.94:1 on that tint and 5.52:1 on
        white, and the dark value already cleared it. */
     --warn: #8f5f00; --warn: light-dark(#8f5f00, #f0b35b);
-    /* The NRE credit, reversed. The file in assets/ is NRE's own, byte for
-       byte; the reversal is applied here rather than by editing the artwork,
-       because an edited file stops being the file the brand supplied and
-       nothing downstream could tell. The mark is painted in a light rendering
-       of NRE's blue on a deep plate of the same blue, which is what makes the
-       credit read as a designed chip rather than a white box in a dark footer.
-       The plate is dark in both palettes, so the mark looks the same either
-       way and its contrast does not have to be re-earned per theme.
-
-       This is a judgement call, not a licence finding: NRE's pack ships no
-       reversed asset, and their developer page says brand materials are
-       subject to their permission, so a reversed rendering is recorded as an
-       open question in licences/release-clearance.md. Taking these two tokens
-       and the rule at the bottom of this block out, and giving .nre-logo a
-       light background, puts NRE's own colours back. */
-    --nre-plate: #141b3d; --nre-ink: #cdd6ff;
+    /* The NRE credit. The file in assets/ is NRE's own, byte for byte; the
+       ink is set here rather than by editing the artwork, because an edited
+       file stops being the file the brand supplied and nothing downstream
+       could tell. The mark is painted white on a deep plate, and white is one
+       of the three colours the Developer Brand Guidelines permit -- "The
+       National Rail logo should only be used in blue, black or white" -- so
+       this is the guidelines' own rendering. The pale blue it replaces
+       ('#cdd6ff') was none of the three, and stood in the record as a
+       rendering NRE had not approved. The plate is dark in both palettes, so
+       the mark looks the same either way and its contrast does not have to be
+       re-earned per theme. */
+    --nre-plate: #141b3d; --nre-ink: #ffffff;
     --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); --h1: clamp(2rem, 7vw, 7rem);
   }
   /* The reader's choice, which beats the system preference: the tokens are
@@ -252,7 +248,7 @@
      route: a quiet rule above, 44px of touch target for a phone. The height is
      on the anchor itself, not only on a container around it -- a nav that is
      44px tall with a 24px link in it is not a 44px target (C25). */
-  /* The NRE "Powered by" mark, reversed onto a dark plate: see --nre-plate.
+  /* The NRE "Powered by" mark, painted white on a dark plate: see --nre-plate.
      The artwork keeps its own fill, and this paints over it, so the file in
      assets/ is still exactly what NRE supplied. The !important is not
      decoration: Illustrator wrote fill:#2E2D7F into a style attribute on each
