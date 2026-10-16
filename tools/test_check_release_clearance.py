@@ -2,12 +2,12 @@
 
 The gate's whole job is to refuse, so the tests are about refusal. The one that
 matters most is the shipped record: `licences/release-clearance.md` clears the
-DTD fares route and refuses the Darwin timetable schedule, and a test that let
-its shape drift -- a wider `--release` quietly passing, or a narrower one refused
--- would turn a documented decision into a silent one, which is the exact shape
-of the finding this gate closes. The record also clears the privacy contact,
-which is not a licence, and the tests below hold that clearing it alone never
-cleared a release.
+DTD fares route and the publishable timetable schedule, and refuses Darwin's, and
+a test that let its shape drift -- a wider `--release` quietly passing, or a
+narrower one refused -- would turn a documented decision into a silent one,
+which is the exact shape of the finding this gate closes. The record also clears
+the privacy contact, which is not a licence, and the tests below hold that
+clearing it alone never cleared a release.
 
 The other tests are the ways a clearance might be faked, each asked of the same
 function: an answer that is not a yes, a clearance that has expired, one dated in
@@ -49,10 +49,14 @@ RECORD = ROOT / "licences" / "release-clearance.md"
 #: a run six months from now does not read a record whose clearances have quietly
 #: expired, and it has to be at or after every date the record itself carries or
 #: the record's own clearance reads as future-dated. The privacy contact is dated
-#: 14 October 2026 and the DTD fares clearance 16 October 2026, so this day is the
-#: later of the two.
+#: 14 October 2026 and the DTD fares and NWR Schedule clearances 16 October 2026,
+#: so this day is the latest of them.
 TODAY = date(2026, 10, 16)
 DARWIN = "P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8"
+#: The timetable product a release may publish from. Two of them are filed, and
+#: they are the same document with Schedule 1 §5 set opposite ways, so a test
+#: that used either one for both is a test of nothing.
+NWR = "P-dbd92416-2f09-4f72-ad42-d53bbfec50f3"
 
 
 def cleared(block: str, **fields: str) -> str:
@@ -68,16 +72,28 @@ class ShippedRecordTest(unittest.TestCase):
     def setUp(self) -> None:
         self.text = RECORD.read_text(encoding="utf-8")
 
-    def test_the_shipped_record_clears_fares_and_refuses_the_timetable(self) -> None:
+    def test_the_shipped_record_clears_both_shapes_the_gate_knows(self) -> None:
         # The record's shape is a decision: the DTD fares route is cleared
-        # against the filed portal terms, and the Darwin timetable schedule is
-        # excluded, so a release that publishes fares passes and one that also
-        # publishes times is refused. Both halves are asserted, because a record
-        # that passed the wider shape would publish the times the exclusion
-        # exists to hold back.
+        # against the filed portal terms, and the times are cleared from NWR
+        # Schedule, whose §5 permits distribution. Both shapes are asserted,
+        # because a record that refused the wider one would leave the
+        # publishable timetable cleared on paper and inert in practice.
         self.assertEqual(clearance_problems(self.text, releasing=["fares"], today=TODAY), [])
-        wider = clearance_problems(self.text, releasing=["fares", "timetable"], today=TODAY)
-        self.assertTrue(any(DARWIN in problem for problem in wider), wider)
+        self.assertEqual(
+            clearance_problems(self.text, releasing=["fares", "timetable"], today=TODAY), []
+        )
+
+    def test_the_record_still_excludes_the_darwin_schedule(self) -> None:
+        # The two timetable licences are the same document with §5 opposite, so
+        # the exclusion is what keeps the reading binding: a release that
+        # published from Darwin's would be refused by the gate's own section
+        # check, and the section has to say so rather than be deleted once the
+        # times had a lawful source.
+        fields = next(
+            fields for heading, fields in parse_sections(self.text).items() if DARWIN in heading
+        )
+        self.assertEqual(fields.get("state"), "excluded")
+        self.assertTrue(fields.get("reason", "").strip())
 
     def test_the_report_only_mode_needs_nothing_cleared(self) -> None:
         # The shape of the question matters: a run that publishes nothing is
@@ -149,6 +165,15 @@ class ClearanceTest(unittest.TestCase):
     def test_a_real_clearance_passes(self) -> None:
         self.assertEqual(clearance_problems(self._record(), releasing=["fares"], today=TODAY), [])
 
+    def test_a_timetable_release_needs_the_publishable_schedule_cleared(self) -> None:
+        # Every product this record does not clear is excluded, so the wider
+        # shape is refused on the timetable product itself: NWR Schedule, whose
+        # §5 permits distribution and not Darwin's, whose §5 does not.
+        problems = clearance_problems(
+            self._record(), releasing=["fares", "timetable"], today=TODAY
+        )
+        self.assertTrue(any(NWR in problem and "excluded" in problem for problem in problems))
+
     def test_an_answer_that_is_not_yes_is_a_refusal(self) -> None:
         # "unknown", "probably" and a blank are the same to this gate, which is
         # the point: a licence nobody has read cannot be cleared by saying so.
@@ -200,13 +225,16 @@ class DigestTest(unittest.TestCase):
     """A clearance is made from a licence file, and does not outlive it."""
 
     def test_a_marketplace_clearance_must_name_the_licence_it_read(self) -> None:
-        pdf = product_digests()[DARWIN]
+        # NWR Schedule, because it is the timetable product a release clears
+        # through: a clearance with the right words and no digest would publish
+        # whatever file happened to sit under that name.
+        pdf = product_digests()[NWR]
         text = (
-            f"## {DARWIN}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
+            f"## {NWR}\n\n- state: cleared\n- answer: yes\n- read on: 2026-09-20\n"
             "- approved by: a person\n- approved on: 2026-09-21\n- expires: 2027-03-21\n"
         )
         for product in products():
-            if product != DARWIN:
+            if product != NWR:
                 text += f"\n## {product}\n\n- state: excluded\n- reason: not used\n"
         self.assertTrue(clearance_problems(text, releasing=["fares", "timetable"], today=TODAY))
 
@@ -323,12 +351,14 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(needed, [DTD, PRIVACY])
 
-    def test_a_release_with_the_timetable_needs_the_darwin_licence_too(self) -> None:
+    def test_a_release_with_the_timetable_needs_the_publishable_schedule_too(self) -> None:
         # This is the check that stops a fares-only decision being read as
-        # permission to publish the times as well.
+        # permission to publish the times as well, and it names the schedule a
+        # release may publish from rather than the one beside it in the shelf.
         needed, problems = products_needed(["fares", "timetable"])
         self.assertEqual(problems, [])
-        self.assertEqual(sorted(needed), sorted([DTD, DARWIN, PRIVACY]))
+        self.assertEqual(sorted(needed), sorted([DTD, NWR, PRIVACY]))
+        self.assertNotIn(DARWIN, needed)
 
     def test_every_release_that_publishes_anything_needs_the_privacy_contact(self) -> None:
         # Every route promises its reader that somebody is at the end of the
@@ -361,13 +391,12 @@ class RecordShapeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(main(["--record", str(Path(tmp) / "nope.md"), "--release", "fares"]), 1)
 
-    def test_the_shipped_record_passes_fares_and_refuses_the_timetable(self) -> None:
+    def test_the_shipped_record_passes_both_shapes(self) -> None:
         # `main` runs against `date.today()`, so this is the record read as a
-        # publish job reads it. The fares shape is cleared and the wider shape is
-        # not: the Darwin schedule is excluded, and the shape the workflow
-        # publishes is the one that must match it.
+        # publish job reads it. Both shapes are cleared, and the workflow's own
+        # shape is held to the flags its build step passes by the test below.
         self.assertEqual(main(["--record", str(RECORD), "--release", "fares"]), 0)
-        self.assertEqual(main(["--record", str(RECORD), "--release", "fares,timetable"]), 1)
+        self.assertEqual(main(["--record", str(RECORD), "--release", "fares,timetable"]), 0)
 
     def test_a_missing_release_shape_does_not_clear_anything(self) -> None:
         # The dangerous flag is the absent one. An empty scope requires nothing
@@ -496,6 +525,21 @@ class WorkflowTest(unittest.TestCase):
             "the build step and the --release the gate is given disagree about the "
             "national timetable; the clearance would clear a release it does not describe",
         )
+
+    def test_the_journey_check_reads_the_pages_the_way_the_shape_declares(self) -> None:
+        # The workflow states its shape three times, and the third is the only one
+        # that reads the artefact: the assemble job's journey check. Its sense has
+        # to be the declared one, because a page that lost its timetable looks
+        # exactly like a page whose release never had one -- so a release that
+        # declares times and ships none is caught here or nowhere.
+        declared = re.search(r"tools\.check_release_clearance --release ([\w,]+)", self.workflow)
+        self.assertIsNotNone(declared, "the clearance step passes no --release")
+        if "timetable" in declared.group(1):
+            self.assertIn('elif found.group(1) != "true":', self.workflow)
+            self.assertIn("these station pages carry no journey times", self.workflow)
+        else:
+            self.assertIn('elif found.group(1) != "false":', self.workflow)
+            self.assertIn("these station pages carry journey times", self.workflow)
 
 
 def _write_manifest(folder: Path) -> None:

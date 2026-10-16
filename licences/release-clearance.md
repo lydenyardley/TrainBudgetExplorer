@@ -1,7 +1,8 @@
 # Release clearance
 
-**The DTD fares route is cleared and the Darwin timetable schedule is not, and
-the deploy workflow is gated on both.** The privacy contact — a promise a person
+**The DTD fares route is cleared, and so is the timetable a release may publish
+from: NWR Schedule, whose Schedule 1 §5 permits distribution. Darwin's timetable
+schedule is not, and stays excluded.** The privacy contact — a promise a person
 keeps rather than a term anyone read — is cleared too, and the [section
 below](#privacy-contact) holds the date it was confirmed and by whom. This file
 is the record the gate reads, and it is edited in a pull request by a person who
@@ -52,10 +53,11 @@ have passed the same build the audit found.
 A clearance is **scoped to a product**, and a release declares what it publishes
 (`--release fares`, `--release fares,timetable`). The fares build in
 `.github/workflows/deploy.yml` reads only the fares feed, so a fares-only
-clearance is enough to publish it. Adding `--timetable` to that build demands a
-timetable clearance this project has not got — which is how the "internal
-business purposes only" reading stays binding instead of being a note somebody
-skips.
+clearance is enough to publish it. Adding `--timetable` to that build demands the
+publishable schedule's clearance as well, which is NWR Schedule's and not
+Darwin's — and the exclusion on Darwin's stays in the record either way, which is
+how the "internal business purposes only" reading remains binding instead of
+becoming a note somebody skips.
 
 Two things a clearance is not, and the tool is built so it cannot be fooled by
 either:
@@ -150,12 +152,13 @@ slots today. It costs one inlined mark on the two routes and ends the question
 instead of holding a reading about it. Anyone who would rather not hold the
 reading should take that option and delete this paragraph.
 
-**What this clearance does not cover.** Times. A page that showed arrival or
-departure times would raise the "forecasted" question, and whether a static
-scheduled time is "forecasted" in the terms' sense is a reading this project has
-not taken. The national timetable is not published, and the Darwin timetable
-product schedule is excluded below for that reason. Putting the times back means
-answering that question, or RDG's §5.
+**What this clearance does not cover.** Times, and it does not need to. A page
+that showed arrival or departure times from this feed would raise the terms'
+"forecasted" question, and whether a static scheduled time is "forecasted" in
+their sense is a reading this project has not taken. The times have a source of
+their own and a clearance of their own below — NWR Schedule, read on 16 October
+2026 — so a page with times on it is not publishing from this feed and the
+reading here holds rather than being stretched.
 
 The registration is in scope too, and it is the one thing no document here can
 show. The portal asks what the data is for and where it will be used, and the
@@ -231,9 +234,10 @@ Anyone who stops reading the tracker sets `state: excluded` again, and the gate
 refuses a release on the line, because refusing is the safe direction.
 
 This is one of the two products that are not a filed licence. [`dtd`](#dtd) is
-the other, and it is cleared against the filed portal terms — but only for a
-prices-only release, so this section and that one together clear `--release
-fares` and nothing wider.
+the other, and it is cleared against the filed portal terms. Both are required by
+every shape that publishes anything, and neither of them is what decides whether
+the times may go out: that is the timetable product's own section below, which is
+NWR Schedule's and not Darwin's.
 
 ## P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8
 
@@ -249,9 +253,13 @@ prices-only mode that says so.
 
 ## P-dbd92416-2f09-4f72-ad42-d53bbfec50f3
 
-- state: excluded
-- reason: filed 16 October 2026 and not published from yet — the build still reads the DTD timetable and the pages carry no times, so nothing needs this product cleared and nothing may publish it on the strength of a reading alone
-# once cleared, also add: - licence digest: da1281583a1b383c459cc07177d89bc7f24a67a7d97e5cf645b826562fd7c0a6
+- state: cleared
+- answer: yes
+- read on: 2026-10-16
+- approved by: Lyden Yardley
+- approved on: 2026-10-16
+- expires: 2027-10-16
+- licence digest: da1281583a1b383c459cc07177d89bc7f24a67a7d97e5cf645b826562fd7c0a6
 
 NWR Schedule, Network Rail's own CIF timetable, filed in this folder on 16 October
 2026 and read the same day. It is the counterpart to the exclusion above: the same
@@ -280,12 +288,29 @@ document, with the §5 field saying the opposite.
   the non-chargeable limit both blank and the update frequency daily. Permitted
   recipients are "All registered users".
 
-**What clearing it would take.** Three things, and none of them is this paragraph:
-the build reading this product instead of the DTD timetable URL, a filter for the
-freight, empty-stock and non-public calls that a raw Network Rail CIF carries and the
-DTD feed arrives without, and the OGL line on the page. Then `state` becomes `cleared`
-with the digest above, `read on`, `approved by` and `approved on` filled in — those
-fields are the owner's, and no tool or agent in this repository can supply them.
+**The three things clearing it took, all of them done by 16 October 2026.** The build
+can read this product rather than the DTD timetable: `schedule_download.py` fetches the
+whole CIF from a URL and `atoc_timetable` reads it whole (ADR-0073). The freight,
+empty-stock and parcels schedules a raw CIF carries are filtered on the CIF's own code
+tables, because the DTD product is filtered before it is published and this one is not.
+And the OGL line above is already on every page the release serves
+(`--notices nre,rdg,ogl,accuracy`), so nothing new had to be written for it.
+
+**What this clearance does and does not do.** It is what puts a time on a page. The
+release in `.github/workflows/deploy.yml` fetches the CIF with `schedule_download` into
+`feeds/nwr-schedule/`, builds the whole network with `--timetable` and no `--date`, and
+declares `--release fares,timetable` to the gate. What it does not do is make a time
+correct, complete, or a booking; it makes it publishable, which is the only question a
+licence can answer. The delivery route was settled the same day as the clearance and
+the credential lives in the repository's secrets, never in this file.
+
+**The decision.** `state` is `cleared` and `answer` is `yes` on the reading recorded
+here: §5 names distribution as the purpose, §8 names no organisation so the OGL
+fallback sentence is the statement the page owes, and §7 confines the exercise of
+those rights to the UK, which is where the journeys the page offers begin and end.
+The two fields a reading cannot supply - `approved by` and `approved on` - were given
+by the owner on 16 October 2026. The clearance runs to 2027-10-16, the licence's
+one-year auto-renewing term, and the digest above is the copy filed in this folder.
 
 ## P-51e17973-7327-4735-a7ca-d2a484a56065
 

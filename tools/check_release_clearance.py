@@ -41,10 +41,11 @@ can clear a product:
 - The clearance is **scoped**. A release declares which products it publishes
   (``--release fares``) and the tool fails if any of them is not cleared. This is
   the part that stops a narrow decision from quietly authorising a wide release:
-  the Darwin timetable is licensed "internal business purposes only", and the
-  project has already decided the timetable is the degradable product, so a
-  fares-only release can be cleared and published while the times stay switched
-  off. Adding ``--timetable`` to the build demands a clearance nobody has.
+  the fares-only release publishes nothing from a timetable, so a fares-only
+  decision clears it, and a release that loads a timetable needs the *publishable*
+  schedule's clearance -- NWR Schedule's -- and not only the one above it. The
+  Darwin schedule stays excluded, so its "internal business purposes only"
+  reading holds even though a clearance that permits the times now exists.
 - Nothing here reads the attribution wording as permission. A page can carry
   every required credit and still be a page nobody has cleared.
 
@@ -105,11 +106,12 @@ SHAPES = {
 def products_needed(releasing: list[str], folder: Path = LICENCES) -> tuple[list[str], list[str]]:
     """The licences a release of this shape publishes, and the reasons it cannot be mapped.
 
-    The published build reads only the fares feed, and the fares feed comes from
-    the DTD subscription. Add the national timetable -- which is what the Darwin
-    product schedule is for, and whose §5 this project reads as internal-only --
-    and the Darwin clearance is required too, which nobody holds. That is the
-    mapping which stops a narrow decision authorising a wide release.
+    The published build reads the fares feed, which comes from the DTD
+    subscription. Add the national timetable and the schedule a release may
+    publish it from is required as well: NWR Schedule's, which §5 permits
+    distribution from, and not Darwin's, whose §5 this project reads as
+    internal-only and which stays excluded. That is the mapping which stops a
+    narrow decision authorising a wide release.
     """
     shape = tuple(sorted(releasing))
     if shape not in SHAPES:
@@ -138,10 +140,13 @@ def products_needed(releasing: list[str], folder: Path = LICENCES) -> tuple[list
 
 STATES = ("cleared", "excluded")
 
-# The Darwin timetable product schedule, identified by the document it is rather
-# than by a product id, so renaming the file cannot quietly point the gate at a
-# different licence. No such document is a refusal, not a shrug.
-TIMETABLE_GLOB = "Darwin-timetable-license-*.pdf"
+# The timetable schedule a release may publish from, identified by the document
+# it is rather than by a product id, so renaming the file cannot quietly point
+# the gate at a different licence. Two such products are filed: this one, whose
+# §5 permits distribution, and Darwin's, whose §5 this project reads as
+# internal-only and which is excluded below. No such document is a refusal, not
+# a shrug.
+TIMETABLE_GLOB = "NWR-Schedule-*.pdf"
 
 # The answer that clears a product. Anything else -- "unknown", "probably", a
 # blank, a sentence -- is a refusal, which is the only safe reading of a licence

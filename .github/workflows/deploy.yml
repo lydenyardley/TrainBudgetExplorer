@@ -15,6 +15,15 @@
 # pass. Add NRDP_USERNAME and NRDP_PASSWORD as repository secrets before enabling
 # the schedule; they are never written to the manifest or logs.
 #
+# The timetable the pages carry comes from a second product on a second host:
+# Network Rail's own CIF under the Open Government Licence, whose Schedule 1 §5
+# permits distribution where the DTD timetable's forbids it (ADR-0073). Set the
+# repository variable SCHEDULE_URL to that file's address, and, if the address
+# wants one, SCHEDULE_USERNAME and SCHEDULE_PASSWORD as secrets, before enabling
+# the schedule or pushing: the release declares `fares,timetable`, so a run
+# without a reachable CIF stops at the download rather than publishing prices
+# under a shape it no longer builds.
+#
 # The scheduled run is UTC 03:17 daily. GitHub may delay scheduled jobs, but
 # a failed audit prevents publication rather than deploying questionable data.
 #
@@ -133,6 +142,36 @@ jobs:
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: python dtd_download.py --output-root feeds
 
+      - name: Download the timetable the release publishes from
+        # A second product, a second licence and a second host: Network Rail's
+        # own CIF under the Open Government Licence, whose §5 permits
+        # distribution where the DTD timetable's forbids it (ADR-0073). The
+        # pages carry times from this file and no longer from the DTD timetable,
+        # which stays only because the audits below read the download the portal
+        # actually served.
+        #
+        # It is fetched in every job that holds the feeds, for the reason the DTD
+        # step is: an artifact of a public repository is downloadable by anyone
+        # signed in, and this is licensed material.
+        #
+        # `schedule_download` refuses an empty URL, and refuses anything that
+        # arrives and is not a schedule, rather than letting a web page become a
+        # timetable with no journeys in it. The credential it reads comes from
+        # the environment and never from this file.
+        env:
+          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+        run: |
+          if [ -z "$SCHEDULE_URL" ]; then
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL, plus SCHEDULE_USERNAME and SCHEDULE_PASSWORD if the address wants a credential, in the repository settings; or point the build at no timetable and declare `--release fares` again."
+            exit 1
+          fi
+          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
+          # The file's own identity, in a form another job can compare. The
+          # path is the same in every job, so these lines are too.
+          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
+
       - name: Download the Knowledgebase reference feeds
         # A separate step, and a tolerant one, on purpose. These are a
         # different subscription from the DTD fares and timetable, so the same
@@ -176,9 +215,18 @@ jobs:
           # feed every single day, and rebuild, retest and republish the
           # identical site every single day.
           CURRENT=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)
+          SCHEDULE=$(cat feeds/nwr-schedule.sha256)
           PREVIOUS=""
+          PREVIOUS_SCHEDULE=""
           if [ -f .feed-state/download-manifest.json ]; then
             PREVIOUS=$(python dtd_download.py --print-fingerprint .feed-state/download-manifest.json)
+          fi
+          # The OGL timetable has a second publisher and a second update clock, so
+          # a day the portal answered 304 for the DTD feeds is not evidence that
+          # this one stood still. Without this, a CIF that moved would keep
+          # publishing yesterday's times until something else triggered a build.
+          if [ -f .feed-state/nwr-schedule.sha256 ]; then
+            PREVIOUS_SCHEDULE=$(cat .feed-state/nwr-schedule.sha256)
           fi
           # Only the daily schedule may skip. A push or a manual run always
           # builds: a push is a change someone made, and a manual run is someone
@@ -189,7 +237,7 @@ jobs:
           if [ "$EVENT" != "schedule" ]; then
             echo "A $EVENT run always builds."
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
+          elif [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -n "$PREVIOUS_SCHEDULE" ] && [ "$SCHEDULE" = "$PREVIOUS_SCHEDULE" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
             echo "Feeds and build inputs are unchanged; keeping the existing site."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -203,16 +251,19 @@ jobs:
         id: feed_fingerprint
         run: echo "value=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Name the DTD download the gates audit
+      - name: Name the downloads the gates audit
         # The shard and assemble jobs download the feeds again and must hold
-        # this same fares and timetable download, or stop.
+        # this same fares, DTD timetable and OGL timetable, or stop.
         id: audited_feed
         shell: bash
         run: |
           VALUE=$(python - <<'PY'
-          # The DTD fares and timetable only: the tolerant Knowledgebase download
-          # shares the manifest, and may differ between jobs without changing a fare.
-          # The bytes, not the download time: each job downloads at its own minute.
+          # The DTD fares and timetable, plus the OGL timetable the release
+          # publishes its times from. The tolerant Knowledgebase download shares
+          # the manifest and may differ between jobs without changing a fare, so
+          # it stays out. The bytes, not the download time: each job downloads at
+          # its own minute. A missing timetable identity prints nothing, which
+          # the caller refuses rather than reading as agreement.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
@@ -221,7 +272,9 @@ jobs:
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
+          schedule_path = Path("feeds/nwr-schedule.sha256")
+          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$VALUE" ]; then
@@ -324,11 +377,15 @@ jobs:
         # here. Anything else outside the band fails this step and names
         # itself.
         #
+        # The timetable it reads is the OGL CIF the pages are timed from, not the
+        # DTD timetable beside it in feeds/: a rate divided by a journey the page
+        # does not show is the same defect one step further from the reader.
+        #
         # Cost is two feeds and one timetable parse, measured at 112s on the
         # real feed at this checkout, which is why it runs before the build
         # rather than after it -- a refusal here costs a parse and a refusal
         # after the build costs both.
-        run: python -m tools.check_fare_rate --feed feeds/fares/dtd-fares.zip --timetable feeds/timetable
+        run: python -m tools.check_fare_rate --feed feeds/fares/dtd-fares.zip --timetable feeds/nwr-schedule
 
 
   # The whole-network build, split across runners. One runner wrote 1,821 of
@@ -368,6 +425,23 @@ jobs:
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: python dtd_download.py --output-root feeds
 
+      - name: Download the timetable the release publishes from
+        # The same licensed file the build job fetched, for the same reason: it
+        # is published material and does not travel as an artifact. The step
+        # below refuses a download the gates did not audit, and the timetable's
+        # own identity is part of what it compares, so this has to run before it.
+        env:
+          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+        run: |
+          if [ -z "$SCHEDULE_URL" ]; then
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
+            exit 1
+          fi
+          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
+          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
+
       - name: Refuse a download the gates did not audit
         # The portal can republish between jobs. Every gate above ran on the
         # build job's download, so a job holding a different one stops here
@@ -378,9 +452,12 @@ jobs:
         shell: bash
         run: |
           HERE=$(python - <<'PY'
-          # The DTD fares and timetable only: the tolerant Knowledgebase download
-          # shares the manifest, and may differ between jobs without changing a fare.
-          # The bytes, not the download time: each job downloads at its own minute.
+          # The DTD fares and timetable, plus the OGL timetable the release
+          # publishes its times from. The tolerant Knowledgebase download shares
+          # the manifest and may differ between jobs without changing a fare, so
+          # it stays out. The bytes, not the download time: each job downloads at
+          # its own minute. A missing timetable identity prints nothing, which
+          # the caller refuses rather than reading as agreement.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
@@ -389,7 +466,9 @@ jobs:
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
+          schedule_path = Path("feeds/nwr-schedule.sha256")
+          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$AUDITED" ]; then
@@ -424,14 +503,13 @@ jobs:
         # bytes read as the same feed, and nothing else.
         run: find feeds -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
 
-      - name: Build the site from audited fares
-        # Prices and conditions, not journey times. The national timetable is
-        # not loaded: publishing times computed from a static schedule raises
-        # the "forecasted arrival and departure times" condition in the portal
-        # terms, and this project has not taken the reading that a scheduled
-        # time is "forecasted" (licences/release-clearance.md, ADR-0021). So
-        # the release is prices-only, and the page's own opening sentence says
-        # so rather than promising times it cannot show.
+      - name: Build the site from audited fares and the publishable timetable
+        # Prices, conditions and journey times. The times come from Network
+        # Rail's own CIF under the Open Government Licence, not from the DTD
+        # timetable: the DTD terms' "forecasted arrival and departure times"
+        # condition is a condition on a page built from that product, and this
+        # one is built from another, whose §5 permits distribution (ADR-0073,
+        # licences/release-clearance.md).
         #
         # A real-feed build is refused unless it carries a licence notice and a
         # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit).
@@ -505,12 +583,13 @@ jobs:
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
           fi
-          # The fares feed is the public price source, and it is the only feed
-          # this release publishes from. The national timetable stays out, so
-          # the pages carry prices and no journey times, and there is no --date
-          # either: a build with no times has no service day to report, and a
-          # date would be a claim it cannot back (the prices-only shape build
-          # below is built the same way).
+          # The fares feed is the public price source and the OGL CIF the step
+          # above fetched is the timetable. There is still no --date, and its
+          # reason is now the product's rather than the licence's: a release
+          # covers the whole network on every day the feed carries, so the page
+          # reports aggregate schedules and the day control filters them. A
+          # build fixed to one day would be a claim about that day, and S24 in
+          # docs/open-work.md is the decision that would make it a mode.
           # Every priced station, not one of them. The release answers the
           # product's premise -- where can we go from anywhere -- so a reader
           # who arrives from any station finds a page there. The root is the
@@ -528,6 +607,7 @@ jobs:
           # and caps the answer at the largest count measured to finish.
           python build_demo_page.py \
             --feed feeds/fares \
+            --timetable feeds/nwr-schedule \
             --knowledgebase feeds/knowledgebase \
             --all-origins \
             --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
@@ -569,6 +649,23 @@ jobs:
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: python dtd_download.py --output-root feeds
 
+      - name: Download the timetable the release publishes from
+        # The same licensed file the build job fetched, for the same reason: it
+        # is published material and does not travel as an artifact. The step
+        # below refuses a download the gates did not audit, and the timetable's
+        # own identity is part of what it compares, so this has to run before it.
+        env:
+          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+        run: |
+          if [ -z "$SCHEDULE_URL" ]; then
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
+            exit 1
+          fi
+          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
+          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
+
       - name: Refuse a download the gates did not audit
         # The portal can republish between jobs. Every gate above ran on the
         # build job's download, so a job holding a different one stops here
@@ -579,9 +676,12 @@ jobs:
         shell: bash
         run: |
           HERE=$(python - <<'PY'
-          # The DTD fares and timetable only: the tolerant Knowledgebase download
-          # shares the manifest, and may differ between jobs without changing a fare.
-          # The bytes, not the download time: each job downloads at its own minute.
+          # The DTD fares and timetable, plus the OGL timetable the release
+          # publishes its times from. The tolerant Knowledgebase download shares
+          # the manifest and may differ between jobs without changing a fare, so
+          # it stays out. The bytes, not the download time: each job downloads at
+          # its own minute. A missing timetable identity prints nothing, which
+          # the caller refuses rather than reading as agreement.
           import hashlib, json
           from pathlib import Path
           import dtd_download as d
@@ -590,7 +690,9 @@ jobs:
               for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
               if e.get("name") in ("fares", "timetable")
           ]
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest() if rows and all(r["sha256"] for r in rows) else "")
+          schedule_path = Path("feeds/nwr-schedule.sha256")
+          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
+          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
           PY
           )
           if [ -z "$AUDITED" ]; then
@@ -633,10 +735,14 @@ jobs:
         # build and the publish cannot pass unnoticed.
         #
         # And it checks the page is the shape this workflow declares. The
-        # release is prices-only, so no station page may carry journey times: a
-        # build that quietly loaded a timetable -- or a `--timetable` left in
-        # the flags -- would ship times under a clearance that names `fares`
-        # alone, which is the one thing the clearance gate itself cannot see.
+        # release publishes times, so every station page must carry them: a
+        # build that lost its `--timetable`, or a page that silently answered
+        # nowhere for every station, would ship a release whose opening sentence
+        # promises times it does not show. This is the third place the shape is
+        # stated -- the build's flags, the clearance job's `--release`, and here
+        # -- and the only one that reads the artefact. The test in
+        # tools/test_check_release_clearance.py holds the first two together;
+        # this holds the pages to them, which is the half no test can see.
         run: |
           if [ ! -s _site/release-manifest.json ]; then
             echo "::error title=release manifest::the build wrote no _site/release-manifest.json, so the routes this release serves are not stated anywhere"
@@ -649,12 +755,12 @@ jobs:
             echo "::error title=release manifest::the manifest names $ROUTES route(s) but the folder holds $PAGES page(s), so the release and the artifact disagree"
             exit 1
           fi
-          # The workflow publishes prices only, so no station page may carry
-          # journey times. Read as JSON rather than grepped, because the payload
-          # is minified and a pattern written with a space after the colon would
-          # match nothing at all. And the empty case fails: a glob that matches
-          # no page would otherwise report nothing wrong and pass, which is the
-          # one outcome a gate must never produce.
+          # The workflow publishes times, so every station page must carry them.
+          # Read as JSON rather than grepped, because the payload is minified and
+          # a pattern written with a space after the colon would match nothing at
+          # all. And the empty case fails: a glob that matches no page would
+          # otherwise report nothing wrong and pass, which is the one outcome a
+          # gate must never produce.
           JOURNEYS=$(python - <<'PY'
           import glob, re, sys
 
@@ -662,22 +768,22 @@ jobs:
           if not pages:
               print("no station pages were written, so there is nothing to check")
               sys.exit(2)
-          carrying = []
+          missing = []
           for path in pages:
               text = open(path, encoding="utf-8").read()
               found = re.search(r'"hasJourneys":\s*(true|false)', text)
               if not found:
-                  carrying.append(path + " (no hasJourneys field at all)")
-              elif found.group(1) != "false":
-                  carrying.append(path + " (hasJourneys is true)")
-          print(" ".join(carrying))
+                  missing.append(path + " (no hasJourneys field at all)")
+              elif found.group(1) != "true":
+                  missing.append(path + " (hasJourneys is false)")
+          print(" ".join(missing))
           PY
           ) || { echo "::error title=journeys::the journey check could not run, so this build's shape is unverified"; exit 1; }
           if [ -n "$JOURNEYS" ]; then
-            echo "::error title=journeys::these station pages carry journey times, so this build published a timetable under a workflow cleared for fares alone: $JOURNEYS. The release is prices-only; loading the timetable again needs a Darwin clearance first."
+            echo "::error title=journeys::these station pages carry no journey times, so this build published prices under a workflow that declares the timetable: $JOURNEYS. The release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073); load the timetable in the build above, or declare `--release fares` again and build without it."
             exit 1
           fi
-          echo "no station page carries journey times, as the fares-only release declares"
+          echo "every station page carries journey times, as the fares-and-timetable release declares"
 
       - name: Check the fare pages carry the source credit
         # The terms require the publisher to acknowledge NRE as the source, and
@@ -743,14 +849,15 @@ jobs:
         #
         # There are two fractions, one per page shape, since 16 October 2026.
         # A page with no timetable cannot run the checks about times, days,
-        # journeys and splits, and the prices-only release this workflow
-        # publishes is made of pages of exactly that shape: held to the
-        # timetable's 5% together, 467 of 6401 checks (7.3%) had no subject on
-        # pages that were otherwise full, which is a gate no licence decision
-        # could keep green. Each shape is measured against the pages of its own
-        # shape, so neither can excuse the other, and a run with no timetable
-        # page in it fails outright -- the demo and one-page builds below are
-        # what stop the times half of the suite going untested.
+        # journeys and splits: held to the timetable's 5% together, 467 of 6401
+        # checks (7.3%) had no subject on pages that were otherwise full, which
+        # is a gate no licence decision could keep green. The release publishes
+        # times again, so the prices-only shape is built below rather than
+        # published, and the second fraction is measured over those pages. Each
+        # shape is measured against the pages of its own shape, so neither can
+        # excuse the other, and a run with no timetable page in it fails
+        # outright -- the demo and one-page builds below are what stop the times
+        # half of the suite going untested.
         #
         # The site build above only runs when the feed changed, so on an
         # unchanged run there is no published page to drive and the suite runs
@@ -870,6 +977,7 @@ jobs:
         run: |
           mkdir -p .feed-state
           cp feeds/download-manifest.json .feed-state/download-manifest.json
+          cp feeds/nwr-schedule.sha256 .feed-state/nwr-schedule.sha256
           python -m tools.build_inputs --fingerprint > .feed-state/build-inputs.sha256
 
       - name: Save the successful feed manifest
@@ -877,6 +985,7 @@ jobs:
         with:
           path: |
             .feed-state/download-manifest.json
+            .feed-state/nwr-schedule.sha256
             .feed-state/build-inputs.sha256
           # Keyed on the feed FINGERPRINT, not on the manifest's bytes, so the
           # cache entry is replaced only when the feeds really are different.
@@ -930,12 +1039,13 @@ jobs:
           python-version: "3.12"
 
       - name: Check the release clearance
-        # `fares`, because the build above loads only the fares feed: the pages
-        # are prices-only, so no journey times are published and the Darwin
-        # product schedule -- which this project reads as internal business
-        # purposes only -- is never exercised. It is excluded in the record,
-        # not cleared: nothing is published from it, and its §5 question is what
-        # returning the times would have to answer first.
+        # `fares,timetable`, because the build above loads both: the prices from
+        # the DTD fares feed and the times from Network Rail's own CIF under the
+        # Open Government Licence, whose §5 permits distribution. The gate maps
+        # `timetable` to that product and not to Darwin's, which stays excluded
+        # in the record on its internal-business-purposes reason and is refused
+        # the moment a release claims times with no cleared source behind them
+        # (ADR-0073).
         #
         # The command also demands the privacy contact (§1's last row): a page
         # can clear every licence and still publish an address nobody has
@@ -946,7 +1056,7 @@ jobs:
         # `--timetable` would be a gate declaring a narrower release than the
         # one being published, the exact failure this gate exists to make
         # impossible.
-        run: python -m tools.check_release_clearance --release fares
+        run: python -m tools.check_release_clearance --release fares,timetable
 
   deploy:
     needs: [build, assemble, clearance]
