@@ -12,7 +12,7 @@
  *     node browser_test.cjs            # when playwright is installed locally
  *     node browser_test.cjs demo.html _site/index.html
  *     node browser_test.cjs _site/from          # sweep a published site
- *     node browser_test.cjs _site/from --max 20 # and stop after twenty
+ *     node browser_test.cjs _site/from --max 20 # and drive twenty of its pages
  *
  * Every expectation is read out of the page under test, so the suite is a
  * test of the template rather than of a station, and one run can sweep the
@@ -23,9 +23,13 @@
  * page of the run, in name order, which is how a whole published station set
  * is driven in one command. A page that names a file beyond itself -- the
  * shared station-picker asset -- has that file served from beside it, so the
- * picker is exercised the way a reader's browser would load it. --max bounds a sweep and says on stderr how many
- * pages it left out, because a run that quietly tested twenty of two thousand
- * has not tested the site.
+ * picker is exercised the way a reader's browser would load it. --max bounds
+ * the sweep, which is the directory, and says on stderr how many pages it left
+ * out, because a run that quietly tested twenty of two thousand has not tested
+ * the site. A page named on the command line is not part of the sweep and is
+ * always driven: the shapes a sweep cannot otherwise reach -- a one-origin
+ * release, a prices-only page -- are exactly the pages a command names, and
+ * 16 October 2026 was when the spread was found to be sampling them away.
  *
  * A path that is not a station page is the chooser at the site root, a
  * one-station release's root, or the privacy page. The chooser is driven like
@@ -37,8 +41,12 @@
  * read as a pass. A run in which too much of the suite had nothing to
  * exercise fails too: skips are reported, and a stated fraction of them is the
  * most a run may skip, so a fixture that has quietly stopped exercising the
- * page cannot look green. That fraction is the same in every mode, so a
- * single page and a sweep are held to one standard.
+ * page cannot look green. There are two of those fractions, because a page
+ * that carries no timetable cannot run the checks about times, days, journeys
+ * and splits while a page that carries one can: each shape is measured against
+ * the pages of that shape, so a prices-only sweep is not excused by a
+ * timetable page beside it, and a run with no timetable page in it fails as
+ * having tested the times half not at all.
  *
  * Exit codes: 0 every page checked behaves, 1 one does not, nothing was
  * checked, or the run skipped more than its budget, 2 playwright is

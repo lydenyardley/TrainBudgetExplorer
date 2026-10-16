@@ -741,6 +741,17 @@ jobs:
         # exercising the suite cannot read as a pass, which is what reporting
         # the number alone allowed.
         #
+        # There are two fractions, one per page shape, since 16 October 2026.
+        # A page with no timetable cannot run the checks about times, days,
+        # journeys and splits, and the prices-only release this workflow
+        # publishes is made of pages of exactly that shape: held to the
+        # timetable's 5% together, 467 of 6401 checks (7.3%) had no subject on
+        # pages that were otherwise full, which is a gate no licence decision
+        # could keep green. Each shape is measured against the pages of its own
+        # shape, so neither can excuse the other, and a run with no timetable
+        # page in it fails outright -- the demo and one-page builds below are
+        # what stop the times half of the suite going untested.
+        #
         # The site build above only runs when the feed changed, so on an
         # unchanged run there is no published page to drive and the suite runs
         # against the demo page alone -- rather than against a file that is
@@ -830,10 +841,17 @@ jobs:
           # build gets the demo site's date for the same reason the demo site
           # does.
           #
-          # They join the same sweep rather than running alone, because
-          # SKIP_BUDGET is measured across the whole sweep: a prices-only page
-          # on its own skips about 10% of the checks (every journey one), and
-          # the budget is a statement about the suite, not about one page.
+          # They join the run as named pages rather than as part of the sweep,
+          # which is what makes them reachable: --max bounds the swept
+          # directory, so the sampling that spreads it across a whole network
+          # cannot sample these away -- and on 16 October 2026 it was doing
+          # exactly that, to a list that had put them at the end of it.
+          #
+          # The budget is stated per shape rather than across the whole run
+          # (SKIP_BUDGET_WITHOUT_TIMES in tests/browser/harness.cjs): the
+          # prices-only page skips every journey check because it has no
+          # timetable, about 10% of the suite, which is a smaller claim about
+          # the page rather than a page with nothing in it.
           python make_synthetic_feed.py _shape_feed --unserved-station --third-origin --return-network
           # No --timetable, so the page prices fares only.
           python build_demo_page.py --feed _shape_feed --origin GRN --out _shape_site/prices-only/index.html

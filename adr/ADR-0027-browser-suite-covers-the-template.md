@@ -149,3 +149,28 @@ accepted and stripped but decides nothing, and one standard covers a single page
 and a station set. The "never ran that assertion" worry this record was written
 against is answered by the budget rather than by the exit code, which is the
 same worry the budget was added for.
+
+**Amended 16 October 2026.** "One standard covers a single page and a station
+set" turned out to be one standard too few: it was one standard for every
+*shape*, and the shapes differ in what they can run. The release went
+prices-only to clear the fares licence, so every page it publishes has no
+timetable, and the checks about times, days, journeys and splits have no subject
+on any of them. Held to the timetable's 5% together in run 38888953205, 467 of
+6401 checks (7.3%) were unexercised on pages that were otherwise full — a gate
+that a licence decision could not keep green, failing for the shape it was
+asked to publish. The budget is now two: 5% for the pages with a timetable,
+10% for the pages without one, measured against the pages of the same shape and
+never pooled, so a prices-only sweep cannot hide a page that has too little in
+it behind the timetable pages beside it. A run with no timetable page at all
+fails, because that is the times half of the suite going untested rather than a
+smaller claim about it. `SKIP_BUDGET_WITHOUT_TIMES` in
+`tests/browser/harness.cjs` carries the measurement behind the 10% — 464 of
+6138 checks, 7.6%, over the 23 prices-only station pages of that run.
+
+The same run found one check that was simply wrong about an empty list: the
+pager check asserted `1 of N pages` on a page whose own one-pound budget cut
+emptied the list, and the page narrates no page at all when the list is empty
+(audit item 34, which the check's own comment cites). On the Golflink page —
+one destination, and so the one page in the sweep a one-pound cut can empty —
+it failed a correct page. It now stands down, and reports the reason, when its
+own cut empties the list.

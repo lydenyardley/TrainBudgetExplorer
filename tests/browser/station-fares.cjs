@@ -1372,7 +1372,17 @@ function saysMoreThan(condition, code) {
       const field = document.getElementById("budgetNumber");
       field.value = String(Math.max(1, Number(field.value) - 1));
       field.dispatchEvent(new Event("input", { bubbles: true }));
-      return { before, after: currentPage, status: document.getElementById("pageStatus").textContent };
+      return {
+        before,
+        after: currentPage,
+        status: document.getElementById("pageStatus").textContent,
+        // The page's own empty state, which is visible exactly while the list
+        // it just rendered has no rows. The probe has to say which of the two
+        // things it is looking at, because a one-pound cut empties the whole
+        // list on a station with one destination and the assertion below is
+        // about the pager, not about the empty state the next check reads.
+        empty: !document.getElementById("empty").hidden,
+      };
     });
     check(
       "a narrowed search returns to the first page",
@@ -1383,8 +1393,14 @@ function saysMoreThan(condition, code) {
       "and the status re-announces the page, without repeating the count",
       // Audit item 21, 14 October 2026: the count is stated once, in the
       // summary line above the table; the pager says which page of how many,
-      // and an empty list narrates no page at all (item 34).
-      /^1 of \d+ pages?$/.test(reset.status.trim()),
+      // and an empty list narrates no page at all (item 34). A list this
+      // check's own budget cut emptied is that second case, so the check
+      // stands down rather than calling a correct page wrong -- which is what
+      // it did on the Golflink page, the one station in the deploy sweep with
+      // a single destination and so the one it can empty.
+      reset.empty
+        ? notExercised("this check's own budget cut emptied the list, which narrates no page")
+        : /^1 of \d+ pages?$/.test(reset.status.trim()),
       reset.status
     );
     // S28: an empty list offers the moves that would fill it, and the first

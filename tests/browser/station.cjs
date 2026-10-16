@@ -40,8 +40,9 @@ async function runPage(browser, index, given, file, body, base) {
     // one-station build has no second station to link to and no destination
     // without a journey, so five honest checks failed and the page could only
     // be left untested. The teeth are the budget, not the failure: a run that
-    // skips more than SKIP_BUDGET of the checks on its station and chooser
-    // pages fails for that reason, in every mode, and names the page.
+    // skips more than the budget for the shape of its pages -- SKIP_BUDGET
+    // with a timetable, SKIP_BUDGET_WITHOUT_TIMES without one -- fails for
+    // that reason, in every mode, and names the page.
     if (condition && condition.skip === NOT_EXERCISED) {
       checks.push({ name, ok: false, skipped: true, detail: condition.reason });
       return;
@@ -119,6 +120,13 @@ async function runPage(browser, index, given, file, body, base) {
     return "other";
   });
   notStation = kind !== "station";
+  // Whether this page carries a timetable, for the two skip budgets in report().
+  // A prices-only page cannot run the checks about times, days and the journeys
+  // they describe, and that is a smaller claim about the page rather than a
+  // page with nothing in it. Read off the payload, like every other fact about
+  // this page, so a sentence in the template cannot decide it.
+  const times =
+    kind === "station" ? await page.evaluate(() => Boolean(DATA.hasJourneys)) : null;
   // S41: the matrix runs first and on every route, including the privacy page,
   // which used to be reported as 0/0 because it carries no controls. It is a
   // published route a reader can land on from every footer on the site.
@@ -134,7 +142,7 @@ async function runPage(browser, index, given, file, body, base) {
     notStation = kind === "other";
     printPage();
     await context.close();
-    return { given, file, checks, stopped, notStation, kind };
+    return { given, file, checks, stopped, notStation, kind, times };
   }
   if (kind === "chooser" || kind === "release") {
     try {
@@ -150,7 +158,7 @@ async function runPage(browser, index, given, file, body, base) {
     notStation = false;
     printPage();
     await context.close();
-    return { given, file, checks, stopped, notStation, kind };
+    return { given, file, checks, stopped, notStation, kind, times };
   }
   // Every expectation below is read out of the page's own payload. The suite
   // used to name Nottingham, Lincoln, Peterborough and the Tower of London,
@@ -376,6 +384,6 @@ async function runPage(browser, index, given, file, body, base) {
     printPage();
     await context.close();
   }
-  return { given, file, checks, stopped, notStation, kind };
+  return { given, file, checks, stopped, notStation, kind, times };
 }
 module.exports = { runPage };

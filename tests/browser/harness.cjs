@@ -69,6 +69,26 @@ const NOT_EXERCISED = Symbol("not exercised");
 // privacy page has no controls to skip and its accessibility-matrix checks
 // would otherwise dilute the denominator.
 const SKIP_BUDGET = 0.05;
+// The budget for a page that carries no timetable, measured separately from the
+// one above and never against the same denominator.
+//
+// A prices-only page cannot run the checks about times, days and the journeys
+// they describe -- a service window, the day control, a changed journey, a
+// split ticket. Those checks have no subject on it, which is a smaller claim
+// about the page rather than a page with nothing in it, and holding it to the
+// timetable's 5% made a gate that a licence decision could not keep green: the
+// published site went prices-only on 16 October 2026 to clear the fares
+// licence, and 467 of 6401 checks (7.3%) had no subject on pages that were
+// otherwise full. Measured the same day: the 23 prices-only station pages in
+// that sweep skipped 464 of 6138 checks, 7.6%, so 10% is that floor with room
+// for a sample drawn from the small end of the network rather than a number
+// picked to make the red run green. The workflow already states the same figure
+// for one prices-only page.
+//
+// The two are counted apart rather than pooled, because pooling is what would
+// let a prices-only sweep hide a page that has too little in it: a bucket is
+// only ever compared with the pages of its own shape.
+const SKIP_BUDGET_WITHOUT_TIMES = 0.1;
 /** A check this page cannot exercise, and why. */
 function notExercised(reason) {
   return { skip: NOT_EXERCISED, reason };
@@ -98,7 +118,8 @@ function pagesBeneath(root) {
  * reported as a missing page rather than as a sweep of nothing that passed.
  */
 function expand(wanted) {
-  const found = [];
+  const named = [];
+  const swept = [];
   for (const argument of wanted) {
     let directory = null;
     try {
@@ -107,14 +128,25 @@ function expand(wanted) {
       // Not there. Left as itself, and reported as a page that does not exist.
     }
     if (directory === null) {
-      found.push(argument);
+      named.push(argument);
       continue;
     }
     const pages = pagesBeneath(directory);
-    if (pages.length) found.push(...pages);
-    else found.push(argument);
+    if (pages.length) swept.push(...pages);
+    else named.push(argument);
   }
-  if (found.length > MAX_PAGES) {
+  const found = [...named, ...swept];
+  // --max bounds the sweep, which is the directory. A page named on the command
+  // line is not part of it: it was named for a reason, and on 16 October 2026
+  // the reason was that the two page shapes the deploy workflow builds for the
+  // suite -- a prices-only page and a one-page page -- are otherwise never met.
+  // Capping the whole list sampled them away instead: with a network of ~2,700
+  // station pages, the spread took 24 of everything and the shape pages, which
+  // sit at the end of the list, were in every run's untested remainder. The
+  // comment below used to claim the spread "always includes the first and last
+  // page", which was untrue for any list longer than MAX_PAGES -- the last
+  // index it reaches is floor((MAX_PAGES-1) * length / MAX_PAGES).
+  if (swept.length > MAX_PAGES) {
     // Evenly spread, not a prefix. The pages arrive in name order, so a prefix
     // is the first N stations alphabetically and nothing after them: on a
     // 2,718-page network --max 24 drove the A's and the B's and no station
@@ -122,24 +154,26 @@ function expand(wanted) {
     // origin-specific template bugs, and a sample confined to one end of the
     // alphabet cannot find one that only the far end has.
     //
-    // Every MAX_PAGES-th page, which is deterministic, needs no seed, and
-    // always includes the first and last page of the list.
-    const step = found.length / MAX_PAGES;
+    // Every MAX_PAGES-th page, which is deterministic and needs no seed.
+    const step = swept.length / MAX_PAGES;
     const sample = [];
     for (let index = 0; index < MAX_PAGES; index += 1) {
-      sample.push(found[Math.floor(index * step)]);
+      sample.push(swept[Math.floor(index * step)]);
     }
     // Loudly, because a bounded sweep that reads as a whole one is worse than
     // no sweep: it would be a gate reporting on a sample and calling it the
     // site. The names are printed so a reader can see the spread rather than
     // take the word for it.
     console.error(
-      `--max ${MAX_PAGES}: driving ${sample.length} of ${found.length} pages, evenly ` +
-        `spread across the list rather than the first ${MAX_PAGES}. ` +
-        `${found.length - sample.length} of them are not being tested.`
+      `--max ${MAX_PAGES}: driving ${sample.length} of the ${swept.length} pages under the ` +
+        `swept director${swept.length === 1 ? "y" : "ies"}, evenly spread rather than the ` +
+        `first ${MAX_PAGES}. ${swept.length - sample.length} of them are not being tested.` +
+        (named.length
+          ? ` Every page named on the command line is driven too (${named.length}).`
+          : "")
     );
     for (const page of sample) console.error(`  swept ${page}`);
-    return sample;
+    return [...named, ...sample];
   }
   return found;
 }
@@ -298,18 +332,31 @@ function report(results) {
   const skipped = counted((entry) => entry.skipped);
   // The budget is measured over the pages whose checks can be skipped, so the
   // pages that cannot skip do not make an over-skipped sweep look within it.
+  // It is measured in two buckets, one per page shape: see
+  // SKIP_BUDGET_WITHOUT_TIMES for why the shape of the page, rather than one
+  // fraction for everything, is what the figure is stated against.
   const skippable = results.filter(
     (result) => result.kind === "station" || result.kind === "chooser"
   );
-  const skipTotal = skippable.reduce(
-    (sum, result) => sum + result.checks.length,
-    0
-  );
-  const skipCount = skippable.reduce(
-    (sum, result) => sum + result.checks.filter((entry) => entry.skipped).length,
-    0
-  );
-  const overSkipBudget = skipCount > skipTotal * SKIP_BUDGET;
+  const buckets = [
+    { label: "page(s) with a timetable", budget: SKIP_BUDGET, times: true },
+    { label: "page(s) without one", budget: SKIP_BUDGET_WITHOUT_TIMES, times: false },
+  ].map((bucket) => {
+    const pages = skippable.filter((result) => Boolean(result.times) === bucket.times);
+    return {
+      label: bucket.label,
+      budget: bucket.budget,
+      pages,
+      checks: pages.reduce((sum, result) => sum + result.checks.length, 0),
+      skipped: pages.reduce(
+        (sum, result) => sum + result.checks.filter((entry) => entry.skipped).length,
+        0
+      ),
+    };
+  });
+  const skipTotal = buckets.reduce((sum, bucket) => sum + bucket.checks, 0);
+  const skipCount = buckets.reduce((sum, bucket) => sum + bucket.skipped, 0);
+  const overBudget = buckets.filter((bucket) => bucket.skipped > bucket.checks * bucket.budget);
   const broken = results.filter(
     (result) => result.stopped || result.checks.some((entry) => !entry.ok && !entry.skipped)
   );
@@ -320,6 +367,12 @@ function report(results) {
   const offTopic = results.filter((result) => result.notStation);
   const tested = results.length - offTopic.length;
   const nothingTested = tested === 0;
+  // A run with no page carrying a timetable has not exercised the times half of
+  // the suite at all, however many pages it swept. The deploy workflow builds
+  // that page (`_shape_site/one-page`) beside the prices-only one for exactly
+  // this, and a run that quietly lost it would report every journey check as a
+  // skip on a prices-only page and read as a pass.
+  const noTimesAtAll = tested > 0 && buckets[0].pages.length === 0;
   if (offTopic.length) {
     console.log(
       `\n${offTopic.length} page(s) were not station pages and were not checked: ${offTopic
@@ -350,15 +403,38 @@ function report(results) {
   const summary = broken.length
     ? `${broken.length} of ${results.length} page(s) failed: ${total - failed - skipped}/${total - skipped} checks passed (${broken.map((result) => result.given).join(", ")})`
     : `${tested} of ${results.length} page(s) checked, ${total - skipped - failed}/${total - skipped} browser checks passed`;
-  console.log(`\n${summary}${skipped ? `, ${skipped} check(s) not exercised by the pages swept` : ""}`);
+  console.log(
+    `\n${summary}` +
+      (skipped
+        ? `, ${skipped} check(s) not exercised by the pages swept (` +
+          buckets
+            .filter((bucket) => bucket.pages.length)
+            .map((bucket) => `${bucket.skipped} of ${bucket.checks} on the ${bucket.label}`)
+            .join(", ") +
+          ")"
+        : "")
+  );
+  if (noTimesAtAll) {
+    // Stated as a failure rather than a note: a run that swept twenty
+    // prices-only pages has not tested the times half of the suite at all, and
+    // "the count was printed" is the thing this budget exists because the
+    // suite would not let pass.
+    console.error(
+      `\nNo page in this run carries a timetable, so the checks about times, days, ` +
+        `journeys and splits were not exercised at all -- the ${skipCount} skip(s) above ` +
+        `are how they would read on a prices-only page.\nAdd a page built with a ` +
+        `timetable to the run; the deploy workflow's \`_shape_site/one-page\` is that page.`
+    );
+  }
   // The budget is stated in the failure as a number, because "too many checks
   // were skipped" without the fraction and the count is a claim a reader has to
   // take on trust -- and the whole reason for the budget is that a run which
-  // printed a skip count could still be green.
-  if (overSkipBudget) {
+  // printed a skip count could still be green. Each bucket names its own
+  // fraction, because they are not the same question.
+  for (const bucket of overBudget) {
     // Named per page, because "too many checks were skipped" is only
     // actionable if it says which page has too little in it.
-    const worst = skippable
+    const worst = bucket.pages
       .map((result) => ({
         given: result.given,
         count: result.checks.filter((entry) => entry.skipped).length,
@@ -368,14 +444,15 @@ function report(results) {
       .sort((left, right) => right.count - left.count)
       .map((entry) => `${entry.given} (${entry.count}/${entry.of})`);
     console.error(
-      `\nOver the skip budget: ${skipCount} of ${skipTotal} checks on the station and ` +
-        `chooser pages were not exercised, which is more than ${Math.round(
-          SKIP_BUDGET * 100
-        )}%.\nThe pages under test have too little in them for the suite to say much ` +
+      `\nOver the skip budget: ${bucket.skipped} of ${bucket.checks} checks on the ${bucket.label} ` +
+        `were not exercised, which is more than ${Math.round(bucket.budget * 100)}%.\n` +
+        `The pages under test have too little in them for the suite to say much ` +
         `about them; give them destinations, or accept a smaller claim about what the run ` +
         `proved.\nSkipped by page: ${worst.join(", ")}`
     );
   }
-  process.exit(failed || broken.length || nothingTested || overSkipBudget ? 1 : 0);
+  process.exit(
+    failed || broken.length || nothingTested || noTimesAtAll || overBudget.length ? 1 : 0
+  );
 }
-module.exports = { ARGV, MAX_PAGES, PAGES, SELLER, NOT_EXERCISED, SKIP_BUDGET, notExercised, pagesBeneath, expand, requirePlaywright, sharedAssets, serve, money, daysSince, cellsAreContentWide, completionProbe, expectedCompletion, report };
+module.exports = { ARGV, MAX_PAGES, PAGES, SELLER, NOT_EXERCISED, SKIP_BUDGET, SKIP_BUDGET_WITHOUT_TIMES, notExercised, pagesBeneath, expand, requirePlaywright, sharedAssets, serve, money, daysSince, cellsAreContentWide, completionProbe, expectedCompletion, report };

@@ -1,6 +1,6 @@
 # ADR-0050: The release is the whole network, and it is affordable
 
-**Status:** Accepted; amended 12 October 2026 (see below)
+**Status:** Accepted; amended 12 October 2026 and 16 October 2026 (see below)
 **Date:** 1 October 2026
 **Relates to:** ADR-0019 (one page per station), ADR-0024 (scaling and the batch
 build, re-measured the same day), ADR-0046 (a row list ships as a table and a
@@ -71,8 +71,8 @@ standard runner with two workers. Not two days.
    prefix.** A whole-network sweep is 2,718 pages; `--max 24` drives 24 of them.
    The first 24 pages in name order are the stations whose slugs start with A
    and B, and a sample confined to one end of the alphabet cannot find a bug
-   that only the far end has. The suite now takes every `--max`-th page, which
-   is deterministic, needs no seed, and always includes the first and last.
+   that only the far end has. The suite takes every `--max`-th page, which is
+   deterministic and needs no seed.
 6. **The build stays a scheduled batch, not a per-push job.** The workflow
    already skips the build entirely when the feed fingerprint is unchanged, so
    a push that touches no feed costs nothing, and the RSP fares feed updates
@@ -126,3 +126,27 @@ origin list with a `--merge` that proves the partition, for the runners the
 single-build wall clock does not fit. A shard is a share of the same release,
 not a release of its own, and the merge writes the chooser, the station list
 and the manifest once from the union. Decisions 2, 3, 5 and 6 stand.
+
+## Amendment — 16 October 2026: the bound is the sweep, and the shape pages get driven
+
+Decision 5 said the spread "always includes the first and last" page of the
+list. It does not, and never did for any list longer than `--max`: the last
+index a spread of `MAX_PAGES` reaches is `floor((MAX_PAGES-1) * length /
+MAX_PAGES)`, which on a 2,700-page network is most of a sample short of the
+end. The claim had a cost. The deploy workflow names two pages on the command
+line -- a prices-only page and a one-page page, the two shapes a sweep cannot
+otherwise meet -- and because the bound was applied to the whole list rather
+than to the swept directory, a spread that took every 24th page of 2,700 could
+and did leave them out of every run. Measured in run 38888953205: 24 pages
+driven, all of them station pages, neither shape among them.
+
+`--max` now bounds the pages of the swept directory. A page named on the
+command line is driven whatever the bound is, because a page is named for a
+reason, and the reasons are the shapes the spread cannot be relied on to
+reach.
+
+Decision 5's spread is unchanged and still right for the sweep itself: 24
+pages of a whole network, evenly spread rather than the A's and the B's.
+
+The same run is what made the skip budget a per-shape figure; see the
+amendment to ADR-0027 for that half.
