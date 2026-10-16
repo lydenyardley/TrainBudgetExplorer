@@ -1105,9 +1105,14 @@ it ships the demo feed, and the pages say so.
 
 **Publication is gated on a licence clearance, and the gate is not code alone.**
 A separate `clearance` job runs `tools/check_release_clearance.py --release
-fares`, and the `deploy` job needs it, so a release that nobody has cleared stops
-at the publish step while the build, the tests and the browser run stay green —
-a red licence gate on every push would only teach people to ignore red. The
+fares`, and the `deploy` job needs it, so a release the record does not clear is
+never published. While a product it publishes is outstanding the run is **red, at
+that one job**: `build`, the shard jobs, `assemble` — which runs `tools/verify
+--full` and the browser suite — stay green, `deploy` is skipped, and the
+`clearance` job's own output names the product that is missing. That is
+deliberate, and the confinement is the point: a gate nobody can see is a gate
+nobody keeps, but a licence refusal that reddened the build would read as a code
+fault. The
 decision itself lives in `licences/release-clearance.md`: which licensed products
 may be published, each answered `cleared` or `excluded` with a reason, a named
 approver, a date and an expiry, changed in a pull request so the review *is* the

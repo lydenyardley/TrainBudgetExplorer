@@ -10,11 +10,13 @@ licence and decide whether it permits publication. What the tool can do is make
 that decision binding, dated, scoped to the release it was made for, and tied to
 the exact licence file it was read from.
 
-`tools/check_release_clearance.py` fails the publish path unless every product a
-release publishes is `cleared` below. Local builds do not read this file at all:
-`build_demo_page.py` and `run.py` are ungated, so a contributor can build, test
-and open a real-feed page with no licence clearance in sight. The gate applies to
-publication, and only to publication.
+`tools/check_release_clearance.py` is the `clearance` job in the deploy workflow,
+and it fails unless every product a release publishes is `cleared` below. A
+failure there reddens that one job and skips the deploy; the build, the shards,
+the assemble job and their tests are unaffected. Local builds do not read this
+file at all: `build_demo_page.py` and `run.py` are ungated, so a contributor can
+build, test and open a real-feed page with no licence clearance in sight. The
+gate applies to publication, and only to publication.
 
 The product list is read from `licence-manifest.json` in this folder (each
 file's name, SHA-256 and product id), plus the two questions that are not a
