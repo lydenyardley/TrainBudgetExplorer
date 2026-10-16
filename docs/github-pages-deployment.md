@@ -33,6 +33,23 @@ The downloader does not put either value in the download manifest. Do not print 
 
 The reference feeds are downloaded in a second step that is allowed to fail, because the Knowledgebase subscription is a different question from the DTD fares and timetable entitlement. A refusal there is a warning and the build continues; the page then says no independent reference feed was checked.
 
+## Configure the timetable the pages carry
+
+The journey times come from Network Rail's own CIF under the Open Government Licence, which is a different product on a different host from the DTD feeds (ADR-0073), so it has its own address and its own credential.
+
+1. Open **Settings → Secrets and variables → Actions**.
+2. On the **Variables** tab, select **New repository variable** and add `SCHEDULE_URL`, set to the address of the gzipped CIF.
+3. If that address wants a credential — Network Rail's own feed answers HTTP Basic — add `SCHEDULE_USERNAME` and `SCHEDULE_PASSWORD` as **repository secrets**, not variables: a signed URL's query is itself a credential, which is why the downloader prints the address without it.
+
+```yaml
+env:
+  SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
+  SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
+  SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+```
+
+A run with no `SCHEDULE_URL` stops at that step rather than publishing prices under a release that declares the times, because the release's shape and the pages it publishes have to agree. Nothing about the fares half needs any of it, and a build with no timetable at all is still a shape the builder renders and the browser suite drives; putting the release back to `--release fares` means removing `--timetable` from the build step as well, or the tripwire below is red.
+
 ### If secrets are missing
 
 The scheduled workflow fails at the download step and does not publish. That is intentional: publishing synthetic or unaudited data would make the provenance line false.
@@ -47,10 +64,10 @@ You can still run the application locally with the synthetic feed, but a public 
 4. Watch the order of the steps:
 
    ```text
-   check the commit messages → download → detect whether the feed changed
-   → audit → gate the unsourced count → gate the price per minute
-   → build the site → hold the bytes → check the manifest and the shape
-   → tests → browser test → clearance → publish
+   check the commit messages → download the DTD feeds and the OGL timetable
+   → detect whether either changed → audit → gate the unsourced count
+   → gate the price per minute → build the site → hold the bytes
+   → check the manifest and the shape → tests → browser test → clearance → publish
    ```
 
 5. The site is published only when every gate before the publish step passes. Two of them are not optional and not softer than they look. `licences/release-clearance.md` must clear the shape the build publishes, which is `fares`: the build publishes prices and no journey times, because the Darwin timetable schedule is read as internal-use-only and is therefore excluded rather than cleared. The `github-pages` environment can require a person to approve the run, which is the other half of the gate.

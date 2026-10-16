@@ -121,3 +121,18 @@ Four rules make it safe to run unattended.
   filter is already there.
 - `docs/open-work.md` question 11 keeps the delivery route open. The code no
   longer depends on which answer it gets.
+
+**Amended 16 October 2026.** The record and the gate caught up the same day. NWR
+Schedule's section in `licences/release-clearance.md` is `cleared` on the owner's
+approval, and `TIMETABLE_GLOB` in `tools/check_release_clearance.py` names that
+product rather than Darwin's, so `--release fares,timetable` passes the gate
+while Darwin's exclusion stays in the record and a release that claims the times
+still has to clear the schedule it publishes them from. The OGL line was already
+on every page the release serves, so nothing new had to be written for it.
+The release was wired to it the same day: every job that holds the feeds fetches
+the CIF into `feeds/nwr-schedule/`, the shard build passes `--timetable
+feeds/nwr-schedule` and no `--date`, the clearance job declares `--release
+fares,timetable`, and the assemble job's journey check refuses a station page with
+no journeys instead of one that carries them. What is left is a measurement rather
+than a decision: the first real run is the whole-network build in the release's own
+shape that the P1 byte-budget finding asks for.

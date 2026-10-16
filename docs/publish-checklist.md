@@ -17,14 +17,13 @@ python -m tools.check_release_clearance --release fares
 ```
 
 to see where the project stands today. The shape the workflow publishes is
-**`fares` only**: the daily build no longer loads the national timetable, so the
-pages carry prices and conditions and no journey times. That keeps the Darwin
-timetable product schedule — which this project reads as internal business
-purposes only — **excluded rather than cleared**, because nothing is published
-from it. It is the degradable half the project designed for: `--timetable` is
-optional and the builder renders a prices-only page that says so, so the strict
-reading stays binding rather than becoming a note somebody skips (ADR-0020,
-ADR-0021).
+**`fares,timetable`**: prices from the DTD fares feed and times from Network Rail's
+CIF under the Open Government Licence (ADR-0073). Darwin's timetable product
+schedule — which this project reads as internal business purposes only — stays
+**excluded**, and that holds whether or not the times go out, because the times come
+from the other product. `--timetable` on the build step without the matching
+`--release` is a red test rather than a quiet widening, and so is a run whose
+station pages come out carrying no journeys (ADR-0020, ADR-0021, ADR-0073).
 
 The **DTD fares route is cleared** in the record against the filed portal terms
 (§1 below), and the privacy contact on the same shape **was cleared on 14
@@ -132,19 +131,22 @@ the account holder can see the registered purpose.
       times.** The daily build no longer loads the national timetable, so the
       published pages carry prices only and Schedule 1 §5's "internal business
       purposes only" reading is never exercised. `licences/release-clearance.md`
-      excludes the product with that reason rather than clearing it. Putting the
-      times back means either answering §5 or sourcing the schedule under a licence
-      that carries no such restriction — Network Rail's own CIF schedule is
-      published under the Open Government Licence, and that path, with the account
-      and the clearance it needs, is in `docs/dtd-licensing-and-data-access.md`
-      ("NWR Schedule and the Network Rail open data feeds") and in
-      `docs/open-work.md`.
-- [x] **The publishable timetable's licence is filed and read — 16 October 2026.**
+      excludes the product with that reason rather than clearing it. The times
+      went back by the second route rather than by answering §5: Network Rail's
+      own CIF schedule is published under the Open Government Licence, and that
+      path — the licence, the whole-CIF reader, and the glob the gate reads — is
+      in `docs/dtd-licensing-and-data-access.md` ("NWR Schedule and the Network
+      Rail open data feeds"), ADR-0073 and `docs/open-work.md`.
+- [x] **The publishable timetable's licence is cleared — 16 October 2026.**
       NWR Schedule, Network Rail, OGL v3.0, §5 permitting distribution and §7
       confining exercise to the UK; the PDF is in `licences/`, the row is in
-      `licences/README.md` and the section is in `licences/release-clearance.md`.
-      It is filed as `excluded` because nothing publishes from it yet. Its
-      **account** is the user's to add, and the build still reads the DTD URL.
+      `licences/README.md` and the cleared section is in
+      `licences/release-clearance.md`. Darwin's version of the same document stays
+      excluded with its §5 reason. The **delivery route** is settled too: the
+      workflow reads `SCHEDULE_URL` (with `SCHEDULE_USERNAME` and
+      `SCHEDULE_PASSWORD` as secrets where the address wants them), fetches the CIF
+      with `schedule_download.py`, and builds the network with `--timetable`.
+      `docs/github-pages-deployment.md` holds the configuration steps.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
       `docs/dtd-licensing-and-data-access.md`
@@ -248,8 +250,9 @@ that could end it.
 - [x] **National Rail Enquiries credited as the source** of the fares and the
       timetable, which the RDG credit is not — `--notices nre`, the third
       attribution this page needs and the one the portal terms require
-- [x] **The OGL fallback wording** for the Darwin timetable, since its §8 gives no
-      statement: `Contains public sector information licensed under the Open Government Licence v3.0.`
+- [x] **The OGL fallback wording** for each OGL timetable, since their §8 gives no
+      statement — Darwin's and NWR Schedule's alike, and it is only NWR
+      Schedule's that is published from: `Contains public sector information licensed under the Open Government Licence v3.0.`
 - [x] Neither is read off a blank §8 and treated as "nothing required" — the blank field
       names additional third-party licensors, of which there are none
 - [x] The wording is pinned in one place in the code, not retyped into a build
@@ -330,14 +333,14 @@ on an assumption is worse than no checklist at all.
 4. Merge. The next push builds, tests, and passes the clearance gate.
 5. Publication stops, rather than the tests going red, if a later release widens
    what it publishes. Adding `--timetable` to the build step changes what
-   `--release` is allowed to claim, and the Darwin clearance this project does not
-   hold is what stops the times going out under a fares-only decision.
+   `--release` is allowed to claim, and the timetable clearance the gate demands
+   is what has to be filed before the times can go out at all.
 
-The build no longer loads the national timetable, so the clearance that matches
-it is `fares`. That was the deliberate choice the fares-only shape exists for: if
-§5 of the Darwin schedule is read as forbidding publication — which is this
-project's reading, and the safe one until RDG answers in writing — the fix is to
-stop loading the timetable and clear `fares` alone. `--timetable` is optional,
-the builder renders a prices-only page that says so, and the journey columns go
-while the product stays (ADR-0021). Putting the times back means answering §5
-first, which is what the RDG letter at `docs/rdg-licence-enquiry.md` asks.
+The shape the workflow publishes is `fares,timetable`. The fares-only choice was
+the one §5 of the Darwin schedule left open, and the times came back through a
+different licence rather than a different reading: `licences/release-clearance.md`
+clears NWR Schedule for them and `tools/check_release_clearance.py` maps
+`--release fares,timetable` to that product rather than to Darwin's. The RDG letter
+at `docs/rdg-licence-enquiry.md` is no longer what the times wait on, and putting
+the release back to prices-only means removing the timetable from the build as
+well as from `--release`.

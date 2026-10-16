@@ -458,12 +458,17 @@ time. A response that is the wrong shape — an HTML error page behind a `200` �
 is not retried either, because that is a fault to be read, not weather to wait
 out.
 
-**The published build is prices-only, so pages carry prices and conditions and
-no journey times.** The deploy workflow loads the fares feed and no timetable and
-passes no `--date`. The journey columns are absent and the page's own opening
-sentence says so, which is the shape `licences/release-clearance.md` clears; a
-run whose station pages come out carrying journeys fails the release-manifest
-check rather than publishing times under a workflow cleared for `fares` alone.
+**The published build carries journey times, and they come from a second source.**
+The deploy workflow loads the DTD fares feed for the prices and Network Rail's own
+CIF for the times: the DTD timetable's Schedule 1 §5 permits internal business
+purposes only, so the same schedule is published from the Open Government Licence
+product instead (ADR-0073). It passes no `--date`, which is the product's choice
+rather than the licence's: a release covers the whole network on every day the feed
+carries, so the page reports aggregate schedules and the day control filters them.
+Three places state this shape and they have to agree -- the build's `--timetable`,
+the clearance job's `--release fares,timetable`, and the journey check that reads
+the built pages. A run whose station pages come out carrying no journeys fails
+that check rather than publishing a release that does not match what it declares.
 
 That step is measured rather than assumed, and the release is the **whole
 network**, so it is measured on the whole network. One origin against the real
@@ -1116,11 +1121,15 @@ fault. The
 decision itself lives in `licences/release-clearance.md`: which licensed products
 may be published, each answered `cleared` or `excluded` with a reason, a named
 approver, a date and an expiry, changed in a pull request so the review *is* the
-approval. The record clears the DTD fares route against the filed portal terms
-and excludes the Darwin timetable schedule, so the release it authorises is
-`fares` alone — prices and conditions, no journey times. That exclusion is the
-project's reading of Schedule 1 §5 as internal-use-only, and the answer that
-would put the times back is the RDG letter at `docs/rdg-licence-enquiry.md`.
+approval. The record clears the DTD fares route against the filed
+portal terms and clears NWR Schedule, whose §5 permits distribution, as the
+timetable a release may publish from. It still excludes the Darwin timetable
+schedule: that exclusion is the project's reading of Schedule 1 §5 as
+internal-use-only, and it holds whether or not the times go out, because the
+times would come from the other product. The shape the workflow declares is
+therefore `fares,timetable`: prices from the DTD feed, times from the OGL CIF every
+job fetches into `feeds/nwr-schedule/`, and no page that comes out without journeys
+may be published under it.
 
 Two things that gate deliberately is not:
 
@@ -1128,9 +1137,9 @@ Two things that gate deliberately is not:
   that is a different question from being permitted to publish at all.
 - **Not permanent, and not scope-free.** `expires` is enforced, the licence file's
   SHA-256 is recorded with the clearance so a replaced licence voids it, and a
-  fares-only clearance does not authorise a build that also loads the national
-  timetable — which is the shape whose licence this project reads as
-  internal-only.
+  fares-only clearance does not authorise a build that also loads a national
+  timetable: that shape demands the publishable schedule's clearance on top of
+  the fares one, so a narrow decision cannot quietly widen the release it covers.
 
 Local builds are untouched by any of this: `build_demo_page.py` and `run.py` do
 not read the record, so the real-feed path can be built, tested and opened

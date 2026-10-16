@@ -70,6 +70,13 @@ the route's script from every page exactly (148,477 bytes a page on the same
 station, same shape), which is about 385 MB across the network — and the release
 is still projected over budget, which is why this is a P1 rather than a footnote.
 
+**Added 16 October 2026: the release's own shape is once again the with-timetable
+one.** The times came back from Network Rail's CIF under the Open Government
+Licence, so the next scheduled run builds every station page with a timetable and
+`tools/page_bytes.py` reads that number. Whether it refuses is the measurement
+this entry has been asking for since 12 October, and a refusal stops publication
+rather than publishing a site over budget.
+
 **What would close it.** One of three, in an order a reader of the numbers would
 take. First, measure first: run a whole-network build in the release's own shape
 and let `python -m tools.page_bytes --site _site --budget-mb 800` refuse it, so
@@ -458,18 +465,23 @@ The reading that matters is in the record rather than in this paragraph: §5
 permits distribution where Darwin's forbids it, §8 names no attribution
 statement so the OGL fallback wording is the required one, and §7 confines
 exercise of the rights to the UK — the one condition here a public page does not
-meet automatically, and a person's to read.
+meet automatically, and a person's to read. The owner read it and cleared the
+product on 16 October 2026.
 
-**How the file arrives is not settled, and it is the harder half.** The
+**How the file arrives is settled, and it was the harder half.** The
 marketplace's file products have no pull API — its own guide offers the
 dashboard's Download button and a file transfer it *pushes* to a destination the
-consumer owns — so the choice is a bucket or an SFTP destination that CI reads
-over plain HTTPS, Network Rail's own feed at
+consumer owns — so the three routes weighed were a bucket or an SFTP destination
+that CI reads over plain HTTPS, Network Rail's own feed at
 `datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full`
 (HTTP Basic, a 302 to a signed S3 URL, admission capped at 1,000 accounts), or a
 script against the dashboard's own endpoints with a bearer token from a scripted
-login. `docs/dtd-licensing-and-data-access.md` holds the detail, and question 11
-below is the decision.
+login. The owner chose Network Rail's own feed on 16 October 2026: it is the same
+CIF under the same licence, and it is the only one of the three that needs no new
+infrastructure and no undocumented front end. The address is the repository
+variable `SCHEDULE_URL` and the credential is the `SCHEDULE_USERNAME` and
+`SCHEDULE_PASSWORD` secrets; `docs/dtd-licensing-and-data-access.md` holds the
+detail and `docs/github-pages-deployment.md` the configuration steps.
 
 **The build's side of it is done, 16 October 2026** (ADR-0073).
 `schedule_download.py` fetches a gzipped whole CIF from a URL with an optional
@@ -479,10 +491,26 @@ drops freight, empty-stock and parcels schedules on the CIF's own code tables,
 and reads a feed that names no stations unfocused rather than emptily -- that
 last one answered "nowhere" for every station, silently, while reading the whole
 file to do it. `make_synthetic_feed.build_synthetic_whole_cif` writes the shape
-those tests are built on. What is left is the OGL line on the page, the
-`timetable` glob in `tools/check_release_clearance.py` pointed at this product
-rather than Darwin's, and the owner's approval line -- none of which can move
-before a file is actually arriving.
+those tests are built on.
+
+**The licence and the gate are done with it, 16 October 2026.**
+`licences/release-clearance.md` clears NWR Schedule on the owner's approval of 16
+October 2026, and `TIMETABLE_GLOB` in `tools/check_release_clearance.py` names
+that product rather than Darwin's, so `--release fares,timetable` passes the gate
+while Darwin's exclusion stays in the record. The OGL line was already on every
+page the release serves (`--notices nre,rdg,ogl,accuracy`), so nothing new had to
+be written for it.
+
+**And the release is wired to it, 16 October 2026.** The workflow fetches the CIF
+in `build`, `shard` and `assemble` into `feeds/nwr-schedule/`, the shard build
+passes `--timetable feeds/nwr-schedule` and no `--date`, the clearance job declares
+`--release fares,timetable`, and the assemble job's journey check now refuses a
+station page that carries no journeys instead of one that does. The CIF's digest
+joined the rebuild trigger, so a day the DTD feeds answered 304 and this one moved
+still rebuilds, and `check_fare_rate` prices against the timetable the pages are
+timed from rather than the DTD one beside it. What is left is measurement rather
+than code: the first real run is the whole-network build in the release's own
+shape that the P1 byte-budget finding above asks for.
 
 ## Suggestions not yet taken up
 
@@ -692,33 +720,19 @@ on a tool.
     terms the audit listed moved in the clarity pass rather than here: "walk-up
     fare" is glossed where it is met, the row's own disclosure says it is
     technical, and "feed dated" became "downloaded" (items 30, 26 and 45).
-11. **How does the timetable file reach the build?** The licence is filed and the
-    file list is read; the delivery is not settled, and it is the one thing
-    between this licence and a build that reads it. The Rail Data Marketplace's
-    file products have **no pull API** — the guide offers the dashboard's
-    Download button and a *file transfer* it pushes to a destination the consumer
-    owns (S3, Google Cloud Storage, Azure Blob, SFTP) — and the button is behind
-    the browser login flow, whose client secret is AES-encrypted (not in the
-    standard library) and whose account may carry a second factor. Three routes,
-    and the choice is the owner's: (a) an RDM file transfer into a bucket or
-    SFTP location that CI reads over plain HTTPS, which needs no credential in CI
-    at all; (b) Network Rail's own feed at
-    `datafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full`,
-    which answers HTTP Basic and redirects to a signed URL and is the same CIF
-    under the same licence, with admission capped at 1,000 accounts and NR's
-    open-data page now pointing at the marketplace; or (c) a script against the
-    dashboard's own endpoints, which is an undocumented front end to keep up
-    with. Until one is chosen the release publishes prices only, which is a shape
-    it is entitled to publish rather than a fault. The code no longer depends on
-    the answer: `schedule_download.py` takes a URL, so whichever route is chosen
-    is a value to fill in rather than a change to make.
-
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
 is one of a collection with none selected by default (ADR-0052), the runner
 serves while the build builds (ADR-0051, amended by ADR-0055), and the source
 credit travels with the pages that show a fare (the reading recorded in
 `licences/release-clearance.md`).
+
+A fifth left the list on 16 October 2026 — **how the timetable file reaches the
+build** — and its answer is in "The journey times are dropped from the release,
+and the source that brings them back" above: Network Rail's own CIF, fetched from
+the `SCHEDULE_URL` repository variable, and a release built and declared as
+`fares,timetable`. The three routes that were weighed are recorded there so the
+question is not re-derived.
 ---
 
 ## Settled in this pass, and where the record is
