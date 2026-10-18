@@ -344,6 +344,12 @@ single.
 | Finding | Closed by | Held by |
 |---|---|---|
 | C5 [P1] a prices-only build claims timetable content it does not have | the paragraph is the payload's own sentence, chosen once from `hasJourneys`, and the renderer writes that string into the page, so the page cannot claim a window its payload does not carry | `tests/test_build_demo_page.py`'s `test_the_sentence_about_times_names_only_what_this_build_has`, which renders both shapes; the words are `build_release.SERVICE_CLAIM` and `SERVICE_CLAIM_WITHOUT_TIMES` |
+| C1 [P1] a phone's station cell is four fragments, not a name | the value is one wrapper element (`.station-value`), so every line of it is placed in the cell's value track rather than the bare text nodes landing in the label track. Landed 18 October 2026 | `tests/browser/station-layout.cjs`, "every value starts in the value track, never under its own label", measured at 390px over every cell of every row; with the wrapper put back it reports `worst: -89px` |
+| C2 [P1] the last cell's label collides with its link | the hold column and the action column drop the desktop widths (1% and 1px) inside the phone block, so the cell is its row's width and its label sits in the track beside the value rather than inside it. Landed 18 October 2026 | the same section: "no value paints outside the cell that holds it" and "the value track is the rest of the cell". With `width: auto` removed it reports a 1px Tickets cell painting 88px outside itself |
+| C8 [P2] changing the budget closes the row the reader opened | the open row is `STATE.openCrs` and every render reopens it, so the panel and the fare inside survive a budget move. Landed 18 October 2026 | `tests/browser/station-rows.cjs`, "a row the reader opened is still open when the budget moves"; with the state half removed it reports `stillOpen: false` |
+
+Everything else in this critique is still open. It lives in `docs/open-work.md`,
+which is where a reader looks for what is left, rather than in a second copy here.
 
 ## Run notes
 

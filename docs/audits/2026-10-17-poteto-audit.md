@@ -6,7 +6,9 @@ the build that writes them, the tools that measure them, and the checks that hol
 them.
 **What it is:** a read-only audit. No file in the repository was changed in
 producing it. Every finding is a numbered recommendation with the evidence that
-produced it; nothing here has been implemented.
+produced it. Seven of them, and the state half of an eighth, were answered on
+18 October 2026 and pruned from this document; "Answered since this was written"
+records what closed them and which check holds each one.
 **Method:** built `_demo_site` from `_demo_feed` and `_demo_kb` at service date
 5 October 2026 and served it; ran `python -m tools.page_bytes` on the result; ran
 the impeccable detector over the three routes; measured the page in Chromium with
@@ -40,64 +42,16 @@ one:
   against file count. Sixteen files are not the problem; `#summary` being declared
   in `service-day.js` and written by `table.js` is, because a reader answering
   "what writes this element" has to open three files.
-- **Encode lessons in structure** is the reason the two test findings (E13, E14)
-  do not say "be careful with the stacked table". They name the assertion and the
-  place it belongs, because the repository already writes the analogous check for
-  every other cell.
+- **Encode lessons in structure** is the reason the test findings (E13, E14, E15;
+  all three answered on 18 October 2026, in the table below) do not say "be
+  careful with the stacked table". They name the assertion and the place it belongs,
+  because the repository already writes the analogous check for every other cell.
 
 ## Findings
 
 Severity is about cost to the product, not effort: **high** means a reader or a
 release decision is being misled now, **medium** means a maintainer pays on every
 change, **low** is housekeeping.
-
-### The instrument that is supposed to measure the page
-
-**E1 [high] The page-size tool reports zero payload and zero rows for every
-station page, and the suite cannot see it.** `tools/page_bytes.py:51` splits the
-inline data with `INLINE_JSON_MARKERS = ("const DATA = ", "const STATIONS = ")`.
-No page has written either string since the data moved onto `window.TBE_*`
-(`page_templates.py:364`, `:410`, `build_assets.py:291`). Measured on this build:
-
-```
-_demo_site/from/grantham/index.html: 38 KB total, 0 KB css, 22 KB script, 0 KB payload, 0 rows
-_demo_site/index.html:               28 KB total, 22 KB css, 3 KB script, 0 KB payload, 0 rows
-identical on all 2 measured pages: 0 KB, 0% of the largest page
-```
-
-The station page's inline data is counted as script, so its own payload and row
-count are both 0, and because the payload is then part of "code", `identical_bytes`
-returns 0 for two pages whose only difference *is* the payload. The budget gate
-still passes because `--site` sums file sizes, which is why nothing has failed.
-`tools/test_page_bytes.py` feeds the tool `const DATA = ` fixtures by hand
-(`:34, :59, :66`), so the tests agree with the tool and not with a page.
-Recommend: build the marker list from the thing that writes the page
-(`page_templates`/`build_assets`), and add one test that measures a page
-`render_page` actually produced. This is the single highest-value fix in the
-document: the open decision about the 354 KB page (14 October engineering audit,
-recommendation 6) cannot be re-measured while the instrument returns 0.
-
-**E2 [high] Every station page blocks parsing on the whole network's station
-list.** `build_assets.station_asset_tag` (`build_assets.py:296-306`) emits a plain
-`<script src>` with no `defer` and no `async`, and `page_templates.py` places
-`__STATIONS_SRC__` immediately before the inline `window.TBE_DATA` block. A classic
-script blocks the parser, and the route's own script runs after parsing, so first
-paint of the table waits on a file that exists for a control most readers never
-open. The list scales with the network (2,712 rows at the last count, each a name,
-a CRS and a href; I did not measure its bytes on the real release). Recommend:
-`defer` as the one-attribute fix, or fetch it on first interaction with the change
-control, which is the shape `ADR-0033`'s fetch boundary already permits.
-
-**E3 [medium] The render path substitutes into its own output and asserts almost
-none of it.** `render_page` performs 42 `.replace()` calls on the whole document,
-inserting the per-origin JSON at `__DATA__` first, then substituting `__NOTE__`,
-`__BASE__`, `__BUDGET__` and the rest across the payload it just embedded. Only two
-placeholders are proved absent afterwards (`build_render.py:303`, `:308`). A
-placeholder added to the template and forgotten here ships literally into every
-page of the release, and a feed-supplied string containing `__BUDGET__` is silently
-rewritten. Recommend: one final assertion that `re.search(r"__[A-Z_]+__", page)` is
-empty, which is the same guard `page_templates._shared_script` already applies to
-its blocks.
 
 **E4 [medium] The resume key is weaker than the cache key, for the exact case the
 cache key was written to survive.** `build_state.resumable_signature` (`:160`)
@@ -131,26 +85,20 @@ release therefore opens at £20 by construction, and the shard manifest's `relea
 dict does not carry the figure, so the merge could not learn a different one.
 Recommend: one constant in one module, threaded through `shared`/`release`.
 
-**E8 [low] The privacy page's one unescaped substitution.** `render_privacy`
-inserts `__CONTACT__` without `html.escape` while every other string on that route
-is escaped. The value is operator-supplied, so the blast radius is small; an
-address containing `&` still becomes markup on the page whose promise is that it
-says exactly what the build does. Recommend: escape it, one line.
-
 ### How the page holds its state
 
-**E9 [high] The page's state is the DOM, read by four independent consumers, and
-a render is a full teardown.** `unit()` and `ticketMode()` query radio groups,
-`chosenCard()` queries the select, `priceOf()` calls `unit()` inside the sort
-comparator. Measured consequence: open a row, type a new budget, and the row's
-`aria-expanded` goes from `true` to `false` and the detail rows go to zero, because
-`rows.replaceChildren()` (`page/station/table.js:153`) rebuilds the list and the
-open CRS is not carried. Read consequence in the same shape: the sort comparator
-calls two DOM readers per comparison, so a 334-row list does thousands of queries
-per render. Recommend: one `view` object derived once per render (`unit`, mode,
-card, cap, list of priced rows), passed to the renderers, with the open CRS kept
-beside it. This is the same defect as the critique's C8, filed here for its cause;
-the reader-facing half stays there.
+**E9 [high] An open row still closes on every render.** The state half landed
+(R4 of the 18 October 2026 plan): `page/station/state.js` is the one object,
+`unit()` and `ticketMode()` read it, and the sort comparator no longer queries
+anything. What did not land is the open CRS. `rowPanel` is a `WeakMap` keyed on
+the row element (`page/station/fare-panel.js:160`) and `rows.replaceChildren()`
+(`page/station/table.js:156`) replaces those elements, so a reader who opens a
+row and types a new budget gets the row closed and the detail gone. Measured
+before the state half: `aria-expanded` goes from `true` to `false` and the detail
+rows go to zero. Recommend: keep the open CRS in `STATE` beside the rest of the
+search and re-open that row after the list is rebuilt. This is the same defect
+as the critique's C8, filed here for its cause; the reader-facing half stays
+there.
 
 **E10 [medium] One sentence has two owners.** `page/station/table.js:198` and
 `page/station/ticket-modes.js:228` compose "No destinations for up to £X …" from
@@ -174,75 +122,32 @@ three files before knowing what may write it. Recommend: move the declared
 elements to the panel that writes them, or to `payload.js`, which is already the
 one place the page's elements are read. No new abstraction: this is a move.
 
-**E13 [medium] Sixteen concatenated panels with order-dependent top-level
-statements.** `page_templates.STATION_SCRIPT_PARTS` documents the order and why,
-which is good practice for a constraint that should not need to exist.
-`page/station/url-state.js:13` takes `DEFAULT_MODE` from the checked radio at parse
-time, so it only works because it is concatenated before `wiring.js` applies the
-URL. Nothing but the Playwright suite exercises the ordering. This is the price of
-the one-file promise and I am not recommending modules; recommend: a check that
-loads the built asset and asserts it parses and runs with the panels in the
-declared order (the suite already proves this indirectly), plus a comment at
-`DEFAULT_MODE` naming the ordering as the invariant it depends on.
+## Answered since this was written
 
-### The checks that are supposed to catch this
+Fifteen findings are closed and pruned: the eight of the 18 October pass, then
+the phone-table group and the state and ownership ones, all on 18 October
+2026. Each row names the check that would fail if the defect came back,
+because the check is the part that keeps it closed.
 
-**E14 [high] The phone table is exercised for overflow, never for where text
-landed.** At 390px `tests/browser/station-fares.cjs` asserts three things about the
-stacked table: the document does not overflow (`:37`), the last cell's rect is
-inside the viewport (`:41`), and each row carries one border. A cell measured at
-**1px wide** with its link painting 48px outside it passes all three. Measured:
-that is exactly the Tickets cell today, and its label is inline with the link.
-Recommend: assert per cell that the number of distinct line-box tops in its own
-value is what the design says it is, at 390 as well as at desktop.
-
-**E15 [medium] The wrap detector exists, with the two broken cells excluded.**
-`tests/browser/station-render.cjs` already counts line-box tops more than 3px apart
-(`lines()`), which is the technique that would report the station cell as three
-lines. Its cell list is `thead th` plus `td.num` plus `.fare-type`, which omits
-`td[data-label="Station"]` and the last cell. A naive inclusion would also fail on
-the deliberate `site-proof` subline, so the assertion has to be per run of inline
-text, not per cell. Recommend: extend the detector and run it at 390; the render
-section currently runs only at the context's default width.
-
-**E16 [medium] The mobile layout's rules are asserted as text, and the text
-passes.** `tests/test_build_demo_page.py` asserts that the media block contains
-`grid-template-columns: 5rem minmax(0, 1fr)`, the `::before` label rule and the
-border rules. All present, all passing, with both defects in place, because the
-failure is the interaction between `td > *` (track two) and a bare text node (no
-track). A text assertion cannot see that. Recommend: replace the layout half of
-that test with the browser assertions of E14/E15 and leave the Python test
-asserting only what it can honestly check (that the media query exists at 44rem).
-
-**E17 [low] A chip's count leaks into the empty-state sentence.**
-`page/station/filters.js:69` builds the type label from
-`input.parentElement.textContent`, and the label is
-`<span>Cities</span> <span class="chipcount">(2)</span>`
-(`build_render.py:269`), so a sentence would read "…in cities (2)". Reachable only
-when two refinements combine, because a chip is withdrawn before it can empty the
-list by itself; I could not construct it in this build. File it as latent rather
-than as a reader-visible defect: the fix is to read the label span, which
-`chipLabel()` already does elsewhere in the same file.
-
-**E18 [low] Three housekeeping items in the page's script.** `clock` is shadowed at
-`page/station/provenance.js:333` over `format.js:8`'s formatter, so any future call
-inside that function throws. `attachStationField`'s `cap` option has no caller and
-its return object is read by nobody (`page_templates.py:498`), so both are surface
-without a use. `const shortlist = shortlistDock` in `shortlist.js` is an alias from
-the removed in-page section. Each is a deletion.
-
-### The one file a person reads to decide what to do next
-
-**E19 [medium] `docs/open-work.md` is 1,035 lines, most of it a record of work that
-is finished.** It carries the settled history of every audit, including the fifty
-findings of the 14 October clarity audit, and the code cites 45 "audit item N"
-locations whose numbers live in that file. Answering "what is open" means reading
-two thirds of a closed record first, which is reader load paid by the one person
-the file exists for. Recommend: the file holds open work only; settled items move
-to the audit document they came from (or to one archive file), and code comments
-cite the ADR or the test that holds a decision rather than a number in a moving
-document. This is not a documentation style preference: 45 comments now depend on a
-file whose purpose is to shrink.
+| | What proves it |
+|---|---|
+| **E1** — the page-size tool reported 0 payload and 0 rows for every station page | `python -m tools.page_bytes _demo_site/from/grantham/index.html` reports 39 KB total, 19 KB payload and 16 rows. R1–R3 of the 18 October 2026 plan built the markers from `page_templates`, made the tool exit 2 on a payload it did not parse, and its test measures a page `render_page` wrote. |
+| **E2** — every station page blocked parsing on the network's station list | `build_assets.station_asset_tag` writes `defer`, and `tests/test_build_demo_page.py` reads the tag out of a rendered page. |
+| **E3** — 42 substitutions, two of them asserted | `build_render.refuse_unfilled` sweeps the whole document on all three routes; its tests render each route, assert no placeholder survives, and assert that a note naming one is refused. |
+| **E8** — the privacy contact was the one unescaped substitution | `render_privacy` escapes it, and the provenance tests read an address carrying `<` and `&`. |
+| **E9** — an open row closed on every render | `STATE.openCrs` holds the row a reader opened and `reopenOpenRow` puts it back after the rows are rebuilt, so the panel and the fare inside it survive a budget move. `tests/browser/station-rows.cjs` drives it as a reader does — open a row, then type a budget — and reported `stillOpen: false` with the state half removed. |
+| **E13** — order-dependent top-level statements | `DEFAULT_MODE` is `STATE.mode` and the comment names the ordering as the invariant it depends on; the browser suite loads the built asset on every page it drives. |
+| **E17** — a chip's count leaked into the sentence that named it | `typeLabel()` reads the label span, and the browser suite checks the sentence for every chip it presses. With the old read put back it reported `in cities (1)`. |
+| **E18** — three housekeeping items | `tests/test_page_assets.py` holds all three: no local declaration shadows a shared function, no top-level constant only renames another, and every option the shared station field reads is passed by a caller. The last check found a second unread option (`onUse`) and the shadow check found a second shadow (`unit` in `url-state.js`); both were removed with these. |
+| **E10** — one sentence, two owners | `emptyListSentence(cap, what)` is the one composition, called by the count line and by the empty state. `tests/browser/station-filters.cjs` asserts the two are the same sentence character for character on a page with an empty list, and reported two different ones when the empty state added a clause of its own. |
+| **E11** — the railcard list rebuilt at the budget's drag frequency | `writeRailcardOptions` runs only when the party changes, so a budget keystroke leaves the list alone. The browser suite marks the list and types a budget; with the guard removed it reported `kept: false`. |
+| **E12** — page-level elements owned by the wrong panel | `#summary`, `#empty`, `#more`, `#pagination`, `#pageStatus` and the two pager buttons are read in `page/station/payload.js`, the one place the page's elements are read; `filters.js` and `service-day.js` keep only what they write. |
+| **E14** — the phone table was exercised for overflow, never for where text landed | `tests/browser/station-layout.cjs` measures every cell of every row at 390px: two tracks, every painted line of the value starting in the value track, nothing painting outside its cell, and the numbers and the ticket link one line each. With the station cell's wrapper removed it reported `worst: -89px`; with the last cell's `width: auto` removed, a 1px Tickets cell painting 88px outside itself. |
+| **E15** — the wrap detector existed with the two broken cells excluded | The detector in `tests/browser/station-render.cjs` now measures every run of every cell, prose runs (a site proof, an interchange, a split note) excluded by class, and the station and tickets cells are in the set. A 3rem `.station-value` at desktop reports `{"cell":"Station","lines":3}`. |
+| **E16** — the mobile layout's rules were asserted as text, and the text passed | `tests/test_build_demo_page.py` keeps the media query and the markup-is-a-table claim; everything else it asserted is now geometry in `station-layout.cjs` at 390px. |
+| **E4** — the resume key was weaker than the cache key | `resumable_signature` and the shard agreement are keyed on `feed_content_digest`, not on names, sizes and mtimes; `tests/test_atoc_knowledgebase.py` gives two feeds of equal size and the same mtime different bytes and gets different keys. |
+| **E19** — `docs/open-work.md` carried two thirds of a closed record | The settled record moved to `docs/settled-work.md` on 18 October 2026, with the audit-item numbers code comments cite; `open-work.md` is 825 lines from 1,133 and holds open work only. |
+| **E7** — the opening budget was a literal in five places | `build_release.OPENING_BUDGET_POUNDS` is the one constant, the shard manifest carries it in `release`, and the merge opens at the shard's figure. `tests/test_page_runner.py` refuses a `budget_pounds=<number>` literal and reads the manifest. |
 
 ## Pruned for overlap
 
@@ -251,12 +156,12 @@ deleted from the audit where it was least useful, not merged into both.
 
 | Subject | Kept in | Dropped here |
 |---|---|---|
-| The phone table's stacked row, as a reader experiences it | critique C1, C2, C13; distill D8 | The recommendation to rebuild the row; this document keeps only the check that would catch it (E14, E15). |
+| The phone table's stacked row, as a reader experiences it | critique C1, C2, C13; distill D8 | The recommendation to rebuild the row; this document kept only the check that would catch it (E14, E15), which landed on 18 October 2026. |
 | The empty state's repeated sentence | distill D2 | The wording recommendation; this document keeps only the ownership fault (E10). |
-| The 354 KB page and what it costs to parse | 14 October engineering audit, recommendation 6 | Not re-filed. E1 explains why that open decision currently cannot be measured. |
+| The 354 KB page and what it costs to parse | 14 October engineering audit, recommendation 6 | Not re-filed. The instrument that could not measure it has been repaired (E1, answered), but this pass did not re-measure the release. |
 | The chooser's dropdown placement | critique C11 | No engineering finding: the mechanism is working as its comment intends, and the disagreement is a design call. |
 | The closing of an open row when the budget changes | critique C8 | The reader-facing description; this document keeps the state model behind it (E9). |
-| The prices-only page's timetable sentence | critique C5 | No second filing. E16 covers the missing check for it only as part of the layout-test question. |
+| The prices-only page's timetable sentence | critique C5 | No second filing: the layout-test question E16 raised was about the phone table, and C5's own check is in `tests/test_build_demo_page.py`. |
 
 ## What is already right, and would be a mistake to trade away
 
@@ -277,11 +182,13 @@ deleted from the audit where it was least useful, not merged into both.
 ## What I could not establish
 
 - No real-feed build. Every figure is of a 3-station demo page; nothing here
-  measures the 2,712-page release, and E1 is why the obvious instrument would not
-  have answered it anyway.
-- E4 (resume identity) is read from the code, not reproduced with a crafted feed.
-  Reproducing it needs two ZIPs of equal size and timestamps, which is a fixture
-  question for `make_synthetic_feed.py`.
+  measures the 2,712-page release. The instrument E1 was filed against now reports
+  a payload, so that question can be measured again, but this pass did not.
+- E4 (resume identity) was read from the code when this audit was written. It
+  is now held by a unit test over two files of equal size and the same mtime,
+  which is the part of the crafted feed that mattered; the end-to-end case -- a
+  resumed build that must not skip -- still has no fixture, and the key is what
+  the unit test pins.
 - E11's platform behaviour (an open select being dismissed when its options are
   replaced) is inferred from how native selects behave, not observed: this session
   drove headless Chromium, whose select popup is not the platform's.
@@ -291,17 +198,34 @@ deleted from the audit where it was least useful, not merged into both.
 
 ## If someone picks this up
 
-Three units, each ending in a check, in this order:
+Everything the four headings above listed is now either closed or argued below.
+What is left:
 
-1. **Make the instrument honest (E1).** One marker list, one test that measures a
-   page the renderer wrote. Nothing else in this document can be verified until the
-   tool reports a payload again.
-2. **Fix the two defects a reader sees (critique C1, C2 via distill D8), and hold
-   them with E14/E15.** The check comes with the fix, so the regression is closed
-   the same day the row is rebuilt.
-3. **Then the state model (E9, E10, E12).** It is the largest change and the one
-   with the least visible payoff, which is exactly why it should follow the two
-   that a reader can see.
+1. **E5 and E6**, both argued rather than done: "Reviewed, and not fixed" says why
+   the recommendation as written cannot answer the question the code asks. Both
+   are recorded in `docs/open-work.md`.
 
-The rest (E2 to E8, E11, E16 to E19) is independent and can be taken in any order;
-E2 is one attribute, E8 is one call, and E19 is a file move.
+## Reviewed, and not fixed, and why
+
+**E5, "take the prune's answer from the release manifest".** The recommendation
+cannot answer the question `prune_shared_assets` asks. The names it must keep are
+not only this build's -- those are passed in -- but the ones named by pages this
+build did **not** write, which are by definition not in the manifest it just
+wrote: a station an earlier build priced still requests the asset it was built
+with, and deleting that asset breaks a page the build promised to leave alone.
+The manifest carries routes, not per-page asset names, so making the manifest the
+source would mean recording every page's asset names in it and trusting that
+record over the files. The cost is real -- the prune reads every `*.html` under
+the output folder, which at the last measured 354 KB a page is about a gigabyte
+across 2,712 pages -- and the honest fix is to make the folder hold only this
+build's pages, which is a build-lifecycle change rather than a line in the prune.
+
+**E6, "a locations-only load in the merge".** Still right, and still not done: the
+loader has one entry point that reads every record type, so a locations-only path
+means a second dispatch through `read_feed_files` and a test that it returns the
+same locations as the full load. The merge is a rare command that already needs
+the feed on disk, so the saving is real but it is not the tail of a long build the
+way E5's read is. Recorded in `docs/open-work.md` rather than done in a session
+whose remaining changes were page-visible.
+
+
