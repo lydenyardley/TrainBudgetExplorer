@@ -118,6 +118,32 @@ async function checkTheFareDetails(world) {
         : cards.filter((c) => !c.fits).every((c) => /\d/.test(c.label || "")),
       JSON.stringify(cards.filter((c) => !c.fits))
     );
+    // 7c(ii). The option list belongs to the party, not to the budget. render()
+    // runs on every `input` event of the budget control, so a list rebuilt there
+    // is rebuilt at drag frequency, and replacing the options of an open native
+    // select can dismiss it under the reader's hand (E11 of the 17 October 2026
+    // audit). Measured by marking the list and typing a budget: a rebuild throws
+    // the mark away, which is what the page did before.
+    const marked = await page.evaluate(() => {
+      const list = document.getElementById("railcardSelect");
+      if (!list || list.options.length === 0) return null;
+      list.options[list.options.length - 1].dataset.probe = "kept";
+      const field = document.getElementById("budgetNumber");
+      const before = field.value;
+      field.value = String(Number(before) + 1);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      const kept = Array.from(list.options).some((option) => option.dataset.probe === "kept");
+      field.value = before;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      return { kept, options: list.options.length, budget: before };
+    });
+    check(
+      "typing a budget does not rebuild the railcard list under the reader",
+      marked === null
+        ? notExercised("this page prices no railcard, so it has no list to rebuild")
+        : marked.kept,
+      JSON.stringify(marked)
+    );
     // 7d. The standard fare under a discounted price is a clear step down the
     // ladder, not a shade: it was 14px against a 16px price, which is the size
     // every other small note on a row already used, so the cell read as two

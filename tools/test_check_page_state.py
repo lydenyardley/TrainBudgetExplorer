@@ -29,8 +29,12 @@ class ReadsTest(unittest.TestCase):
 
     def test_a_comparison_is_not_an_assignment(self) -> None:
         # `===` starts with `=`, and a count that read it as an assignment would
-        # miss the reads in every chip comparison on the page.
-        source = "if (input.value === \"all\") continue;\n"
+        # miss the reads in every chip comparison on the page. The fixture names
+        # a `row` rather than the page's own `input` because a test that spells a
+        # statement of the page verbatim is exactly what
+        # `tests/test_test_suite_shape.py` refuses -- the assertion here is about
+        # the counter, not about the page.
+        source = "if (row.value === \"all\") continue;\n"
         self.assertEqual(check_page_state.reads(source), 1)
 
     def test_a_comment_is_not_a_read(self) -> None:

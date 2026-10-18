@@ -502,15 +502,14 @@ function stationMatches(station, needle) {
 # what each of them draws.
 STATION_FIELD_JS = """function attachStationField(options) {
   const field = options.field;
-  if (!field) return null;
+  if (!field) return;
   const stations = options.stations || [];
   const inside = options.inside || [];
   const onChange = options.onChange || function () {};
-  const onUse = options.onUse || function () {};
   const onCancel = options.onCancel || function () {};
   const dropdown = options.dropdown || null;
   const onChoose = options.onChoose || null;
-  const CAP = options.cap || 544;
+  const CAP = 544;
   // Where the panel is drawn from, and what makes it appear. A route whose
   // field sits above the page's own explanation anchors the panel to the
   // list's place in the document, so the prose between them stays readable and
@@ -660,12 +659,7 @@ STATION_FIELD_JS = """function attachStationField(options) {
       window.removeEventListener("resize", follow);
     }
   }
-  const reportUse = () => {
-    const used = inUse();
-    if (used) enterUse();
-    else leaveUse();
-    onUse(used);
-  };
+  const reportUse = () => (inUse() ? enterUse() : leaveUse());
   const isInside = (target) => {
     if (!target) return false;
     if (field.contains(target)) return true;
@@ -725,7 +719,6 @@ STATION_FIELD_JS = """function attachStationField(options) {
     reportUse();
     onCancel();
   });
-  return { complete: complete, commit: commit, reportUse: reportUse };
 }"""
 
 

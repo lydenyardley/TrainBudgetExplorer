@@ -330,9 +330,9 @@ function provenance() {
     // Named for what it is (audit item 46) and dated in the page's own words, so
     // the build stamp is not the one ISO date on the page (audit item 49). The
     // digest stays: it is the citation a person debugging the site looks for.
-    const clock = DATA.builtAt.slice(11, 16);
+    const time = DATA.builtAt.slice(11, 16);
     line.textContent = "Site built " + humanDate(DATA.builtAt.slice(0, 10)) +
-      (clock ? " at " + clock + " UTC" : "") +
+      (time ? " at " + time + " UTC" : "") +
       " from this revision of the code" +
       (DATA.sourceFingerprint ? ", source " + DATA.sourceFingerprint : "") + ".";
     line.hidden = false;

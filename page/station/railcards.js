@@ -142,6 +142,42 @@ function renderRailcardNote() {
   note.textContent = "The prices shown apply the " + chosen.label +
     " wherever it lowers the fare. " + DATA.railcardMethod;
 }
+// Which party the option list was written for, and which cards it offered. Both
+// are set by writeRailcardOptions below; `null` means nothing has been written.
+let optionsForParty = null;
+let offeredCards = [];
+
+// The list itself, and why it is written once per party rather than once per
+// render: render() runs on every `input` event of the budget slider, so a list
+// rebuilt there is replaced at drag frequency, and replacing the options of an
+// open native select can dismiss it under the reader's hand (E11 of the 17
+// October 2026 audit). Nothing in the list depends on the budget -- only on who
+// is travelling and on the cards this feed priced -- so a party that has not
+// changed has nothing new to show.
+function writeRailcardOptions(adults) {
+  railcardSelect.replaceChildren();
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "No railcard";
+  railcardSelect.append(none);
+  offeredCards = [];
+  for (const key of railcardKeys) {
+    const card = railcards[key];
+    const option = document.createElement("option");
+    option.value = key;
+    if (cardCoversParty(card)) {
+      option.textContent = card.label;
+      offeredCards.push(key);
+    } else {
+      option.textContent = card.label + (adults < card.minAdults
+        ? " (needs " + card.minAdults + " adults)"
+        : " (covers up to " + card.maxAdults + " adult" + (card.maxAdults === 1 ? "" : "s") + ")");
+      option.disabled = true;
+    }
+    railcardSelect.append(option);
+  }
+}
+
 function syncRailcardParty() {
   const help = document.getElementById("railcardHelp");
   if (!railcardKeys.length) {
@@ -178,35 +214,18 @@ function syncRailcardParty() {
   // sentence in the option is the feed's own bound, so the reason is on screen
   // rather than inferred from an absence.
   const adults = unit() === "party" ? 2 : 1;
-  const wanted = STATE.railcard;
-  railcardSelect.replaceChildren();
-  const none = document.createElement("option");
-  none.value = "";
-  none.textContent = "No railcard";
-  railcardSelect.append(none);
-  const offered = [];
-  for (const key of railcardKeys) {
-    const card = railcards[key];
-    const option = document.createElement("option");
-    option.value = key;
-    if (cardCoversParty(card)) {
-      option.textContent = card.label;
-      offered.push(key);
-    } else {
-      option.textContent = card.label + (adults < card.minAdults
-        ? " (needs " + card.minAdults + " adults)"
-        : " (covers up to " + card.maxAdults + " adult" + (card.maxAdults === 1 ? "" : "s") + ")");
-      option.disabled = true;
-    }
-    railcardSelect.append(option);
+  if (optionsForParty !== adults) {
+    writeRailcardOptions(adults);
+    optionsForParty = adults;
   }
-  // The reader's choice survives the rebuild when the party on screen still
-  // allows it, and is cleared when it does not -- in the state first, because
-  // every price below reads it from there, and then in the control that shows
-  // it, so the two cannot disagree about which card is priced with.
-  STATE.railcard = offered.includes(wanted) ? wanted : "";
+  // The reader's choice survives as long as the party on screen allows it, and
+  // is cleared when it does not -- in the state first, because every price below
+  // reads it from there, and then in the control that shows it, so the two
+  // cannot disagree about which card is priced with. This runs on every render,
+  // unlike the list: the address can name a card after the list was written.
+  STATE.railcard = offeredCards.includes(STATE.railcard) ? STATE.railcard : "";
   railcardSelect.value = STATE.railcard;
-  railcardSelect.disabled = offered.length === 0;
+  railcardSelect.disabled = offeredCards.length === 0;
   if (!help) return;
   if (noCard()) {
     // The action and the memory come first: which card is held changes every

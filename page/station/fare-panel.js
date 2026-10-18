@@ -160,12 +160,31 @@ function railcardRuleFor(destination) {
 const rowPanel = new WeakMap();
 function closePanel(row) {
   const panel = rowPanel.get(row);
+  STATE.openCrs = "";
   if (!panel) return false;
   panel.row.remove();
   if (panel.control) panel.control.setAttribute("aria-expanded", "false");
   rowPanel.delete(row);
   return true;
 }
+// Put back the row a reader had open, against the rows this render built. One
+// function, so the click a reader made and the render that follows it take the
+// same path through the panel; the CRS is read from the state rather than from
+// the element the click was on.
+function reopenOpenRow(items) {
+  if (!STATE.openCrs) return;
+  const destination = items.find((candidate) => candidate.crs === STATE.openCrs);
+  const row = destination
+    ? Array.from(rows.children).find((candidate) => candidate.dataset.crs === STATE.openCrs)
+    : null;
+  const toggle = row ? row.querySelector(".toggle") : null;
+  if (!row || !toggle) {
+    STATE.openCrs = "";
+    return;
+  }
+  toggleDetail(row, destination, toggle);
+}
+
 function toggleDetail(row, destination, toggle) {
   if (rowPanel.get(row)) {
     closePanel(row);
@@ -196,4 +215,11 @@ function toggleDetail(row, destination, toggle) {
   rowPanel.set(row, { row: detail, control: toggle });
   toggle.setAttribute("aria-controls", detail.id);
   toggle.setAttribute("aria-expanded", "true");
+  // E9 of the 17 October 2026 audit: the open row is part of the search, so it
+  // is recorded where the rest of it is. It used to live only in this WeakMap,
+  // keyed on the row element, and every render replaces those elements -- so a
+  // reader who opened a row and then moved the budget lost the panel and the
+  // fare and condition inside it. table.js reopens this CRS on the row its next
+  // render built.
+  STATE.openCrs = destination.crs;
 }

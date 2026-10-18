@@ -178,6 +178,14 @@ function render() {
     cellWithLinks(row, destination, wanted);
     rows.append(row);
   }
+  // E9 of the 17 October 2026 audit: the row the reader opened is still open
+  // after this render. The rows are new elements every time -- replaceChildren
+  // above -- so the panel went with them and a reader who moved the budget lost
+  // the fare and its condition. The CRS is in STATE (fare-panel.js records it),
+  // which is what makes the open row part of the search rather than a property
+  // of a row element that no longer exists. A CRS this page does not carry is
+  // dropped rather than kept for a list that is not on screen.
+  reopenOpenRow(pageItems);
 
   // Q4: in the cheapest list every row names its own fare, so the count line
   // names the mix rather than implying one ticket type, and the party figure
@@ -194,11 +202,11 @@ function render() {
   // stays empty rather than implying the budget filtered something out.
   summary.textContent = available.length && wanted.length
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + basis + order + mix
-    // An empty list names what emptied it. The paragraph below the table has
-    // said so since S28; this line -- the first thing a reader reads after
-    // dragging the budget -- said only that there was nothing, while the chip
-    // that caused it sat inside the folded refinements.
-    : available.length ? "No destinations for up to " + money(cap) + " " + basis + typeLabel() : "";
+    // An empty list names what emptied it, in the one sentence both it and
+    // the paragraph below the table use: this line -- the first thing a reader
+    // reads after dragging the budget -- said only that there was nothing,
+    // while the chip that caused it sat inside the folded refinements.
+    : available.length ? emptyListSentence(cap, basis) : "";
   empty.hidden = wanted.length > 0;
   renderEmpty(available, wanted, cap, basis);
   more.hidden = true;

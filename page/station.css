@@ -484,9 +484,19 @@
        change station under the count, off the same line as the number beside
        it -- the reason both are `display: block` on a wide screen. */
     td > * { grid-column: 2; }
-    /* The destination and the row's actions carry no label, so they take the
-       whole width rather than the value track. */
-    td:first-child, td:last-child { display: block; }
+    /* The two cells the desktop rules shrink to their own content -- the hold
+       column, at "width: 1%", and the action column, at "width: 1px" -- carry
+       those widths into this layout, where a one-pixel box is a one-pixel box
+       and its contents paint outside it. Measured at 390px before this: the
+       action cell was 1px wide at the row's left edge with its link painting
+       95px past it, which is the "TICKETSTickets" collision C2 of the 17
+       October 2026 critique. Named by the selectors the base rules use,
+       because a media query adds no specificity of its own. */
+    #rows > tr[data-crs] > td:last-child, #rows > tr[data-crs] > td.hold { width: auto; }
+    /* The panel a row opens is one full-width block of prose rather than a
+       labelled cell. It is the only cell of its own row, so it is both the
+       first and the last child. */
+    tr.detail td { display: block; }
     td.num { text-align: left; }
     /* The panel a row opens belongs to the row above it. It had a rule under it
        of its own, so opening one destination drew a second line across the page

@@ -109,9 +109,11 @@ function applyState(given) {
   const units = offered('input[name="unit"]');
   const chips = offered('input[name="destinationType"]');
   const mode = pick("mode", STATE.mode);
-  const unit = pick("unit", STATE.unit);
+  // Not `unit`: that is the page's own reader of the radio group, and a local
+  // of the same name is a call that throws the moment somebody makes one.
+  const chosenUnit = pick("unit", STATE.unit);
   if (modes.has(mode)) STATE.mode = mode;
-  if (units.has(unit)) STATE.unit = unit;
+  if (units.has(chosenUnit)) STATE.unit = chosenUnit;
   // A card code is applied only when this page prices that card. A link from
   // another station can name one this origin's feed holds nothing for, and the
   // reader should get this page's own default rather than a control reading as

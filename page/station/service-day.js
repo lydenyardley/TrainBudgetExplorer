@@ -1,8 +1,8 @@
 // The day the table reports, and the week of answers the build walked for
 // each row.
 
-const summary = document.getElementById("summary");
-const empty = document.getElementById("empty");
+// The table's count line and its empty state are read in payload.js with the
+// rest of the page's elements, because table.js is what writes them.
 const serviceDayBar = document.getElementById("serviceDayBar");
 const serviceDaySelect = document.getElementById("serviceDay");
 const serviceDayHelp = document.getElementById("serviceDayHelp");

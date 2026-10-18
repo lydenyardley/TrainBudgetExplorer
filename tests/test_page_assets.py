@@ -8,6 +8,7 @@ what the move depends on: each file is the bytes the page ships, and a checkout
 that hands back CRLF cannot rewrite every page of a release.
 """
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -168,6 +169,103 @@ class PageAssetTest(unittest.TestCase):
         self.assertEqual(
             page_bytes.INLINE_JSON_MARKERS,
             (page_templates.PAYLOAD_MARKER, page_templates.CHOOSER_MARKER),
+        )
+
+
+#: A function the script declares on its own, at the top level, where every
+#: later panel can call it.
+SHARED_FUNCTION = re.compile(
+    r"^(?:function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?(?:function\b|\())"
+)
+#: A declaration indented inside a function, which shadows a top-level name.
+LOCAL_DECLARATION = re.compile(r"\s+(?:const|let|var)\s+(\w+)\s*=")
+TOP_LEVEL_DECLARATION = re.compile(r"^(?:const|let|var|function)\s+(\w+)")
+#: One top-level constant that is only another name for a binding beside it.
+ALIAS = re.compile(r"^const (\w+) = (\w+);$")
+
+
+def script_sources() -> dict[str, str]:
+    """Every file the routes' scripts are built from, by its own name."""
+    return {
+        path.relative_to(page_templates._PAGE_ASSETS).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(page_templates._PAGE_ASSETS.rglob("*.js"))
+    }
+
+
+def shared_field_calls(source: str) -> list[str]:
+    """The text of each ``attachStationField({...})`` call, braces paired."""
+    calls = []
+    for match in re.finditer(r"attachStationField\(\{", source):
+        start = source.index("{", match.start())
+        depth, index = 0, start
+        while index < len(source):
+            if source[index] == "{":
+                depth += 1
+            elif source[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    calls.append(source[start : index + 1])
+                    break
+            index += 1
+    return calls
+
+
+class PageScriptSurfaceTest(unittest.TestCase):
+    """The page's script is one file, so its top level is one shared namespace.
+
+    Each check is a fault the 17 October 2026 audit found by reading the panels
+    (E18): a local that shadows a helper, a constant that only renames another,
+    and an option the shared station field reads that no caller passes. The
+    third instance of the first fault, a local ``unit`` in url-state.js, was
+    found by writing this class rather than by the audit.
+    """
+
+    def test_no_local_declaration_shadows_a_shared_function(self) -> None:
+        sources = script_sources()
+        functions: dict[str, str] = {}
+        for name, source in sources.items():
+            for number, line in enumerate(source.splitlines(), 1):
+                match = SHARED_FUNCTION.match(line)
+                if match:
+                    functions[match.group(1) or match.group(2)] = f"page/{name}:{number}"
+        shadows = []
+        for name, source in sources.items():
+            for number, line in enumerate(source.splitlines(), 1):
+                match = LOCAL_DECLARATION.match(line)
+                if match and match.group(1) in functions:
+                    shadows.append(
+                        f"page/{name}:{number} declares {match.group(1)}, "
+                        f"which {functions[match.group(1)]} defines"
+                    )
+        self.assertEqual(shadows, [])
+
+    def test_no_top_level_constant_only_renames_another(self) -> None:
+        sources = script_sources()
+        declared = {
+            match.group(1)
+            for source in sources.values()
+            for line in source.splitlines()
+            if (match := TOP_LEVEL_DECLARATION.match(line))
+        }
+        aliases = []
+        for name, source in sources.items():
+            for number, line in enumerate(source.splitlines(), 1):
+                match = ALIAS.match(line)
+                if match and match.group(2) in declared and match.group(1) != match.group(2):
+                    aliases.append(
+                        f"page/{name}:{number} defines {match.group(1)} as {match.group(2)}"
+                    )
+        self.assertEqual(aliases, [])
+
+    def test_every_option_the_shared_field_reads_is_passed_by_a_caller(self) -> None:
+        read = set(re.findall(r"options\.(\w+)", page_templates.STATION_FIELD_JS))
+        passed = set()
+        for source in script_sources().values():
+            for call in shared_field_calls(source):
+                passed.update(re.findall(r"^\s+(\w+):", call, re.M))
+        self.assertEqual(
+            sorted(read - passed), [],
+            "the shared station field reads an option no caller passes",
         )
 
 

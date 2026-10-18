@@ -14,7 +14,6 @@ const shortlistDock = document.getElementById("shortlistDock");
 // was the section between the count and the table; it is the strip at the foot
 // of the screen, and every function that guarded on the old id was quietly
 // doing nothing on a page without one.
-const shortlist = shortlistDock;
 const shortlistShareBox = document.getElementById("shortlistShareBox");
 const shortlistLimit = document.getElementById("shortlistLimit");
 const shortlistStatus = document.getElementById("shortlistStatus");
@@ -155,7 +154,7 @@ function focusDestinationRow(crs) {
 }
 
 function renderShortlist() {
-  if (!shortlist) return;
+  if (!shortlistDock) return;
   const kept = shortlisted();
   // A row whose fare the reader can no longer see priced -- a different ticket
   // mode -- leaves the list rather than sitting in it as a name with no price.

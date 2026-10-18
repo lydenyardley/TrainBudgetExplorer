@@ -47,13 +47,27 @@ async function driveTheFilters(world) {
         currentPage = 1;
         render();
       }
+      const why = document.querySelector("#empty p");
       return {
         empty: document.getElementById("empty").hidden === false,
         summary: document.getElementById("summary").textContent,
+        reason: why ? why.textContent : "",
       };
     });
     check("an empty budget says so rather than showing nothing", floored.empty, JSON.stringify(floored));
     check("the summary counts what is left", /No destinations for up to/.test(floored.summary), floored.summary);
+    // E10 of the 17 October 2026 audit: the same sentence was composed twice,
+    // once into the count line and once into the empty state, so the two could
+    // drift and only one of them was ever read by a test. One function writes
+    // both now, and this is the visible half of that: they are the same
+    // sentence, character for character, on the page a reader sees.
+    check(
+      "and the count line and the empty state are one sentence, not two",
+      floored.reason
+        ? floored.summary.trim() === floored.reason.trim()
+        : notExercised("this page shows no empty-state paragraph"),
+      JSON.stringify({ summary: floored.summary, reason: floored.reason })
+    );
     // S17: the slider has always stopped somewhere the page never said out
     // loud, so a reader could not predict whether a fare at the boundary was
     // included without dragging the control to find out. The figure is read

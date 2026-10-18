@@ -83,6 +83,59 @@ async function checkTheRowActions(world) {
       span.columns > 0 && span.cells === 1 && span.spans[0] === span.columns,
       `${span.cells} cell(s), spans ${span.spans.join("+")}, table has ${span.columns} column(s)`
     );
+    // 5c. The open row survives the render. A reader who opens a row and then
+    // moves the budget is looking at the fare and its condition; every render
+    // replaces the rows, and the panel was keyed on the row element, so moving
+    // the budget closed the row and took the panel with it (E9 of the 17
+    // October 2026 audit, C8 of the critique). Driven as the reader does it:
+    // open a row, then type a budget that keeps it.
+    const keptOpen = await page.evaluate(() => {
+      const first = document.querySelector("#rows tr[data-crs]");
+      if (!first) return null;
+      const toggle = first.querySelector(".toggle");
+      if (toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+      const crs = first.dataset.crs;
+      const opened = toggle.getAttribute("aria-expanded") === "true";
+      // The fare sentence is what the reader opened the row for, and it is the
+      // part of the panel that cannot change with the budget: the copy status
+      // beside it does, and comparing the whole panel would fail on a control
+      // doing its job.
+      const sentence = () => {
+        const line = document.querySelector("#rows tr.detail .fare-line");
+        return line ? line.textContent : "";
+      };
+      const before = sentence();
+      // Raising the budget adds rows and drops none, so the row the reader
+      // opened is still one this list carries.
+      const field = document.getElementById("budgetNumber");
+      field.value = String(Number(field.value) + 1);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      const after = Array.from(document.querySelectorAll("#rows tr[data-crs]")).find(
+        (row) => row.dataset.crs === crs
+      );
+      const control = after ? after.querySelector(".toggle") : null;
+      const detail = document.querySelector("#rows tr.detail");
+      const facts = {
+        crs,
+        opened,
+        carried: Boolean(after),
+        stillOpen: Boolean(control && control.getAttribute("aria-expanded") === "true"),
+        panel: Boolean(detail) && sentence() === before && before !== "",
+        rows: document.querySelectorAll("#rows tr[data-crs]").length,
+      };
+      // Left as the sections after this one expect to find it: they open a row
+      // themselves and look for a closed one, and a row this check left open
+      // would be a page with no closed toggle on it.
+      if (control && control.getAttribute("aria-expanded") === "true") control.click();
+      return facts;
+    });
+    check(
+      "a row the reader opened is still open when the budget moves",
+      keptOpen === null
+        ? notExercised("this page shows no rows to open")
+        : keptOpen.opened && keptOpen.carried && keptOpen.stillOpen && keptOpen.panel,
+      JSON.stringify(keptOpen)
+    );
     // 6. The party price carries the railcard, because that price needs it.
     // The budget is the cheapest party price in the payload, not the adult one
     // used above: two adults never cost less than one, so a budget that shows

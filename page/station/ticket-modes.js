@@ -213,15 +213,27 @@ function renderEmptyMode() {
   }
 }
 
+// The one sentence for the one fact that the list is empty, and what emptied
+// it. It is composed here and read by both owners of that fact -- the count
+// line above the table and the empty state below it -- because it was written
+// out twice, and an empty list printed it twice, a line apart, from the same
+// inputs (E10 of the 17 October 2026 audit). `cap` is the clamped budget the
+// caller has already worked out, and `what` is its own phrase for the party
+// figure, which only the count line can word.
+//
+// C21: the predicate is price <= cap, so every place the budget is named says
+// "up to". "Within" and "under" both read as exclusive to a reader comparing
+// them with a fare that lands exactly on the ceiling, and the count line, the
+// empty state and the heading have to agree.
+function emptyListSentence(cap, what) {
+  return "No destinations for up to " + money(cap) + " " + what + typeLabel() + ".";
+}
+
 function renderEmpty(available, wanted, cap, what) {
   empty.replaceChildren();
   if (wanted.length) return;
   const why = document.createElement("p");
-  // C21: the predicate is price <= cap, so every place the budget is named
-  // says "up to". "Within" and "under" both read as exclusive to a reader
-  // comparing them with a fare that lands exactly on the ceiling, and the
-  // summary, the empty state and the heading have to agree.
-  why.textContent = "No destinations for up to " + money(cap) + " " + what + typeLabel() + ".";
+  why.textContent = emptyListSentence(cap, what);
   empty.append(why);
   const actions = document.createElement("p");
   actions.className = "empty-actions";

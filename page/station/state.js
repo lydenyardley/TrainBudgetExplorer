@@ -26,6 +26,11 @@ const STATE = {
   page: 1,
   day: 0,
   shortlist: [],
+  // The row a reader has opened, by CRS, so a render can put it back (E9 of
+  // the 17 October 2026 audit). Part of the search rather than of a panel's
+  // furniture: it decides what the page shows, and the render that rebuilds the
+  // rows is the one that has to reopen it.
+  openCrs: "",
 
   // Per-mode memory. A reader's budget and their chip selection belong to the
   // ticket type they set them in, so switching mode and coming back restores

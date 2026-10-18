@@ -1,14 +1,12 @@
 // The refinements: the fold that holds them, the destination-type chips,
 // their counts, and the line that says what is narrowed.
 
-const more = document.getElementById("more");
+// #more, #pagination, #pageStatus and the two pager buttons are read in
+// payload.js: table.js and wiring.js write them, and only the pager's own page
+// arithmetic below lives here (E12 of the 17 October 2026 audit).
 const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
 const destinationType = document.getElementById("destinationTypes");
 const PAGE_SIZE = 20;
-const pagination = document.getElementById("pagination");
-const previousPage = document.getElementById("previousPage");
-const nextPage = document.getElementById("nextPage");
-const pageStatus = document.getElementById("pageStatus");
 const clearTypes = document.getElementById("clearTypes");
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
@@ -75,7 +73,10 @@ function matchesType(destination, wantedTypes) {
 function typeLabel() {
   const labels = destinationTypeInputs
     .filter((input) => input.value !== "all" && input.checked)
-    .map((input) => input.parentElement.textContent.trim().toLowerCase());
+    // The chip's own label span, not the whole label element: the count beside
+    // it says how many destinations the chip would show, and a sentence reading
+    // "in cities (2)" states that number as part of the filter.
+    .map((input) => input.parentElement.querySelector("span").textContent.trim().toLowerCase());
   // "or", not "and": two selected types show the union, and a message that
   // said "and" would describe a filter the page does not apply.
   return labels.length > 1 ? " in " + labels.join(" or ") : labels.length ? " in " + labels[0] : "";

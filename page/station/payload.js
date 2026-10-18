@@ -104,3 +104,17 @@ if (window.TBE_STATIONS) {
 const rows = document.getElementById("rows");
 const budget = document.getElementById("budget");const budgetNumber = document.getElementById("budgetNumber");const budgetCeilingNote = document.getElementById("budgetCeiling");
 const budgetField = document.getElementById("budgetField");
+// The table's own furniture, read here rather than in the panels whose
+// declarations merely sat nearest it. #summary and #empty were declared in
+// service-day.js and written by table.js; #more, #pagination, #pageStatus and
+// the two pager buttons were declared in filters.js and written by table.js or
+// wired in wiring.js. A maintainer changing the count line had to open three
+// files to learn what may write it (E12 of the 17 October 2026 audit), and this
+// is the file the page already reads its elements in.
+const summary = document.getElementById("summary");
+const empty = document.getElementById("empty");
+const more = document.getElementById("more");
+const pagination = document.getElementById("pagination");
+const pageStatus = document.getElementById("pageStatus");
+const previousPage = document.getElementById("previousPage");
+const nextPage = document.getElementById("nextPage");

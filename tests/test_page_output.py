@@ -80,7 +80,12 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertEqual(len(pages), 2)
         for page in pages:
             html = page.read_text(encoding="utf-8")
-            self.assertIn('<script src="/stations.js"></script>', html)
+            # Deferred, not classic: this tag used to be asserted exactly as it
+            # was written, which is how a parse barrier on the whole network's
+            # station list passed the suite for so long (E2 of the 17 October
+            # 2026 audit). The behaviour it asserts is that the request is a
+            # deferred one, because the table is in the page already.
+            self.assertIn('<script src="/stations.js" defer></script>', html)
             self.assertNotIn('"stations":', embedded_text(html))
             # The page keeps its own destination rows, and the heading control
             # is still the page's own markup rather than something built here.

@@ -44,13 +44,23 @@ function holdCell(destination) {
 function stationCell(destination) {
   const cell = document.createElement("td");
   cell.dataset.label = "Station";
+  // The name, the code and the two brackets were five sibling nodes of the
+  // cell, and below 44rem the cell is a two-track grid that sends its
+  // *elements* to the value track, so the three bare text nodes were
+  // auto-placed in the label track: a phone read "(", then "NOT", then ")",
+  // one per line under the name (C1 of the 17 October 2026 critique, measured
+  // at 390px). One wrapper for the whole value, which is also the thing a
+  // check can assert: every line of a value starts in the value track.
+  const value = document.createElement("span");
+  value.className = "station-value";
   const name = document.createElement("span");
   name.className = "station-name";
   name.textContent = destination.name;
   const code = document.createElement("span");
   code.className = "station-code";
   code.textContent = destination.crs;
-  cell.append(name, " (", code, ")");
+  value.append(name, " (", code, ")");
+  cell.append(value);
   function appendSiteProof(label, sites, titleFor) {
     if (!sites?.length) return;
     const proof = document.createElement("span");
