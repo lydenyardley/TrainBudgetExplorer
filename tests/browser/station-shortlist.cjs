@@ -18,7 +18,7 @@ async function checkTheShortlist(world) {
       // Every priced row, not the one a cheapest-affordable budget happens to
       // leave: comparing two places needs two places on screen.
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
       if (rows.length < 2) return { rows: rows.length };
@@ -61,7 +61,7 @@ async function checkTheShortlist(world) {
           ? row.querySelector(".hold-box").getAttribute("aria-label") || ""
           : "",
       }));
-      const held = shortlistCodes.slice();
+      const held = STATE.shortlist.slice();
       // The dock's row is a place and its price. The place and the price are
       // read off the table row it came from, and the order from the dock
       // itself, so this says the row agrees with the table rather than that the
@@ -84,10 +84,10 @@ async function checkTheShortlist(world) {
       const address = window.location.href;
       // The party price is the price a pair would see, so the comparison has
       // to follow the party control.
-      document.querySelector('input[name="unit"][value="party"]').checked = true;
+      applyState({ unit: "party" });
       render();
       const asPair = facts();
-      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      applyState({ unit: "adult" });
       render();
       const asSolo = facts();
       // A shortlist kept across a mode change must not keep a place whose fare
@@ -221,7 +221,7 @@ async function checkTheShortlist(world) {
         ),
         JSON.stringify(shortlist.boxes.slice(0, 4))
       );
-      const wanted = await page.evaluate(() => shortlistCodes);
+      const wanted = await page.evaluate(() => STATE.shortlist);
       check(
         "the shortlist is in the address, so it can be shared",
         wanted.every((code) => shortlist.address.includes("short=" + code)),
@@ -286,7 +286,7 @@ async function checkTheShortlist(world) {
       return {
         exists: Boolean(dock),
         hidden: dock ? dock.hidden : null,
-        codes: typeof shortlistCodes === "undefined" ? null : shortlistCodes.length,
+        codes: typeof STATE === "undefined" ? null : STATE.shortlist.length,
       };
     });
     check(
@@ -368,7 +368,7 @@ async function checkTheShortlist(world) {
         shape("ZNRV", "SERVICE NEVER", undefined),
       ];
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const read = (crs) => {
         const row = document.querySelector('#rows tr[data-crs="' + crs + '"]');
@@ -388,7 +388,7 @@ async function checkTheShortlist(world) {
       const out = { later: read("ZSVC"), never: read("ZNRV") };
       DATA.destinations = kept;
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const nextWeekday = days[new Date(later + "T00:00:00Z").getUTCDay()];
       return out.later ? { rows: out, weekday: days[weekday], nextWeekday: nextWeekday } : null;
@@ -606,12 +606,14 @@ async function compareTheDockWithTheTable(world) {
       // And in the list it comes from: the row is a return, and on the
       // "cheapest of any type" view the table is built from every list, so
       // the cell read was another row's or none.
-      const modeBox = (value) => document.querySelector(`input[name="ticketMode"][value="${value}"]`);
       const keptMode = (document.querySelector('input[name="ticketMode"]:checked') || {}).value;
-      if (modeBox("return")) modeBox("return").checked = true;
+      // Through the state, not by assigning the radio: the page draws its
+      // controls from the state now, so an assignment is undone by the next
+      // render and this setup would have measured the mode it came in with.
+      applyState({ mode: "return" });
       DATA.destinations = [row];
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const clashes = [];
       for (let i = 0; i < days.length; i += 1) {
@@ -625,11 +627,11 @@ async function compareTheDockWithTheTable(world) {
         if (note && !/via /.test(cell)) clashes.push({ day: days[i], cell: cell });
       }
       DATA.destinations = kept;
-      if (keptMode && modeBox(keptMode)) modeBox(keptMode).checked = true;
+      if (keptMode) applyState({ mode: keptMode });
       select.value = "0";
       select.dispatchEvent(new Event("change", { bubbles: true }));
       setBudget(keptBudget);
-      currentPage = 1;
+      STATE.page = 1;
       render();
       return { crs: row.crs, days: days.length, clashes: clashes };
     });
@@ -692,7 +694,7 @@ async function compareTheDockWithTheTable(world) {
     );
     const dock = await page.evaluate(() => {
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const boxes = Array.from(document.querySelectorAll("#rows tr[data-crs] .hold-box"));
       if (boxes.length < 2) return { rows: boxes.length };

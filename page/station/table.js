@@ -81,7 +81,10 @@ function render() {
   // dragged the budget and then looked at the tab list had no way to tell two
   // searches apart. Before the early returns, because a page with nothing
   // priced still names its origin and its budget.
-  document.title = "Train fares up to £" + budgetNumber.value + " from " + DATA.origin.name;
+  // The budget is read from the state, not from the field that displays it: a
+  // field the reader is mid-way through editing is not the search the page is
+  // running, and the title is a statement about the search (R4).
+  document.title = "Train fares up to £" + STATE.budget + " from " + DATA.origin.name;
   // The heading holds the budget field and the station control, so its own name
   // is the whole sentence rather than the controls' text run together. It is the
   // same sentence as the tab title, so the two cannot disagree (audit item 13).
@@ -130,7 +133,7 @@ function render() {
     // The shortlist is a list of places this mode can price, so a mode that
     // prices none of them empties it rather than leaving a list of names with
     // no fares behind them.
-    shortlistCodes = [];
+    STATE.shortlist = [];
     renderFilterState();
     renderShortlist();
     return;
@@ -146,15 +149,15 @@ function render() {
   const wanted = available
     .filter((d) => priceOf(d) <= cap && matchesType(d, wantedTypes))
     .sort((a, b) => priceOf(a) - priceOf(b));
-  budgetNumber.value = budget.value;
+  budgetNumber.value = String(STATE.budget);
   sizeBudgetField();
   updateChipCounts(available, cap);
   renderFilterState();
   rows.replaceChildren();
 
   const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
-  currentPage = Math.min(Math.max(1, currentPage), pageCount);
-  const pageItems = wanted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  STATE.page = Math.min(Math.max(1, STATE.page), pageCount);
+  const pageItems = wanted.slice((STATE.page - 1) * PAGE_SIZE, STATE.page * PAGE_SIZE);
   for (const destination of pageItems) {
     const row = document.createElement("tr");
     row.dataset.crs = destination.crs;
@@ -208,9 +211,9 @@ function render() {
   // meets as their own search. The page indicator below does not repeat it
   // (audit item 21), and an empty list narrates no page at all (audit item 34).
   pageStatus.textContent = wanted.length
-    ? currentPage + " of " + pageCount + (pageCount === 1 ? " page" : " pages")
+    ? STATE.page + " of " + pageCount + (pageCount === 1 ? " page" : " pages")
     : "";
-  previousPage.disabled = currentPage === 1;
-  nextPage.disabled = currentPage === pageCount;
+  previousPage.disabled = STATE.page === 1;
+  nextPage.disabled = STATE.page === pageCount;
   renderShortlist();
 }

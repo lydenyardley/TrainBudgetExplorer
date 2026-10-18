@@ -142,8 +142,8 @@ function feedRecord(destination) {
 // is one. It was the last line of a dialog; a rule is a record, and records
 // live in the record.
 function railcardRuleFor(destination) {
-  if (noCard() || !railcards[railcardSelect.value]) return null;
-  const details = (destination.railcards || {})[railcardSelect.value];
+  if (noCard() || !railcards[STATE.railcard]) return null;
+  const details = (destination.railcards || {})[STATE.railcard];
   if (!details || !details.rule) return null;
   const rule = DATA.railcardRules[details.rule];
   return rule ? rule.text : null;
@@ -154,7 +154,6 @@ function railcardRuleFor(destination) {
 // state that had gone. The copy text now lands inside the panel the button that
 // asked for it is already in, which leaves one region per row and one control
 // whose state is written back when it closes.
-let regionSeq = 0;
 // Keyed on the row element, not its station code: every render replaces the
 // rows, so a code-keyed map would keep detached rows and their panels alive
 // and let one render's state answer for another's row.
@@ -192,7 +191,7 @@ function toggleDetail(row, destination, toggle) {
   // secondary actions live at the end of the same panel.
   cell.append(fareDetails(destination), rowActions(row, destination));
   detail.append(cell);
-  detail.id = "detail-times-" + destination.crs + "-" + (regionSeq += 1);
+  detail.id = "detail-times-" + destination.crs + "-" + (STATE.regionSeq += 1);
   row.after(detail);
   rowPanel.set(row, { row: detail, control: toggle });
   toggle.setAttribute("aria-controls", detail.id);

@@ -156,8 +156,7 @@ async function checkTheFareDetails(world) {
           if (card.minAdults > travellers || travellers > card.maxAdults) continue;
           const radio = document.querySelector('input[name="unit"][value="' + who + '"]');
           if (!radio) continue;
-          radio.checked = true;
-          document.getElementById("railcardSelect").value = card.key;
+          applyState({ unit: who, railcard: card.key });
           render();
           const hit = readLadder();
           seen.push(card.key + "/" + (who === "party" ? 2 : 1));
@@ -172,8 +171,7 @@ async function checkTheFareDetails(world) {
         // Left off by the search rather than returned from: it checked every
         // radio on the way through, so the page has to be handed back the way
         // the suite found it or every later check reads someone else's search.
-        document.getElementById("railcardSelect").value = before;
-        document.querySelector(`input[name="unit"][value="${unitBefore}"]`).checked = true;
+        applyState({ unit: unitBefore, railcard: before });
         render();
         return { noCardLowers: true, tried: seen };
       }
@@ -187,8 +185,7 @@ async function checkTheFareDetails(world) {
         card: chosen.key,
         unit: unit(),
       };
-      document.getElementById("railcardSelect").value = before;
-      document.querySelector(`input[name="unit"][value="${unitBefore}"]`).checked = true;
+      applyState({ unit: unitBefore, railcard: before });
       render();
       return reading;
     });
@@ -310,11 +307,10 @@ async function checkTheFareDetails(world) {
       // be judged from.
       const fallback = document.querySelector('input[name="ticketMode"]:checked');
       const mode = (wanted) => {
-        const input = document.querySelector(`input[name="ticketMode"][value="${wanted}"]`);
-        input.checked = true;
+        applyState({ mode: wanted });
         render();
         const rows = document.querySelectorAll("#rows tr").length;
-        fallback.checked = true;
+        applyState({ mode: fallback.value });
         return rows;
       };
       // Only a mode that is not the page default, because a default is the one
@@ -333,10 +329,9 @@ async function checkTheFareDetails(world) {
       // The budget the party mode can actually show, or null when this page
       // has nothing a pair could buy. The same restore as above.
       const fallback = document.querySelector('input[name="unit"]:checked');
-      const input = document.querySelector('input[name="unit"][value="party"]');
-      input.checked = true;
+      applyState({ unit: "party" });
       const ceiling = budgetCeiling();
-      fallback.checked = true;
+      applyState({ unit: fallback.value });
       return ceiling > 1 ? ceiling : null;
     });
     const aChip = stateful.chips[0] || null;
@@ -449,7 +444,7 @@ async function checkTheFareDetails(world) {
     );
     const solo = cardChoice
       ? await page.evaluate(() => {
-        document.querySelector('input[name="unit"][value="adult"]').checked = true;
+        applyState({ unit: "adult" });
         render();
         const select = document.getElementById("railcardSelect");
         return {
@@ -478,13 +473,13 @@ async function checkTheFareDetails(world) {
     );
     const duo = cardChoice
       ? await page.evaluate(() => {
-        document.querySelector('input[name="unit"][value="party"]').checked = true;
+        applyState({ unit: "party" });
         render();
         const select = document.getElementById("railcardSelect");
         const options = Array.from(select.options).map((o) => o.value);
         const first = options.find((v) => v !== "") || "";
         if (first) {
-          select.value = first;
+          applyState({ railcard: first });
           render();
         }
         return {
@@ -553,9 +548,7 @@ async function checkTheFareDetails(world) {
       for (const adults of [1, 2]) {
         const card = cards.find((c) => c.minAdults <= adults && adults <= c.maxAdults);
         if (!card) continue;
-        document.querySelector(
-          'input[name="unit"][value="' + (adults === 2 ? "party" : "adult") + '"]'
-        ).checked = true;
+        applyState({ unit: adults === 2 ? "party" : "adult" });
         render();
         const options = Array.from(document.getElementById("railcardSelect").options)
           .map((o) => o.value)
@@ -686,10 +679,7 @@ async function checkTheFareDetails(world) {
           render();
           return;
         }
-        document.querySelector(
-          'input[name="unit"][value="' + (choice.adults === 2 ? "party" : "adult") + '"]'
-        ).checked = true;
-        select.value = "";
+        applyState({ unit: choice.adults === 2 ? "party" : "adult", railcard: "" });
         // The rows the card lowers are put on the first page. The table shows 20
         // rows a page, cheapest first, and a card's minimum fare means the
         // rows it lowers are the dearer ones: Falmouth Town's 16-25 Railcard
@@ -706,7 +696,7 @@ async function checkTheFareDetails(world) {
         DATA.destinations = onePage(DATA.destinations || []);
         DATA.singleDestinations = onePage(DATA.singleDestinations || []);
         DATA.anytimeDestinations = onePage(DATA.anytimeDestinations || []);
-        currentPage = 1;
+        STATE.page = 1;
         render();
         const dearest = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
           .flat()
@@ -723,16 +713,14 @@ async function checkTheFareDetails(world) {
       const lowered = pick ? pick.helped : 0;
       const clear = await readCells();
       await page.evaluate((choice) => {
-        const select = document.getElementById("railcardSelect");
-        select.value = choice ? choice.key : "";
+        applyState({ railcard: choice ? choice.key : "" });
         render();
       }, pick);
       const card = await readCells();
       if (pick) {
         await page.evaluate(() => {
           [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations] = window.__keptLists;
-          currentPage = 1;
-          document.getElementById("railcardSelect").value = "";
+          applyState({ railcard: "", page: 1 });
           render();
         });
       }
@@ -817,10 +805,7 @@ async function checkTheFareDetails(world) {
           if (document.getElementById("railcardDrawer")) {
             return { error: "the railcard drawer is still on the page" };
           }
-          document.querySelector(
-            'input[name="unit"][value="' + (choice.adults === 2 ? "party" : "adult") + '"]'
-          ).checked = true;
-          document.getElementById("railcardSelect").value = choice.key;
+          applyState({ unit: choice.adults === 2 ? "party" : "adult", railcard: choice.key });
           // Only the list the page is showing: a row in another ticket mode is
           // not on screen, so it is not a note a reader could read.
           const priced = activeDestinations().filter((d) => (d.railcards || {})[choice.key]);
@@ -832,7 +817,7 @@ async function checkTheFareDetails(world) {
           if (dearest) {
             setBudget(Math.min(Number(document.getElementById("budget").max), Math.ceil(dearest / 100)));
           }
-          currentPage = 1;
+          STATE.page = 1;
           render();
           const readings = [];
           for (const row of Array.from(document.querySelectorAll("#rows tr[data-crs]"))) {
@@ -907,10 +892,7 @@ async function checkTheFareDetails(world) {
       const modeBefore = document.querySelector('input[name="ticketMode"]:checked').value;
       const lists = { return: "destinations", single: "singleDestinations", anytime: "anytimeDestinations" };
       const restore = () => {
-        const back = document.querySelector(`input[name="ticketMode"][value="${modeBefore}"]`);
-        if (back) back.checked = true;
-        setBudget(Number(budgetBefore));
-        currentPage = 1;
+        applyState({ mode: modeBefore, budget: Number(budgetBefore), page: 1 });
         render();
       };
       // The note is read out of the opened panel and the panel is closed again:
@@ -932,9 +914,9 @@ async function checkTheFareDetails(world) {
         const list = DATA[lists[mode]];
         const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
         if (!list || !input) continue;
-        input.checked = true;
-        setBudget(budgetCeiling());
-        currentPage = 1;
+        applyState({ mode: mode, page: 1 });
+        render();
+        applyState({ budget: budgetCeiling() });
         render();
         const changesAt = (d) => (d.changeStations || []).length;
         // The table holds one page of twenty rows and the list behind it holds
@@ -956,7 +938,7 @@ async function checkTheFareDetails(world) {
           const elsewhere = changedRows.find((d) => {
             const at = list.indexOf(d);
             if (at < 0) return false;
-            currentPage = Math.floor(at / PAGE_SIZE) + 1;
+            STATE.page = Math.floor(at / PAGE_SIZE) + 1;
             render();
             return onScreen().includes(d.crs);
           });
@@ -1163,7 +1145,7 @@ function saysMoreThan(condition, code) {
       // nothing to check on a page that carries the row.
       const budgetBefore = budget.value;
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       const codes = Object.entries(DATA.restrictionValidity || {}).filter(
         ([, value]) => value && (value.outwardText || value.returnText)
       ).map(([code]) => code);
@@ -1171,7 +1153,7 @@ function saysMoreThan(condition, code) {
       for (const wanted of [fallback.value, "return", "single", "anytime"]) {
         const input = document.querySelector(`input[name="ticketMode"][value="${wanted}"]`);
         if (!input) continue;
-        input.checked = true;
+        applyState({ mode: wanted });
         render();
         // The condition, its validity and the record are one disclosure away on
         // the row, so every row is opened before it is read. The render() that
@@ -1187,7 +1169,7 @@ function saysMoreThan(condition, code) {
             code: Array.from(cell.querySelectorAll(".feed-record dd")).map((dd) => dd.textContent)[1],
             text: (cell.querySelector(".validity") || {}).textContent || "",
           }));
-        fallback.checked = true;
+        applyState({ mode: fallback.value });
         render();
         if (shown.some((cell) => codes.includes(cell.code))) {
           const found = { mode: wanted, cells: shown };
@@ -1195,10 +1177,10 @@ function saysMoreThan(condition, code) {
           return found;
         }
       }
-      fallback.checked = true;
+      applyState({ mode: fallback.value });
       render();
       setBudget(budgetBefore);
-      currentPage = 1;
+      STATE.page = 1;
       render();
       return { mode: null, cells: [] };
     });
@@ -1217,7 +1199,7 @@ function saysMoreThan(condition, code) {
       // destination with a fare and no service is the case under test, and it
       // is usually outside a budget set to the cheapest affordable fare.
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const row = Array.from(document.querySelectorAll("#rows tr")).find((candidate) => {
         const cell = candidate.querySelector("td.missing");
@@ -1272,7 +1254,7 @@ function saysMoreThan(condition, code) {
     // no name and no size is a control nobody can find or aim at.
     const expander = await page.evaluate(() => {
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
       const row = document.querySelector("#rows tr:not(.detail)");
       const button = row && row.querySelector(".row-expand");
@@ -1352,8 +1334,7 @@ function saysMoreThan(condition, code) {
         (candidate) => candidate.value !== "all" && !candidate.closest("label").hidden
       );
       if (!first) return null;
-      first.checked = true;
-      all.checked = false;
+      applyState({ types: [first.value] });
       render();
       const offered = !document.getElementById("clearTypes").hidden;
       document.getElementById("clearTypes").click();
@@ -1371,14 +1352,14 @@ function saysMoreThan(condition, code) {
     // reader with a longer list would have left it and the control is judged on
     // what it does with it.
     const reset = await page.evaluate(() => {
-      currentPage = 3;
-      const before = currentPage;
+      STATE.page = 3;
+      const before = STATE.page;
       const field = document.getElementById("budgetNumber");
       field.value = String(Math.max(1, Number(field.value) - 1));
       field.dispatchEvent(new Event("input", { bubbles: true }));
       return {
         before,
-        after: currentPage,
+        after: STATE.page,
         status: document.getElementById("pageStatus").textContent,
         // The page's own empty state, which is visible exactly while the list
         // it just rendered has no rows. The probe has to say which of the two
@@ -1420,7 +1401,7 @@ function saysMoreThan(condition, code) {
       // unreachable on that page at all.
       const floor = Number(document.getElementById("budget").min);
       setBudget(floor);
-      currentPage = 1;
+      STATE.page = 1;
       render();
       if (document.getElementById("empty").hidden) return { actions: [], floor };
       const actions = Array.from(document.querySelectorAll("#empty .toggle")).map((button) => button.textContent);

@@ -9,7 +9,6 @@ const SHORTLIST_LIMIT = 8;
 // Read from the address on load and written back on every change, like the rest
 // of the search state: a shortlist that only lives in one tab is not a
 // shortlist anybody can hand to somebody else.
-let shortlistCodes = [];
 const shortlistDock = document.getElementById("shortlistDock");
 // The one element whose presence means this page has a shortlist at all. It
 // was the section between the count and the table; it is the strip at the foot
@@ -27,22 +26,22 @@ const shortlistDockCount = document.getElementById("shortlistDockCount");
 const shortlistDockClear = document.getElementById("shortlistDockClear");
 
 function shortlisted() {
-  const wanted = new Set(shortlistCodes);
+  const wanted = new Set(STATE.shortlist);
   // In the page's own order, and only rows this ticket mode actually carries:
   // a shortlist that named a destination the reader cannot see priced would be
   // a list of places they cannot buy.
   return activeDestinations().filter((destination) => wanted.has(destination.crs));
 }
 function inShortlist(crs) {
-  return shortlistCodes.includes(crs);
+  return STATE.shortlist.includes(crs);
 }
 function toggleShortlist(crs) {
   const added = !inShortlist(crs);
   if (!added) {
-    shortlistCodes = shortlistCodes.filter((code) => code !== crs);
+    STATE.shortlist = STATE.shortlist.filter((code) => code !== crs);
     if (shortlistLimit) shortlistLimit.textContent = "";
   } else {
-    if (shortlistCodes.length >= SHORTLIST_LIMIT) {
+    if (STATE.shortlist.length >= SHORTLIST_LIMIT) {
       // Said on the page rather than to a screen reader alone: a control that
       // stops responding with no explanation is the one thing a reader cannot
       // act on, and the strip is where they are already looking.
@@ -51,7 +50,7 @@ function toggleShortlist(crs) {
       if (shortlistLimit) shortlistLimit.textContent = message;
       return;
     }
-    shortlistCodes = [...shortlistCodes, crs];
+    STATE.shortlist = [...STATE.shortlist, crs];
     if (shortlistLimit) shortlistLimit.textContent = "";
   }
   announceShortlist(crs, added);
@@ -160,7 +159,7 @@ function renderShortlist() {
   const kept = shortlisted();
   // A row whose fare the reader can no longer see priced -- a different ticket
   // mode -- leaves the list rather than sitting in it as a name with no price.
-  shortlistCodes = kept.map((destination) => destination.crs);
+  STATE.shortlist = kept.map((destination) => destination.crs);
   // Every row's tick is this list, drawn on the row. Anything that empties the
   // shortlist takes the ticks with it: the Clear above the table, the Clear in
   // the dock, and a place leaving the ticket mode the reader is looking at.
@@ -215,13 +214,15 @@ function renderShortlist() {
 function shortlistText() {
   const kept = shortlisted();
   const what = unit() === "party" ? "for the two of us" : "per adult";
+  // The budget the page is searching with, which is the state's own figure: the
+  // copied list used to read the field that displays it (R4).
   const lines = [
     "Shortlist from " + DATA.origin.name + " (" + DATA.origin.crs + ")",
-    "Budget: £" + budgetNumber.value + " " + what,
+    "Budget: £" + STATE.budget + " " + what,
   ];
   // The day the reader chose, not the day the build happened to pick: a
   // pasted line that says otherwise sends someone to the wrong day.
-  const chosen = (DATA.serviceDays || [])[serviceDayIndex] || DATA.serviceDate;
+  const chosen = (DATA.serviceDays || [])[STATE.day] || DATA.serviceDate;
   if (chosen) lines.push("Times for: " + humanDate(chosen));
   for (const destination of kept) {
     const journey = journeyFor(destination);
@@ -260,7 +261,7 @@ if (shortlistCopy) {
 }
 if (shortlistDockClear) {
   shortlistDockClear.addEventListener("click", () => {
-    shortlistCodes = [];
+    STATE.shortlist = [];
     setShortlistStatus("");
     renderShortlist();
     writeUrl();

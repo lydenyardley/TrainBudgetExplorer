@@ -30,6 +30,7 @@ ASSETS = {
 }
 STATION_SCRIPT_PARTS = {
     "station/payload.js": "STATION_SCRIPT",
+    "station/state.js": "STATION_SCRIPT",
     "station/railcards.js": "STATION_SCRIPT",
     "station/budget.js": "STATION_SCRIPT",
     "station/service-day.js": "STATION_SCRIPT",

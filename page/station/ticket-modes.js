@@ -2,8 +2,10 @@
 // of any type -- and what the page says when a mode or a budget returns
 // nothing.
 
+// The mode on screen, which is the state's own copy: the radios display it
+// rather than being it (R4).
 function ticketMode() {
-  return document.querySelector('input[name="ticketMode"]:checked').value;
+  return STATE.mode;
 }
 // One place that knows which payload list each ticket mode shows, so the
 // count in a message cannot drift from the list the table is built from.
@@ -198,17 +200,11 @@ function renderEmptyMode() {
   actions.className = "empty-actions";
   for (const mode of Object.keys(modeLabels())) {
     if (mode === ticketMode() || !modeCount(mode)) continue;
-    const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "toggle";
     button.textContent = showLabel(mode);
-    button.addEventListener("click", () => {
-      input.checked = true;
-      currentPage = 1;
-      render();
-      writeUrl();
-    });
+    button.addEventListener("click", () => chooseMode(mode));
     actions.append(button);
   }
   if (actions.childElementCount) {
@@ -245,7 +241,7 @@ function renderEmpty(available, wanted, cap, what) {
     const enough = Math.ceil(cheapest / 100);
     offer("Raise the budget to " + money(enough * 100), () => {
       setBudget(enough);
-      currentPage = 1;
+      STATE.page = 1;
       render();
       writeUrl({ budget: true });
     });
@@ -258,24 +254,13 @@ function renderEmpty(available, wanted, cap, what) {
   if (unit() === "adult" && railcardKeys.length) {
     const cheaper = activeDestinations().some((destination) => destination.partyPence <= cap * 100);
     if (cheaper) {
-      offer("Price it for two adults", () => {
-        document.querySelector('input[name="unit"][value="party"]').checked = true;
-        currentPage = 1;
-        render();
-        writeUrl();
-      });
+      offer("Price it for two adults", () => chooseUnit("party"));
     }
   }
   // Another ticket type on this origin, with its own count.
   for (const mode of Object.keys(modeLabels())) {
     if (mode !== ticketMode() && modeCount(mode)) {
-      const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
-      offer(showLabel(mode), () => {
-        input.checked = true;
-        currentPage = 1;
-        render();
-        writeUrl();
-      });
+      offer(showLabel(mode), () => chooseMode(mode));
     }
   }
   if (actions.childElementCount) {

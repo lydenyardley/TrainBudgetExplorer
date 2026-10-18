@@ -5,8 +5,8 @@
 // first page, because the cheapest destinations are the ones a narrowed
 // search wants to see first and page 4 of the previous set is not where they
 // are now. The count and the page position are both re-announced by render().
-budget.addEventListener("input", () => { setBudget(budget.value); currentPage = 1; render(); writeUrl({ budget: true }); });
-budgetNumber.addEventListener("input", () => { setBudget(budgetNumber.value); currentPage = 1; render(); writeUrl({ budget: true }); });
+budget.addEventListener("input", () => chooseBudget(budget.value));
+budgetNumber.addEventListener("input", () => chooseBudget(budgetNumber.value));
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
     budgetNumber.focus();
@@ -14,36 +14,28 @@ budgetField.addEventListener("click", (event) => {
   }
 });
 railcardSelect.addEventListener("change", () => {
+  chooseCard(railcardSelect.value);
   try {
     if (noCard()) window.localStorage.removeItem(RAILCARD_MEMORY + DATA.origin.crs);
-    else window.localStorage.setItem(RAILCARD_MEMORY + DATA.origin.crs, railcardSelect.value);
+    else window.localStorage.setItem(RAILCARD_MEMORY + DATA.origin.crs, STATE.railcard);
   } catch (error) {
     // Storage blocked. The choice still applies to this page and still travels
     // in the URL; it just will not be there next time.
   }
-  currentPage = 1;
-  render();
-  writeUrl();
 });
+// "All" is the selection being empty rather than a chip of its own, so
+// choosing it clears every specific chip -- reading the boxes back would find
+// the chips still on and keep them, which made the All control do nothing. Any
+// other chip is the set of boxes now on, and clearing the last one leaves the
+// empty selection that checks All again.
 for (const input of destinationTypeInputs) {
-  input.addEventListener("change", () => {
-    const all = destinationTypeInputs.find((candidate) => candidate.value === "all");
-    if (input.value === "all") {
-      for (const candidate of destinationTypeInputs) candidate.checked = candidate === all;
-    } else if (input.checked) {
-      all.checked = false;
-    } else if (destinationTypeInputs.filter((candidate) => candidate.value !== "all").every((candidate) => !candidate.checked)) {
-      all.checked = true;
-    }
-    currentPage = 1;
-    render();
-    writeUrl();
-  });
+  input.addEventListener("change", () => chooseTypes(
+    input.value === "all" ? [] : chipSelection()));
 }
-for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
-for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => { currentPage = 1; render(); writeUrl(); });
-previousPage.addEventListener("click", () => { currentPage -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
-nextPage.addEventListener("click", () => { currentPage += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => chooseUnit(radio.value));
+for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => chooseMode(radio.value));
+previousPage.addEventListener("click", () => { STATE.page -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+nextPage.addEventListener("click", () => { STATE.page += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 applyState(readState());
 // The day control is written from the payload rather than from markup, so a
 // page whose build carried no week shows no control at all rather than an empty
@@ -70,7 +62,7 @@ if (serviceDaySelect) {
     });
     // The address was read before this block ran, so the day a link asked for is
     // already recorded; the control is pointed at it now that it has options.
-    setServiceDay(serviceDayIndex);
+    setServiceDay(STATE.day);
     serviceDaySelect.addEventListener("change", function () {
       chooseServiceDay(serviceDaySelect.value);
     });

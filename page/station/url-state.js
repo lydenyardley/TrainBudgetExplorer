@@ -10,24 +10,29 @@
 // blob. The same query is what a picker option carries, so a link to another
 // origin is the same search from a different station (S06) -- one function
 // writes both, so they cannot drift apart.
-const DEFAULT_MODE = document.querySelector('input[name="ticketMode"]:checked').value;
+// The build's own default, captured before any control moves: it is the value a
+// parameter is left out for. STATE.mode is seeded from the markup, so this is
+// the template's answer rather than a second copy of it.
+const DEFAULT_MODE = STATE.mode;
 function stateQuery() {
   const params = new URLSearchParams();
-  params.set("budget", budgetNumber.value);
-  const mode = ticketMode();
-  if (mode !== DEFAULT_MODE) params.set("mode", mode);
-  if (unit() === "party") params.set("party", "2");
-  if (!noCard()) params.set("card", railcardSelect.value);
-  const types = Array.from(selectedDestinationTypes()).sort();
+  // Read from the state, not from the two fields that display it: the address
+  // is a projection of the search, so a control that has not been re-rendered
+  // yet cannot write a figure the page is no longer searching with.
+  params.set("budget", String(STATE.budget));
+  if (STATE.mode !== DEFAULT_MODE) params.set("mode", STATE.mode);
+  if (STATE.unit === "party") params.set("party", "2");
+  if (STATE.railcard) params.set("card", STATE.railcard);
+  const types = STATE.types.slice().sort();
   for (const type of types) params.append("types", type);
-  if (currentPage > 1) params.set("page", String(currentPage));
+  if (STATE.page > 1) params.set("page", String(STATE.page));
   // Only a day other than the build's own. A link that arrived without one
   // reads as this build's day, which is what the address then says too, so the
   // parameter has one meaning rather than two.
-  if (serviceDayIndex > 0) params.set("day", String(serviceDayIndex));
+  if (STATE.day > 0) params.set("day", String(STATE.day));
   // One repeated short key per place rather than a joined list: URLSearchParams
   // would percent-encode the commas, and a shared link is meant to be readable.
-  for (const code of shortlistCodes) params.append("short", code);
+  for (const code of STATE.shortlist) params.append("short", code);
   return params.toString();
 }
 
@@ -35,16 +40,15 @@ function stateQuery() {
 // many events it fires, so the budget replaces the address while the pointer
 // is down and pushes once it settles; every other control is a single click
 // and pushes at once.
-let budgetUrlTimer = null;
 function writeUrl({ budget = false } = {}) {
   if (!budget) {
     writeUrlNow(true);
     return;
   }
-  if (budgetUrlTimer) clearTimeout(budgetUrlTimer);
+  if (STATE.budgetUrlTimer) clearTimeout(STATE.budgetUrlTimer);
   writeUrlNow(false);
-  budgetUrlTimer = setTimeout(() => {
-    budgetUrlTimer = null;
+  STATE.budgetUrlTimer = setTimeout(() => {
+    STATE.budgetUrlTimer = null;
     writeUrlNow(true);
   }, 700);
 }
@@ -84,35 +88,61 @@ function readState() {
     short: params.getAll("short").map((code) => code.trim().toUpperCase()).filter(Boolean),
   };
 }
-function applyState(state) {
-  if (state.budget !== null && Number.isFinite(state.budget) && state.budget >= 0) {
-    setBudget(state.budget);
-  }
+// Put a search on the page. Every field it is not given keeps what the page
+// already has, so a link that names only the budget leaves the reader's card and
+// chips alone, and anything driving the page from script can set one part of the
+// search without inventing the other seven. The address's own reader below
+// always passes all of them.
+//
+// This is the one place that writes a control from the state, and it reads none
+// of them back (R4 of the 18 October 2026 plan, in `docs/open-work.md`): the
+// object is decided first and every control is then drawn from it, so a control
+// can only ever show the search the page is actually running. A value this page
+// does not offer keeps the current one instead of being guessed at -- a link
+// from another station can name a mode, a party or a chip this origin's feed
+// holds nothing for.
+function applyState(given) {
+  const pick = (key, current) => (given[key] === undefined || given[key] === null ? current : given[key]);
+  const offered = (selector) => new Set(
+    Array.from(document.querySelectorAll(selector), (control) => control.value));
+  const modes = offered('input[name="ticketMode"]');
+  const units = offered('input[name="unit"]');
+  const chips = offered('input[name="destinationType"]');
+  const mode = pick("mode", STATE.mode);
+  const unit = pick("unit", STATE.unit);
+  if (modes.has(mode)) STATE.mode = mode;
+  if (units.has(unit)) STATE.unit = unit;
+  // A card code is applied only when this page prices that card. A link from
+  // another station can name one this origin's feed holds nothing for, and the
+  // reader should get this page's own default rather than a control reading as
+  // a card they hold.
+  const card = pick("railcard", STATE.railcard);
+  STATE.railcard = card && railcards[card] ? card : "";
+  // Only a chip this page offers, and never "all": that chip is the selection
+  // being empty, so a link naming it as a type would filter every row away.
+  STATE.types = [...new Set(pick("types", STATE.types))]
+    .filter((type) => type !== "all" && chips.has(type));
+  STATE.page = Math.max(1, pick("page", STATE.page));
+  const budget = pick("budget", STATE.budget);
+  if (Number.isFinite(budget) && budget >= 0) setBudget(budget);
+  STATE.shortlist = pick("short", STATE.shortlist).filter(pricedHere);
+  // Now the controls, from the object. Nothing below reads one back.
   for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
-    if (input.value === state.mode) input.checked = true;
+    input.checked = input.value === STATE.mode;
   }
   for (const input of document.querySelectorAll('input[name="unit"]')) {
-    if (input.value === state.unit) input.checked = true;
+    input.checked = input.value === STATE.unit;
   }
-  // A card code that arrived on a link is applied only when this page prices
-  // that card. A link from another station can name a card this origin's feed
-  // holds nothing for, and the reader should get this page's own default rather
-  // than a control reading as a card they hold.
-  const wanted = state.railcard && railcards[state.railcard] ? state.railcard : "";
-  railcardSelect.value = wanted;
+  railcardSelect.value = STATE.railcard;
   for (const input of destinationTypeInputs) {
-    input.checked = input.value !== "all" && state.types.includes(input.value);
-  }
-  const all = destinationTypeInputs.find((input) => input.value === "all");
-  if (all && !all.checked && !destinationTypeInputs.some((input) => input.value !== "all" && input.checked)) {
-    all.checked = true;
+    input.checked = input.value === "all"
+      ? STATE.types.length === 0
+      : STATE.types.includes(input.value);
   }
   // Back and Forward carry the day like every other part of the search, so the
-  // address is read back into the table rather than only into a variable the
-  // control reads once. No write: Back is a decision the reader already made.
-  setServiceDay(state.day);
-  currentPage = Math.max(1, state.page);
-  shortlistCodes = state.short.filter(pricedHere);
+  // day is set through the state rather than only into a variable the control
+  // reads once. No write: Back is a decision the reader already made.
+  setServiceDay(pick("day", STATE.day));
 }
 // Whether this page can price that station at all, in any of its ticket modes.
 function pricedHere(code) {

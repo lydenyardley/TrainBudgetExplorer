@@ -5,7 +5,7 @@
 // dearest depends on the party and the card, and this panel holds neither.
 
 function sizeBudgetField() {
-  const digits = Math.max(1, String(budgetNumber.value || "1").length);
+  const digits = Math.max(1, String(STATE.budget).length);
   budgetNumber.style.width = digits + "ch";
 }
 // The stop is part of the budget's contract, so it is named where the reader is
@@ -26,8 +26,6 @@ function sizeBudgetField() {
 // (filters.js), so a reader who chose "Small towns" in Return mode and glanced
 // at Singles would return to a budget that no longer reaches a small town, and
 // the page would drop the filter it promises to keep (C20, critique item 3).
-const budgetByMode = Object.create(null);
-let lastClampedMode = null;
 function clampBudget(available) {
   const mode = ticketMode();
   // An empty list has no prices to bound. An unpriced page and a ticket mode
@@ -38,20 +36,20 @@ function clampBudget(available) {
   if (!available.length) {
     // Nothing is remembered for a mode that bounds nothing: the figure the
     // reader is holding belongs to the mode they set it in.
-    lastClampedMode = mode;
-    return Number(budget.value) * 100;
+    STATE.lastClampedMode = mode;
+    return STATE.budget * 100;
   }
-  const remembered = mode === lastClampedMode ? undefined : budgetByMode[mode];
-  lastClampedMode = mode;
+  const remembered = mode === STATE.lastClampedMode ? undefined : STATE.budgetByMode[mode];
+  STATE.lastClampedMode = mode;
   const ceiling = budgetCeiling();
   budget.max = String(ceiling);
   budgetNumber.max = String(ceiling);
   budgetCeilingNote.textContent = money(ceiling * 100) + " for "
     + (unit() === "party" ? "two adults" : "one adult");
   if (remembered !== undefined && Number(remembered) <= ceiling) setBudget(remembered);
-  else if (Number(budget.value) > ceiling) setBudget(ceiling);
-  budgetByMode[mode] = Number(budget.value);
-  return Number(budget.value) * 100;
+  else if (STATE.budget > ceiling) setBudget(ceiling);
+  STATE.budgetByMode[mode] = STATE.budget;
+  return STATE.budget * 100;
 }
 // The floor is zero, not one pound. Every outbound single from the real
   // Grindleford page is fifty pence, so a floor of £1 left the
@@ -67,6 +65,7 @@ function clampBudget(available) {
   const top = Number(budget.max);
   const safe = Math.max(0, Math.min(Number.isFinite(top) ? top : 0,
                                     Number.isFinite(wanted) ? wanted : 0));
+  STATE.budget = safe;
   budget.value = String(safe);
   budgetNumber.value = String(safe);
   sizeBudgetField();

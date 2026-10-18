@@ -115,7 +115,7 @@ function journeyCell(destination, column) {
   // And only beside a journey: a row with no journey on the day prints
   // "Unknown" for the count, and naming a station under it would be a route
   // the page has just said it does not know.
-  const via = !missing && serviceDayIndex === 0 ? interchangeLine(destination) : null;
+  const via = !missing && STATE.day === 0 ? interchangeLine(destination) : null;
   // The station sits on its own line under the count, so this cell is two
   // lines tall by design. It says so in the markup, because the check that
   // measures wrapped numbers cannot otherwise tell that from a number that
@@ -244,7 +244,7 @@ function fareSummary(destination) {
 // reads Direct beside a claim that it changes somewhere is a row contradicting
 // itself. The same suppression, and for the same reason.
 function splitNote(destination) {
-  if (serviceDayIndex !== 0) return null;
+  if (STATE.day !== 0) return null;
   // A two-ticket row (ADR-0061) is the split this note describes, priced, and
   // it has no through fare for the note to compare against.
   if (destination.tickets) return null;

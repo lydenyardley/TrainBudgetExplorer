@@ -416,13 +416,12 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       let rowToggle = null;
       if (document.getElementById("rows") && typeof setBudget === "function") {
         setBudget(budgetCeiling());
-        currentPage = 1;
+        STATE.page = 1;
         render();
         for (const mode of [modeBefore, "single", "return", "anytime"]) {
           const input = document.querySelector(`input[name="ticketMode"][value="${mode}"]`);
           if (!input) continue;
-          input.checked = true;
-          currentPage = 1;
+          if (typeof applyState === "function") applyState({ mode, page: 1 });
           render();
           const row = Array.from(document.querySelectorAll("#rows tr:not(.detail)")).find((r) => {
             const found = activeDestinations().find((d) => d.crs === r.dataset.crs);
@@ -450,11 +449,10 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         measured.push({ what, selector, value: Math.round(value * 100) / 100, needed, size });
       }
       if (rowToggle) rowToggle.click();
-      const back = document.querySelector(`input[name="ticketMode"][value="${modeBefore}"]`);
-      if (back) back.checked = true;
+      if (typeof applyState === "function") applyState({ mode: modeBefore });
       if (document.getElementById("rows") && typeof setBudget === "function") {
         setBudget(Number(budgetBefore));
-        currentPage = 1;
+        STATE.page = 1;
         render();
       }
       // Whether this page's feed prices any fare with a condition at all. A

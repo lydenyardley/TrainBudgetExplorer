@@ -18,12 +18,11 @@ const RAILCARD_MEMORY = "tbe.railcard.";
 // Both come from the one CHEVRON constant below, because two drawings of a
 // chevron is one too many marks to keep in step.
 const CHEVRON = __CHEVRON_JS__;
-let rememberedCard = null;
 try {
-  rememberedCard = window.localStorage.getItem(RAILCARD_MEMORY + DATA.origin.crs);
+  STATE.rememberedCard = window.localStorage.getItem(RAILCARD_MEMORY + DATA.origin.crs);
 } catch (error) {
   // A browser with storage blocked still gets the control; it just asks again.
-  rememberedCard = null;
+  STATE.rememberedCard = null;
 }
 
 // The collection the page offers, keyed by the code the feed priced it under.
@@ -32,7 +31,7 @@ const railcards = (DATA.railcards || []).reduce((all, card) => {
   return all;
 }, {});
 const railcardKeys = Object.keys(railcards);
-const noCard = () => railcardSelect.value === "";
+const noCard = () => STATE.railcard === "";
 
 // The options are written from the payload, so the control lists the cards this
 // build actually priced and nothing else. This runs before the address is read
@@ -53,8 +52,11 @@ if (railcardKeys.length) {
   // A remembered card is applied only when this page prices it, so a reader who
   // chose a card on a page that offered it is not silently moved onto a
   // different card where it is absent.
-  if (rememberedCard && railcardSelect.querySelector('option[value="' + rememberedCard + '"]')) {
-    railcardSelect.value = rememberedCard;
+  if (STATE.rememberedCard && railcardSelect.querySelector('option[value="' + STATE.rememberedCard + '"]')) {
+    // The control and the state say the same thing: the remembered card is
+    // what this page prices with until the address says otherwise.
+    STATE.railcard = STATE.rememberedCard;
+    railcardSelect.value = STATE.railcard;
   }
 }
 
@@ -67,7 +69,7 @@ function cardCoversParty(card) {
   return card.minAdults <= adults && adults <= card.maxAdults;
 }
 function unit() {
-  return document.querySelector('input[name="unit"]:checked').value;
+  return STATE.unit;
 }
 function priceOf(destination) {
   const party = unit() === "party";
@@ -84,9 +86,9 @@ function priceOf(destination) {
 // the feed blocked for a fare has no price and is not offered as one.
 function chosenCard(destination) {
   if (noCard()) return null;
-  const card = destination.railcards && destination.railcards[railcardSelect.value];
+  const card = destination.railcards && destination.railcards[STATE.railcard];
   if (!card || card.pricePence === null || card.pricePence === undefined) return null;
-  const chosen = railcards[railcardSelect.value];
+  const chosen = railcards[STATE.railcard];
   return chosen && cardCoversParty(chosen) ? card : null;
 }
 // Q3: with the card ticked the cell shows what the reader would pay *and* the
@@ -132,7 +134,7 @@ function renderRailcardNote() {
     note.textContent = DATA.railcardNote;
     return;
   }
-  const chosen = railcards[railcardSelect.value];
+  const chosen = railcards[STATE.railcard];
   // "Wherever it lowers the fare", not "every price includes it": a card whose
   // minimum fare is above the standard one leaves that row at the standard
   // fare, and the paragraph explaining the numbers cannot be false about a row
@@ -176,7 +178,7 @@ function syncRailcardParty() {
   // sentence in the option is the feed's own bound, so the reason is on screen
   // rather than inferred from an absence.
   const adults = unit() === "party" ? 2 : 1;
-  const wanted = railcardSelect.value;
+  const wanted = STATE.railcard;
   railcardSelect.replaceChildren();
   const none = document.createElement("option");
   none.value = "";
@@ -199,8 +201,11 @@ function syncRailcardParty() {
     railcardSelect.append(option);
   }
   // The reader's choice survives the rebuild when the party on screen still
-  // allows it, and is cleared when it does not.
-  railcardSelect.value = offered.includes(wanted) ? wanted : "";
+  // allows it, and is cleared when it does not -- in the state first, because
+  // every price below reads it from there, and then in the control that shows
+  // it, so the two cannot disagree about which card is priced with.
+  STATE.railcard = offered.includes(wanted) ? wanted : "";
+  railcardSelect.value = STATE.railcard;
   railcardSelect.disabled = offered.length === 0;
   if (!help) return;
   if (noCard()) {
@@ -214,7 +219,7 @@ function syncRailcardParty() {
       "the page's address; until then, every price is a standard fare.";
     return;
   }
-  const chosen = railcards[railcardSelect.value];
+  const chosen = railcards[STATE.railcard];
   const covers = "The " + chosen.label + " in this feed covers " + chosen.minAdults + " to " +
     chosen.maxAdults + " adults";
   help.textContent = covers + ", which matches the party on screen. " + chosen.eligibleCount +

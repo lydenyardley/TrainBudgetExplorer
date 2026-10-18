@@ -11,7 +11,6 @@ const serviceDayHelp = document.getElementById("serviceDayHelp");
 // DATA.serviceDays. Zero is the build's own day, which is what every one of
 // these surfaces said before the reader could choose, so the page opens on the
 // day it has always opened on.
-let serviceDayIndex = 0;
 // Put a day on the control and in the state the table reads. One function for
 // every caller, because the reader can ask for a day two ways -- the control,
 // or Back -- and a page where only one of them moves the table is a page whose
@@ -22,7 +21,7 @@ let serviceDayIndex = 0;
 function setServiceDay(index) {
   const days = DATA.serviceDays || [];
   const wanted = Math.min(Math.max(Number(index) || 0, 0), Math.max(days.length - 1, 0));
-  serviceDayIndex = wanted;
+  STATE.day = wanted;
   // The control has no options until the block below writes them, which is
   // after the address is read, so a link's day is recorded first and the
   // control is pointed at it once it exists.
@@ -38,7 +37,7 @@ function setServiceDay(index) {
 // itself.
 function chooseServiceDay(index) {
   setServiceDay(index);
-  currentPage = 1;
+  STATE.page = 1;
   render();
   renderShortlist();
   writeUrl();
@@ -99,7 +98,7 @@ function serviceAnswer(destination) {
   // up in it. Handing back the day's whole table instead is a row that
   // prints a dash for every station on the page, because the object has no
   // index 0 in it to read a duration from.
-  const day = perDay[serviceDayIndex];
+  const day = perDay[STATE.day];
   if (!day) return undefined;
   // The build keeps only the stations a walk reached, so a station this
   // day's table does not name is one it did not run to on that day. The row
@@ -131,7 +130,7 @@ function journeyFor(destination) {
 // names both, which is what tells a reader the row is worth reading.
 function dayAbsenceText(destination, brief) {
   const days = DATA.serviceDays || [];
-  const iso = days[serviceDayIndex];
+  const iso = days[STATE.day];
   const day = { short: shortDay(iso), long: iso ? humanDate(iso) : "" };
   let later = null;
   const answer = serviceAnswer(destination);
@@ -140,7 +139,7 @@ function dayAbsenceText(destination, brief) {
     // The next day this station does run on, looked up in that day's table
     // the same way the chosen day is. A day whose table does not name the
     // station is not a day it runs on, so it is passed over.
-    for (let index = serviceDayIndex + 1; index < perDay.length; index++) {
+    for (let index = STATE.day + 1; index < perDay.length; index++) {
       const table = perDay[index];
       if (table && Object.prototype.hasOwnProperty.call(table, destination.crs)) {
         later = days[index];

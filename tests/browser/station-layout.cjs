@@ -120,11 +120,11 @@ async function measureTheLayout(world) {
     await page.setViewportSize({ width: 1280, height: 600 });
     await open(facts.affordable);
     await page.evaluate(() => {
-      if (typeof shortlistCodes !== "undefined" && shortlistCodes.length) {
+      if (typeof STATE !== "undefined" && STATE.shortlist.length) {
         document.getElementById("shortlistClear").click();
       }
       setBudget(budgetCeiling());
-      currentPage = 1;
+      STATE.page = 1;
       render();
     });
     const stuckHeadings = await page.evaluate(() => {

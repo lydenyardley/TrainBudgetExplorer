@@ -59,6 +59,7 @@ SHARED_CSS = _page_file("shared.css")
 # that reason, not for any order of their own.
 STATION_SCRIPT_PARTS = (
     "station/payload.js",
+    "station/state.js",
     "station/railcards.js",
     "station/budget.js",
     "station/service-day.js",

@@ -115,7 +115,7 @@ async function driveTheFilters(world) {
       const select = document.getElementById("railcardSelect");
       const card = (DATA.railcards || []).find((c) => c.minAdults <= 1 && 1 <= c.maxAdults);
       if (!select || !card) return null;
-      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      applyState({ unit: "adult" });
       const lowered = [DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations]
         .flat()
         .filter((d) => {
@@ -149,8 +149,7 @@ async function driveTheFilters(world) {
     if (resortable) {
       const beforeCard = await shownPrices();
       await page.evaluate((key) => {
-        const select = document.getElementById("railcardSelect");
-        select.value = key;
+        applyState({ railcard: key });
         render();
       }, resortable);
       const withCard = await shownPrices();
@@ -285,8 +284,12 @@ async function driveTheFilters(world) {
       return null;
     }, world.pageSize);
     if (heritage) {
-      await page.check('input[name="destinationType"][value="all"]');
-      await page.locator(`input[name="ticketMode"][value="${heritage.mode}"]`).check({ force: true });
+      // The reader's own controls, clicked where the reader clicks them: a
+      // label click is idempotent, and page.check() on a radio the page already
+      // holds throws rather than doing nothing, which turned a setup that the
+      // page had already satisfied into a failure.
+      await page.locator('label:has(input[name="destinationType"][value="all"])').click();
+      await page.locator(`label:has(input[name="ticketMode"][value="${heritage.mode}"])`).click();
       await page.fill("#budgetNumber", String(heritage.pounds));
       const heritageText = await page.textContent("#rows");
       // Read the link off the row the payload named rather than the first proof
@@ -639,11 +642,11 @@ async function driveTheFilters(world) {
       const original = document.querySelector('input[name="ticketMode"]:checked').value;
       const offered = {};
       for (const mode of switchable) {
-        document.querySelector(`input[name="ticketMode"][value="${mode}"]`).checked = true;
+        applyState({ mode });
         render();
         offered[mode] = new Set(activeDestinations().flatMap((x) => x.destinationTypes || [x.destinationType]));
       }
-      document.querySelector(`input[name="ticketMode"][value="${original}"]`).checked = true;
+      applyState({ mode: original });
       render();
       const out = [];
       for (const input of document.querySelectorAll('input[name="destinationType"]')) {

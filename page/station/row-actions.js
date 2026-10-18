@@ -73,11 +73,11 @@ function cardNote(destination) {
   // control above already reads "No railcard selected, so these are standard
   // fares". A paragraph on every expanded row repeating the page's default is
   // the noise this replaced.
-  if (noCard() || !railcards[railcardSelect.value]) return null;
+  if (noCard() || !railcards[STATE.railcard]) return null;
   const note = document.createElement("p");
   note.className = "card-note";
 
-  const card = railcards[railcardSelect.value];
+  const card = railcards[STATE.railcard];
   // ADR-0061: a two-ticket row is two published fares, so a card is decided on
   // each ticket and the row's card price is the two card prices added together.
   // The reader is quoted the pair the journey is, not a card applied to half of
@@ -233,7 +233,7 @@ function journeyText(destination) {
   lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
   const card = chosenCard(destination);
   if (together && card) {
-    lines.push(railcards[railcardSelect.value].label + " discount is not sent to the seller: confirm the railcard on their site");
+    lines.push(railcards[STATE.railcard].label + " discount is not sent to the seller: confirm the railcard on their site");
   }
   return lines.join("\n");
 }
@@ -250,7 +250,7 @@ function showCopyText(host, text, button) {
   box.readOnly = true;
   box.rows = 5;
   box.value = text;
-  box.id = "copy-text-" + (regionSeq += 1);
+  box.id = "copy-text-" + (STATE.regionSeq += 1);
   box.setAttribute("aria-label", "Journey details to copy");
   host.append(box);
   // The copy control is not a disclosure -- it has no collapsed state to speak

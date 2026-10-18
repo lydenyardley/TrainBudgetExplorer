@@ -162,10 +162,10 @@ async function renderThePage(world) {
       JSON.stringify({ kinds: headline.kinds, total: headline.total, named: headline.named, summary: headline.summary })
     );
     const partyBasis = await page.evaluate(() => {
-      document.querySelector('input[name="unit"][value="party"]').checked = true;
+      applyState({ unit: "party" });
       render();
       const summary = document.getElementById("summary").textContent;
-      document.querySelector('input[name="unit"][value="adult"]').checked = true;
+      applyState({ unit: "adult" });
       render();
       return summary;
     });

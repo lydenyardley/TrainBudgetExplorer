@@ -5,7 +5,6 @@ const more = document.getElementById("more");
 const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="destinationType"]'));
 const destinationType = document.getElementById("destinationTypes");
 const PAGE_SIZE = 20;
-let currentPage = 1;
 const pagination = document.getElementById("pagination");
 const previousPage = document.getElementById("previousPage");
 const nextPage = document.getElementById("nextPage");
@@ -41,9 +40,9 @@ function filterStateText() {
   // card is reading the price beside it, and the fold hides the panel that
   // offered it, so "no card selected" and "no railcard" were both a fact this
   // line could not state without reading the panel again.
-  const card = noCard() || !railcards[railcardSelect.value]
+  const card = noCard() || !railcards[STATE.railcard]
     ? "0 railcard"
-    : "1 railcard (" + railcards[railcardSelect.value].label + ")";
+    : "1 railcard (" + railcards[STATE.railcard].label + ")";
   const labelOf = (value) => {
     const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
     const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
@@ -56,10 +55,17 @@ function filterStateText() {
 function renderFilterState() {
   if (filterState) filterState.textContent = filterStateText();
 }
-function selectedDestinationTypes() {
-  return new Set(destinationTypeInputs
+// The chips as the reader has them. This is the one adapter that reads the
+// controls rather than the state, because a chip's own click is the only place
+// its value is news: everything else asks selectedDestinationTypes(), which
+// reads STATE.types.
+function chipSelection() {
+  return destinationTypeInputs
     .filter((input) => input.value !== "all" && input.checked)
-    .map((input) => input.value));
+    .map((input) => input.value);
+}
+function selectedDestinationTypes() {
+  return new Set(STATE.types);
 }
 function matchesType(destination, wantedTypes) {
   if (wantedTypes.size === 0) return true;
@@ -98,10 +104,7 @@ function updateChipCounts(available, cap) {
   if (clear) clear.hidden = selectedDestinationTypes().size === 0;
 }
 function clearDestinationTypes() {
-  for (const input of destinationTypeInputs) input.checked = input.value === "all";
-  currentPage = 1;
-  render();
-  writeUrl();
+  chooseTypes([]);
 }
 // A chip is offered when a destination in the list the reader is looking at
 // carries it and is inside the budget. The build offers one from the union of
@@ -136,51 +139,41 @@ function syncDestinationTypeChips(available, cap) {
   // announced too, and only a chip that was actually selected is announced at
   // all -- so a drag that merely hides the chips already sitting at (0) stays
   // quiet.
-  const modeChanged = lastSyncedMode !== null && lastSyncedMode !== mode;
+  const modeChanged = STATE.lastSyncedMode !== null && STATE.lastSyncedMode !== mode;
   if (modeChanged) {
-    typeSelectionsByMode[lastSyncedMode] = Array.from(selectedDestinationTypes());
+    STATE.typesByMode[STATE.lastSyncedMode] = STATE.types.slice();
   }
-  const all = destinationTypeInputs.find((input) => input.value === "all");
-  const dropped = [];
-  for (const input of destinationTypeInputs) {
-    if (input.value === "all") continue;
-    const present = offered.has(input.value);
-    const chip = input.closest("label");
-    if (chip) chip.hidden = !present;
-    if (!present && input.checked) {
-      input.checked = false;
-      dropped.push(chipLabel(input.value));
-    }
-  }
+  // The selection is computed from the state and then drawn, rather than read
+  // back out of fourteen checkboxes: a chip the budget or the mode takes away
+  // leaves STATE.types here, and every chip below is set from what is left. The
+  // other direction -- reading the boxes after clearing one of them -- is how
+  // the page ended up with two answers to "what is narrowed" (R4).
+  const dropped = STATE.types.filter((type) => !offered.has(type));
+  const kept = STATE.types.filter((type) => offered.has(type));
   // Restore what the reader chose the last time they were in this mode, minus
   // anything this mode cannot offer. A mode reached for the first time keeps
   // whatever the reader has selected now, which is what the previous behaviour
   // did too.
-  const remembered = typeSelectionsByMode[mode];
-  const restored = [];
-  if (modeChanged && remembered && remembered.length) {
-    let anyRestored = false;
-    for (const input of destinationTypeInputs) {
-      if (input.value === "all") continue;
-      const wanted = remembered.includes(input.value) && offered.has(input.value);
-      if (wanted) { input.checked = true; anyRestored = true; restored.push(chipLabel(input.value)); }
-    }
-    if (anyRestored && all) all.checked = false;
+  const remembered = modeChanged ? STATE.typesByMode[mode] || [] : [];
+  const restored = remembered.filter((type) => offered.has(type) && !kept.includes(type));
+  STATE.types = kept.concat(restored);
+  for (const input of destinationTypeInputs) {
+    if (input.value === "all") continue;
+    const chip = input.closest("label");
+    if (chip) chip.hidden = !offered.has(input.value);
+    input.checked = STATE.types.includes(input.value);
   }
-  if (!all || !all.checked) {
-    const selected = destinationTypeInputs.some(
-      (input) => input.value !== "all" && input.checked);
-    if (!selected && all) all.checked = true;
-  }
-  lastSyncedMode = mode;
+  const all = destinationTypeInputs.find((input) => input.value === "all");
+  if (all) all.checked = STATE.types.length === 0;
+  STATE.lastSyncedMode = mode;
   // Announced whenever something changed, not only on a mode change: the budget
   // can take a chip away too, and a filter that changed the result set without
   // saying so is indistinguishable from a broken one. Nothing is said when
   // nothing changed, so a budget drag that moves no chip's zero stays quiet.
-  if (dropped.length || restored.length) announceFacetChange(dropped, restored, mode);
+  if (dropped.length || restored.length) {
+    announceFacetChange(dropped.map(chipLabel), restored.map(chipLabel), mode);
+  }
 }
-const typeSelectionsByMode = Object.create(null);
-let lastSyncedMode = null;
 function chipLabel(value) {
   const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
   const chip = input ? input.closest("label") : null;
