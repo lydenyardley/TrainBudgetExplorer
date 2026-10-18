@@ -591,6 +591,13 @@ The reviews themselves are gone from the tree, so the structural ideas they
 weighed and rejected are kept here: they are the part a later reader would
 otherwise re-derive, and each carries the reason it was rejected.
 
+- **Renaming the destination-type chips, or naming the census bands under them**
+  (clarity audit item 17, 16 October 2026). "Cities" and "Villages" are Census
+  2021 built-up-area size bands, so a reader may bring the ordinary word's meaning
+  to a chip that means the band. Read and rejected by the owner: the words stay,
+  because the chip is the page's own grouping of a place rather than a claim about
+  it, the sourced facets worth naming already carry their named proof, and a
+  rename would trade a word every reader knows for a longer one meaning the same.
 - **Moving the root Python modules into a package** (8 October 2026). High
   import and CI churn, and the `AGENTS.md` map gets most of the orientation
   benefit.
@@ -692,42 +699,6 @@ on a tool.
    2026**: is there community traction, and is the thing worth keeping. S44 is the
    argument about what to measure before that date, and it is measured at the
    community posts rather than on the page. Nothing is built for this.
-7. **Why does the release chooser count 50 where its own page counts 53?**
-   Clarity audit item 3's data half, and the last of that audit's P1 findings. The
-   copy half landed, so no count is bare any more: a chooser row says "destinations
-   this feed prices" and a count line says "destinations for up to £20.00 per
-   adult", and the index behind the first is every priced destination at any
-   budget (`_priced_destinations`, the union over the three modes at
-   `EVERYTHING_PENCE`). The synthetic build's 5 against 4 is exactly that
-   difference; the release's 50 against 53 is three more than it explains. Whoever
-   can query the release index has to say which number the index is meant to be
-   and whether the page or the index is the one that is wrong.
-8. **Which destination-type names can a reader read as themselves?** Clarity audit
-   item 17. "Cities" and "Villages" are Census 2021 built-up-area size bands, so
-   the meaning a reader brings to either word is not the one the chip applies; the
-   rule line under the chips counts them and does not name the bands. Two ways out,
-   and both are yours: one line saying where the bands come from ("size of the
-   place, from the 2021 census"), or renaming the four in
-   `DESTINATION_TYPE_FILTERS` in `atoc_fare_declarations.py`, which is the reviewed
-   table the payload's types are keyed by, so a rename is one registry edit.
-9. **What may the built line claim about publication?** Clarity audit item 42.
-    The privacy page's first line reads "the build published on" and then the
-    build's own timestamp (`builtAt`, set in `build_payload.py`). The
-    sentence has to stay, because the analytics bullets below it are claims about
-    one build; whether it may use the verb "published" is the decision of whoever
-    clears the release. The fares-only release is cleared and a push deploys, so
-    the verb becomes true when a run reaches the deploy job — not before, and not
-    for a build that is only ever built locally.
-10. **Which trade terms does this audience know?** Clarity audit item 44. ITX,
-    DTD, RR, "flow", "NRE", "Priced as" and "feed" itself are quoted on the routes
-    the release serves and glossed on none of them. The audit asks for one short
-    glossary inside the method disclosure and a first-use gloss for the two or
-    three terms that appear above the table; the brief asks for plain language
-    without flattening real terminology, so which of these a rail reader already
-    knows is a judgement about the audience rather than a style rule. Three of the
-    terms the audit listed moved in the clarity pass rather than here: "walk-up
-    fare" is glossed where it is met, the row's own disclosure says it is
-    technical, and "feed dated" became "downloaded" (items 30, 26 and 45).
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
 is one of a collection with none selected by default (ADR-0052), the runner
@@ -741,6 +712,16 @@ and the source that brings them back" above: Network Rail's own CIF, fetched fro
 the `SCHEDULE_URL` repository variable, and a release built and declared as
 `fares,timetable`. The three routes that were weighed are recorded there so the
 question is not re-derived.
+
+Four more left the list on 18 October 2026, all four from the clarity audit and
+all four written out under "The 14 October 2026 clarity audit" below: **the
+chooser counts the places its page carries**, so at the top of the budget the two
+print the same number (item 3, settled by measurement rather than by a person);
+**the destination-type chips keep their words** — a rejection rather than a fix,
+with its reason; **the notice line dates the build** instead of claiming a
+publication it cannot know happened; and **the trade words are defined once**,
+inside the method disclosure, with no gloss where the page meets them.
+
 ---
 
 ## Settled in this pass, and where the record is
@@ -889,20 +870,40 @@ pair-rule encoding and the sharded release build.
 
 ### The 14 October 2026 clarity audit
 
-The audit file is pruned rather than removed, because five of its fifty findings
-are still open: four of them need a person (3's data question, 17, 42 and 44) and
-one has not been taken up (23). The other forty-four landed on 15 October 2026 in
-one commit, because the payload keys and the page's reads had to move together
-and the templates and their tests carry items from more than one route; item 1
-had already landed in `e20582d` with the rest of that day's critiques, and
+The audit file was removed on 18 October 2026, when its last finding left the
+tree, and its fifty findings are settled here. Forty-four landed on 15 October
+2026 in one commit, because the payload keys and the page's reads had to move
+together and the templates and their tests carry items from more than one route;
+item 1 had already landed in `e20582d` with the rest of that day's critiques, and
 `git log --grep="audit item"` reads any of them back. Item 8 read a sentence that
 was worth leaving as it was, and item 5 offered a warm and a blunt wording, so
-this pass chose one (warm) rather than splitting the difference.
+this pass chose one (warm) rather than splitting the difference. What was left
+after that pass went on 18 October 2026: item 23 landed on its own, item 3 was
+settled by measurement rather than by a person, item 17 was read and rejected
+with its reason, and items 42 and 44 were answered (below).
 
 Two of the findings were the same fault twice, and they are the ones worth
 remembering: a paragraph written from build-time constants while the rows beside
 it are written from the state on screen (items 20 and 24), so a railcard holder
 was told "No railcard is selected" while every row showed a card price.
+
+Item 3's data half turned out not to be a question about the index at all. One
+real build, read on 16 October 2026:
+
+    python build_demo_page.py --feed feeds/fares --timetable feeds/timetable-nwr \
+      --origin GRA --notices nre,rdg,ogl,accuracy --out <site>/index.html
+
+gives a chooser row reading *"GRANTHAM GRA 331 destinations this feed prices"*
+over a page that says **331 destinations for up to £181.00 per adult** at the top
+of its own budget and **53** at the default £20.00, from 324 rows in the cheapest
+list, 331 in the single list and 135 in the anytime list. The chooser's number is
+the page's own payload — the distinct places those lists carry, counted once
+each — so the two are the same number whenever the budget excludes nothing, and
+that is why the number moved from the 50 the audit read to the 331 the page
+holds: the index pass's `_priced_destinations` (what the chooser used to print,
+and what still decides the write set, ADR-0019 decision 3) is not the page's own
+count. The 50 against 53 was a count of places at any budget (50) beside a count
+of rows inside £20.00 on a page carrying 331 of them (53).
 
 | Item | What it asked | What landed | Held by |
 |---|---|---|---|
@@ -916,7 +917,11 @@ was told "No railcard is selected" while every row showed a card price.
 | 35, 36, 37 | the shortlist dock | the live region says what changed rather than the count; the share line names what the link carries beside a real link; the list noun is "destination" | `tests/browser/station-shortlist.cjs`, "and the change to the list is announced, not just drawn" and "and the shared link names exactly the places the list holds" |
 | 40, 41, 43 | the privacy page | the contact is a sentence with a real link; the hosting paragraph no longer restates the bullets above it; one actor name and one tense across the conditional promises | `tests/test_build_provenance.py` (the contact and its issue tracker); `DEFAULT_PRIVACY_CONTACT` in `build_release.py` |
 | 45, 46, 47, 48, 49, 50 | the provenance block | the price line tells the two dates apart ("downloaded", "fares and times read for"); the build stamp is named and dated in the page's own words; each method sentence has a subject; the destination-type source sits with the attribution; the timetable verdict names the day the times are for | `tests/test_build_provenance.py` (the two clauses, the type source's place); `tests/browser/station-fares.cjs`, "and judges that window against the reader's today" |
-| 23 | the price cell's three facts with no words between them | not taken up; the recommendation stands in the audit file | the audit file, still open |
+| 23 | the price cell's three facts with no words between them | the note reads "with your card (was £7.00)", so the words say which number is the card's | `page/station/railcards.js`; `tests/browser/station-fares.cjs`, "a discounted row shows the card price and the standard fare it was discounted from" |
+| 3 (the data half) | the chooser's number and the page's number disagree | the chooser names the page's own places, so at the top of the budget the two are the same number | `places_in_payload` in `build_payload.py`; the build and its readings are below |
+| 17 | the destination-type chips are census bands wearing everyday words | read and rejected by the owner: the words stay | the entry under "Rejected designs, with the reason"; no code changed |
+| 42 | the built line promised a publication that had not happened | the line dates the build ("This notice describes the build dated ..."), so it is true of a build nobody deployed and of a deployed one | `build_render.py`; `tests/test_build_provenance.py`, which holds the line to the date and to no claim of publication |
+| 44 | nothing defined the trade vocabulary the page quotes | one glossary inside the method disclosure, written from the route's shared script and not per page, and no gloss where the words are met | `page/station/provenance.js`; the placeholder in `page_templates.py`; `tests/browser/station-render.cjs`, "the trade words the page quotes are defined together, in the method disclosure" |
 
 ### The measurements three ADRs lean on
 
@@ -981,7 +986,7 @@ above (ADR-0050).
 
 ## Where this came from
 
-All eleven files below are gone from the working tree; each was removed by the
+All twelve files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
 above. `git show <commit>` reads one back. Most were removed on 14 October 2026,
 in the commit that settled their findings here; the route audit below was removed
@@ -989,14 +994,12 @@ on 16 October 2026, with the reading that closed its last two items. Their
 rejections are under "Rejected designs, with the reason" and their figures are in
 `docs/build-performance-findings.md`.
 
-Three reviews are still in `docs/audits/`, each pruned to what it still asks for.
-`2026-10-14-impeccable-critique.md` is recommendations 3's second half, 7 and 8,
-which are the entry above. The app-engineering audit of the same date is its
-recommendation 6, the entry above. `2026-10-14-impeccable-clarify.md` is the
-clarity reading of every route: its forty-four applied findings are the entry
-above, its four for-a-person findings are questions 7 to 10 above, and its last
-one (item 23) is a wording nobody has asked for yet. A review with nothing open
-does not keep a file.
+Two reviews from 14 October are still in `docs/audits/`, each pruned to what it
+still asks for. `2026-10-14-impeccable-critique.md` is recommendations 3's second
+half, 7 and 8, which are the entry above. The app-engineering audit of the same
+date is its recommendation 6, the entry above. The reviews filed on 17 October and
+the plan filed on 18 October sit beside them. A review with nothing open does not
+keep a file.
 
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in
@@ -1037,3 +1040,8 @@ does not keep a file.
   twenty-two items settle in the tables above, the last two ([20] and [21]) closing
   with the source-credit reading, and its detector's one finding is a rejected
   design above. Removed on 16 October 2026.
+- `docs/audits/2026-10-14-impeccable-clarify.md` — the clarity reading of every
+  route. Its fifty findings settle in the entry above: the applied ones are held
+  by the commits that carry them, item 8 was read and left as it was, item 3 was
+  settled by measurement, item 17 is a rejection with its reason, and items 23, 42
+  and 44 landed on their own. Removed on 18 October 2026.
