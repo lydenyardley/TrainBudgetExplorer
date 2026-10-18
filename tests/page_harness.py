@@ -26,6 +26,7 @@ import build_state
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from page_templates import PAYLOAD_MARKER
 
 
 def _unpack_railcards(value, codec):
@@ -153,12 +154,12 @@ class PageTestCase(unittest.TestCase):
 
 def embedded_text(html: str) -> str:
     """The payload exactly as the page's own script receives it."""
-    start = html.index("window.TBE_DATA = ") + len("window.TBE_DATA = ")
+    start = html.index(PAYLOAD_MARKER) + len(PAYLOAD_MARKER)
     return html[start : html.index(";", start)]
 
 
 def embedded_payload(html: str) -> dict:
-    match = re.search(r"window\.TBE_DATA = (\{.*?\});\n", html, re.DOTALL)
+    match = re.search(re.escape(PAYLOAD_MARKER) + r"(\{.*?\});\n", html, re.DOTALL)
     if match is None:
         raise AssertionError("the page carries no embedded payload")
     return hydrate_rows(json.loads(match.group(1)))

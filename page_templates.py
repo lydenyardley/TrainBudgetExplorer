@@ -13,6 +13,16 @@ what is genuinely its own.
 
 from pathlib import Path
 
+# The markers a built page introduces its inlined payload with. They live beside
+# the templates that write them, because the line and the name of the line are
+# one fact. Every reader of a built page imports these instead of spelling them
+# again: eight spellings existed on 18 October 2026, seven agreed, and the byte
+# measurer held the stale one, so it reported every page as carrying no payload
+# and passed. `tests/test_page_assets.py` holds each template to its marker, so a
+# template that renames the line fails there rather than in a measurement.
+PAYLOAD_MARKER = "window.TBE_DATA = "
+CHOOSER_MARKER = "window.TBE_CHOOSER_STATIONS = "
+
 # Every stylesheet and every script this site ships, as a file of its own: an
 # editor sees them, `node --check` reads them, and a search for a symbol finds
 # one answer rather than a copy inside a string. They are read at import, so the

@@ -137,12 +137,12 @@ def _within(spans: list[tuple[int, int]], start: int, end: int) -> bool:
     return any(low <= start and end <= high for low, high in spans)
 
 
-#: The one file whose assertions must quote the page's JavaScript: the byte
-#: budget finds a payload by the marker that introduces it
-#: (``page_bytes.INLINE_JSON_MARKERS``), so its fixtures have to contain that
-#: marker to be fixtures at all. It is exempt as a file rather than needle by
-#: needle, because every needle in it is the same one.
-FIXTURE_FILES = {"tools/test_page_bytes.py"}
+#: Empty since 18 October 2026. The byte measurer's fixtures were the one entry,
+#: because they spelled the payload marker by hand and that is a statement of the
+#: page's script. They import it from ``page_templates`` now, so the exemption went
+#: with the copy. Kept as a set because the next file that needs one should have to
+#: say so here rather than skip the rule quietly.
+FIXTURE_FILES: set[str] = set()
 
 
 def test_files() -> list[Path]:

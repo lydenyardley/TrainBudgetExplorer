@@ -35,6 +35,7 @@ from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex
 # naming a file the prune then deletes (ADR-0071).
 import build_assets
 from build_assets import replace_published
+from page_templates import PAYLOAD_MARKER
 
 
 BUILD_STATE_NAME = ".trainbudget-build.json"
@@ -250,7 +251,7 @@ def page_is_current(path: Path, html: str) -> bool:
         return False
     try:
         decoder = json.JSONDecoder()
-        marker = "window.TBE_DATA = "
+        marker = PAYLOAD_MARKER
         old_start = current.index(marker) + len(marker)
         new_start = html.index(marker) + len(marker)
         old, old_end = decoder.raw_decode(current, old_start)

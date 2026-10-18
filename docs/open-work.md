@@ -112,6 +112,14 @@ chooser is 28 KB and the privacy page 26 KB. The site budget is not the
 constraint here — 2,712 such pages are — so this is per-page parse and paint on a
 phone rather than the 800 MB question above.
 
+**18 October 2026.** The instrument this item was waiting on was measuring
+nothing. `tools/page_bytes` searched for a marker the renderer had stopped
+writing, so it reported 0 KB of payload and 0 rows on every page, and the
+invocation CI runs passed over an empty site too. Both are failures now, and the
+split it reports for the demo page is in `docs/build-performance-findings.md`.
+The real-feed figure is still a real-feed build away, so this item stays open: the
+instrument is repaired, and the number it was blocking has not been taken yet.
+
 **What would close it: a measurement, then a decision, in that order.** The audit
 asked for the figure before the change (ADR-0032): split the payload by ticket
 mode, time first paint on a 4x-throttled connection, and compare that against the

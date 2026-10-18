@@ -822,3 +822,36 @@ and not with `--fast`. `atoc_fares_loader.py` alone is **108** of the 350 -- the
 `FaresLoader` mixin sets attributes its subclass reads -- and `feed_audit.py`
 (42) and `sanity_report.py` (23) are the next two. Nothing smaller than those
 three is worth a pass of its own, which is what ADR-0072's ratchet is for.
+
+## The page-byte split, measured after the marker was repaired
+
+Measured 18 October 2026 on this machine, over the demo and shape builds already
+on disk, with the command CI runs.
+
+```
+python -m tools.page_bytes --site _demo_site
+python -m tools.page_bytes _demo_site/index.html _demo_site/from/grantham/index.html
+```
+
+| Page | Total | CSS | Script | Payload | Rows |
+|---|---|---|---|---|---|
+| the chooser | 28 KB | 22 KB | 3 KB | 0 KB | 3 |
+| `/from/grantham/` | 38 KB | 0 KB | 3 KB | **19 KB** | 16 |
+| `/from/lincoln/` | 35 KB | 0 KB | 3 KB | **15 KB** | 11 |
+
+The payload is **48%** of the Grantham page's 39,757 bytes. Its CSS reads 0 KB
+because the station route's stylesheet is a separate hashed asset, and this tool
+measures a stylesheet only where the page inlines one. The demo site totals 0 MB
+of the 800 MB budget over its 5 pages.
+
+Before this date the same command reported **0 KB payload and 0 rows on every
+page**, and exited 0. The tool searched for `const DATA = ` while the renderer
+wrote `window.TBE_DATA = `, and a marker it could not find was indistinguishable
+from a page that ships nothing. `python -m tools.page_bytes --site <an empty
+folder>` also exited 0, printing `over 0 page(s)`, and that is the invocation
+`deploy.yml` runs. Both are failures now.
+
+These are the first figures this tool has produced that describe a page, and they
+describe a demo page. The Grantham page here holds 16 destinations where the
+real-feed page holds 334, so this is not the 354 KB figure in
+`docs/open-work.md`, which still needs a real-feed build.

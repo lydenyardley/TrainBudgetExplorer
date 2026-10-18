@@ -27,9 +27,18 @@ next feed revision, and the failure that costs a publication is the one nobody
 saw coming. The budget is printed with every site measurement so a reader can
 disagree with it.
 
+**What it refuses to call a pass.** A measurement's zero and a page's emptiness
+are different facts, and until 18 October 2026 this tool could not tell them
+apart. It searched for a marker the renderer had stopped writing, so every page
+reported 0 KB of payload and 0 rows and the budget gate passed over a site it had
+measured nothing of. Two conditions are now failures: a page that names a payload
+which did not parse, because the page says it ships data and the tool did not find
+it, and a `--site` run that finds no page at all. Both are checked locally, so a
+page that genuinely ships nothing, the privacy route, still passes.
+
 Exit codes: 0 every page measured and the site is inside the budget, 1 the site
-is over it, 2 a path could not be read. A release that cannot be measured has not
-passed.
+is over it, 2 a path could not be read, a page named a payload it did not parse,
+or a site held no page. A release that cannot be measured has not passed.
 """
 
 from __future__ import annotations
@@ -42,13 +51,18 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
+
 # The number the network has to fit inside, argued in the module docstring.
 SITE_BUDGET_MB = 800
 
 # Each of these introduces JSON a page ships inline. Every occurrence is
 # measured, so a page that carries more than one block cannot report less than it
-# sends, and the code left behind is what a browser must parse to render.
-INLINE_JSON_MARKERS = ("const DATA = ", "const STATIONS = ")
+# sends, and the code left behind is what a browser must parse to render. They
+# are imported from the module that writes them rather than spelled here: a copy
+# of a marker is a measurement that goes silently stale when the renderer moves
+# on, which is exactly what this tool did.
+INLINE_JSON_MARKERS = (PAYLOAD_MARKER, CHOOSER_MARKER)
 
 STYLE = re.compile(r"<style[^>]*>(.*?)</style>", re.S)
 SCRIPT = re.compile(r"<script[^>]*>(.*?)</script>", re.S)
@@ -61,6 +75,10 @@ class PageBytes:
     ``css`` and ``code`` are kept as text rather than as sizes because the only
     question worth asking of them is whether another page carries the same
     characters, and that question cannot be asked of a length.
+
+    ``named`` counts the markers found, whether or not JSON followed one. It is
+    what separates a page that ships no payload from a page whose payload this
+    tool failed to read, and those two facts used to look identical.
     """
 
     path: Path
@@ -69,6 +87,7 @@ class PageBytes:
     code: str
     payload: int
     rows: int
+    named: int = 0
 
     @property
     def css_bytes(self) -> int:
@@ -100,15 +119,19 @@ def _row_count(value: object) -> int:
     return total
 
 
-def _split_script(script: str) -> tuple[int, int, str]:
+def _split_script(script: str) -> tuple[int, int, int, str]:
     """One script split into its inline JSON and the code around it.
 
     Scanned left to right with a cursor, so a removed payload cannot expose the
     text behind it to a second attempt at the same marker, and a marker with no
     JSON after it is left in the code as the mention it is.
+
+    The count of markers found is returned beside the bytes, because a marker the
+    tool could not read is the one case a caller has to hear about.
     """
     payload = 0
     rows = 0
+    named = 0
     kept: list[str] = []
     cursor = 0
     while True:
@@ -121,6 +144,7 @@ def _split_script(script: str) -> tuple[int, int, str]:
             break
         position, marker = found
         after = position + len(marker)
+        named += 1
         try:
             value, end = json.JSONDecoder().raw_decode(script[after:])
         except json.JSONDecodeError:
@@ -132,7 +156,7 @@ def _split_script(script: str) -> tuple[int, int, str]:
         rows += _row_count(value)
         cursor = after + end
     kept.append(script[cursor:])
-    return payload, rows, "".join(kept)
+    return payload, rows, named, "".join(kept)
 
 
 def measure_page(path: Path | str) -> PageBytes:
@@ -140,11 +164,13 @@ def measure_page(path: Path | str) -> PageBytes:
     text = io.open(path, encoding="utf-8").read()
     payload = 0
     rows = 0
+    named = 0
     code = []
     for script in SCRIPT.findall(text):
-        script_payload, script_rows, remainder = _split_script(script)
+        script_payload, script_rows, script_named, remainder = _split_script(script)
         payload += script_payload
         rows += script_rows
+        named += script_named
         code.append(remainder)
     return PageBytes(
         path=Path(path),
@@ -153,6 +179,7 @@ def measure_page(path: Path | str) -> PageBytes:
         code="".join(code),
         payload=payload,
         rows=rows,
+        named=named,
     )
 
 
@@ -212,6 +239,14 @@ def main(argv: list[str] | None = None) -> int:
             f"{page.code_bytes // 1024} KB script, {page.payload // 1024} KB payload, "
             f"{page.rows} rows"
         )
+    blind = [page for page in measured if page.named and not page.payload]
+    if blind:
+        print(
+            f"{blind[0].path} names a payload that did not parse, so its byte cost "
+            "is unknown and this measurement says nothing",
+            file=sys.stderr,
+        )
+        return 2
     shared = identical_bytes(measured)
     if len(measured) > 1:
         largest = max(page.total for page in measured)
@@ -222,6 +257,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if site is not None:
         total, pages = site
+        if pages == 0:
+            print(
+                f"no page was found under {args.site}, so whether it fits the budget "
+                "is unknown. Build the site before measuring it.",
+                file=sys.stderr,
+            )
+            return 2
         budget = args.budget_mb * 1024 * 1024
         print(
             f"site {total / 1024 / 1024:.0f} MB of a {args.budget_mb} MB budget "

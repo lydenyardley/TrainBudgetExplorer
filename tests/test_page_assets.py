@@ -147,5 +147,28 @@ class PageAssetTest(unittest.TestCase):
                 )
 
 
+    def test_each_template_names_its_payload_with_the_marker_it_declares(self) -> None:
+        # The template is where the line is written, so the constant and the
+        # literal are one fact stated twice. Held together here because the
+        # failure is silent: eight spellings of this marker existed on 18 October
+        # 2026, the renderer had moved past one of them, and the byte measurer
+        # went on reading a marker no page wrote. It reported every page as
+        # carrying 0 KB of payload and the budget gate passed.
+        self.assertIn(page_templates.PAYLOAD_MARKER, page_templates.TEMPLATE)
+        self.assertIn(page_templates.CHOOSER_MARKER, page_templates._CHOOSER_TEMPLATE)
+
+    def test_every_reader_of_the_marker_derives_it_from_the_template(self) -> None:
+        # A reader that spells the marker again is a copy, and a copy is what
+        # went stale. These two are the readers that measure and gate a built
+        # page, so they are the ones whose drift would pass a check.
+        from tools import check_source_credit, page_bytes
+
+        self.assertEqual(check_source_credit.FARE_MARK, page_templates.PAYLOAD_MARKER)
+        self.assertEqual(
+            page_bytes.INLINE_JSON_MARKERS,
+            (page_templates.PAYLOAD_MARKER, page_templates.CHOOSER_MARKER),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@ from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, build_station_index, encode_payload, render_page
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
 
 from tests.page_harness import embedded_payload, embedded_text, hydrate_rows, page_script, setUpModule, station_page, tearDownModule
 
@@ -131,7 +132,7 @@ class SharedStationAssetTest(unittest.TestCase):
             body = html.split("<body", 1)[1]
             blocks = re.findall(r"<script>(.*?)</script>", body, re.DOTALL)
             self.assertEqual(len(blocks), 1, [block[:60] for block in blocks])
-            self.assertTrue(blocks[0].strip().startswith("window.TBE_DATA = "))
+            self.assertTrue(blocks[0].strip().startswith(PAYLOAD_MARKER))
             self.assertLess(len(blocks[0]), len(STATION_SCRIPT))
 
     def test_the_script_is_written_once_and_named_for_its_own_bytes(self) -> None:
@@ -215,7 +216,7 @@ class SharedStationAssetTest(unittest.TestCase):
         body = chooser.split("<body", 1)[1]
         blocks = re.findall(r"<script>(.*?)</script>", body, re.DOTALL)
         self.assertEqual(len(blocks), 1, [block[:60] for block in blocks])
-        self.assertTrue(blocks[0].strip().startswith("window.TBE_CHOOSER_STATIONS = "))
+        self.assertTrue(blocks[0].strip().startswith(CHOOSER_MARKER))
 
     def test_the_page_takes_the_switch_away_when_the_stylesheet_does_not_arrive(self) -> None:
         # The picker's failure mode, one route down: a control that cannot do

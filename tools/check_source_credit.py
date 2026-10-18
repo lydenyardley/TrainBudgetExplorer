@@ -4,8 +4,8 @@ The portal terms require the publisher to "acknowledge NRE as the source of
 Information", and the Developer Brand Guidelines place the *Powered by National
 Rail Enquiries* mark where the fares feed is the product's predominant
 information. The station route is that page: the build writes the feed's own
-answer into it (``window.TBE_DATA``, filled by ``render_page``) and writes the
-acknowledgement into its footer when ``--notices`` names ``nre``.
+answer into it (``page_templates.PAYLOAD_MARKER``, filled by ``render_page``) and
+writes the acknowledgement into its footer when ``--notices`` names ``nre``.
 
 Two ways that comes apart, and neither is visible in the flags:
 
@@ -49,10 +49,14 @@ import argparse
 import sys
 from pathlib import Path
 
+from page_templates import PAYLOAD_MARKER
+
 #: The station template writes the page's own answer under this name, and it is
 #: the one part of the page that differs per origin. A page carrying it is a
-#: page showing fares from the feed that has to be acknowledged.
-FARE_MARK = "window.TBE_DATA"
+#: page showing fares from the feed that has to be acknowledged. Imported from
+#: the template that writes it, so a page cannot stop being a fare page by
+#: renaming its payload while this check goes on reporting that it read none.
+FARE_MARK = PAYLOAD_MARKER
 
 #: The acknowledgement, both halves, as ``build_release`` writes them. The label
 #: is what a failure says is missing, so it reads as the licence's own words.
