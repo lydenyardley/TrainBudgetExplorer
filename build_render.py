@@ -20,6 +20,7 @@ from atoc_fares import DESTINATION_TYPE_FILTERS
 import build_assets
 from build_assets import (
     chooser_script_tag,
+    page_path_for_route,
     prune_shared_assets,
     station_asset_tag,
     station_script_tag,
@@ -135,6 +136,15 @@ def write_release(
         build_assets.station_style_asset_name(),
         build_assets.station_script_asset_name(),
         build_assets.chooser_script_asset_name(),
+        # Every route this release serves was written by this build a few lines
+        # above, and each of those pages requests only the names just passed.
+        # Reading them back is the whole release's bytes for an answer already
+        # held here (E5); the pages left unread are the ones an earlier build
+        # wrote, which are exactly the ones that can name an older asset.
+        written=[
+            page_path_for_route(out_dir, route, base_path)
+            for route in manifest["routes"]
+        ],
     )
     return manifest_path
 

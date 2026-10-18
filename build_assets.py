@@ -8,6 +8,7 @@ payload and the chooser both need the same address for the same station.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import hashlib
 import html
 import json
@@ -217,20 +218,46 @@ def chooser_script_tag(src: str) -> str:
 SHARED_ASSET_PATTERNS = ("station-*.css", "station-*.js", "chooser-*.js")
 
 
-def prune_shared_assets(out_dir: Path, *keep: str) -> list[str]:
+def page_path_for_route(out_dir: Path, route: str, base_path: str = "") -> Path:
+    """The file a release route names, the way the manifest check reads it.
+
+    One expression, two callers: the check that every route the manifest claims
+    was written, and the prune deciding which pages are this build's own. If
+    they disagreed about what a route is, the prune would stop reading a page
+    the build did not write and delete the asset that page still requests.
+    """
+    relative = route[len(base_path):] if base_path and route.startswith(base_path) else route
+    if relative.endswith("/"):
+        return out_dir / (relative.lstrip("/") + "index.html")
+    return out_dir / relative.lstrip("/")
+
+
+def prune_shared_assets(
+    out_dir: Path, *keep: str, written: Iterable[Path] = ()
+) -> list[str]:
     """Remove the hashed assets this build did not write, and name them.
 
     ``keep`` holds the file names this build wrote. A name the manifest no
     longer names is served to nobody and read by no page, so keeping it grows
     the folder and lies in `git status` about what the release is.
+
+    ``written`` holds the pages this build wrote, and they are not read. A page
+    this build rendered requests this build's own asset names and nothing else,
+    so reading it back answers a question ``keep`` already answered -- and doing
+    that for every page of the release is about a gigabyte at the last measured
+    354 KB a page (E5). Only a page this build did not write can name an asset
+    this build did not write, and those are the pages read here.
     """
     kept = set(keep)
+    ours = set(written)
     # A page this build did not write -- a station an earlier build priced and
     # this one does not, which the build names rather than deletes -- still
     # requests the asset it was built with. Deleting that asset would break a
     # page the build promised to leave alone, so anything a file in the folder
     # still names is kept.
     for page in out_dir.rglob("*.html"):
+        if page in ours:
+            continue
         try:
             text = page.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):

@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-from build_assets import internal_hrefs, write_page_atomic
+from build_assets import internal_hrefs, page_path_for_route, write_page_atomic
 
 
 DEFAULT_NOTE = (
@@ -265,9 +265,7 @@ def manifest_problems(out_dir: Path, manifest: dict, base_path: str = "") -> lis
         if not isinstance(route, str) or not route.startswith("/"):
             problems.append(f"the manifest names {route!r}, which is not a route on this site")
             continue
-        relative = route[len(base_path):] if base_path and route.startswith(base_path) else route
-        target = out_dir / (relative.lstrip("/") + "index.html" if relative.endswith("/") else relative.lstrip("/"))
-        if not target.is_file():
+        if not page_path_for_route(out_dir, route, base_path).is_file():
             problems.append(f"the manifest names {route}, which was not written")
     return problems
 

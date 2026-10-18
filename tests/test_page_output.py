@@ -14,8 +14,11 @@ import unittest
 import contextlib
 import io
 from pathlib import Path
+from unittest import mock
 
 import build_demo_page
+import build_render
+from build_assets import page_path_for_route
 from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, build_station_index, encode_payload, render_page
@@ -184,6 +187,79 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertTrue((self.site / build_demo_page.chooser_script_asset_name()).is_file())
         self.assertTrue((self.site / "stations.js").is_file())
         self.assertTrue((self.site / "index.html").is_file())
+
+    def test_the_prune_reads_only_the_pages_this_build_did_not_write(self) -> None:
+        # E5: the tidy-up read every page of the release to learn three file
+        # names the caller already held, which at the last measured 354 KB a
+        # page is about a gigabyte at the tail of the build. A page this build
+        # wrote requests this build's names; only a page it did not write can
+        # name an asset it did not write, and only those are read.
+        stale = self.site / "station-222222222222.css"
+        stale.write_text(":root {}", encoding="utf-8")
+        leftover = self.site / "from" / "leftover" / "index.html"
+        leftover.parent.mkdir(parents=True, exist_ok=True)
+        leftover.write_text(
+            f'<link rel="stylesheet" href="/{stale.name}">', encoding="utf-8"
+        )
+        manifest = json.loads(
+            (self.site / "release-manifest.json").read_text(encoding="utf-8")
+        )
+        written = [
+            page_path_for_route(self.site, route, manifest["basePath"])
+            for route in manifest["routes"]
+        ]
+        station = sorted((self.site / "from").glob("*/index.html"))[0]
+        read: list[Path] = []
+        real = Path.read_text
+
+        def record(path: Path, *args, **kwargs):
+            read.append(path)
+            return real(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", record):
+            removed = build_demo_page.prune_shared_assets(
+                self.site,
+                build_demo_page.station_style_asset_name(),
+                build_demo_page.station_script_asset_name(),
+                build_demo_page.chooser_script_asset_name(),
+                written=written,
+            )
+        self.assertEqual(removed, [])
+        self.assertTrue(stale.is_file(), "the leftover page still names this asset")
+        self.assertIn(leftover, read, "the page this build did not write must be read")
+        self.assertNotIn(station, read, "the page this build wrote costs its bytes for nothing")
+
+    def test_the_build_tells_the_prune_which_pages_it_wrote(self) -> None:
+        # The saving above is the argument, not the function: a build that
+        # stopped passing it would read the whole release again and every other
+        # test here would still pass, so the call is asserted where it is made.
+        root = Path(self._tmp.name) / "second"
+        with mock.patch.object(build_render, "prune_shared_assets", return_value=[]) as prune:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = build_demo_page.main(
+                    [
+                        "--feed",
+                        str(self.feed),
+                        "--timetable",
+                        str(self.timetable),
+                        "--all-origins",
+                        "--out",
+                        str(root / "site" / "index.html"),
+                    ]
+                )
+        self.assertEqual(code, 0)
+        site = root / "site"
+        self.assertEqual(
+            sorted(prune.call_args.kwargs["written"]),
+            sorted(
+                [
+                    site / "index.html",
+                    site / "privacy" / "index.html",
+                    site / "from" / "grantham" / "index.html",
+                    site / "from" / "nottingham" / "index.html",
+                ]
+            ),
+        )
 
     def test_a_page_is_current_only_when_nothing_but_its_stamp_moved(self) -> None:
         # The rebuild skips a write only when the page would say the same
