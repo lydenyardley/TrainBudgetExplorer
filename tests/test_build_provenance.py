@@ -739,6 +739,14 @@ class ProvenanceTest(PageTestCase):
         self.assertIn(">Back to the station list</a>", html)
         self.assertIn('footnav"><a href="/">Station list</a>', html)
 
+    def test_the_privacy_contact_is_escaped_like_every_other_string(self) -> None:
+        # E8 of the 17 October 2026 audit: every other substitution on this
+        # route was escaped and this one was not. The value is operator-supplied,
+        # and the page's promise is that it says exactly what the build does.
+        html = render_privacy("note", "", "privacy<team>&legal@example.test")
+        self.assertIn("privacy&lt;team&gt;&amp;legal@example.test", html)
+        self.assertNotIn("privacy<team>", html)
+
     def test_every_route_says_when_its_data_is_invented(self) -> None:
         # S45: an invented station or fare must not be mistakable for a real
         # one in a review, a demo or a shared screenshot, so every route states

@@ -20,6 +20,7 @@ from atoc_fares import FaresDb
 from atoc_knowledgebase import Knowledgebase
 from atoc_timetable import SliceIndex, TimetableDb
 
+from build_release import OPENING_BUDGET_POUNDS
 from build_demo_page import (
     STATION_ASSET_NAME,
     build_payload,
@@ -331,7 +332,7 @@ def build_page_job(job: dict) -> tuple[str, str, str, int]:
     payload["stationsSrc"] = with_base(base_path, "/" + STATION_ASSET_NAME)
     html = render_page(
         payload,
-        budget_pounds=20,
+        budget_pounds=OPENING_BUDGET_POUNDS,
         analytics=_WORKER["analytics"],
         nre_credit=wants_nre_credit(_WORKER["attribution"]),
     )

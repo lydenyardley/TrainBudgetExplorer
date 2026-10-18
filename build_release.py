@@ -24,6 +24,16 @@ DEFAULT_NOTE = (
 )
 
 
+# The budget every page of a release opens at, in pounds. It was a literal in
+# five places -- four in build_pool.py and one in build_workers.py -- and absent
+# from the shard manifest, so a merged release opened at £20 by construction and
+# the merge could not have learned any other figure (E7 of the 17 October 2026
+# audit). One constant, read by the in-process build, the pool and the merge,
+# and carried in the shard manifest's `release` beside the note and the price
+# source so a merge opens where its shards did.
+OPENING_BUDGET_POUNDS = 20
+
+
 # The provenance line sits with the prices, not the footer, because where a
 # number came from is part of the number. A real feed overrides it from its own
 # metadata.json (read_feed_metadata), so the default only ever reaches a page

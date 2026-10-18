@@ -513,6 +513,38 @@ class ParallelPathTest(unittest.TestCase):
             build_state.resumable_signature(again, []),
         )
 
+    def test_the_resume_key_is_the_feed_content_not_its_size_and_time(self) -> None:
+        # E4 of the 17 October 2026 audit. The resume key read names, sizes and
+        # mtimes while the fares cache was keyed on content, so a download
+        # replaced by different bytes of the same length under the same
+        # timestamp re-parsed the fares and resumed every page as complete: the
+        # release then quoted the previous download beside freshly parsed data.
+        import os
+
+        import build_state
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            first = root / "a.ffl"
+            first.write_text("0100 1160 1", encoding="utf-8")
+            second = root / "b.ffl"
+            second.write_text("0100 1260 1", encoding="utf-8")
+            # The cheap identity cannot tell them apart: that is the case.
+            self.assertEqual(first.stat().st_size, second.stat().st_size)
+            os.utime(first, ns=(1, 1))
+            os.utime(second, ns=(1, 1))
+            one = {"feed": str(first), "timetable": None}
+            other = {"feed": str(second), "timetable": None}
+            self.assertNotEqual(
+                build_state.resumable_signature(dict(one), []),
+                build_state.resumable_signature(dict(other), []),
+            )
+            # And the same bytes twice is the same build, or nothing would resume.
+            self.assertEqual(
+                build_state.resumable_signature(dict(one), []),
+                build_state.resumable_signature(dict(one), []),
+            )
+
     def test_the_fingerprint_is_stable_for_one_feed_and_moves_with_it(self) -> None:
         # The signature is JSON-serialised, so the fingerprint has to be a
         # value with a stable serialised form. A parsed feed's repr carries an

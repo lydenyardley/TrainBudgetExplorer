@@ -336,7 +336,6 @@ class FaresCacheTest(unittest.TestCase):
         self.build()
         before = self.page()
         self.assertIn("1160", before, "the fixture's Nottingham return is on the page")
-        cheap_fingerprint = build_demo_page.feed_fingerprint(self.feed)
         cache_before = self.cache_paths()
 
         target = next(item for item in sorted(self.feed.glob("*.ffl")))
@@ -346,11 +345,6 @@ class FaresCacheTest(unittest.TestCase):
         target.write_text(original.replace("1160", "1260", 1), encoding="utf-8")
         os.utime(target, ns=(stamp, stamp))
         self.assertEqual(len(target.read_text(encoding="utf-8")), len(original))
-        self.assertEqual(
-            build_demo_page.feed_fingerprint(self.feed),
-            cheap_fingerprint,
-            "the cheap fingerprint cannot tell these two feeds apart, which is the point",
-        )
 
         said = self.build()
         self.assertIn("wrote GRN.pickle", said, "different bytes are a different cache, so the feed is parsed again")

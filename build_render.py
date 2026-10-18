@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from pathlib import Path
 
 from atoc_fares import DESTINATION_TYPE_FILTERS
@@ -213,6 +214,28 @@ def first_use_sentence(payload: dict) -> str:
     return "Click the <b>station name</b> to start from somewhere else."
 
 
+# A template's own placeholder, and nothing else: the pattern is narrow enough
+# that a page's prose or payload can never match it by accident.
+_PLACEHOLDER = re.compile(r"__[A-Z_]+__")
+
+
+def refuse_unfilled(page: str, route: str) -> str:
+    """The page, or a refusal naming the placeholder the template kept.
+
+    Each route substitutes forty-odd placeholders over the document it just
+    embedded a payload into, so a placeholder added to a template and forgotten
+    here would ship literally on every page of a release, and a feed's own text
+    containing one would be rewritten by the substitution that ran after it. The
+    two checks below catch the only placeholders anybody thought to name; this
+    one is the whole document, which is the claim that was missing (E3 of the 17
+    October 2026 audit).
+    """
+    match = _PLACEHOLDER.search(page)
+    if match:
+        raise ValueError(f"the {route} shipped {match.group()} unfilled")
+    return page
+
+
 def render_page(
     payload: dict,
     *,
@@ -311,7 +334,7 @@ def render_page(
     # payload names no script would render tables and wire nothing.
     if "__STATION_SCRIPT__" in page or not script_tag:
         raise ValueError("the station page shipped without its script")
-    return page
+    return refuse_unfilled(page, "station page")
 
 
 def note_markup(note: str, css_class: str = "") -> str:
@@ -415,15 +438,19 @@ def render_privacy(
         if built_at
         else ""
     )
-    return (
+    privacy = (
         PRIVACY.replace("__BASE__", base_path)
         .replace("__BUILT_LINE__", built_line)
         .replace("__NOTE__", note_markup(note, "muted"))
-        .replace("__CONTACT__", contact)
+        # Escaped like every other string on this route: the address is
+        # operator-supplied, and a page whose promise is that it says exactly
+        # what the build does cannot be the one place a character becomes markup.
+        .replace("__CONTACT__", html.escape(contact))
         .replace("__PRACTICES__", "".join(f"  <li>{item}</li>\n" for item in practices))
         .replace("__SYNTHETIC__", "true" if synthetic else "false")
         .replace("__SYNTHETIC_BANNER__", synthetic_markup(synthetic))
     )
+    return refuse_unfilled(privacy, "privacy page")
 
 
 def picker_has_options(payload: dict) -> bool:
@@ -521,7 +548,7 @@ def render_chooser(
             "from, most first &mdash; not by how busy it is, and not by how near it is.</p>"
         )
         title_suffix = "pick your station"
-    return (
+    chooser = (
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
         .replace("__ORIGIN_CLAUSE__", origin_clause)
         .replace("__CHOOSER_INTRO__", intro)
@@ -537,3 +564,4 @@ def render_chooser(
         .replace("__SYNTHETIC__", "true" if synthetic else "false")
         .replace("__SYNTHETIC_BANNER__", synthetic_markup(synthetic))
     )
+    return refuse_unfilled(chooser, "station list")

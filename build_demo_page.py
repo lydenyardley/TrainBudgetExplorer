@@ -112,7 +112,6 @@ from build_state import (
     SOURCE_FILES,
     TIMETABLE_INDEX_ROOT,
     fares_index_cache_paths,
-    feed_fingerprint,
     load_page_fares,
     module_sources,
     page_facts_path,

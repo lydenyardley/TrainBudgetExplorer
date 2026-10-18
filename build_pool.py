@@ -45,6 +45,7 @@ from build_release import (
     DEFAULT_PRICE_SOURCE,
     DEFAULT_PRIVACY_CONTACT,
     MEASUREMENT_PLANS,
+    OPENING_BUDGET_POUNDS,
     notices_or_attribution,
     release_gate_problems,
     site_features,
@@ -55,7 +56,7 @@ from build_state import (
     BUILD_STATE_NAME,
     fares_cache_identity,
     fares_index_cache_paths,
-    feed_fingerprint,
+    feed_content_digest,
     load_page_fares,
     missing_slice_message,
     open_timetable_index,
@@ -504,8 +505,11 @@ def shard_agreement(shared: dict) -> dict:
     }
     agreement = {
         "source": source_fingerprint(),
-        "feed": feed_fingerprint(shared["feed"]),
-        "timetable": feed_fingerprint(shared["timetable"]) if shared["timetable"] else None,
+        # Content, like the resume key: two shards built from different bytes
+        # of the same size and mtime are different releases (E4 of the 17
+        # October 2026 audit).
+        "feed": feed_content_digest(shared["feed"]),
+        "timetable": feed_content_digest(shared["timetable"]) if shared["timetable"] else None,
         "config": {
             key: value for key, value in shared.items() if key not in excluded
         },
@@ -643,7 +647,9 @@ def merge_shards(args) -> int:
             with_base(release.get("base_path", ""), f"/from/{entry['slug']}/")
             for entry in index
         ],
-        budget_pounds=20,
+        # The shard's own figure, so a merge of shards built at another budget
+        # opens where they did rather than at this process's constant (E7).
+        budget_pounds=release.get("budget_pounds", OPENING_BUDGET_POUNDS),
         note=release.get("note", ""),
         price_source=release.get("price_source", DEFAULT_PRICE_SOURCE),
         feed_date=release.get("feed_date"),
@@ -1042,7 +1048,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
         out_dir,
         index=index,
         routes=[with_base(base_path, f"/from/{slug}/") for slug in sorted(written)],
-        budget_pounds=20,
+        budget_pounds=OPENING_BUDGET_POUNDS,
         note=note,
         price_source=price_source,
         feed_date=feed_date,
@@ -1082,6 +1088,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
                         crs: coverage.extract_origin(crs) for crs in origins
                     },
                     "release": {
+                        "budget_pounds": OPENING_BUDGET_POUNDS,
                         "note": note,
                         "price_source": price_source,
                         "feed_date": feed_date,
@@ -1181,7 +1188,7 @@ def _build_single_origin(ctx: BuildContext) -> int:
             station_page,
             render_page(
                 payload,
-                budget_pounds=20,
+                budget_pounds=OPENING_BUDGET_POUNDS,
                 analytics=analytics,
                 nre_credit=wants_nre_credit(notices_or_attribution(args)),
             ),
@@ -1202,7 +1209,7 @@ def _build_single_origin(ctx: BuildContext) -> int:
         out_dir,
         index=index,
         routes=[entry["href"] for entry in routes],
-        budget_pounds=20,
+        budget_pounds=OPENING_BUDGET_POUNDS,
         note=note,
         price_source=price_source,
         feed_date=feed_date,

@@ -112,35 +112,21 @@ def source_fingerprint() -> str:
     return digest.hexdigest()[:16]
 
 
-def feed_fingerprint(path: str | Path) -> str:
-    """A cheap identity for resumable output: file names, sizes, and mtimes."""
-    root = Path(path)
-    files = [root] if root.is_file() else sorted(item for item in root.rglob("*") if item.is_file())
-    digest = hashlib.sha256()
-    for item in files:
-        try:
-            stat = item.stat()
-            identity = f"{item}:{stat.st_size}:{stat.st_mtime_ns}"
-        except OSError:
-            identity = f"{item}:missing"
-        digest.update(identity.encode("utf-8", "replace") + b"\n")
-    return digest.hexdigest()
-
-
 def feed_content_digest(path: str | Path) -> str:
     """An identity for a feed that cannot outlive the bytes it names.
 
-    ``feed_fingerprint`` reads names, sizes and mtimes, which separates two
-    downloads on any ordinary day and costs nothing. It cannot separate two
+    Names, sizes and mtimes separate two downloads on any ordinary day and cost
+    nothing, which is why the resume key used them. They cannot separate two
     downloads when the replacement holds different bytes of the same length
-    under the same timestamp: a copy that preserves mtimes, an archive
-    extracted with the dates stored in it, a feed directory restored from
-    somewhere else. A cache keyed that way would go on serving prices parsed
-    from bytes the feed no longer holds, and the page would look entirely
-    normal while quoting fares from a download that had been replaced -- the
-    one kind of cache failure nobody notices. So a cache that holds parsed
-    data is keyed by the content itself, at a cost of about a fifth of a
-    second over 48MB, against the half-minute parse it exists to avoid.
+    under the same timestamp: a copy that preserves mtimes, an archive extracted
+    with the dates stored in it, a feed directory restored from somewhere else.
+    A key like that goes on serving prices parsed from bytes the feed no longer
+    holds, and the page looks entirely normal while quoting fares from a
+    download that had been replaced -- the one kind of cache failure nobody
+    notices. So every key here -- this cache's, the resume's (E4 of the 17
+    October 2026 audit) and the merge's -- is the content itself, at a cost of
+    about a fifth of a second over 48MB against the half-minute parse it exists
+    to avoid.
     """
     root = Path(path)
     a_directory = root.is_dir()
@@ -162,8 +148,13 @@ def resumable_signature(shared: dict, index: list[dict]) -> str:
     """Identity of the inputs and decisions represented by a station build."""
     stable = {
         "source": source_fingerprint(),
-        "feed": feed_fingerprint(shared["feed"]),
-        "timetable": feed_fingerprint(shared["timetable"]) if shared["timetable"] else None,
+        # Content, not names and timestamps: the case the fares cache was
+        # written for -- a replacement of the same size and mtime -- left the
+        # pages resuming as complete while the cache re-parsed, so a release
+        # quoted the previous download beside freshly parsed data (E4 of the
+        # 17 October 2026 audit). Hashed once per build, not once per page.
+        "feed": feed_content_digest(shared["feed"]),
+        "timetable": feed_content_digest(shared["timetable"]) if shared["timetable"] else None,
         "config": {key: value for key, value in shared.items()
                    if key not in {"feed", "timetable", "built_at", "analytics"}},
         "stations": index,

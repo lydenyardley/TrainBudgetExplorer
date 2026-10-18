@@ -26,6 +26,7 @@ import argparse
 import build_assets
 import build_demo_page
 import build_pool
+import build_release
 import build_state
 import build_workers
 import run
@@ -302,6 +303,13 @@ class AllOriginsCliTest(unittest.TestCase):
         for number, shard in enumerate(shards, 1):
             manifest = json.loads((shard / "shard.json").read_text(encoding="utf-8"))
             self.assertEqual((manifest["shard"], manifest["of"]), (number, 2))
+            # E7 of the 17 October 2026 audit: the figure a page opens at is in
+            # the shard's own record, so the merge reads it from what the shards
+            # were built with rather than from a literal in the merge.
+            self.assertEqual(
+                manifest["release"]["budget_pounds"],
+                build_release.OPENING_BUDGET_POUNDS,
+            )
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = build_demo_page.main(
@@ -363,6 +371,27 @@ class AllOriginsCliTest(unittest.TestCase):
                 ["--merge", str(shard), "--feed", str(self.feed), "--out", str(self.out)]
             )
         self.assertEqual(code, 2)
+
+    def test_the_opening_budget_is_one_constant_and_the_merge_reads_the_shard(self) -> None:
+        # E7 of the 17 October 2026 audit: `budget_pounds=20` was a literal in
+        # four places in build_pool.py and one in build_workers.py, and absent
+        # from the shard manifest -- so a merged release opened at £20 by
+        # construction, whatever its shards had been built at. The figure is one
+        # constant now, and the merge takes it from the shard's own record.
+        for module in ("build_pool.py", "build_workers.py"):
+            source = (pathlib.Path(__file__).resolve().parents[1] / module).read_text(
+                encoding="utf-8"
+            )
+            self.assertNotRegex(
+                source,
+                r"budget_pounds=\d",
+                f"{module} still opens a page at a literal budget rather than the one constant",
+            )
+        pool = (
+            pathlib.Path(__file__).resolve().parents[1] / "build_pool.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('budget_pounds=release.get("budget_pounds"', pool)
+        self.assertIn('"budget_pounds": OPENING_BUDGET_POUNDS', pool)
 
     def test_a_merge_refuses_shards_built_from_different_inputs(self) -> None:
         first = self.out.parent / "shard-1" / "index.html"
