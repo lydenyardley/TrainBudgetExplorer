@@ -16,7 +16,7 @@
  * after it. They are handed `world` -- the page, the helpers above, and
  * whatever an earlier section left on it.
  */
-const { NOT_EXERCISED, SELLER, notExercised } = require("./harness.cjs");
+const { NOT_EXERCISED, SELLER, installLineCounter, notExercised } = require("./harness.cjs");
 const { checkAccessibilityMatrix } = require("./a11y-matrix.cjs");
 const { checkChooser } = require("./chooser.cjs");
 const { checkReleaseRoot } = require("./release-root.cjs");
@@ -93,6 +93,9 @@ async function runPage(browser, index, given, file, body, base) {
     route.fulfill({ status: 200, contentType: "text/html", body: "<h1>seller</h1>" })
   );
   const page = await context.newPage();
+  // Installed before the first navigation, so every check that counts painted
+  // lines measures them the one way (E15 of the 17 October 2026 audit).
+  await installLineCounter(page);
   const url = `${base}/page-${index + 1}.html`;
   const rows = () => page.locator("#rows a.buy").count();
   // Is this a page the suite tests? A station page carries the payload and the
@@ -292,6 +295,26 @@ async function runPage(browser, index, given, file, body, base) {
       return expected;
     }
     await page.check(chip);
+    // The sentence a chip contributes to names the chip, not its count: the
+    // count is a number about the chip, and "in cities (2)" reads as part of
+    // the filter the reader asked for (E17 of the 17 October 2026 audit).
+    const named = await page.evaluate((value) => {
+      const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
+      const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
+      const count = document.querySelector(`[data-count-for="${value}"]`);
+      return {
+        sentence: typeLabel(),
+        name: span ? span.textContent.trim().toLowerCase() : "",
+        count: count ? count.textContent : "",
+      };
+    }, type);
+    check(
+      "a chip's count stays out of the sentence that names it",
+      named.count
+        ? named.sentence.includes(named.name) && !named.sentence.includes("(")
+        : notExercised(`the ${type} chip carries no count on this page`),
+      JSON.stringify(named)
+    );
     const shown = await rows();
     const text = await page.textContent("#rows");
     // The rows are compared as a set against the payload rather than as the

@@ -224,43 +224,41 @@ async function renderThePage(world) {
     // "£10.1" over "0" -- while CHANGES wrapped mid-word in a 72px column. A
     // wrapped price is not a cramped column, it is a different number, and the
     // header word was deciding the width. So this is measured as painted line
-    // boxes rather than read off the CSS: getClientRects() over a cell's own
-    // contents returns one rect per line, and the distinct tops are the lines.
+    // boxes rather than read off the CSS: getClientRects() over a run of text
+    // returns one rect per line, and the distinct tops are the lines.
+    //
+    // A cell prints one or more runs -- a station's name and its site proof, a
+    // change count and the station it changes at, the ticket link and the
+    // chevron -- and each run is what is measured. The deliberate second line
+    // is a run of its own: the station a journey changes at sits under the
+    // count on purpose (ADR-0045), so counting a whole cell's lines as a wrap
+    // was the check measuring the design. That is E15 of the 17 October 2026
+    // audit, where the detector existed and left the station and tickets cells
+    // out rather than learning to read them as runs.
     const measure = await page.evaluate(() => {
-      const lines = (el) => {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        // Line boxes a pixel or two apart are one line: a cell whose only
-        // child is an inline span reports the span's line-height beside the
-        // row's strut, and a genuine second line is a whole line lower.
-        const tops = Array.from(range.getClientRects())
-          .map((rect) => rect.top)
-          .sort((a, b) => a - b);
-        let count = 0;
-        let last = -Infinity;
-        for (const top of tops) {
-          if (top - last > 3) count += 1;
-          last = top;
-        }
-        return count;
-      };
-      // `.changes` is excluded because the station a journey changes at is put
-      // on its own line under the count on purpose (ADR-0045). Counting its
-      // two lines as a wrap is the check measuring the design.
+      const prose = new Set(["site-proof", "interchange", "split"]);
+      const runsOf = (el) => (el.children.length ? Array.from(el.children) : [el]);
       const cells = [
         ...document.querySelectorAll("thead th"),
-        ...document.querySelectorAll("#rows td.num:not(.changes), #rows .fare-type"),
+        ...document.querySelectorAll("#rows td"),
       ];
+      let runs = 0;
       const wrapped = [];
       for (const el of cells) {
         if (!el.getBoundingClientRect().height) continue;
-        const count = lines(el);
-        if (count > 1) {
-          wrapped.push({
-            text: el.textContent.trim(),
-            lines: count,
-            width: Math.round(el.getBoundingClientRect().width),
-          });
+        for (const run of runsOf(el)) {
+          // A site proof, an interchange and a split note are prose and wrap
+          // as prose does; every other run is one fact in one column.
+          if (Array.from(run.classList).some((name) => prose.has(name))) continue;
+          runs += 1;
+          if (window.valueLines(run) > 1) {
+            wrapped.push({
+              cell: el.dataset.label || el.tagName.toLowerCase(),
+              text: run.textContent.trim().slice(0, 40),
+              lines: window.valueLines(run),
+              width: Math.round(run.getBoundingClientRect().width),
+            });
+          }
         }
       }
       // The second half of the same finding: the count line sat 205px above the
@@ -283,6 +281,7 @@ async function renderThePage(world) {
           .map((el) => el.id || el.tagName.toLowerCase());
       return {
         cells: cells.length,
+        runs,
         wrapped,
         priceWidth: Math.round((box(document.querySelector("#rows td.num")) || { width: 0 }).width),
         countToTable: box(summary) && box(table) ? Math.round(box(table).top - box(summary).bottom) : null,
@@ -296,13 +295,13 @@ async function renderThePage(world) {
       };
     });
     check(
-      "no price, number or column heading wraps onto a second line",
+      "no price, number, name or column heading wraps onto a second line",
       measure.cells === 0
         ? notExercised("this page has no results table to measure")
         : measure.wrapped.length === 0,
       measure.wrapped.length
         ? JSON.stringify(measure.wrapped.slice(0, 6))
-        : `${measure.cells} cells measured, price column ${measure.priceWidth}px, tabular-nums ${measure.tabular}`
+        : `${measure.runs} runs in ${measure.cells} cells measured, price column ${measure.priceWidth}px, tabular-nums ${measure.tabular}`
     );
     check(
       "the count line sits on the table it counts",

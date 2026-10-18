@@ -285,6 +285,35 @@ function daysSince(iso) {
 // put a fraction on either side of the widest cell without the column being
 // any wider than what is in it.
 const cellsAreContentWide = (column) => column.width <= column.content + 1.5;
+// How many lines a thing's own contents paint on, as painted line boxes rather
+// than as CSS: getClientRects() over a range returns one rect per line, and the
+// distinct tops are the lines. Line boxes a few pixels apart are one line, so a
+// cell whose only child is an inline span does not report the span's line-height
+// beside the row's strut as a second line. Both the desktop wrap check and the
+// phone row's own checks measure with this, so "what counts as a line" is
+// decided once (E15 of the 17 October 2026 audit).
+function valueLines(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const tops = Array.from(range.getClientRects())
+    .map((rect) => rect.top)
+    .sort((a, b) => a - b);
+  let count = 0;
+  let last = -Infinity;
+  for (const top of tops) {
+    if (top - last > 3) count += 1;
+    last = top;
+  }
+  return count;
+}
+// The page is where line boxes exist, so the counter has to be installed
+// there: page.evaluate stringifies its callback, which means a function defined
+// here cannot be closed over from inside the page, and an init script is the
+// one way to put it there that also survives every navigation open() performs.
+// A section asks for it as window.valueLines.
+async function installLineCounter(page) {
+  await page.addInitScript({ content: `window.valueLines = ${valueLines};` });
+}
 // The probe a completion check should type, and the name it should then
 // produce, read from the page's own station list rather than from the
 // fixture: the shorter name wins over the one earlier in list order, which is
@@ -455,4 +484,4 @@ function report(results) {
     failed || broken.length || nothingTested || noTimesAtAll || overBudget.length ? 1 : 0
   );
 }
-module.exports = { ARGV, MAX_PAGES, PAGES, SELLER, NOT_EXERCISED, SKIP_BUDGET, SKIP_BUDGET_WITHOUT_TIMES, notExercised, pagesBeneath, expand, requirePlaywright, sharedAssets, serve, money, daysSince, cellsAreContentWide, completionProbe, expectedCompletion, report };
+module.exports = { ARGV, MAX_PAGES, PAGES, SELLER, NOT_EXERCISED, SKIP_BUDGET, SKIP_BUDGET_WITHOUT_TIMES, notExercised, pagesBeneath, expand, requirePlaywright, sharedAssets, serve, money, daysSince, cellsAreContentWide, installLineCounter, completionProbe, expectedCompletion, report };

@@ -237,6 +237,211 @@ async function measureTheLayout(world) {
     } else {
       check("a results row is tinted under the pointer", notExercised("this page lists fewer than three rows"));
     }
+    // The stacked table, measured where the reader meets it: at 390px, on the
+    // rows the page actually paints. The overflow checks in the fare section
+    // ask whether the document is wider than the screen; these ask where the
+    // text landed, which is the half a scrollbar cannot see. A cell measured at
+    // 1px with its link painting 48px outside it passed every overflow check
+    // (E14 of the 17 October 2026 audit).
+    //
+    // The design each check holds the page to: two tracks per cell, the label
+    // in the first and every painted run of the value in the second; the value
+    // track is what is left of the cell rather than a width of its own; a
+    // number and the ticket link are one line each; and the headings are hidden
+    // from sight rather than from a screen reader. Each of those was a string
+    // assertion in tests/test_build_demo_page.py, and all five passed with the
+    // defect in place (E16): a text assertion cannot see the interaction
+    // between `td > *` and a bare text node.
+    await page.setViewportSize({ width: 390, height: 720 });
+    await open(facts.affordable);
+    const stacked = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+      const root = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const rectsOf = (node) => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return Array.from(range.getClientRects()).map((rect) => ({
+          left: rect.left,
+          right: rect.right,
+        }));
+      };
+      const cells = [];
+      const numbers = [];
+      for (const tr of rows) {
+        for (const cell of tr.cells) {
+          const style = getComputedStyle(cell);
+          const box = cell.getBoundingClientRect();
+          const tracks = (style.gridTemplateColumns || "")
+            .split(" ")
+            .map(parseFloat)
+            .filter((size) => !Number.isNaN(size));
+          const gap = parseFloat(style.columnGap) || 0;
+          // The tracks are laid inside the cell's padding and border, and the
+          // hold cell keeps a few pixels of padding from the desktop rule it
+          // inherits, so the value track does not start at the cell's edge.
+          const inset =
+            (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.borderLeftWidth) || 0);
+          const start = box.left + inset + (tracks.length > 1 ? tracks[0] + gap : 0);
+          const runs = cell.children.length ? Array.from(cell.children) : [cell];
+          const measured = runs.map((run) => ({
+            cls: String(run.className || run.tagName).slice(0, 30),
+            lines: window.valueLines(run),
+            rects: rectsOf(run),
+          }));
+          // Every line of text the cell paints, including the anonymous ones: a
+          // bare text node in a grid container is an item with no element and
+          // no class, so a detector that walked `children` could not see it --
+          // which is how "NO" then "(" got under the label track with every
+          // check green (C1 of the 17 October 2026 critique, E14 of the audit).
+          const painted = rectsOf(cell);
+          // Where each run starts against the value track, and whether any of
+          // it paints outside the cell at all.
+          const early = painted.filter((rect) => rect.left < start - 1);
+          const outside = painted.filter(
+            (rect) => rect.left < box.left - 1 || rect.right > box.right + 1
+          );
+          cells.push({
+            label: cell.dataset.label || "",
+            display: style.display,
+            tracks: tracks.length,
+            labelTrack: Math.round(tracks[0] || 0),
+            valueTrack: Math.round(tracks[1] || 0),
+            gap: Math.round(gap),
+            // What the two tracks and the gap leave of the cell's own content
+            // box: nothing, but for the sub-pixel rounding of three sizes.
+            slack:
+              Math.round(
+                (box.width -
+                  (parseFloat(style.paddingLeft) || 0) -
+                  (parseFloat(style.paddingRight) || 0) -
+                  (parseFloat(style.borderLeftWidth) || 0) -
+                  (parseFloat(style.borderRightWidth) || 0) -
+                  (tracks[0] + tracks[1] + gap)) *
+                  10
+              ) / 10,
+            width: Math.round(box.width),
+            row: Math.round(tr.getBoundingClientRect().width),
+            early: early.length,
+            worst: early.length ? Math.round(Math.min(...early.map((rect) => rect.left)) - start) : 0,
+            outside: outside.length,
+            painted: getComputedStyle(cell, "::before").content,
+          });
+          // The runs the design fixes at one line: every number, and the word
+          // on the ticket link. `num missing` is the sentence a day with no
+          // journey prints, which is prose in a number's column.
+          for (const run of measured) {
+            if (/^(num|price|changes-count|fare-kind|buy)$/.test(run.cls)) {
+              numbers.push({ label: cell.dataset.label, cls: run.cls, lines: run.lines });
+            }
+          }
+        }
+      }
+      const heads = Array.from(document.querySelectorAll("thead th"));
+      const head = document.querySelector("thead");
+      const headBox = head ? head.getBoundingClientRect() : null;
+      const headStyle = head ? getComputedStyle(head) : null;
+      return {
+        rowCount: rows.length,
+        root,
+        cells,
+        numbers,
+        headers: heads.map((th) => ({
+          label: th.textContent.trim(),
+          display: getComputedStyle(th).display,
+        })),
+        // The headings are hidden by clipping the whole `thead` to a pixel, not
+        // by taking each cell out of the layout, so the box to measure is the
+        // one that carries the clip.
+        head: headBox
+          ? {
+              width: Math.round(headBox.width * 10) / 10,
+              height: Math.round(headBox.height * 10) / 10,
+              position: headStyle.position,
+              overflow: headStyle.overflow,
+            }
+          : null,
+      };
+    });
+    const bad = (wanted) => stacked.cells.filter(wanted).slice(0, 4);
+    const tracks = bad((cell) => cell.tracks !== 2 || Math.abs(cell.labelTrack - stacked.root * 5) > 1);
+    check(
+      "at 390px every cell stacks into a 5rem label track and a value track",
+      stacked.cells.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        : tracks.length === 0,
+      tracks.length
+        ? JSON.stringify(tracks)
+        : `${stacked.cells.length} cells, label track ${stacked.cells[0] ? stacked.cells[0].labelTrack : 0}px at a ${stacked.root}px root`
+    );
+    const narrow = bad((cell) => Math.abs(cell.slack) > 1.5);
+    check(
+      "and the value track is the rest of the cell rather than a width of its own",
+      stacked.cells.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        : narrow.length === 0,
+      narrow.length
+        ? JSON.stringify(narrow.map((cell) => ({
+            label: cell.label,
+            width: cell.width,
+            slack: cell.slack,
+          })))
+        : `${stacked.cells.length} cells measured`
+    );
+    const early = bad((cell) => cell.early > 0);
+    check(
+      "at 390px every value starts in the value track, never under its own label",
+      stacked.cells.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        : early.length === 0,
+      early.length
+        ? JSON.stringify(early.map((cell) => ({ label: cell.label, runs: cell.early, worst: cell.worst + "px" })))
+        : `${stacked.cells.length} cells measured`
+    );
+    const spilled = bad((cell) => cell.outside > 0 || cell.width < cell.row - 1);
+    check(
+      "at 390px no value paints outside the cell that holds it",
+      stacked.cells.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        : spilled.length === 0,
+      spilled.length
+        ? JSON.stringify(spilled.map((cell) => ({ label: cell.label, width: cell.width, row: cell.row, outside: cell.outside })))
+        : `${stacked.cells.length} cells measured, each the width of its row`
+    );
+    const wrappedNumbers = stacked.numbers.filter((run) => run.lines !== 1).slice(0, 6);
+    check(
+      "at 390px a price, a count, a time and the ticket link each paint one line",
+      stacked.numbers.length === 0
+        ? notExercised("this page shows no number and no ticket link to measure")
+        : wrappedNumbers.length === 0,
+      wrappedNumbers.length
+        ? JSON.stringify(wrappedNumbers)
+        : `${stacked.numbers.length} number runs and links measured`
+    );
+    const unlabelled = stacked.cells.filter((cell) => cell.painted !== `"${cell.label}"`).slice(0, 4);
+    check(
+      "at 390px each cell names itself where its column heading is hidden",
+      stacked.cells.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        : unlabelled.length === 0,
+      unlabelled.length
+        ? JSON.stringify(unlabelled.map((cell) => ({ label: cell.label, painted: cell.painted })))
+        : `${stacked.cells.length} cells paint their own label`
+    );
+    // The headings are hidden from sight rather than from a screen reader: the
+    // `thead` is a clipped pixel, and the cells inside it are still table cells
+    // rather than `display: none`, which would take the headings out of the
+    // accessibility tree with them and leave a phone reader with no place the
+    // column names are written.
+    const head = stacked.head;
+    check(
+      "at 390px the column headings are hidden from sight and not from a screen reader",
+      !head || stacked.headers.length === 0
+        ? notExercised("this page shows no column headings")
+        : head.width <= 1 && head.height <= 1 && head.position === "absolute" &&
+          /hidden/.test(head.overflow) &&
+          stacked.headers.every((th) => th.display !== "none"),
+      JSON.stringify({ head, headers: stacked.headers.slice(0, 3) })
+    );
     await page.setViewportSize({ width: 1280, height: 800 });
 }
 module.exports = { measureTheLayout };

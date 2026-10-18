@@ -401,11 +401,16 @@ class DemoPageTest(PageTestCase):
         # heading. That the script rewrites it from the tab title on every render,
         # so the two cannot disagree, is the browser suite's to prove.
         self.assertIn('aria-label="Train fares up to &pound;20 from GRANTHAM"', heading)
-        # The other two places that name the cap. "Within" is not "under", but
-        # it reads the same way beside a fare that lands exactly on the ceiling,
+        # The other places that name the cap. "Within" is not "under", but it
+        # reads the same way beside a fare that lands exactly on the ceiling,
         # and a summary saying "3 destinations within £20" under a heading that
         # says "up to £20" is the same defect in different words.
-        self.assertEqual(3, page_script(self.html).count("for up to "),
+        #
+        # The other two phrases rather than three: the count line and the empty
+        # list are one function now, because an empty list printed the sentence
+        # twice, a line apart (E10 of the 17 October 2026 audit). The phrasing
+        # itself is the claim, and the two call sites are one sentence of code.
+        self.assertEqual(2, page_script(self.html).count("for up to "),
                          "the cap is named the old way somewhere")
         self.assertNotIn('"No destinations within "', page_script(self.html))
 
@@ -950,30 +955,23 @@ class DemoPageTest(PageTestCase):
         self.assertIn("We don’t have a page for ‘", script)
         self.assertNotIn('from \\"', script)
 
-    def test_the_mobile_reflow_keeps_the_markup_a_real_table(self) -> None:
-        # The reflow is display-only CSS in a max-width media query. The markup
-        # must stay a real table for desktop and assistive technology, and the
-        # stylesheet must wrap cells rather than fix their width, so no cell can
-        # sit outside the viewport however long a station name is.
+    def test_the_mobile_reflow_is_declared_at_44rem(self) -> None:
+        # What this test may claim, and nothing more. The stacked layout's own
+        # rules were asserted here as text -- the label rule, the two tracks,
+        # the border cancellation -- and all of them were present, all passing,
+        # while the station cell painted its brackets under its name and the
+        # tickets cell collapsed to 1px (E16 of the 17 October 2026 audit). The
+        # failure was how the rules interacted with the markup, which is not
+        # something a string can see. The rules are now checked as painted
+        # geometry in tests/browser/station-layout.cjs, at 390px, and this keeps
+        # only the claim a template string can honestly make: the breakpoint is
+        # still 44rem, the width the six-column table needs (ADR-0019).
         self.assertIn("@media (max-width: 44rem)", self.stylesheet)
-        # From the first max-width block to the end of the stylesheet: the
-        # footer nav has its own small block, and the table's rules must be
-        # found wherever they sit.
-        reflow = self.stylesheet[self.stylesheet.index("table, tbody { display: block; }") - 200:]
-        self.assertNotIn("display: none", reflow.split("thead")[0])
-        self.assertIn("thead { position:absolute; width:1px; height:1px;", reflow)
-        self.assertIn("td[data-label]::before { content: attr(data-label)", reflow)
-        # The cells wrap rather than hold a width. `minmax(0, 1fr)` is what says
-        # so, and it replaced `flex-wrap` here: a fixed or `max-content` track
-        # would be as wide as its longest content and push the row sideways.
-        self.assertIn("grid-template-columns: 5rem minmax(0, 1fr)", reflow)
-        # One rule per row, drawn by the row. Every cell used to keep the border
-        # the table gave it and draw a line at its own height, so a stacked row
-        # showed up to six horizontal lines at six different heights, none of
-        # them reaching the row's own. The panel a row opens had one too, and
-        # opening a destination drew a second line across the page.
-        self.assertIn("th, td { border-bottom: 0; }", reflow)
-        self.assertIn("tr.detail td { padding: .5rem 0 .55rem; border-bottom: 0; }", reflow)
+
+    def test_the_table_markup_stays_a_real_table(self) -> None:
+        # The reflow is display-only CSS. The markup has to stay a table so a
+        # screen reader keeps its rows, its column headings and the relation
+        # between them on a phone, where a stack of divs has none of the three.
         table_markup = self.html.split("<table>")[1].split("</table>")[0]
         self.assertNotIn("<div", table_markup)
 
@@ -995,6 +993,44 @@ class DemoPageTest(PageTestCase):
         self.assertIn("It stops at the highest fare", hint)
         self.assertIn("&pound;{}.00 for one adult".format(ceiling), hint)
         self.assertNotIn("__CEILING_NOTE__", self.html)
+
+    def test_the_shared_station_list_does_not_block_the_page(self) -> None:
+        # E2 of the 17 October 2026 audit. A classic script is a parse barrier,
+        # and this one is the whole network's station list in front of the first
+        # paint of a table that does not need it. The tag is read out of the
+        # rendered page rather than off the function that writes it, so a page
+        # that stops asking for the list with a deferred tag fails here too.
+        page = render_page({**self.payload, "stationsSrc": "/stations-abc.js"}, budget_pounds=20)
+        tag = re.search(r'<script src="/stations-abc\.js"[^>]*>', page)
+        self.assertIsNotNone(tag, "the page did not ask for the shared station list")
+        self.assertIn(" defer", tag.group(0), tag.group(0))
+
+    def test_no_route_ships_a_placeholder(self) -> None:
+        # E3 of the 17 October 2026 audit: the renderers substitute forty-odd
+        # placeholders over a document they have already embedded a payload in,
+        # so a placeholder a template gained and the renderer forgot would ship
+        # literally on every page of a release. Each route is read here, not
+        # just the station page, because each has its own substitution chain.
+        index = build_demo_page.build_station_index({"GRN": 5}, self.fares.locations_by_crs)
+        routes = {
+            "station page": self.html,
+            "station page with a shared list": render_page(
+                {**self.payload, "stationsSrc": "/stations-abc.js"}, budget_pounds=20
+            ),
+            "station list": build_demo_page.render_chooser(index, budget_pounds=20),
+            "privacy page": build_demo_page.render_privacy("note", "", "a@b.test"),
+        }
+        for name, page in routes.items():
+            self.assertEqual(re.findall(r"__[A-Z_]+__", page), [], f"{name} shipped a placeholder")
+
+    def test_feed_text_naming_a_placeholder_is_refused(self) -> None:
+        # The substitutions run over the whole document after the payload is
+        # embedded, so a note containing a placeholder's name would be rewritten
+        # by the substitution that ran before it. Refusing is the only answer
+        # that does not publish a sentence the feed did not write.
+        with self.assertRaises(ValueError) as raised:
+            render_page({**self.payload, "note": "__BUDGET__"}, budget_pounds=20)
+        self.assertIn("__BUDGET__", str(raised.exception))
 
     def test_the_stated_ceiling_follows_the_party_the_reader_chooses(self) -> None:
         # The ceiling is party-aware -- two adults cost twice one -- so a note
