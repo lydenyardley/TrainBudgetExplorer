@@ -62,6 +62,7 @@ CLEAN = (
     "tools/check_commit_message.py",
     "tools/check_facet_reference.py",
     "tools/check_links.py",
+    "tools/check_page_state.py",
     "tools/check_release_clearance.py",
     "tools/easy_fares_check.py",
     "tools/measure_build_memory.py",

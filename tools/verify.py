@@ -162,6 +162,23 @@ def types() -> Step:
     return step.done(result.returncode == 0, detail[-1] if detail else "")
 
 
+def page_state() -> Step:
+    """The page-state read ratchet (R5 of the 18 October 2026 plan).
+
+    In `--full` only, beside the type ratchet: it reads the page's sources and
+    needs nothing installed, but it is a size over sixteen files rather than a
+    check of one, so it is not in the fast loop.
+    """
+    step = Step("page state")
+    result = subprocess.run(
+        [sys.executable, "-m", "tools.check_page_state"], cwd=ROOT, capture_output=True, text=True
+    )
+    detail = (result.stdout + result.stderr).strip().splitlines()
+    if result.returncode == 2:
+        return step.done(None, detail[-1] if detail else "no page to read")
+    return step.done(result.returncode == 0, detail[-1] if detail else "")
+
+
 def _run(command: list[str], what: str) -> bool:
     print(f"  $ {' '.join(command)}", flush=True)
     result = subprocess.run(command, cwd=ROOT)
@@ -255,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         steps.append(javascript())
         if not (args.fast and not (args.full or args.all)):
             steps.append(types())
+            steps.append(page_state())
     if args.browser or args.all:
         steps.append(browser())
     for step in steps:
