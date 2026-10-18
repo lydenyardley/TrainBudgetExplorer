@@ -199,7 +199,11 @@ class ProvenanceTest(PageTestCase):
         dated = build_demo_page.render_privacy(
             "note", "", "a@b.test", plain, built_at="2026-10-11T09:15:00Z"
         )
-        self.assertIn("This notice describes the build published on 11 October 2026.", dated)
+        self.assertIn("This notice describes the build dated 11 October 2026.", dated)
+        # And it dates the build rather than claiming a publication: a build
+        # nobody deployed is not published, and the phrase is false of every
+        # build that never reached the deploy job (clarity audit item 42).
+        self.assertNotIn("publish", dated.split('id="builtLine">', 1)[1].split("</p>", 1)[0])
         self.assertIn('id="builtLine"', dated)
         self.assertNotIn(
             'id="builtLine" hidden',
@@ -207,7 +211,7 @@ class ProvenanceTest(PageTestCase):
             "a dated notice nobody can read is not a dated notice",
         )
         self.assertNotIn("__BUILT_LINE__", dated)
-        self.assertNotIn("build published on", quiet, "an undated build says so by omitting the line")
+        self.assertNotIn("build dated", quiet, "an undated build says so by omitting the line")
         self.assertIn("injects an analytics snippet", build_demo_page.render_privacy("note", "", "a@b.test", measured))
         self.assertIn(
             "affiliate network",

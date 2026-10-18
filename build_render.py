@@ -399,8 +399,13 @@ def render_privacy(
     # The date this notice's build-dependent sentences were true of: "no
     # analytics run" is a promise about a build, and the build knows when it
     # was made (route audit item 16, 9 October 2026).
+    # "dated", not "published": a build nobody has deployed is not a
+    # publication, so the verb was false of every local build and true only of
+    # the ones a run reached the deploy job with (clarity audit item 42,
+    # answered 16 October 2026). The date is what the sentence needs, and the
+    # date is true either way.
     built_line = (
-        '<p class="muted" id="builtLine">This notice describes the build published on '
+        '<p class="muted" id="builtLine">This notice describes the build dated '
         + html.escape(human_date(built_at[:10]))
         + ".</p>"
         if built_at
