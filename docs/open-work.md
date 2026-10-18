@@ -996,7 +996,8 @@ rejections are under "Rejected designs, with the reason" and their figures are i
 
 Two reviews from 14 October are still in `docs/audits/`, each pruned to what it
 still asks for. `2026-10-14-impeccable-critique.md` is recommendations 3's second
-half, 7 and 8, which are the entry above. The app-engineering audit of the same
+half and 8, which are the entry above; its item 7 is answered by the trade words
+that are now defined once. The app-engineering audit of the same
 date is its recommendation 6, the entry above. The reviews filed on 17 October and
 the plan filed on 18 October sit beside them. A review with nothing open does not
 keep a file.
