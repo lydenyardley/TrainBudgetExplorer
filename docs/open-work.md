@@ -1121,3 +1121,8 @@ keep a file.
   by the commits that carry them, item 8 was read and left as it was, item 3 was
   settled by measurement, item 17 is a rejection with its reason, and items 23, 42
   and 44 landed on their own. Removed on 18 October 2026.
+- `docs/audits/2026-10-18-agent-friendliness-plan.md` — the plan to
+  rearchitect the code for agents rather than patch it. Its eight items settle
+  in the entry above, with the premise it started from (a check that cannot fail
+  is worse than none) and the measurements that found it. Removed on 18 October
+  2026, in `fe71c1d`.
