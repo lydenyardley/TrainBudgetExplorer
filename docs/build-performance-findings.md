@@ -855,3 +855,120 @@ These are the first figures this tool has produced that describe a page, and the
 describe a demo page. The Grantham page here holds 16 destinations where the
 real-feed page holds 334, so this is not the 354 KB figure in
 `docs/open-work.md`, which still needs a real-feed build.
+
+## The shared station list, deferred: the plan
+
+**Written:** 18 October 2026, before the runs below. The figures are in the
+section after this one, dated the same day.
+
+**Question.** Every station page carries `<script src="/stations.js" defer>` for
+the picker's station list, and `defer` on that tag is new: it was a classic tag,
+which is a parse barrier, until E2 of the 17 October 2026 audit. On a page that
+already holds its own answer in inline script, what does the attribute buy a
+reader's first paint?
+
+**The change under test is one attribute.** Two copies of the same built page,
+`_demo_site/from/nottingham/index.html`, differing only in whether the station
+list's tag carries `defer`. The route's own script is deferred in both, so the
+only difference is when the shared list stops blocking the parser.
+
+**Why the size of the list decides the answer.** The demo build's own list is
+459 bytes for its 3 stations, and 459 bytes that never arrive can delay nothing
+measurably. A release writes the list for every station it wrote a page for --
+the writer's own docstring names 2,712 -- so the list is served at two sizes: the
+demo build's 459 bytes, and **162 KB**, the size of the file the same writer
+(`build_assets.render_station_asset` over `station_asset_rows`) produces for the
+2,613 stations in `feeds/knowledgebase/stations.xml`. The second is the size a
+release's reader downloads; the first is the control that says the method can
+see a difference at all.
+
+| Served list | Bytes | Stations |
+|---|---|---|
+| the demo build's own | 459 | 3 |
+| the reference station file's | 165,934 | 2,613 |
+
+**What is measured, and why those three.** First Contentful Paint: it is the
+thing a parse barrier moves, and nothing paints while the parser waits. Time to
+the first results row on screen: the answer the page exists to give, measured by
+a `requestAnimationFrame` loop installed before any page script runs, so it is
+the row's own paint and not a load event. And DOMContentLoaded, as the check that
+the barrier is what the tag claims it is rather than a measurement artefact.
+
+**How.** Chromium through Playwright, one fresh browser context per run so no run
+sees a cached list, alternating A and B within each repetition to cancel a drift
+in the machine, network throttled through CDP to 150 ms latency, 1.6 Mbps down
+and 750 Kbps up (a slow phone), no CPU throttle. 7 runs per variant, reported as
+median with min and max, at each of the two list sizes, plus one unthrottled pass
+as a control on the throttle itself. The page is served from the project's own
+shape: a static server over loopback.
+
+**What would make this untrustworthy, and is stated with the figure.** Loopback
+has no TLS handshake and no network jitter, so the RTT component is 150 ms and
+nothing else. The page under test is the synthetic demo build, whose banner the
+real page does not carry and whose payload is 16 rows against Grantham's 334. The
+figure is about a *release-sized station list on a throttled connection*, and it
+is not the figure for a fast connection or for a smaller release. Nothing here
+measures whether the picker still works after the deferral; the browser suite's
+picker checks are what hold that (`tests/browser/station-picker.cjs`), and the
+list must still arrive before the reader opens the control rather than before
+first paint.
+
+## The deferred station list, measured: it buys a serialization no reader sees
+
+Measured 18 October 2026 on this machine, by `node measure_station_defer.cjs`,
+following the plan above. 7 runs per variant per size, alternating within each
+repetition, each in a fresh browser context so no run sees a cached list. All
+figures are milliseconds from navigation start. The row below is one sweep; how
+the three numbers behaved across four sweeps is stated underneath it, because one
+sweep cannot tell a difference from a drift.
+
+| Release-sized list, 150 ms / 1.6 Mbps | Payload script ran at | FCP | First row | DCL |
+|---|---|---|---|---|
+| a classic tag | 2,212 | 1,112 [1,028–1,208] | 2,337 [2,313–2,411] | 2,300 |
+| `defer` | 1,016 | 1,032 [1,012–1,116] | 2,334 [2,298–2,361] | 2,290 |
+
+**The barrier is real, and it is 1.2 s wide.** The list's tag sits in the body
+before the inline payload, so a classic tag stops the parser until the list has
+arrived: 166 KB over a 1.6 Mbps link, which ends at 2,199 ms and takes the
+payload's own script with it. Deferred, the payload runs at **1,016 ms**, as soon
+as the parser reaches it. Across the four sweeps run here the payload was
+**1,161, 1,187, 1,196 and 1,161 ms** earlier behind a deferred tag. That is the
+one figure the attribute moves, and it moved every time.
+
+**Nothing a reader sees moved.** Across the same four sweeps the FCP difference
+(block minus defer) was −40, +80, −8 and −40 ms, with the two spreads overlapping
+in every sweep; the first results row differed by −40, +3, −4 and 0 ms. At this
+run count neither direction is measurable, and that is the finding rather than a
+failure of the harness: the row is built by the route's own script, which is
+174 KB, arrives at 2,278 ms and 2,267 ms and runs the moment it lands. The 166 KB
+list is already there by then whichever way its tag was written, so a barrier that
+ends at 2,212 ms ends before the byte that matters.
+
+The two controls agree. With the demo build's own 459-byte list the payload runs
+at 824 ms against 813 ms and the first row at 1,547 ms against 1,547 ms. With the
+release-sized list and no throttling (3 runs), FCP 68 against 64 and the first row
+98 against 95. The list's delivery is independent of the attribute in both: all
+2,613 stations arrive and the picker shows its 40 options in every run of every
+variant, which is the one thing the deferral must not break.
+
+**What this costs the comment that made the claim.** `build_assets.station_asset_tag`
+said deferring stops "first paint of the table" waiting on the network's station
+list. On the page shape measured it does not, and the docstring now says what was
+measured instead: a serialization of the payload's execution, 1.2 s at a
+release-sized list, which the route's own script hides from the reader. The
+attribute stays -- it costs nothing and it is the difference whenever a page's own
+script is not the last byte on the wire -- but it is not the paint win it was
+described as, and no figure should be quoted as one.
+
+**The cost that did not move, and is larger than the win.** Every station page
+still downloads the whole list: **165,934 bytes** at a release-sized release, for
+a control most readers never open, beside a 33 KB payload and a 174 KB route
+script. Deferring changes when those bytes are *used*, not whether they are
+fetched. Whether the picker should fetch the list when it opens instead is a
+separate question, and this is the number that one starts from.
+
+**Reproduce.** The demo build from the plan above, then
+`node measure_station_defer.cjs` in the repository root. It writes the
+release-sized list itself, through `build_assets.render_station_asset` over
+`feeds/knowledgebase/stations.xml`, and refuses rather than guessing if the built
+page no longer carries the tag it rewrites.

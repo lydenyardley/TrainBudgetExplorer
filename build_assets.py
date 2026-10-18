@@ -300,10 +300,21 @@ def station_asset_tag(src: str | None) -> str:
     and every direct caller of ``render_page`` still ship one file per route with
     no second request. Without this tag the page's picker reads its list out of
     the page's own payload, exactly as before the list moved.
+
+    Deferred like the route's own script, because a classic tag is a parse barrier
+    and the list has nothing to do with the table: document order still runs it
+    before the route's script, which is the one thing the picker needs.
+
+    What the barrier costs was measured on 18 October 2026, and it is not what the
+    comment here first claimed. A release-sized list is 166 KB, and behind a
+    classic tag the page's inline payload runs 1.2 s later -- but nothing a reader
+    sees moves, because the row waits on the route's own 174 KB script, which is
+    the last byte on the wire either way. Measured figures, method and limits:
+    ``docs/build-performance-findings.md``, "The shared station list, deferred".
     """
     if not src:
         return ""
-    return f'<script src="{html.escape(src, quote=True)}"></script>\n'
+    return f'<script src="{html.escape(src, quote=True)}" defer></script>\n'
 
 
 def published_routes_for(index: list[dict], base_path: str = "") -> list[dict]:
