@@ -746,7 +746,11 @@ async function checkTheFareDetails(world) {
             helped.every(
               (crs) =>
                 Math.round(amount(card[crs].was) * 100) === card[crs].standard &&
-                /standard/.test(card[crs].was)
+                // The words, not only the number: the cell says which of the two
+                // prices is the card's and which is the fare it came from
+                // (audit item 23, 14 October 2026). It read "£4.65 £7.00
+                // standard", where a word's position was the whole explanation.
+                /^with your card \(was £/.test(card[crs].was)
             )
           : notExercised("no destination on this page is lowered by the card"),
         JSON.stringify(helped.slice(0, 3).map((crs) => [crs, clear[crs], card[crs]]))

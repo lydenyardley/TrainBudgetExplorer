@@ -106,7 +106,11 @@ function priceCell(destination) {
   if (price < standard) {
     const was = document.createElement("span");
     was.className = "was";
-    was.textContent = " " + money(standard) + " standard";
+    // "£4.65 with your card (was £7.00)" rather than "£4.65 £7.00 standard":
+    // the cell held three numbers and a word, so what said which was which was
+    // the position of the word "standard" and nothing else (audit item 23,
+    // 14 October 2026). The words carry it now, at the cost of a longer note.
+    was.textContent = " with your card (was " + money(standard) + ")";
     cell.append(was);
   }
   return cell;
