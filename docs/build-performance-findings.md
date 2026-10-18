@@ -1019,3 +1019,73 @@ not the location file, and the seconds are not a promise for other hardware.
 **Reproduce.** `python -m tools.measure_locations_load`, or with
 `--runs` and `--feed` to name another download. It spawns one process per load
 and refuses when the two maps disagree rather than printing a ratio over them.
+
+## The release link crawl: the plan
+
+**Written 18 October 2026, before the figure below was taken.** The prune stopped
+reading the pages it wrote (E5), so `build_release.crawl_internal_links` is now
+the one place a build reads the whole release again: every page and every shared
+asset, to prove each internal link names a written file. The question is what
+that read costs, and whether the same check has a cheaper shape.
+
+**Method.** A corpus shaped like the release, measured directly rather than
+extrapolated: one real station page, copied to 2,712 routes (the priced stations
+the 12 October 2026 audit counts) and padded to 354 KB (the page size that same
+audit measured), with the padding a payload of thousands of station links so the
+scan meets the match count a release page's destination rows carry. Three crawls
+run interleaved over the same corpus, five times each, best of the five reported:
+the crawl as it shipped until 18 October 2026 (the tree walked twice), the same
+with the tree walked once, and the same scanning bytes with no decode. Every
+variant must report the same broken links, or it is a different check rather than
+a faster one. The cost is then broken into its parts
+on the same corpus: walking the tree, reading and decoding, scanning, resolving.
+
+**What it does not cover.** A real release: the corpus's pages are one page
+repeated, so its link graph is far simpler than a release's even though its byte
+count and match count are not. The machine's disk is 98% full and its page cache
+holds what it can, and the build runs in CI on other hardware, so the seconds are
+this machine's and the shares are the portable part. It also does not cover the
+build end to end; the crawl's share of that is the build's own measured hours.
+
+## The release link crawl, measured: six seconds, and the cheaper shape that is not worth it
+
+**Measured 18 October 2026 on this machine**, five runs each, interleaved, best of
+the five reported with the range. Corpus: 2,712 pages of 362,523 bytes, 2,719
+files, 0.98 GB, built by the method in the plan above. Five internal links a page,
+which is what a real station page carries: the payload is column-encoded and the
+route's script builds the destination links, so 32 KB of real page holds five.
+
+| Crawl | Best of five | Range |
+| --- | --- | --- |
+| Two walks of the tree, decode each page | **6.95 s** | 6.95-11.56 |
+| One walk, decode each page (shipped from 18 October 2026) | **6.46 s** | 6.46-13.51 |
+| Two walks, scan bytes, no decode | **2.66 s** | 2.66-5.56 |
+
+Every variant reported the same two broken links on the same corpus, checked
+before the timing: the cheaper shape is the same check or it is not a saving.
+
+**What the 6.46 s is made of**, each measured on the same corpus: walking the tree
+once **0.44 s** (0.83 s twice), reading and decoding 2,719 files **3.07 s**,
+scanning them for links **2.75 s**, resolving the 13,573 links against 2,719
+written files **0.00 s**. The scan and the decode are the cost; there is nothing
+to make cheaper about the resolution, because a station page has five links and
+not five thousand.
+
+**What bounds it.** Single-core work over 0.98 GB, read from the page cache at
+about 150-370 MB/s. The five runs spread by up to 2x in this machine's noise
+(which is why the best is quoted beside the range), so a difference under about
+half a second is not measurable here.
+
+**Verdict. The same check can be done in 2.66 s rather than 6.46 s**, by scanning
+the page's bytes and never decoding them. It is not worth taking. The crawl runs
+once per build, and the release build is measured in hours (the workflow's own
+150-minute timeout); 3.8 s is under 0.1% of it, and the second parser would be a
+second set of regexes to keep in step with the first, on the code path whose job
+is to catch a link the renderer got wrong. The walk was taken because it also
+removes a second snapshot of the same tree: one walk, one list of files, one
+answer. Nothing else here earns its place.
+
+**Reproduce.** `python -m tools.measure_link_crawl`. It writes the release-shaped
+corpus, checks that every variant reports the same broken links, then times them
+interleaved. `--runs` and `--pages` change the sample; the default is five runs at
+the release's 2,712 pages.
