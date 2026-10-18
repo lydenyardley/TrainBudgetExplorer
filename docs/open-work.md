@@ -520,6 +520,24 @@ timed from rather than the DTD one beside it. What is left is measurement rather
 than code: the first real run is the whole-network build in the release's own
 shape that the P1 byte-budget finding above asks for.
 
+### `docs/build-performance-findings.md` is a rule with no enforcer
+
+`AGENTS.md` used to carry "Measured figures live in one place" in its rule table,
+with the file as the enforcer. It came out of that table on 18 October 2026 when
+the table gained a column for what fails when a rule is broken (R7 of the
+agent-friendliness plan), because nothing does: a document that quotes a figure in
+its own words, or a comment that dates a measurement it took from elsewhere, is
+caught by a person or not at all.
+
+What would close it is a check that reads every Markdown figure this repository
+states about itself and holds it to the one place it was measured — which needs
+the figures to be findable in the prose, and nothing marks them today. A first
+step that needs no marker: fail on a documented number that appears in two files
+with different values, spelled as a plain integer or one of the money and duration
+shapes the findings file uses. The false positives would be dates, prices in
+worked examples and counts of tests, so the allowlist is the work rather than the
+reading.
+
 ## Suggestions not yet taken up
 
 From the re-envision pass of 27 September 2026. Each carries the benefit it was
@@ -530,7 +548,7 @@ argued for, because a suggestion without one is a wish.
 | | Suggestion | What it is for | Lyden's comment | Where it stands |
 |---|---|---|---|---|
 | **S08** | An opt-in "find my station" path, backed by a reviewed coordinate source, keeping manual name/code search as the default and explaining exactly what the permission does before asking | A traveller who knows their town but not the station's CRS code can still start, without silently collecting location data | | Open. It is the same data question as C27, and it is gated on the same named source. |
-| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open, and moved: the prices-only release publishes no times at all, so this waits on the timetable returning from the Open Government Licence source in "The journey times are dropped from the release" above. |
+| **S24** | Date-specific schedules as an explicit product mode: build or select a timetable snapshot for the named date, label its service date beside the times, and keep undated aggregate schedules visibly indicative | A journey time is tied to the day the reader cares about rather than to a mixed schedule set | | Open, and moved: the release publishes times again (the NWR Schedule wiring of 16 October 2026 in "The journey times are dropped from the release" above), so the question is now whether a date-specific mode is worth having over the aggregate schedules the CIF carries — the day control is a filter over them, and the page already names the date each row's time is for. |
 | **S25** | Calendar handling, but only where the source supports it: bank holidays and service exceptions as first-class inputs, with a clear fallback where they are not | Fewer "typical" schedules are mistaken for holiday-specific service | | Open, and downstream of S24. A service-date label is what makes a fallback honest. |
 | **S31** | Deep links verified per seller, date and party before they are enabled, with a working fallback and the destination's link mode stated; never infer success from a URL that merely has query parameters | The handoff is the shortest one known to work, rather than the shortest one that looks right | **Implement** | Queued next. The railcard work it waited on is landed, so the party a link is built for is now whichever the reader chose. |
 
@@ -676,13 +694,13 @@ on a tool.
    provenance recorded beside the station index, and the location permission
    explained in full before it is asked for. Manual name and code search stays
    the default whichever way this goes.
-2. **Is a service date a product mode?** S24 and S25. When times are published they
-   are aggregate schedules and the day control is a filter. A date-specific
-   snapshot, labelled beside the times and carrying bank holidays and service
-   exceptions where the source supports them, is a product decision rather than a
-   data one, and S25 sits downstream of whatever this answer is. The release
-   currently publishes no times at all, so this waits on the timetable returning
-   from the Open Government Licence source in the findings above.
+2. **Is a service date a product mode?** S24 and S25. The times a page carries
+   are aggregate schedules and the day control is a filter over them. A
+   date-specific snapshot, labelled beside the times and carrying bank holidays
+   and service exceptions where the source supports them, is a product decision
+   rather than a data one, and S25 sits downstream of whatever this answer is.
+   The release has published times again since 16 October 2026 (NWR Schedule, in
+   the findings above), so this is waiting on the answer rather than on a source.
 3. **Which byte-budget path first?** The P1 finding above lists three ways the
    release gets back inside its 800 MB budget: measure the real release first,
    change the pair-rule encoding, or shard the build. The order is a judgement
@@ -922,6 +940,63 @@ of rows inside £20.00 on a page carrying 331 of them (53).
 | 17 | the destination-type chips are census bands wearing everyday words | read and rejected by the owner: the words stay | the entry under "Rejected designs, with the reason"; no code changed |
 | 42 | the built line promised a publication that had not happened | the line dates the build ("This notice describes the build dated ..."), so it is true of a build nobody deployed and of a deployed one | `build_render.py`; `tests/test_build_provenance.py`, which holds the line to the date and to no claim of publication |
 | 44 | nothing defined the trade vocabulary the page quotes | one glossary inside the method disclosure, written from the route's shared script and not per page, and no gloss where the words are met | `page/station/provenance.js`; the placeholder in `page_templates.py`; `tests/browser/station-render.cjs`, "the trade words the page quotes are defined together, in the method disclosure" |
+
+### The 18 October 2026 agent-friendliness plan
+
+`docs/audits/2026-10-18-agent-friendliness-plan.md` was removed on 18 October
+2026, when R4, R5, R7 and the rest of R8 landed; the commit that removed it is
+named at the foot of this file. The question it answered was the operator's, of
+18 October 2026: the code should be rearchitected for agents rather than patched.
+
+Its premise is worth keeping because it is the reason the next such plan should
+start the same way. There are four rungs of enforcement, strongest first: make the
+bad state unrepresentable, make it fail a check, write a canonical helper, write
+prose. This repository was already strong at the second rung, and that strength is
+where the first defect lived: **a check that cannot fail is worse than no check,
+because it spends the trust a real check would have earned.** Three measurements
+found it in three places that day: a byte gate that reported 0 KB of payload on
+every page it measured, the same gate passing an empty folder, and one fact (the
+payload's marker) spelled independently in eight files, the eighth being the gate.
+
+| Item | What changed | Held by |
+|---|---|---|
+| **R1** | `page_templates.py` owns `PAYLOAD_MARKER` and `CHOOSER_MARKER`; five modules import them instead of spelling them, `tools/check_source_credit.py`'s docstring included | `tests/test_page_assets.py` holds each template to its own marker, and the two gating tools to the template's |
+| **R2** | `page_bytes` exits 2 on a page that names a payload it did not parse, and on a `--site` run that finds no page | `tools/test_page_bytes.py`, two cases, plus a third proving a page that ships nothing still passes |
+| **R3** | the byte measurer's own test measures a page built from `page_templates.TEMPLATE`, not a page the test typed | `tools/test_page_bytes.py` |
+| **R4** | `page/station/state.js` is the page's one mutable object: `seedState()`, then one gesture per control family (`chooseBudget`, `chooseUnit`, `chooseMode`, `chooseCard`, `chooseTypes`, `chooseServiceDay`). Every listener is one line calling one of them, every render derives from the state, and `applyState` is the one place a control is written from it — it no longer reads a control back | the browser suite, 844/844 over five pages on 18 October 2026, with the setups that used to assign `.checked` on a control now driving a gesture or `applyState` |
+| **R5** | `tools/check_page_state.py`: a ratchet over control reads per panel, in the shape `tools/check_types.py` uses, run by `python -m tools.verify --full` | `tools/test_check_page_state.py`, thirteen cases over the verdict, including that a panel the budget does not name fails and that a write is not counted as a read. It fails on the tab title's old `budgetNumber.value` read, which is the defect it was written from |
+| **R6** | the paragraph about times is the payload's own sentence, chosen once from `hasJourneys`: a prices-only page no longer says "valid on the services listed" | `tests/test_build_demo_page.py`'s `test_the_sentence_about_times_names_only_what_this_build_has`; the words are `build_release.SERVICE_CLAIM` and `SERVICE_CLAIM_WITHOUT_TIMES` |
+| **R7** | `AGENTS.md`'s rule table gained the third column, "what fails, and what it says", and lost the one row that could not name a failure | the row below, which is that row's new home: "docs/build-performance-findings.md is a rule with no enforcer" |
+| **R8** | the prose the structure replaced is gone: `check_source_credit.py`'s docstring imports the marker it used to spell, and `url-state.js`'s `applyState` no longer explains why it must re-read the controls, because it does not | the same tests as R1 and R4 |
+
+**The evidence, kept because the numbers are the argument.** `grep -cE
+'\.(value|checked|dataset|textContent|hidden|classList)' page/station/*.js` summed
+to **269 accesses across 15 modules** before R4. It is a size, not a defect count,
+and it does not separate reads from writes; after R4 the reads alone, which is what
+the ratchet counts, sum to **34** across the page's 17 panels (measured 18 October
+2026). Six of the 37 `fix(page|station|chooser|routes)` commits were the same shape
+from six sides, all of them a second writer or reader of a fact that only lived in
+an element: `Back and Forward carry the chosen day`, `an arrow key no longer takes
+the station away from Tab`, `the tick on a row is the shortlist`, `a card must not
+swap the row under a reader's feet`, `the budget floor is zero`, `the field stops
+moving the page`. Eighteen of the 108 `fix` commits were `fix(tools|tests|ci|verify)`
+-- the instrument was wrong -- and that is what R1 to R3 answered.
+
+**What it does not establish.** The commit-prefix census is the author's label, not
+a measured property: it locates the work and does not measure it. R4's benefit is
+prevention rather than repair, because the six defects it is meant to prevent were
+already fixed at the element level, so it is proved by the cases that keep passing
+rather than by a case that starts passing. And the ratchet counts reads without
+judging them: a read inside a gesture and a read compared against a chip's markup
+look the same to it, which is why the reason for a particular read belongs in the
+comment beside it.
+
+**Not proposed, and why.** No package move (rejected 8 October for import and CI
+churn, and R1 gave the same orientation benefit through one module). No type
+checker for page defects (they are in JavaScript; R5 is a lint over JavaScript
+instead). No split for length, no schema for the classification tables, no new
+abstraction over the checks: each would trade a written reason for a mechanism
+that cannot carry it, and `verify.py` is already the runner.
 
 ### The measurements three ADRs lean on
 
