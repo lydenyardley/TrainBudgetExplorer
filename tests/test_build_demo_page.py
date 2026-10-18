@@ -25,6 +25,7 @@ import build_state
 from atoc_fares import FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, explain_unpriced, render_page
+from build_release import SERVICE_CLAIM, SERVICE_CLAIM_WITHOUT_TIMES
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from tests.page_harness import browser_suite_text, embedded_payload, embedded_text, js_function, page_markup, page_script, serialised_callback_lines, setUpModule, station_page, tearDownModule, PageTestCase
 
@@ -338,6 +339,23 @@ class DemoPageTest(PageTestCase):
         )
         self.assertIsNotNone(intro)
         self.assertNotIn("journey time", intro.group(1))
+
+    def test_the_sentence_about_times_names_only_what_this_build_has(self) -> None:
+        # C5 of the 17 October 2026 critique: the paragraph above the method
+        # disclosure shipped "Unrestricted fares are valid on the services
+        # listed" on a build that loads no timetable, so a reader of the
+        # published shape was told about services that are not there. The
+        # sentence is the payload's own now, chosen once from hasJourneys, and
+        # the renderer writes that same string into the page.
+        prices_only = build_payload(self.fares, None, "GRN")
+        self.assertFalse(prices_only["hasJourneys"])
+        self.assertEqual(prices_only["pricingNote"], SERVICE_CLAIM_WITHOUT_TIMES)
+        self.assertEqual(self.payload["pricingNote"], SERVICE_CLAIM)
+        self.assertIn("services listed", self.html)
+        without_times = render_page(prices_only, budget_pounds=20)
+        self.assertIn(SERVICE_CLAIM_WITHOUT_TIMES, without_times)
+        self.assertNotIn("services listed", without_times)
+        self.assertNotIn("options in the timetable", without_times)
 
     def test_the_undated_schedule_caveat_sits_with_the_times(self) -> None:
         # C04: the warning that the times are typical rather than date-specific

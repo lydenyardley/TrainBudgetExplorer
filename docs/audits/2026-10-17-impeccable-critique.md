@@ -158,21 +158,6 @@ copy above it is held to `75ch`; the footer, which is where the page keeps its
 honesty, is held to nothing. Fix: one `max-width: 75ch` on the footer, or a
 `--measure` token the `.sub` rule already implies.
 
-**C5 [P1] A prices-only build claims timetable content it does not have.**
-`page_templates.py:330` ships this paragraph unconditionally:
-
-> The times on this page are options in the timetable, not a booking. Unrestricted
-> fares are valid on the services listed; an Advance single is valid only on a
-> qualifying train, so no train is picked for you.
-
-The prices-only page has no timetable, stands its Time and Changes columns down,
-and hides the day control; measured on the built shape page, `body.textContent`
-still contains both "options in the timetable" and "valid on the services listed".
-A reader of the published shape is told about services that are not there, on a
-page whose first principle is that an approximation never passes for a quote. Fix:
-build the paragraph from `hasJourneys`, the way the intro already is
-(`page/station/provenance.js:161`).
-
 **C6 [P2] Three disclosures look like prose.**
 "About the ticket link" (24px tall), "Where these prices come from…" and "The
 words this page uses" are `<summary>` elements with no marker, no chevron, no
@@ -353,6 +338,12 @@ single.
   measure and the smallest type?
 - If the chooser's list had a heading, would the ordering note still need to
   apologize for the ordering?
+
+## What landed
+
+| Finding | Closed by | Held by |
+|---|---|---|
+| C5 [P1] a prices-only build claims timetable content it does not have | the paragraph is the payload's own sentence, chosen once from `hasJourneys`, and the renderer writes that string into the page, so the page cannot claim a window its payload does not carry | `tests/test_build_demo_page.py`'s `test_the_sentence_about_times_names_only_what_this_build_has`, which renders both shapes; the words are `build_release.SERVICE_CLAIM` and `SERVICE_CLAIM_WITHOUT_TIMES` |
 
 ## Run notes
 

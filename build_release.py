@@ -102,6 +102,29 @@ PRICING_NOTE = (
 )
 
 
+# C5: the paragraph above the method disclosure makes the same point at more
+# length, and a build that loaded no timetable has no services for a fare to be
+# valid on. It shipped the timetable sentence on every page, so a prices-only
+# build told its reader about services that are not there -- on a page whose
+# first principle is that an approximation never passes for a quote (C5 of the
+# 17 October 2026 critique). The words live here, beside the note they restate,
+# and the payload carries whichever sentence its own shape supports.
+SERVICE_CLAIM = (
+    "The times on this page are options in the timetable, not a booking. "
+    "Unrestricted fares are valid on the services listed; an Advance single is "
+    "valid only on a qualifying train, so no train is picked for you."
+)
+SERVICE_CLAIM_WITHOUT_TIMES = (
+    "Advance singles are valid only on a qualifying train, so no train is picked "
+    "for you. This build prices fares only, so no times are listed."
+)
+
+
+def service_claim(has_journeys: bool) -> str:
+    """The paragraph about times that this build's payload can support."""
+    return SERVICE_CLAIM if has_journeys else SERVICE_CLAIM_WITHOUT_TIMES
+
+
 # S38: the measurement plans this project would accept, written out rather than
 # left implied. Each is a plan a reader can be told about in one sentence, and
 # each is a decision rather than a default: switching analytics on without

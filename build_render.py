@@ -287,6 +287,10 @@ def render_page(
         .replace("__CEILING_NOTE__", "&pound;" + str(ceiling) + ".00 for one adult")
         .replace("__BUDGET__", str(initial_budget))
         .replace("__NOTE__", note_markup(payload["note"]))
+        # C5: the paragraph about times is the payload's own sentence, which
+        # build_payload chose from hasJourneys. A template that wrote its own
+        # would be the second owner of the claim.
+        .replace("__SERVICE_CLAIM__", html.escape(payload["pricingNote"]))
         .replace("__BASE__", payload.get("baseHref", "/").rstrip("/"))
         .replace("__ANALYTICS__", analytics)
         .replace("__SYNTHETIC__", "true" if payload.get("synthetic", True) else "false")

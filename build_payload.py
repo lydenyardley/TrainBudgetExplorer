@@ -36,7 +36,7 @@ from build_assets import (
     with_base,
 )
 from build_provenance import STALE_AFTER_DAYS, cif_date_to_iso, restriction_codes_shown
-from build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE, PRICING_NOTE
+from build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE, service_claim
 from build_state import read_service_week, source_fingerprint, write_service_week
 from destination_coverage import UnsourcedReport, unnameable_from_tally
 from retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
@@ -1109,6 +1109,11 @@ def build_payload(
         if not set(row.get("destinationTypes") or []) - {"other"}
     }
 
+    # One fact, read once: whether this build loaded a timetable decides both
+    # what the payload says about journeys and which sentence about times it
+    # carries (C5). Two spellings of it could disagree.
+    has_journeys = timetable is not None
+
     return {
         "origin": {"crs": origin_row.crs, "name": display_station_name(origin_row.crs, origin_row.name)},
         "sourceFingerprint": source_fingerprint(),
@@ -1163,7 +1168,7 @@ def build_payload(
         # between "nothing inside your budget" and "nothing priced from here at
         # all" is on the page rather than inferred from an empty table.
         "stationCount": len(fares.locations_by_crs),
-        "hasJourneys": timetable is not None,
+        "hasJourneys": has_journeys,
         # The collection, and the shared RR rule records behind it. Nothing is
         # selected: the reader names the card they hold, or reads standard
         # fares, and the browser remembers which they chose.
@@ -1221,9 +1226,12 @@ def build_payload(
         # payload rather than re-derived by each renderer.
         "synthetic": price_source == DEFAULT_PRICE_SOURCE,
         "linkNote": LINK_NOTE_FALLBACK if mode == "fallback" else None,
-    # The pricing paragraph is a fixed part of the page, but the payload
-    # carries it so tests can assert the page says what the times are.
-    "pricingNote": PRICING_NOTE,
+        # The paragraph about times is not the same on every build: a
+        # prices-only page has no services for a fare to be valid on, so it
+        # carries the sentence its own shape supports (C5, 17 October 2026).
+        # The renderer writes this string into the page, so the payload and the
+        # page cannot say different things.
+        "pricingNote": service_claim(has_journeys),
         "feed": fares.stats(),
         "locationTypeSource": fares.location_type_source,
         "timetable": timetable.stats() if timetable else None,

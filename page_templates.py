@@ -337,7 +337,11 @@ __THEME_TOGGLE__
        mixes (audit item 14, 9 October 2026). What is left is what only a
        limitation can say, and the standard-class fact is in the method note. -->
   <p>ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
-  <p>The times on this page are options in the timetable, not a booking. Unrestricted fares are valid on the services listed; an Advance single is valid only on a qualifying train, so no train is picked for you.</p>
+  <!-- C5 of the 17 October 2026 critique: this sentence named "the services
+       listed" on a build that lists no services. It is the payload's own
+       sentence now, chosen from hasJourneys, so the page cannot make a claim
+       its payload does not support (build_release.SERVICE_CLAIM). -->
+  <p>__SERVICE_CLAIM__</p>
   <!-- Everything the page knows about where its numbers came from, in the one
        place a reader goes to check them. These four lines stood between the
        budget control and the first fare on every station page: the feed's
