@@ -578,7 +578,10 @@ def merge_shards(args) -> int:
             file=sys.stderr,
         )
         return 2
-    fares = FaresDb().load_feed(args.feed)
+    # The merge asks one question of the feed -- which origins it names -- so it
+    # reads the location file and not the flows (E6). The full parse this
+    # replaced was the largest thing the end of a distributed build did.
+    fares = FaresDb().load_feed(args.feed, locations_only=True)
     universe = sorted(
         crs for crs in fares.locations_by_crs if not is_pseudo_station(crs)
     )

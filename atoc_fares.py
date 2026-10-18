@@ -14,12 +14,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
+from functools import partial
 import os
 from pathlib import Path
 import pickle
 
 from atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
-from atoc_fares_loader import FaresLoader
+from atoc_fares_loader import LOCATION_FILE_SUFFIXES, FaresLoader
 from parse_report import ParseReport, read_feed_files
 
 from atoc_fare_declarations import (
@@ -217,6 +218,7 @@ class FaresDb(FaresLoader):
         *,
         focus_origin: str | None = None,
         cache_path: str | Path | None = None,
+        locations_only: bool = False,
     ) -> "FaresDb":
         """Load a feed, optionally retaining fares for one origin only.
 
@@ -226,8 +228,25 @@ class FaresDb(FaresLoader):
         persisted atomically and reused on later page builds. The cache is
         opt-in so audit and general analysis retain their complete-feed
         semantics.
+
+        ``locations_only`` reads the station list and nothing else, for a caller
+        whose only question is which origins this feed names (the shard merge,
+        E6). The database it returns keeps no fares, so focusing or caching one
+        is refused rather than silently ignored.
         """
         origin = focus_origin.strip().upper() if focus_origin is not None else None
+        if locations_only:
+            if origin is not None or cache_path is not None:
+                raise ValueError(
+                    "a locations-only load keeps no fares, so it cannot be "
+                    "focused or cached"
+                )
+            read_feed_files(
+                path,
+                self.report,
+                partial(self._load_lines, only=LOCATION_FILE_SUFFIXES),
+            )
+            return self
         if cache_path is not None and origin is not None:
             cache = Path(cache_path)
             if cache.is_file():

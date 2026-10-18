@@ -245,6 +245,37 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.ticket_types["CDR"].name, "OFF-PEAK DAY R")
         self.assertTrue(self.db.ticket_types["CDR"].restricted_by_train)
 
+    def test_a_locations_only_load_reads_the_stations_the_full_one_reads(self) -> None:
+        # The shard merge asks the feed one question, which origins it names,
+        # and reads the location file rather than parsing every flow to answer
+        # it (E6). A cheaper reader that disagreed with the full one would
+        # refuse a correct split, so the two are compared rather than trusted.
+        db = FaresDb().load_feed(self.feed, locations_only=True)
+        self.assertEqual(
+            {
+                crs: (location.nlc, location.name, location.group_nlc)
+                for crs, location in db.locations_by_crs.items()
+            },
+            {
+                crs: (location.nlc, location.name, location.group_nlc)
+                for crs, location in self.db.locations_by_crs.items()
+            },
+        )
+        self.assertEqual(db.report.files_read, ["rjfaf.loc"])
+        # And it is the station list it keeps, not a feed read and discarded:
+        # nothing that costs a flow parse is here.
+        self.assertEqual(db.flows, {})
+        self.assertEqual(db.fares_by_flow, {})
+
+    def test_a_locations_only_load_refuses_a_focus_or_a_cache(self) -> None:
+        # Both are promises about fares, and a locations-only load keeps none;
+        # accepting either would return a database that silently answered
+        # "nowhere" to every price question asked of it.
+        for kwargs in ({"focus_origin": "GRA"}, {"cache_path": Path("any.pickle")}):
+            with self.subTest(**kwargs):
+                with self.assertRaises(ValueError):
+                    FaresDb().load_feed(self.feed, locations_only=True, **kwargs)
+
     def test_the_dtd_flag_spelling_is_read_by_a_test_the_synthetic_feed_cannot_pass(self) -> None:
         # The licensed feed writes ``Y`` for a true flag. This project's
         # synthetic feed was written before any licensed file was available and

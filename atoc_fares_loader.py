@@ -68,6 +68,13 @@ if TYPE_CHECKING:
     from atoc_fares import FaresDb
 
 
+# The one feed file a caller needs to answer "which stations does this feed
+# name". The shard merge asks exactly that question, and reading the flows to
+# answer it is a full parse of the national feed in the process that exists to
+# be cheap at the end of a distributed build (E6).
+LOCATION_FILE_SUFFIXES = frozenset({"loc"})
+
+
 class FaresLoader:
     """The loading half of a fares database, which ``FaresDb`` inherits.
 
@@ -1086,8 +1093,17 @@ class FaresLoader:
         }
         path.write_text(json.dumps(cache, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    def _load_lines(self, name: str, lines) -> None:
+    def _load_lines(
+        self, name: str, lines, only: frozenset[str] | None = None
+    ) -> None:
+        """Read one feed file, or only the suffixes ``only`` names.
+
+        A skipped file is not reported as unreadable: the caller said which
+        files it wanted, so the rest are not a gap in the download.
+        """
         extension = Path(name).suffix.lower().lstrip(".")
+        if only is not None and extension not in only:
+            return
         # The optional station classification lookup lives beside the fares
         # files and is read after the feed stream. It is still a known input,
         # not an unreadable file that should pollute the damage audit.
