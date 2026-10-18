@@ -163,6 +163,37 @@ function renderIntro() {
   else intro.insertBefore(document.createTextNode(text + " "), intro.firstChild);
 }
 
+// The trade vocabulary the lines in this disclosure quote: ITX, DTD, RR, the
+// "feed" itself, a "flow", "Priced as" in a row's own panel, and NRE in the
+// credit above. Item 44 of the 14 October 2026 clarity audit asked for them to
+// be defined somewhere a reader can find; the answer was a glossary inside the
+// method disclosure and no inline glosses, so a reader who wants the words
+// opens one thing -- the accordion they are already in -- and finds them
+// together. The definitions are written from here rather than shipped in the
+// page's markup because this file is one shared asset: the same 900 bytes in
+// every station page's HTML is a megabyte across a release.
+const FEED_WORDS = [
+  ["DTD", "The downloadable fares feed: the industry file these prices are read from."],
+  ["ITX", "A ticket-type code. An ITX placeholder is a fare the feed carries without a usable price, and this page leaves those out."],
+  ["RR", "The railcard rules inside the fares feed: which card may discount which fare, and the minimum fare it applies over."],
+  ["Feed", "One downloaded file of licensed data. \"This download\" means the dated copy these prices and times were read from."],
+  ["Flow", "One origin-to-destination pair the fares feed prices. A journey can be one flow or two, which is where a row naming two tickets comes from."],
+  ["Priced as", "The kind of fare a price is: Regular, buyable on the day, or Restricted, valid only under the condition the row states."],
+  ["NRE", "National Rail Enquiries, whose data portal licenses the feeds this site is built from."],
+];
+
+function renderWordList() {
+  const list = document.getElementById("wordList");
+  if (!list || list.children.length) return;
+  for (const [term, meaning] of FEED_WORDS) {
+    const dt = document.createElement("dt");
+    dt.textContent = term;
+    const dd = document.createElement("dd");
+    dd.textContent = meaning;
+    list.append(dt, dd);
+  }
+}
+
 function provenance() {
   // An origin the build could not price is a different page from one whose
   // prices sit outside this budget, so it gets its own first sentence and its
@@ -220,6 +251,7 @@ function provenance() {
     parts.push(DATA.serviceDate ? "times for " + humanDate(DATA.serviceDate) : "typical services in the feed");
   }
   document.getElementById("provenance").textContent = parts.join(" · ");
+  renderWordList();
   document.getElementById("pricingBasis").textContent = DATA.pricingBasis
     ? DATA.pricingBasis + ". Use the ticket-type control to change which fares are listed, then use the budget filter to narrow the list."
     : "";

@@ -355,6 +355,11 @@ __THEME_TOGGLE__
     <p class="tag" id="restrictionReference" hidden></p>
     <p class="tag" id="buildMetadata" hidden></p>
     <p class="tag" id="provenance"></p>
+    <!-- Item 44 of the 14 October 2026 clarity audit, answered "the glossary
+         only": the trade words the lines above quote are defined once, here,
+         rather than glossed where each is met. The definitions come from the
+         route's shared script, so they cost the release nothing per page. -->
+    <details class="words"><summary>The words this page uses</summary><dl id="wordList"></dl></details>
   </details>
   <nav class="footnav"><a href="__BASE__/">Station list</a> <a href="__BASE__/privacy/">Privacy</a></nav>
   <p id="copyStatus" role="status" class="sr-only"></p>

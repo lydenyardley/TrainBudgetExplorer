@@ -389,5 +389,46 @@ async function renderThePage(world) {
             (!handoff.wanted.disclosure || /paid|earn|commission/i.test(handoff.summary.text)),
       `${JSON.stringify(handoff.summary)} beforeTable=${handoff.beforeTable} inMethod=${handoff.inMethod}`
     );
+    // Item 44 of the 14 October 2026 clarity audit, answered "the glossary
+    // only": the trade words the lines above quote are defined once, inside
+    // the method disclosure, and nowhere else. The definitions are written by
+    // the route's shared script rather than shipped in each page's markup, so
+    // the check reads what a reader sees with the accordion closed and open.
+    const words = await page.evaluate(() => {
+      const list = document.getElementById("wordList");
+      const details = list && list.closest("details");
+      const inMethod = Boolean(list && list.closest(".method"));
+      const terms = list ? Array.from(list.querySelectorAll("dt")).map((dt) => dt.textContent.trim()) : [];
+      const meanings = list ? Array.from(list.querySelectorAll("dd")).map((dd) => dd.textContent.trim()) : [];
+      // The page's own text with the glossary taken out of it. A definition
+      // counted as its own quotation would make this check pass for a word the
+      // page never says, which is the shape this suite exists to refuse.
+      const copy = document.body.cloneNode(true);
+      const copyOfList = copy.querySelector("#wordList");
+      if (copyOfList) copyOfList.remove();
+      const outside = copy.textContent;
+      // NRE arrives with the acknowledgement, and a build without notices has
+      // none, so that term is held to the page only when the credit is there.
+      const credited = outside.includes("National Rail Enquiries");
+      return {
+        inMethod,
+        summary: details ? details.querySelector("summary").textContent.trim() : null,
+        terms,
+        // Every definition says something: a term with an empty or one-word
+        // gloss is a term the page still has not explained.
+        defined: terms.length > 0 && meanings.length === terms.length && meanings.every((m) => m.split(/\s+/).length >= 6),
+        // The words it defines are the words the page actually quotes. "Flow"
+        // is met lower-cased in the feed's own count.
+        quoted:
+          [/ITX/, /DTD/, /\bRR\b/, /flow/i].every((pattern) => pattern.test(outside)) &&
+          (!credited || /\bNRE\b/.test(outside)),
+        credited,
+      };
+    });
+    check(
+      "the trade words the page quotes are defined together, in the method disclosure",
+      words.inMethod && words.defined && words.quoted && words.terms.length >= 5,
+      JSON.stringify(words)
+    );
 }
 module.exports = { renderThePage };
