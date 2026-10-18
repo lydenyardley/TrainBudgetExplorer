@@ -972,3 +972,50 @@ separate question, and this is the number that one starts from.
 release-sized list itself, through `build_assets.render_station_asset` over
 `feeds/knowledgebase/stations.xml`, and refuses rather than guessing if the built
 page no longer carries the tag it rewrites.
+
+## The shard merge's feed load: the plan
+
+**Written 18 October 2026, before the figure below was taken.** Finding E6 of the
+17 October 2026 audit: `build_pool.merge_shards` loaded the whole fares feed and
+used one field of it, `locations_by_crs`, to check that the shards partition the
+feed. `FaresDb.load_feed(..., locations_only=True)` now reads the `.loc` file and
+nothing else. The question this measures is what the merge stops paying for.
+
+**Method.** One fresh process per load, because a heap warmed by a full parse
+would pay for the next one. Each process is timed from just before
+`FaresDb()` to just after `load_feed` returns, on the real feed
+(`feeds/fares/dtd-fares.zip`, the 24 September 2026 download), three runs each,
+on this machine. Correctness is measured first: the two loads' location maps are
+compared by CRS to `(nlc, name, group_nlc)`, because a cheaper reader that
+disagreed would refuse a correct split and no timing would show it.
+
+**What it does not cover.** The merge command end to end, which also copies the
+shards' pages, writes the chooser, the station list and the manifest, and crawls
+the result. Nor the timetable. The figure below is the feed load only.
+
+## The locations-only load, measured: the merge stops parsing the feed
+
+**Measured 18 October 2026 on this machine, three runs each, one process per
+load**, by the method in the plan above. Real feed: `feeds/fares/dtd-fares.zip`,
+the 24 September 2026 download, 48,525,887 bytes.
+
+| Measurement | Full load | Locations only |
+| --- | --- | --- |
+| Best of three, `FaresDb().load_feed` | **37.7 s** (42.7, 37.7, 39.4) | **0.3 s** (0.3, 0.3, 0.4) |
+| Stations kept | 3,436 | 3,436, same map |
+
+The two maps are equal as values, CRS by CRS to `(nlc, name, group_nlc)`, which
+is the part that matters: the merge refuses a shard set that does not partition
+this list, so a cheaper reader that saw a different list would refuse a correct
+split and no timing would show it. **The merge stops paying 37.4 s of its feed
+load, about 125x, and reads about 37 s less of the file's records.**
+
+**What this does not say.** It is the feed load, not the merge. A merge also
+copies the shards' pages, writes the chooser, the station list and the manifest,
+and crawls the result, and none of that is in this figure. It is also one
+machine on one download: the ratio is a property of how much of the archive is
+not the location file, and the seconds are not a promise for other hardware.
+
+**Reproduce.** `python -m tools.measure_locations_load`, or with
+`--runs` and `--feed` to name another download. It spawns one process per load
+and refuses when the two maps disagree rather than printing a ratio over them.

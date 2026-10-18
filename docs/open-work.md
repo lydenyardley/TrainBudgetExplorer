@@ -38,31 +38,6 @@ sweep, no raw OSM tourism tags, no polygon-wide landscape tagging) still hold.
 
 ## The open findings
 
-### The merge reads the whole fares feed to answer a set question (E6, 17 October 2026)
-
-`build_pool.merge_shards` loads the feed through `FaresDb().load_feed` and uses
-only `locations_by_crs` from it: the universe of origins the shards must
-partition, and the names `build_station_index` writes. That is a full parse in the
-process whose whole reason to exist is to be cheap at the end of a distributed
-build. The fix is a locations-only load beside the full one -- a second dispatch
-through `read_feed_files`, and a test that it returns the same locations as the
-full parse. Filed rather than fixed on 18 October 2026 because the merge is a rare
-command that already requires the feed on disk, so the saving is real but it is
-not the tail of a long build the way the prune below is.
-
-### The prune reads every page in the output folder (E5, 17 October 2026)
-
-`build_assets.prune_shared_assets` globs `*.html` under the output folder and reads
-every one of them to collect the asset names in use, to answer a question about
-three filenames. At the last measured 354 KB a page that is about a gigabyte of
-reads across a 2,712-page release, at the tail of a build that already takes
-hours. The audit's recommendation -- take the answer from the release manifest --
-cannot answer it: the names that must be kept are the ones named by pages this
-build did **not** write, and those are not in the manifest it just wrote. The
-honest fix is to make the output folder hold only this build's pages, which is a
-build-lifecycle change rather than a line in the prune.
-
-
 ### P1 — a whole-network release is over its byte budget, and the pair rules are why
 
 **Severity:** P1 for a published release, and now measured rather than

@@ -6,9 +6,10 @@ the build that writes them, the tools that measure them, and the checks that hol
 them.
 **What it is:** a read-only audit. No file in the repository was changed in
 producing it. Every finding is a numbered recommendation with the evidence that
-produced it. Seven of them, and the state half of an eighth, were answered on
-18 October 2026 and pruned from this document; "Answered since this was written"
-records what closed them and which check holds each one.
+produced it. All nineteen were answered on 18 October 2026; "Answered since this
+was written" records what closed each one and which check holds it, and the
+finding text above it stays as it was filed so the recommendation that changed
+can be read beside the reason it changed.
 **Method:** built `_demo_site` from `_demo_feed` and `_demo_kb` at service date
 5 October 2026 and served it; ran `python -m tools.page_bytes` on the result; ran
 the impeccable detector over the three routes; measured the page in Chromium with
@@ -124,10 +125,10 @@ one place the page's elements are read. No new abstraction: this is a move.
 
 ## Answered since this was written
 
-Fifteen findings are closed and pruned: the eight of the 18 October pass, then
-the phone-table group and the state and ownership ones, all on 18 October
-2026. Each row names the check that would fail if the defect came back,
-because the check is the part that keeps it closed.
+All nineteen findings are closed and pruned, all on 18 October 2026: the eight of
+the first pass, the phone-table group, the state and ownership ones, and the last
+two of the build group. Each row names the check that would fail if the defect
+came back, because the check is the part that keeps it closed.
 
 | | What proves it |
 |---|---|
@@ -148,6 +149,8 @@ because the check is the part that keeps it closed.
 | **E4** — the resume key was weaker than the cache key | `resumable_signature` and the shard agreement are keyed on `feed_content_digest`, not on names, sizes and mtimes; `tests/test_atoc_knowledgebase.py` gives two feeds of equal size and the same mtime different bytes and gets different keys. |
 | **E19** — `docs/open-work.md` carried two thirds of a closed record | The settled record moved to `docs/settled-work.md` on 18 October 2026, with the audit-item numbers code comments cite; `open-work.md` is 825 lines from 1,133 and holds open work only. |
 | **E7** — the opening budget was a literal in five places | `build_release.OPENING_BUDGET_POUNDS` is the one constant, the shard manifest carries it in `release`, and the merge opens at the shard's figure. `tests/test_page_runner.py` refuses a `budget_pounds=<number>` literal and reads the manifest. |
+| **E5** — tidying the release read the whole release | `prune_shared_assets` is given the pages this build wrote and does not read them, because a page it rendered requests its own names and nothing else; only a page an earlier build wrote can name an older asset. `tests/test_page_output.py` records every `read_text` the prune makes and asserts the station page it wrote is not among them, and a leftover page that names a stale asset still protects it. The recommendation as filed, to take the answer from the manifest, cannot answer the question: the names that must be kept belong to pages the manifest does not describe, so the fix is which pages are read rather than where the names come from. |
+| **E6** — the shard merge parsed the whole fares feed to answer a set question | `FaresDb.load_feed(..., locations_only=True)` reads the `.loc` file through the same `read_feed_files` dispatch, and `merge_shards` asks only the locations question. `tests/test_atoc_fares.py` proves the cheap load returns the map the full one returns and reads only `rjfaf.loc`; on the real feed the load went **37.7 s → 0.3 s**, the same 3,436 stations, measured 18 October 2026 in `docs/build-performance-findings.md`. |
 
 ## Pruned for overlap
 
@@ -198,34 +201,13 @@ deleted from the audit where it was least useful, not merged into both.
 
 ## If someone picks this up
 
-Everything the four headings above listed is now either closed or argued below.
-What is left:
+Nothing is left. Every finding this audit filed is closed, each with the check
+that would fail if it came back, and the two that were argued before they were
+fixed carry the reason the recommendation changed: E5's manifest idea could not
+answer the question, and E6's second dispatch was one keyword on the existing one.
 
-1. **E5 and E6**, both argued rather than done: "Reviewed, and not fixed" says why
-   the recommendation as written cannot answer the question the code asks. Both
-   are recorded in `docs/open-work.md`.
-
-## Reviewed, and not fixed, and why
-
-**E5, "take the prune's answer from the release manifest".** The recommendation
-cannot answer the question `prune_shared_assets` asks. The names it must keep are
-not only this build's -- those are passed in -- but the ones named by pages this
-build did **not** write, which are by definition not in the manifest it just
-wrote: a station an earlier build priced still requests the asset it was built
-with, and deleting that asset breaks a page the build promised to leave alone.
-The manifest carries routes, not per-page asset names, so making the manifest the
-source would mean recording every page's asset names in it and trusting that
-record over the files. The cost is real -- the prune reads every `*.html` under
-the output folder, which at the last measured 354 KB a page is about a gigabyte
-across 2,712 pages -- and the honest fix is to make the folder hold only this
-build's pages, which is a build-lifecycle change rather than a line in the prune.
-
-**E6, "a locations-only load in the merge".** Still right, and still not done: the
-loader has one entry point that reads every record type, so a locations-only path
-means a second dispatch through `read_feed_files` and a test that it returns the
-same locations as the full load. The merge is a rare command that already needs
-the feed on disk, so the saving is real but it is not the tail of a long build the
-way E5's read is. Recorded in `docs/open-work.md` rather than done in a session
-whose remaining changes were page-visible.
+The pass that closed the last two made no page change. E5 removes a read and E6
+replaces one; neither moves a byte a reader receives, which is why the browser
+suite is not part of their evidence.
 
 
