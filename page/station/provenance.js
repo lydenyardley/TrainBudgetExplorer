@@ -170,8 +170,8 @@ function renderIntro() {
 // method disclosure and no inline glosses, so a reader who wants the words
 // opens one thing -- the accordion they are already in -- and finds them
 // together. The definitions are written from here rather than shipped in the
-// page's markup because this file is one shared asset: the same 900 bytes in
-// every station page's HTML is a megabyte across a release.
+// page's markup because this file is one shared asset: the list renders to 944
+// bytes, and on every station page of a 2,718-page release that is 2.5 MB.
 const FEED_WORDS = [
   ["DTD", "The downloadable fares feed: the industry file these prices are read from."],
   ["ITX", "A ticket-type code. An ITX placeholder is a fare the feed carries without a usable price, and this page leaves those out."],
