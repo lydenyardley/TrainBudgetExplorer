@@ -110,9 +110,13 @@ on this release, and the fee is nil by a published document:
   one awaiting permission.
 - **Forecasted times** — the terms require that "all forecasted arrival and
   departure times, provided by Your End User Product(s), are consistent with
-  Darwin forecasts". This release is **prices-only** (`--release fares`): the
-  build does not load the national timetable, so the pages provide no arrival or
-  departure times and the condition has nothing to apply to.
+  Darwin forecasts". The condition is on times this agreement's Information gives
+  the product, and this release derives none: `--release fares,timetable` loads
+  NWR Schedule's CIF rather than the DTD timetable, and a time on a page is that
+  product's, whose own section below records its clearance on 16 October 2026.
+  Until that date this line read that the release was prices-only (`--release
+  fares`) and carried no times at all; that was true of the fares-only build and
+  stopped being true when the release was wired to the schedule feed.
 - **Time-Bound Data** — the terms require that "all Time-Bound Data, used in Your
   End User Product(s), are displayed as directed in the Information, as per the
   Developer Guidelines", and the licence **defines** the term: "'Time-Bound Data'
