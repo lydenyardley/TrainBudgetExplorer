@@ -585,21 +585,24 @@ def render_chooser(
         ordering = ""
         title_suffix = only["name"]
     else:
+        # C14/D11 of the 17 October 2026 critique: the field's placeholder is
+        # the prompt. It used to be the bare word "station" under an
+        # instruction paragraph that said what to do with it, so the sentence
+        # read "from station" and the instruction had to explain it. "your
+        # station" is a word the sentence can take, and the paragraph is gone.
         origin_clause = (
             '<span id="originClause"><span class="heading-lead">from</span> '
             '<span class="origin-slot-wrap" id="originField">'
-            '<input id="originSearch" type="search" placeholder="station" autocomplete="off" '
+            '<input id="originSearch" type="search" placeholder="your station" autocomplete="off" '
             'aria-label="The station you are starting from" aria-describedby="pickStatus" '
             'aria-controls="picks"></span></span>'
         )
-        intro = (
-            '<p class="sub">Type the station you are starting from, then pick it '
-            "from the list.</p>"
-        )
-        ordering = (
-            '<p class="sub" id="orderingNote">Every station this page prices journeys '
-            "from, most first &mdash; not by how busy it is, and not by how near it is.</p>"
-        )
+        # C15/D9: the instruction folded into the placeholder, so there is no
+        # paragraph here. The ordering note is the list's subtitle now, and the
+        # denial it used to carry -- not busy, not near -- was a defence against
+        # a question nothing on the screen had asked.
+        intro = ""
+        ordering = '<p class="tag" id="orderingNote">Most first.</p>'
         title_suffix = "pick your station"
     chooser = (
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)

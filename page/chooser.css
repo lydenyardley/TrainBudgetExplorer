@@ -19,7 +19,11 @@
      alone it is a chooser's own content again, in the flow, in columns,
      because a chooser nobody has touched yet is a directory. */
   #picks.under-field { grid-template-columns: minmax(0, 1fr); }
-  #orderingNote { margin: 0 0 1.6rem; }
+  /* C12/C15: the heading carries what every row used to repeat, and the
+     ordering note is its subtitle rather than a third paragraph above the
+     list. */
+  #picksHeading { margin: 1.6rem 0 0; }
+  #orderingNote { margin: 0; }
   /* One cell per station, as many across as the column holds: at 78rem a
      single row per station put a station's own count most of a screen away
      from its name, so the three facts of a row stopped being one thing. The
@@ -30,14 +34,15 @@
      sit there: a one-station release carries no ordering note, and the list
      then sat 5px under its sentence (finding, 30 September 2026). Adjacent
      margins collapse, so the chooser's spacing is unchanged. */
-  #picks { list-style: none; margin: 1.6rem 0 0; padding: 0;
+  #picks { list-style: none; margin: .4rem 0 0; padding: 0;
            display: grid; grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
            gap: 0 1.5rem; }
   #picks a { display: flex; justify-content: space-between; gap: 1rem; min-height: 44px; padding: .55rem .4rem;
              color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--line); }
   #picks a:hover, #picks a:focus-visible { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   #picks .code { color: var(--muted); font-variant-numeric: tabular-nums; }
-  #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  #picks .count { color: var(--muted); font-size: .85rem; white-space: nowrap;
+                  min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
   #nomatch { color: var(--muted); margin-top: .75rem; }
   #capMessage { margin-top: .75rem; }
   p.tag { margin-top: 2rem; }

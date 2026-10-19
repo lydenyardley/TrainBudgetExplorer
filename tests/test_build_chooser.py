@@ -18,10 +18,15 @@ class ChooserTest(PageTestCase):
     def test_the_chooser_says_what_its_order_is_and_is_not(self) -> None:
         # S10: a cold-start order that does not name its measure reads as a
         # recommendation, and priced-destination count is not popularity.
+        # D9 of the 17 October 2026 critique: "most first" is the list's own
+        # subtitle now, and the denial of busyness and nearness is gone --
+        # nothing on the page had asked about either.
         index = build_demo_page.build_station_index({"GRN": 5, "NOT": 2}, self.fares.locations_by_crs)
         chooser = build_demo_page.render_chooser(index, budget_pounds=20)
-        self.assertIn("Every station this page prices journeys from", chooser)
-        self.assertIn("not by how busy it is", chooser)
+        self.assertIn('<p class="tag" id="orderingNote">Most first.</p>', chooser)
+        self.assertNotIn("not by how busy it is", chooser)
+        # And the measure the numbers count is the list's heading, said once.
+        self.assertIn('<h2 id="picksHeading">Destinations this feed prices</h2>', chooser)
 
     def test_the_entry_route_carries_the_same_provenance_the_station_pages_do(self) -> None:
         # The root is the page every community link points at, and it used to
@@ -108,7 +113,11 @@ class ChooserTest(PageTestCase):
         # page does not: a field holding the word station, waiting to be
         # typed in, so the page reads as a question with its answer missing.
         self.assertIn('id="originSearch"', chooser)
-        self.assertIn('placeholder="station"', chooser)
+        # C14/D11 of the 17 October 2026 critique: the placeholder is the
+        # prompt, so the sentence reads "from your station" and the instruction
+        # paragraph that used to explain it is gone.
+        self.assertIn('placeholder="your station"', chooser)
+        self.assertNotIn("Type the station you are starting from", chooser)
         self.assertNotIn("Rail Budget", chooser)
 
     def test_a_one_station_release_names_the_station_instead_of_asking(self) -> None:
@@ -145,7 +154,7 @@ class ChooserTest(PageTestCase):
         # The list is the whole page's answer, so it is still built and
         # counted: a real list element the script fills, and the status region
         # beside it that says how many stations it is showing.
-        self.assertIn('<ul id="picks"></ul>', chooser)
+        self.assertIn('<ul id="picks" aria-labelledby="picksHeading"></ul>', chooser)
         self.assertIn('<span id="pickStatus" class="sr-only" role="status"></span>', chooser)
 
     def test_the_chooser_stylesheet_does_not_change_with_the_station_count(self) -> None:
@@ -235,7 +244,10 @@ class ChooserTest(PageTestCase):
             {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 5},
         ]
         html = render_chooser(index, budget_pounds=20)
-        self.assertIn("Type the station you are starting from", html)
+        # C15 of the 17 October 2026 critique: the instruction folded into the
+        # field's placeholder, so the list starts at its own heading.
+        self.assertIn('placeholder="your station"', html)
+        self.assertIn('<h2 id="picksHeading">', html)
         # No fares payload on the chooser: the reader has not chosen a station
         # yet, so the page carries the index and nothing the station pages read.
         with self.assertRaises(AssertionError):

@@ -112,9 +112,19 @@ function render() {
     const code = document.createElement("span");
     code.className = "code";
     code.textContent = station.crs;
+    // C12/D10 of the 17 October 2026 critique: the phrase the heading carries
+    // was repeated in every row, 2,712 times on the real release. The row
+    // carries the number; the name still says what the number counts, because a
+    // link whose accessible name ends in a bare digit is a number without a
+    // subject.
     const count = document.createElement("span");
     count.className = "count";
-    count.textContent = station.destinations + (station.destinations === 1 ? " destination" : " destinations") +
+    count.textContent = station.destinations;
+    count.setAttribute(
+      "aria-label",
+      station.destinations + (station.destinations === 1 ? " destination" : " destinations")
+    );
+    count.title = station.destinations + (station.destinations === 1 ? " destination" : " destinations") +
       " this feed prices";
     link.append(name, code, count);
     item.append(link);
@@ -163,12 +173,12 @@ attachStationField({
   stations: STATIONS,
   dropdown: picks,
   inside: [picks],
-  // The list opens on typing rather than on focus, and it is drawn over the
-  // list's own place in the page rather than over the field: the intro and
-  // the ordering note between the two stay readable, and a click aimed at
-  // them is a click on prose rather than on this page's first option
-  // (four-dimension audit R1, route audit item 3).
-  anchor: "list",
+  // The list opens on typing rather than on focus, and it is drawn under the
+  // field that opened it (C11 of the 17 October 2026 critique): the panel used
+  // to appear at the list's own place in the document, 204px below the field
+  // at 1280, so the answer floated over the prose between the two. A reader
+  // who types a station is looking at the field, and the panel now meets them
+  // there, the way the station page's picker already did.
   openOn: "text",
   onChange: (_value, query, completion) => {
     typedQuery = query;

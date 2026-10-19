@@ -420,8 +420,13 @@ __THEME_TOGGLE__
 <h1 id="pageHeading">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="500" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br>__ORIGIN_CLAUSE__</h1>
 __CHOOSER_INTRO__
 <p class="sub" id="provenanceLine">__PROVENANCE__</p>
+<!-- C12/D10 of the 17 October 2026 critique: every row ended with the same
+     nine words, "N destinations this feed prices", which on the real release
+     is 2,712 repetitions of one phrase. The phrase is the list's heading now
+     and each row carries the number alone, in the same column. -->
+<h2 id="picksHeading">Destinations this feed prices</h2>
 __ORDERING_NOTE__
-<ul id="picks"></ul>
+<ul id="picks" aria-labelledby="picksHeading"></ul>
 <p id="nomatch" hidden></p>
 <!-- The station list is drawn by the route's own code, so a chooser whose copy
      did not arrive shows an empty list with no explanation unless something
@@ -526,17 +531,11 @@ STATION_FIELD_JS = """function attachStationField(options) {
   const dropdown = options.dropdown || null;
   const onChoose = options.onChoose || null;
   const CAP = 544;
-  // Where the panel is drawn from, and what makes it appear. A route whose
-  // field sits above the page's own explanation anchors the panel to the
-  // list's place in the document, so the prose between them stays readable and
-  // clickable (four-dimension audit R1); the station page's picker has no
-  // prose under its field and is drawn from the field itself. A chooser also
-  // opens on typing rather than on focus: a panel over prose the reader has
-  // not asked to replace is the defect that anchor answers.
-  const LIST_ANCHORED = options.anchor === "list";
+  // What makes the panel appear. A chooser opens on typing rather than on
+  // focus: a panel over prose the reader has not asked to replace is noise,
+  // and the caret in the field already says the page is waiting (C11 of the 17
+  // October 2026 critique moved the panel under the field on both routes).
   const OPEN_ON_TEXT = options.openOn === "text";
-  // The list's place in the document, read once before it leaves the flow.
-  let listTop = 0;
   // The station a completion is offering, held so Tab and Enter can go to it
   // rather than merely accept the text. A field that can complete a name can
   // then act on one.
@@ -643,18 +642,12 @@ STATION_FIELD_JS = """function attachStationField(options) {
     const left = Math.max(0, Math.min(box.left, window.innerWidth - width - 8));
     dropdown.style.left = left + "px";
     dropdown.style.width = width + "px";
-    // The list's own place in the document for the anchored routes, so the
-    // panel covers the list and nothing written above it.
-    dropdown.style.top = LIST_ANCHORED
-      ? listTop - window.scrollY + "px"
-      : box.bottom + 4 + "px";
+    // Under the word the reader is typing in, on both routes.
+    dropdown.style.top = box.bottom + 4 + "px";
   }
   const follow = () => place();
   function enterUse() {
     if (dropdown && !dropdown.classList.contains("under-field")) {
-      if (LIST_ANCHORED) {
-        listTop = dropdown.getBoundingClientRect().top + window.scrollY;
-      }
       dropdown.classList.add("under-field");
       window.addEventListener("scroll", follow, { passive: true });
       window.addEventListener("resize", follow);

@@ -57,8 +57,10 @@ async function checkChooser(page, url, check) {
     JSON.stringify(heading)
   );
   check(
-    "and the station it has no answer for is a field holding the word station",
-    heading.slot && heading.placeholder === "station",
+    "and the station it has no answer for is a field holding the prompt",
+    // C14/D11 of the 17 October 2026 critique: the placeholder is a word the
+    // sentence can take, so "from your station" reads as English.
+    heading.slot && heading.placeholder === "your station",
     JSON.stringify(heading)
   );
   check(
@@ -80,15 +82,15 @@ async function checkChooser(page, url, check) {
     total: typeof STATIONS === "undefined" ? 0 : STATIONS.length,
     cap: STATION_LIST_CAP,
     first: typeof STATIONS === "undefined" || !STATIONS.length ? null : STATIONS[0],
-    // The panel waits for the first keystroke, and it is drawn over the list's
-    // own place rather than over the field's: a page nobody has touched shows
-    // its own explanation (four-dimension audit R1, route audit item 3).
+    // The panel waits for the first keystroke, so a page nobody has touched
+    // shows its own directory rather than a dropdown.
     fixed: document.getElementById("picks").classList.contains("under-field"),
-    introVisible: (() => {
+    // C12 of the 17 October 2026 critique: the list has its own heading, and
+    // the heading is where the phrase every row used to repeat lives.
+    headed: (() => {
+      const head = document.getElementById("picksHeading");
       const box = document.getElementById("picks").getBoundingClientRect();
-      const intro = document.querySelector("#pageHeading + p.sub");
-      const top = intro ? intro.getBoundingClientRect().bottom : 0;
-      return box.top >= top - 1;
+      return Boolean(head) && box.top >= head.getBoundingClientRect().bottom - 1;
     })(),
     capText: (document.getElementById("capMessage") || {}).textContent || "",
     capHidden: (document.getElementById("capMessage") || {}).hidden,
@@ -98,7 +100,7 @@ async function checkChooser(page, url, check) {
     wholeList.total > 0 &&
       wholeList.shown === Math.min(wholeList.total, wholeList.cap) &&
       !wholeList.fixed &&
-      wholeList.introVisible &&
+      wholeList.headed &&
       (wholeList.total <= wholeList.cap ||
         (wholeList.capHidden === false && new RegExp("Showing " + wholeList.cap + " of " + wholeList.total).test(wholeList.capText))),
     JSON.stringify(wholeList)
@@ -118,16 +120,14 @@ async function checkChooser(page, url, check) {
       const list = document.getElementById("picks");
       const f = field.getBoundingClientRect();
       const l = list.getBoundingClientRect();
-      // The panel is drawn over the list's own place in the document, so the
-      // intro and the ordering note between the field and it stay above the
-      // panel: a click aimed at them is a click on prose (four-dimension R1).
-      const intro = document.querySelector("#pageHeading + p.sub");
       return {
         value: field.value,
         start: field.selectionStart,
         end: field.selectionEnd,
         position: getComputedStyle(list).position,
-        introBottom: intro ? Math.round(intro.getBoundingClientRect().bottom) : 0,
+        // C11 of the 17 October 2026 critique: the panel answers at the field
+        // that opened it, not at the list's place 200px further down.
+        fieldBottom: Math.round(f.bottom),
         panelTop: Math.round(l.top),
         options: list.querySelectorAll("a").length,
         sideScroll:
@@ -140,25 +140,32 @@ async function checkChooser(page, url, check) {
         completed.start === letters.length &&
         completed.end === expected.length &&
         completed.position === "fixed" &&
-        completed.panelTop >= completed.introBottom &&
+        completed.panelTop >= completed.fieldBottom &&
+        completed.panelTop - completed.fieldBottom <= 24 &&
         completed.options >= Math.min(probe.matches.length, 40) &&
         completed.sideScroll <= 0,
       JSON.stringify({ letters, expected, matches: probe.matches.map((station) => station.name), completed })
     );
-    // The defect this anchor answers: with the field focused and a completion
-    // in it, a click aimed at the page's own explanation must be a click on
-    // prose. It used to land on the completion drawn over the intro, and the
-    // reader left for a station they had not chosen (four-dimension audit R1).
-    const introClick = await page.evaluate(() => {
-      const intro = document.querySelector("#pageHeading + p.sub");
-      const before = window.location.href;
-      intro.click();
-      return { before, after: window.location.href };
+    // The panel is a dropdown under the word the reader is typing in, so the
+    // page's own prose is not the thing it answers over. What it must not do
+    // is keep the old position: the list's place in the document, where the
+    // answer used to appear 204px below the question (C11).
+    const anchored = await page.evaluate(() => {
+      const field = document.getElementById("originSearch").getBoundingClientRect();
+      const panel = document.getElementById("picks").getBoundingClientRect();
+      const provenance = document.getElementById("provenanceLine").getBoundingClientRect();
+      return {
+        fieldBottom: Math.round(field.bottom),
+        panelTop: Math.round(panel.top),
+        provenanceTop: Math.round(provenance.top),
+      };
     });
     check(
-      "a click on the prose leaves the page alone while a completion is in the field",
-      introClick.before === introClick.after,
-      JSON.stringify(introClick)
+      "the panel opens under the field rather than over the prose it is written below",
+      anchored.panelTop >= anchored.fieldBottom &&
+        anchored.panelTop - anchored.fieldBottom <= 24 &&
+        anchored.panelTop < anchored.provenanceTop,
+      JSON.stringify(anchored)
     );
     await page.fill("#originSearch", "");
   } else {
@@ -285,13 +292,23 @@ async function checkChooser(page, url, check) {
     rows.every((row) => /\/from\/[^/]+\/$/.test(new URL(row.href, "http://x").pathname)),
     rows.map((row) => row.href).join(" ")
   );
+  const counts = await page.evaluate(() => ({
+    // C12/D10 of the 17 October 2026 critique: the phrase is the list's
+    // heading and the number is the row's, so the nine words are painted once
+    // rather than once per station.
+    heading: (document.getElementById("picksHeading") || {}).textContent || "",
+    rows: Array.from(document.querySelectorAll("#picks a")).map(
+      (a) => ((a.querySelector(".count") || {}).textContent || "").trim()
+    ),
+  }));
   check(
-    "every option carries its name, its code and a count",
+    "every option carries its name, its code and a bare count",
     rows.length > 0 &&
-      rows.every((row) =>
-        listed.some((station) => row.text.includes(station.name) && row.text.includes(station.crs)) &&
-        /\d+ destinations?/.test(row.text)),
-    JSON.stringify(rows[0] || null)
+      rows.every((row) => listed.some((station) => row.text.includes(station.name) && row.text.includes(station.crs))) &&
+      counts.rows.length === rows.length &&
+      counts.rows.every((count) => /^\d+$/.test(count)) &&
+      /destinations this feed prices/i.test(counts.heading),
+    JSON.stringify({ first: rows[0] || null, counts })
   );
   check("every option is a 44px target", rows.every((row) => row.tall >= 44), `${rows[0] ? rows[0].tall : 0}px`);
   check(
@@ -350,11 +367,14 @@ async function checkChooser(page, url, check) {
   // a reader would otherwise assume it means (audit item 2, 14 October 2026:
   // the measure is "how many journeys this page prices from the station", in
   // the reader's words rather than the build's).
-  const ranking = await page.textContent("body");
+  const ranking = await page.textContent("#orderingNote");
   check(
-    "the chooser says what its order is, and what it is not",
-    /most first/i.test(ranking) && /not by how busy/i.test(ranking) && /not by how near/i.test(ranking),
-    (await page.textContent("#orderingNote")) || ""
+    "the chooser says what its order is, and stops defending it",
+    // D9 of the 17 October 2026 critique: "most first" is the claim, and the
+    // denial of busyness and nearness answered a question nothing asked.
+    /most first/i.test(ranking) &&
+      (await page.locator("#picksHeading").count()) === 1,
+    ranking || ""
   );
   // The route has no filter bar, and that is a design decision rather than an
   // omission: the only two things a reader can change here are the two slots in
