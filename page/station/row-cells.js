@@ -210,13 +210,14 @@ function fareSentence(destination) {
     return "Advance single: you choose the train, and the price and availability can change.";
   }
   if (destination.restrictionCode) {
-    // The feed either describes the code or says it cannot, and the paragraph
-    // below is the one that says which. The lead sentence promised a condition
-    // either way, so on a code the feed cannot describe it sent the reader down
-    // for something that was not there (audit item 25).
+    // The feed either describes the code or says it cannot. Where it can, the
+    // condition is the paragraph below. Where it cannot, the payload's own
+    // sentence already carries the code and the reason, so it is the whole
+    // explanation and the panel adds nothing after it (D3 of the 17 October
+    // 2026 critique: the two sentences said the same thing twice).
     return destination.restrictionDescribed
       ? "Restricted fare — the condition is below."
-      : "Restricted fare — the fare's own condition is not in this feed, so check the seller's terms.";
+      : destination.restrictionDescription;
   }
   if (destination.quality === "outbound single") return "Standard outbound single, with no conditions in the feed.";
   if (destination.quality === "unrestricted Anytime Day Return") {
@@ -237,7 +238,7 @@ function fareSummary(destination) {
     return "Two tickets, bought separately, changing at " + via + ".";
   }
   if (destination.isAdvance) return "Advance single: valid only on a qualifying train, and the price and availability can change.";
-  if (destination.restrictionCode) return destination.restrictionDescription || "Restricted fare: the fare's own condition is not in this feed, so check the seller's terms.";
+  if (destination.restrictionCode) return destination.restrictionDescription || "Restricted fare.";
   return "No fare restriction code is attached to this fare.";
 }
 

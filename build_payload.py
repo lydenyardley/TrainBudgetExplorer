@@ -436,11 +436,14 @@ def describe_restriction(context: PageContext, code: str) -> str:
     if code in headers:
         return headers[code].description
     if code:
+        # D3 of the 17 October 2026 critique: the panel printed this sentence
+        # after a lead line that said the same thing, so an undescribed
+        # condition was explained twice. One sentence, carrying the code, is
+        # the whole explanation, and the page prints it once.
         return (
-            "This fare carries restriction "
+            "Restriction "
             + code
-            + ", which this feed does not describe, so the condition has to be read "
-            "from the seller's own terms"
+            + " is not described in this feed, so check the seller's terms."
         )
     return ""
 

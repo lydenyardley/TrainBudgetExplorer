@@ -36,14 +36,12 @@ class DemoPageTest(PageTestCase):
         # true.
         self.assertIn('id="firstUse"', self.html)
         self.assertIn("<b>station name</b>", self.html)
-        # The note is half of the opening sentence rather than a
-        # paragraph of its own: the page's promise and the one thing a
-        # reader cannot guess are read together, not two blocks apart.
-        self.assertLess(
-            self.html.index('id="pageIntro"'),
-            self.html.index('id="firstUse"'),
-        )
-        self.assertIn("</span></p>", self.html)
+        # D1 of the 17 October 2026 critique: the paragraph that used to open
+        # the page was a third copy of the heading, the count line and the
+        # column headings. The one sentence a first-time reader cannot guess
+        # is the paragraph now, under the word it describes.
+        self.assertNotIn('id="pageIntro"', self.html)
+        self.assertIn('<p class="sub" id="firstUse">', self.html)
 
     def test_the_page_states_where_a_split_ticket_would_split(self) -> None:
         # The other half of Q2: the sentence that states the possibility, in
@@ -331,14 +329,13 @@ class DemoPageTest(PageTestCase):
         self.assertTrue(self.payload["hasJourneys"])
         self.assertFalse(build_payload(self.fares, None, "GRN")["hasJourneys"])
         self.assertIn("no times or changes are shown", page_script(self.html))
-        self.assertIn("with the fastest time and the fewest changes", page_script(self.html))
-        # The static text is the fares-only sentence, so a page that has not
-        # run this script yet cannot be promising times it will not show.
-        intro = re.search(
-            r'<p class="sub" id="pageIntro">(.*?)</p>', self.html, re.S
-        )
-        self.assertIsNotNone(intro)
-        self.assertNotIn("journey time", intro.group(1))
+        # D1 of the 17 October 2026 critique: the sentence that had to branch on
+        # this fact is gone, because it was the page's claim stated a third
+        # time. What is left above the table is the build's own sentence about
+        # its timetable, and the page cannot promise a time it does not show.
+        self.assertNotIn("fastest time", self.html)
+        self.assertNotIn("journey time", self.html)
+        self.assertNotIn('id="pageIntro"', self.html)
 
     def test_the_sentence_about_times_names_only_what_this_build_has(self) -> None:
         # C5 of the 17 October 2026 critique: the paragraph above the method
@@ -690,7 +687,9 @@ class DemoPageTest(PageTestCase):
         # field keeps its own aria-label, so nothing is announced twice.
         self.assertIn('<span class="budget-prefix">&pound;</span>', heading)
         self.assertNotIn('<span class="budget-prefix" aria-hidden="true">', heading)
-        self.assertIn("--h1: clamp(2rem, 7vw, 7rem)", self.stylesheet)
+        # C3 of the 17 October 2026 critique: the fold is a budget, so the
+        # heading has a viewport-height term as well as a width one.
+        self.assertIn("--h1: clamp(2rem, min(7vw, 9vh), 6rem)", self.stylesheet)
         self.assertIn(".sub { color: var(--muted); max-width: 75ch; }", self.stylesheet)
         self.assertNotIn("max-width: 32ch", self.html)
         self.assertNotIn("margin: -1rem 0 1.5rem", self.html)
@@ -702,7 +701,11 @@ class DemoPageTest(PageTestCase):
         # assignment that copies one to the other. Which cells carry which label
         # on a phone is read off the rendered rows by the browser suite.
         self.assertIn('<th scope="col">Fare type</th>', self.html)
-        self.assertIn("td[data-label]::before { content: attr(data-label)", self.stylesheet)
+        # C13/D8 of the 17 October 2026 critique: the phone row dropped the
+        # label track, so the values are a two-line grid and the heading row is
+        # the only place the column names are written.
+        self.assertIn("#rows > tr[data-crs] { display: flex; flex-wrap: wrap;", self.stylesheet)
+        self.assertNotIn("td[data-label]::before { content: attr(data-label)", self.stylesheet)
         # The column is the fare in three words. SDR, 2AS and BPS are a
         # seller's vocabulary and they were the column, on every row, in
         # front of the one number the reader came for; the code is in the
@@ -725,14 +728,20 @@ class DemoPageTest(PageTestCase):
         # C07: the condition is still on the same row, one disclosure away, so
         # the pointer is kept rather than dropped -- and it now points at the
         # thing it names instead of at a column that no longer exists.
-        self.assertIn("Restricted fare — the fare's own condition is not in this feed", page_script(self.html))
+        # D3 of the 17 October 2026 critique: an undescribed condition is one
+        # sentence, carrying the code, and the page prints it once. The
+        # sentence is the payload's own, so it is asserted where it travels.
+        self.assertIn("is not described in this feed, so check the seller's terms", self.html)
+        self.assertNotIn("which this feed does not describe", self.html)
 
     def test_row_actions_carry_a_44px_touch_target(self) -> None:
         # The visible mark stays small; the hit area reaches 44px via ::after.
         self.assertIn('.toggle::after { content: ""; position: absolute; inset: -6px; }', self.stylesheet)
-        # The link's slop is sized from its own line box, so 44px holds whatever
-        # height the font gives the line; the browser suite measures it.
-        self.assertIn('top: min(-11px, calc(50% - 22px)); bottom: min(-11px, calc(50% - 22px));', self.stylesheet)
+        # C7 of the 17 October 2026 critique: the ticket link is the primary
+        # action, so it is a control with a 44px floor rather than a word with
+        # an invisible ring around it. The browser suite measures the box.
+        self.assertIn('.buy { display: inline-flex;', self.stylesheet)
+        self.assertIn("min-height: 2.75rem", self.stylesheet.split(".buy {", 1)[1].split("}", 1)[0])
 
     # -- the unpriced-origin page ------------------------------------------
 
@@ -1029,7 +1038,10 @@ class DemoPageTest(PageTestCase):
         # by the substitution that ran before it. Refusing is the only answer
         # that does not publish a sentence the feed did not write.
         with self.assertRaises(ValueError) as raised:
-            render_page({**self.payload, "note": "__BUDGET__"}, budget_pounds=20)
+            render_page(
+                {**self.payload, "note": "__BUDGET__", "synthetic": False},
+                budget_pounds=20,
+            )
         self.assertIn("__BUDGET__", str(raised.exception))
 
     def test_the_stated_ceiling_follows_the_party_the_reader_chooses(self) -> None:

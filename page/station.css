@@ -189,18 +189,22 @@
      The mark rotates on open because a closed chevron and an open one are the
      same shape otherwise, and the panel is above the fold either way. */
   .row-expand { display: inline-flex; align-items: center; justify-content: center;
-                width: 2.75rem; height: 2.75rem; padding: 0; margin-left: .5rem;
-                border-radius: .35rem; }
+                width: 2.75rem; height: 2.75rem; padding: 0; margin-left: .35rem;
+                border: 0; border-radius: .35rem; background: transparent;
+                color: var(--muted); }
+  .row-expand:hover, .row-expand:focus-visible, .row-expand[aria-expanded=true] { color: var(--accent); }
   .row-expand .chevron { width: 1.1rem; height: 1.1rem; }
   .row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }
-  .buy { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor;
-         white-space: nowrap; position: relative; }
-  /* The slop is sized from the link's own line box, not assumed from it: a
-     fixed -11px made 44px only where the font drew a 22px line, and a font
-     with a 20px line (DejaVu, on a machine without system-ui) left 42px. Each
-     side reaches at least 11px and as far as half of what 44px still needs. */
-  .buy::after { content: ""; position: absolute; left: -4px; right: -4px;
-                top: min(-11px, calc(50% - 22px)); bottom: min(-11px, calc(50% - 22px)); }
+  /* C7 of the 17 October 2026 critique: the row's two actions had inverted
+     weight. Buying was a 48x22 underlined word and the disclosure was a 44x44
+     bordered button, so the eye went to the chevron. The ticket link now wears
+     the border and the 44px floor, and the expander is the bare mark beside
+     it: the primary action is the one that looks like a control. */
+  .buy { display: inline-flex; align-items: center; justify-content: center;
+         min-height: 2.75rem; padding: .3rem .7rem;
+         border: 1px solid var(--line); border-radius: .3rem; background: var(--field);
+         color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .buy:hover, .buy:focus-visible { border-color: var(--accent); }
   tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
   tr.detail ul { margin: 0; padding-left: 1.1rem; }
   tr.detail li { font-variant-numeric: tabular-nums; }
@@ -443,7 +447,15 @@
   .unpriced { margin: 0 0 1.25rem; }
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   .method { margin-top: 1rem; }
-  .method summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); cursor: pointer; }
+  /* C6 of the 17 October 2026 critique: three disclosures sat in a column of
+     muted paragraphs with no mark, no underline and the paragraph's own colour,
+     so a reader had no way to know two of them opened. They wear the page's
+     one drawn chevron now, which also says which way they are pointing. */
+  .method summary { min-height: 44px; display: flex; align-items: center; gap: .45rem;
+                    color: var(--accent); cursor: pointer; }
+  .method summary .chevron, .link-terms summary .chevron { width: .9em; height: .9em; opacity: .75; }
+  .method summary:hover .chevron, .link-terms summary:hover .chevron,
+  .method summary:focus-visible .chevron, .link-terms summary:focus-visible .chevron { opacity: 1; }
   /* What the ticket link does, and how this page was built, are one fold above
      the table. The line a reader sees says what is inside it; only the wording
      waits. Those two paragraphs plus the build line were 57px of the 205px
@@ -451,7 +463,7 @@
      put the first fare below the fold on a laptop (finding, 29 September
      2026). */
   .link-terms { margin: 0; }
-  .link-terms summary { min-height: 24px; display: inline-flex; align-items: center;
+  .link-terms summary { min-height: 24px; display: inline-flex; align-items: center; gap: .4rem;
                         color: var(--muted); cursor: pointer; }
   .link-terms summary:hover, .link-terms summary:focus-visible { color: var(--accent); }
   .link-terms p { margin: .35rem 0 0; }
@@ -487,23 +499,52 @@
        `th, td` pair and a media query adds no specificity of its own. */
     th, td { border-bottom: 0; }
     thead th { position: static; }
-    /* One cell per line, the full width, rather than a flex line that wrapped
-       wherever it happened to fit. The wrap is what made a row's cells
-       different heights from each other. */
-    tr { display: block; padding: .55rem 0; border-bottom: 1px solid var(--line); }
-    /* Two columns of the same width in every cell: the label, then the value.
-       A fixed track rather than `max-content`, so "CHANGES" and "PRICE" do not
-       each size a column of their own and leave the values ragged. */
-    td { display: grid; grid-template-columns: 5rem minmax(0, 1fr); column-gap: .55rem;
-         align-items: baseline; border: 0; padding: 0; }
-    td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: .78rem;
-                             text-transform: uppercase; letter-spacing: .04em; }
-    /* Every element inside a cell is part of its value, so it belongs in the
-       value track and takes its own line there when there is more than one.
-       This is what keeps the standard fare under a discounted price, and the
-       change station under the count, off the same line as the number beside
-       it -- the reason both are `display: block` on a wide screen. */
-    td > * { grid-column: 2; }
+    /* Two lines per row, not six. The stacked row used to give every cell a
+       label track and a value track, which at 390px is 275px a row -- a page
+       of twenty destinations in 5,500px, before the pager (C13/D8 of the 17
+       October 2026 critique). A phone row is two lines now: the place
+       and its price, then the time, the count, the fare and the ticket. The
+       column headings stay available to a screen reader above, and every value
+       here says what it is on its own -- a price carries its currency, a count
+       says "Direct" or "2 changes" -- so the label column has nothing left to
+       do.
+
+       The hold column spans both lines, because holding a place is the one
+       thing a reader does while scanning. The ticket link stays on the row
+       rather than moving into the disclosure: buying is the action the page
+       exists for, and C7 of the same critique just gave it the weight. */
+    /* A wrapping flex row rather than a grid. A shared column grid charges
+       every line for the widest cell in each column, which left the time 42px
+       wide and made "No service that day" four lines -- a 151px row. Flex lets
+       each line size itself, and the ticket wraps to a third line on a 320px
+       screen rather than pushing the page sideways. */
+    #rows > tr[data-crs] { display: flex; flex-wrap: wrap; align-items: baseline;
+                           column-gap: .6rem; row-gap: .1rem;
+                           padding: .5rem 0; border-bottom: 1px solid var(--line); }
+    /* The line break between the place and its facts. A full-width, zero-height
+       flex item is how a wrapping row is told where the first line ends. */
+    #rows > tr[data-crs]::before { content: ""; order: 4; flex: 0 0 100%; height: 0; }
+    #rows > tr[data-crs] > td { display: block; padding: 0; border: 0; text-align: left; }
+    #rows > tr[data-crs] > td.hold { order: 1; flex: 0 0 2.75rem; align-self: center; }
+    #rows > tr[data-crs] > td[data-label="Station"] { order: 2; flex: 1 1 0; min-width: 0; }
+    #rows > tr[data-crs] > td[data-label="Price"] { order: 3; flex: 0 0 auto; text-align: right; }
+    /* A zero basis, so the line breaker does not count the time's whole
+       sentence when it decides whether the ticket fits on this line; the cell
+       grows into what is left afterwards. */
+    #rows > tr[data-crs] > td[data-label="Time"] { order: 5; flex: 1 1 0%; }
+    #rows > tr[data-crs] > td[data-label="Changes"] { order: 6; }
+    #rows > tr[data-crs] > td[data-label="Fare type"] { order: 7; }
+    /* Centred rather than baseline-aligned: a 44px button's baseline sits low
+       enough to add a line's worth of space above the second line. */
+    #rows > tr[data-crs] > td[data-label="Tickets"] { order: 8; margin-left: auto; align-self: center; }
+    /* At a 320px screen -- a 200% zoom -- the four facts cannot share one line
+       without the time becoming a column of single words, so the ticket takes
+       a line of its own, right-aligned where the thumb is. */
+    @media (max-width: 24rem) {
+      #rows > tr[data-crs]::after { content: ""; order: 7.5; flex: 0 0 100%; height: 0; }
+      #rows > tr[data-crs] > td[data-label="Time"] { flex: 1 1 auto; }
+      #rows > tr[data-crs] > td[data-label="Tickets"] { order: 9; }
+    }
     /* The two cells the desktop rules shrink to their own content -- the hold
        column, at "width: 1%", and the action column, at "width: 1px" -- carry
        those widths into this layout, where a one-pixel box is a one-pixel box
@@ -513,19 +554,14 @@
        October 2026 critique. Named by the selectors the base rules use,
        because a media query adds no specificity of its own. */
     #rows > tr[data-crs] > td:last-child, #rows > tr[data-crs] > td.hold { width: auto; }
-    /* The panel a row opens is one full-width block of prose rather than a
-       labelled cell. It is the only cell of its own row, so it is both the
-       first and the last child. */
-    tr.detail td { display: block; }
-    td.num { text-align: left; }
     /* The panel a row opens belongs to the row above it. It had a rule under it
        of its own, so opening one destination drew a second line across the page
        and read as another destination. The actions stay inline in the cell
        rather than pushed to the right edge, which is where the thumb is and
        where a stray tap buys a ticket. */
-    tr.detail { padding: 0; border-bottom: 0; }
+    tr.detail { display: block; padding: 0; border-bottom: 0; }
     /* `border-bottom` is named here and not left to the `th, td` rule above,
        because the base `tr.detail td` rule that this cancels is one selector
        deeper and wins on specificity whatever order the two are written in. */
-    tr.detail td { padding: .5rem 0 .55rem; border-bottom: 0; }
+    tr.detail td { display: block; padding: .5rem 0 .55rem; border-bottom: 0; }
   }

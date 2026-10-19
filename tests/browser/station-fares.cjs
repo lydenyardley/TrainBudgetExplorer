@@ -1093,7 +1093,9 @@ function saysMoreThan(condition, code) {
           (cell) =>
             cell.sentence.length > 10 &&
             !/^[A-Z0-9]{1,4}\b/.test(cell.sentence) &&
-            (!cell.restricted || saysMoreThan(cell.readable, cell.restriction))
+            // D3 of the 17 October 2026 critique: where the feed has no wording
+            // the fare's own sentence is the explanation, code included.
+            (!cell.restricted || saysMoreThan(cell.readable || cell.sentence, cell.restriction))
         ),
       JSON.stringify(conditions.found[0] || null) +
         ` rows=${conditions.rows} toggles=${conditions.toggles}`
@@ -1117,10 +1119,12 @@ function saysMoreThan(condition, code) {
     check(
       "no row prints its restriction code as though it were the condition",
       conditions.found.every(
-        (cell) => !cell.restricted || saysMoreThan(cell.readable, cell.restriction)
+        (cell) => !cell.restricted || saysMoreThan(cell.readable || cell.sentence, cell.restriction)
       ),
       JSON.stringify(
-        conditions.found.filter((cell) => cell.restricted && !saysMoreThan(cell.readable, cell.restriction))
+        conditions.found.filter((cell) =>
+          cell.restricted && !saysMoreThan(cell.readable || cell.sentence, cell.restriction)
+        )
       )
     );
     // The rule above is the one the whole check rests on, and it was wrong once
@@ -1500,6 +1504,10 @@ function saysMoreThan(condition, code) {
     // sentence is not, and is what the check below judges.
     const fresh = await page.evaluate(() => {
       const line = document.getElementById("freshness");
+      // D4 of the 17 October 2026 critique: the window the timetable covers is
+      // a source date, so it lives in the method fold with the other dates.
+      const coverage = document.getElementById("timetableCoverage");
+      const coverageText = coverage ? coverage.textContent : "";
       const now = new Date();
       const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
       const days = (iso) => Math.round((today - Date.parse(iso + "T00:00:00Z")) / 86400000);
@@ -1527,15 +1535,20 @@ function saysMoreThan(condition, code) {
         // spot ADR-0058 records for a list longer than one page: a case that was
         // never swept cannot fail.
         window: DATA.timetableFrom
-          ? new RegExp(humanDate(DATA.timetableFrom) + " to " + humanDate(DATA.timetableTo)).test(line.textContent)
+          ? new RegExp(humanDate(DATA.timetableFrom) + " to " + humanDate(DATA.timetableTo)).test(coverageText)
           : null,
         verdict: DATA.timetableFrom
           ? (days(DATA.timetableFrom) < 0
-            ? /has not started yet/.test(line.textContent)
+            ? /has not started yet/.test(coverageText)
             : days(DATA.timetableTo) > 0
-              ? /has ended/.test(line.textContent)
-              : /covers the day these times are for/.test(line.textContent))
-          : /prices fares only/.test(line.textContent),
+              ? /has ended/.test(coverageText)
+              : /covers the day these times are for/.test(coverageText))
+          : /prices fares only/.test(line ? line.textContent : ""),
+        coverageInMethod: Boolean(coverage && coverage.closest(".method")),
+        coverageShown: Boolean(coverage && !coverage.hidden),
+        // On a synthetic feed with a timetable there is no price age to print,
+        // so the line above the table is empty by design rather than missing.
+        expected: Boolean(DATA.feedDate) || !DATA.timetableFrom,
         // Finding, 29 September 2026: the count line now sits directly on its
         // table, so the age of the numbers is stated above the count rather
         // than below it. The promise is unchanged -- it is beside the numbers
@@ -1548,15 +1561,24 @@ function saysMoreThan(condition, code) {
         inFooter: Boolean(line.closest("footer") || line.closest(".method")),
       };
     });
-    check("the page says how old its numbers are", fresh.shown && fresh.text.length > 20, fresh.text);
+    check(
+      "the page says how old its numbers are when it has a date to say them with",
+      fresh.expected ? fresh.shown && fresh.text.length > 20 : !fresh.shown,
+      `${fresh.text} (expected a line: ${fresh.expected})`
+    );
     check(
       "the timetable sentence carries the feed's own service window",
       fresh.window === null
         ? notExercised("this build prices fares only, so there is no service window to print")
         : fresh.window,
-      `${fresh.text} (${JSON.stringify(fresh.window)})`
+      `${JSON.stringify(fresh.window)} (shown ${fresh.coverageShown}, in the method ${fresh.coverageInMethod})`
     );
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
+    check(
+      "and the window sits with the other source dates rather than above the table",
+      fresh.window === null || fresh.coverageInMethod,
+      `in the method: ${fresh.coverageInMethod}, above the table: ${!fresh.coverageInMethod}`
+    );
     // 7f. The conditions in the table are the fares feed's own wording; the
     // page says what the portal's own restriction feed was asked and answered.
     // It used to sit above the table. It is in the page's method note now,
@@ -1705,7 +1727,11 @@ function saysMoreThan(condition, code) {
     }
     check(
       "and it sits beside the result count, not in the footer",
-      fresh.beforeSummary && fresh.beforeTable && !fresh.inFooter,
+      // A synthetic build with a timetable has no price age to print, so the
+      // line is empty by design rather than misplaced.
+      !fresh.expected
+        ? notExercised("this build has no price age to print above the table")
+        : fresh.beforeSummary && fresh.beforeTable && !fresh.inFooter,
       `${fresh.text} beforeSummary=${fresh.beforeSummary} beforeTable=${fresh.beforeTable} inFooter=${fresh.inFooter}`
     );
     if (!fresh.feedDate) {

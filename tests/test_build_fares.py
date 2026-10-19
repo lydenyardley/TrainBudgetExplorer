@@ -304,7 +304,13 @@ class FaresPayloadTest(PageTestCase):
             payload = build_payload(fares, None, "GRN")
         rows = {row["crs"]: row for row in payload["destinations"]}
         self.assertEqual(rows["NOT"]["restrictionCode"], "1A")
-        self.assertIn("does not describe", rows["NOT"]["restrictionDescription"])
+        # D3 of the 17 October 2026 critique: the sentence carries the code and
+        # is the panel's whole explanation, so the page never prints a second
+        # sentence saying the same thing.
+        self.assertEqual(
+            rows["NOT"]["restrictionDescription"],
+            "Restriction 1A is not described in this feed, so check the seller's terms.",
+        )
         self.assertFalse(rows["NOT"]["restrictionDescribed"])
         # Nothing to show is the honest outcome, and the map says so by
         # leaving the code out rather than by carrying an empty pair.

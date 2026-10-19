@@ -25,7 +25,6 @@
 // compute, not a feed that has gone stale.
 function renderFreshness() {
   const line = document.getElementById("freshness");
-  if (!line) return;
   const parts = [];
   // Whole calendar days, not elapsed 24-hour periods: a timetable that starts
   // yesterday has not "not started yet" because it started at ten yesterday
@@ -53,7 +52,14 @@ function renderFreshness() {
   }
   if (!DATA.timetableFrom) {
     parts.push("This build prices fares only: no timetable was supplied, so no times or changes are shown.");
-  } else {
+  }
+  // D4 of the 17 October 2026 critique: the window the timetable covers is a
+  // fact about a source, and it sat in the line above the table beside the age
+  // of the prices -- two blocks between the count and the first Row. The age
+  // of the prices stays where the reader comparing a fare can see it; the
+  // window joins the other dates in the method fold.
+  const coverage = document.getElementById("timetableCoverage");
+  if (DATA.timetableFrom && coverage) {
     // days() is today minus the date, so a start still ahead is negative and
     // an end already past is positive.
     const starts = days(DATA.timetableFrom);
@@ -63,9 +69,11 @@ function renderFreshness() {
       : ends > 0
         ? "which has ended, so these times describe services that no longer run"
         : "which covers the day these times are for";
-    parts.push("Times are from a timetable covering " + humanDate(DATA.timetableFrom) + " to " +
-      humanDate(DATA.timetableTo) + ", " + verdict + ".");
+    coverage.textContent = "Times are from a timetable covering " + humanDate(DATA.timetableFrom) + " to " +
+      humanDate(DATA.timetableTo) + ", " + verdict + ".";
+    coverage.hidden = false;
   }
+  if (!line) return;
   line.textContent = parts.join(" ");
   line.hidden = !parts.length;
 }
@@ -138,31 +146,6 @@ function renderRestrictionReference() {
   line.textContent = text;
   line.hidden = !text;
 }
-// C04: the first sentence of the page promised the fastest journey time and
-// the number of changes, and the script then removed the Time and Changes
-// columns on a prices-only build without revising the sentence. So the
-// sentence is written here, from the build's own fact, rather than shipped as
-// prose that one shape of build is lying about.
-function renderIntro() {
-  const intro = document.getElementById("pageIntro");
-  if (!intro) return;
-  // The first-use note is a child of this paragraph, so it is replaced by
-  // writing the first text node and leaving the span the build filled in alone.
-  // Setting textContent on the paragraph would delete the build's sentence
-  // along with the old one, and a station page with no sentence saying what the
-  // station name does is exactly the page the note exists to prevent.
-  const first = intro.firstChild;
-  // One promise, written once, with the timetable clause composed onto it
-  // (audit item 10). The fares-only case adds no clause of its own: the
-  // freshness line above the table is the one place that says a timetable was
-  // not supplied, so a reader meets that fact once rather than three times
-  // (audit item 38).
-  const text = "Every destination this feed prices from the station above, inside the budget" +
-    (DATA.hasJourneys ? ", with the fastest time and the fewest changes." : ".");
-  if (first && first.nodeType === 3) first.nodeValue = text + " ";
-  else intro.insertBefore(document.createTextNode(text + " "), intro.firstChild);
-}
-
 // The trade vocabulary the lines in this disclosure quote: ITX, DTD, RR, the
 // "feed" itself, a "flow", "Priced as" in a row's own panel, and NRE in the
 // credit above. Item 44 of the 14 October 2026 clarity audit asked for them to
@@ -199,7 +182,6 @@ function provenance() {
   // prices sit outside this budget, so it gets its own first sentence and its
   // own way forward — not an empty table under a slider that can't help.
   if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) {
-    document.getElementById("pageIntro").hidden = true;
     const unpriced = document.getElementById("unpriced");
     const intro = "We couldn't price any journeys from " + DATA.origin.name +
       " (" + DATA.origin.crs + ") in this feed.";
@@ -259,7 +241,6 @@ function provenance() {
   renderModeNote();
   renderFreshness();
   renderRestrictionReference();
-  renderIntro();
   renderRailcardNote();
   // C03: what the reader has to do for themselves when the link is the plain
   // one, and what the link earns the site. Both sit above the table now, so

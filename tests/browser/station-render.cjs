@@ -179,7 +179,11 @@ async function renderThePage(world) {
     // say what the times are; both are read off the payload, not off a
     // hardcoded sentence.
     const opening = await page.evaluate(() => ({
-      intro: (document.getElementById("pageIntro") || {}).textContent || "",
+      // D1 of the 17 October 2026 critique: the paragraph that promised a time
+      // is gone, so what is asserted is that the page no longer makes a promise
+      // its columns have to keep.
+      promises: /fastest time/i.test(document.body.textContent || ""),
+      firstUse: (document.getElementById("firstUse") || {}).textContent || "",
       heading: (document.getElementById("pageHeading") || {}).getAttribute("aria-label") || "",
       title: document.title,
       hasJourneys: DATA.hasJourneys,
@@ -195,16 +199,16 @@ async function renderThePage(world) {
       ).map((th) => th.textContent),
     }));
     check(
-      "the opening sentence matches whether a timetable was loaded",
-      // The no-timetable fact is not this sentence's to state: it is said once,
-      // in the freshness line above the table, so the promise is the same one
-      // either way with the times clause composed onto it (audit item 38).
-      /inside the budget/.test(opening.intro) &&
-        /fastest time/.test(opening.intro) === opening.hasJourneys,
+      "the page promises no time it cannot show",
+      // The heading states the budget and the station, the count line states
+      // the destinations, and the columns state time and changes. Nothing above
+      // the table makes a claim about a journey any more, so there is no
+      // sentence left to go stale on a prices-only build.
+      opening.promises === false && opening.firstUse.length > 0,
       JSON.stringify(opening)
     );
     check(
-      "the times columns exist exactly when the sentence promises times",
+      "the times columns exist exactly when this build has times",
       opening.hasJourneys
         ? opening.headers.includes("Time") && opening.headers.includes("Changes")
         : !opening.headers.includes("Time") && !opening.headers.includes("Changes"),
@@ -397,6 +401,9 @@ async function renderThePage(world) {
       const list = document.getElementById("wordList");
       const details = list && list.closest("details");
       const inMethod = Boolean(list && list.closest(".method"));
+      // D7 of the 17 October 2026 critique: one disclosure for the page's
+      // trust content, not a second one nested inside the first.
+      const nested = Boolean(list && list.closest("details.words"));
       const terms = list ? Array.from(list.querySelectorAll("dt")).map((dt) => dt.textContent.trim()) : [];
       const meanings = list ? Array.from(list.querySelectorAll("dd")).map((dd) => dd.textContent.trim()) : [];
       // The page's own text with the glossary taken out of it. A definition
@@ -411,6 +418,7 @@ async function renderThePage(world) {
       const credited = outside.includes("National Rail Enquiries");
       return {
         inMethod,
+        nested,
         summary: details ? details.querySelector("summary").textContent.trim() : null,
         terms,
         // Every definition says something: a term with an empty or one-word
@@ -426,7 +434,7 @@ async function renderThePage(world) {
     });
     check(
       "the trade words the page quotes are defined together, in the method disclosure",
-      words.inMethod && words.defined && words.quoted && words.terms.length >= 5,
+      words.inMethod && !words.nested && words.defined && words.quoted && words.terms.length >= 5,
       JSON.stringify(words)
     );
 }

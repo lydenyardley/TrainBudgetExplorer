@@ -362,7 +362,14 @@ def render_page(
         # before any script runs. The script keeps it true afterwards.
         .replace("__CEILING_NOTE__", "&pound;" + str(ceiling) + ".00 for one adult")
         .replace("__BUDGET__", str(initial_budget))
-        .replace("__NOTE__", note_markup(payload["note"]))
+        # D6 of the 17 October 2026 critique: a synthetic build's note said in
+        # the footer what the banner at the top already says, so the banner is
+        # the only copy. A real build never carries that note; one with a
+        # provenance note of its own still gets the paragraph.
+        .replace(
+            "__NOTE__",
+            "" if payload.get("synthetic", True) else note_markup(payload["note"]),
+        )
         # C5: the paragraph about times is the payload's own sentence, which
         # build_payload chose from hasJourneys. A template that wrote its own
         # would be the second owner of the claim.

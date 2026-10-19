@@ -152,19 +152,16 @@ __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
 <h1 id="pageHeading" aria-label="Train fares up to &pound;__BUDGET__ from __ORIGIN__">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
-<!-- C04: the opening sentence is written by renderIntro() once the build has
-     said whether a timetable was loaded. The static text below is the
-     fares-only sentence, because that is the one that cannot overstate what a
-     prices-only build shows; a build with a timetable replaces it.
-
-     The first-use note is the second half of the same paragraph rather than a
-     paragraph of its own. It answers one question -- what the station name in
-     the heading does -- and a reader who has not clicked it should be able to
-     read that answer and the page's promise in one go, not in two blocks with a
-     line's gap between them. Two elements, because the build writes the second
-     one per build and the first one is written by script, and a reader cannot
-     tell where the sentence ended. -->
-<p class="sub" id="pageIntro">Every destination this feed prices from the station above, inside the budget.<span id="firstUse"> __FIRST_USE__</span></p>
+<!-- D1 of the 17 October 2026 critique: the paragraph that opened the page was
+     a third copy of its own claim. The heading states the budget and the
+     station, the count line states the destinations and their number, and the
+     column headings state time and changes; what was left was the one thing a
+     first-time reader cannot guess, which is that the name in the heading can
+     be changed. That sentence is now the paragraph, under the word it
+     describes, and the 48px it costs the fold is the price of the one fact.
+     The build writes it per build, because a one-origin page has no such
+     control to point at. -->
+<p class="sub" id="firstUse">__FIRST_USE__</p>
 <!-- The list, not the field. The field is moved into the heading by the
      script, into the place the station's own name was, so that clicking the
      name and typing are the same gesture in the same place -- and the list
@@ -283,7 +280,7 @@ __THEME_TOGGLE__
        These two paragraphs plus the build line were 57px of the 205px between
        the count and the table on the real page (finding, 29 September 2026). -->
   <details class="link-terms" id="linkTerms">
-    <summary id="linkTermsSummary">About the ticket link</summary>
+    <summary><span id="linkTermsSummary">About the ticket link</span> __CHEVRON__</summary>
     <p class="tag" id="linkNote" hidden></p>
     <p class="tag" id="disclosure" hidden></p>
   </details>
@@ -348,6 +345,9 @@ __THEME_TOGGLE__
   __NRE_SOURCE__
   <p id="commissionDisclosure" hidden></p>
   <div id="attribution" hidden></div>
+  <!-- D6 of the 17 October 2026 critique: on a synthetic build this paragraph
+       repeated the banner at the top of the same page, so the build passes no
+       note here at all; a real build with a note of its own still gets one. -->
   __NOTE__
   <!-- This paragraph opened by restating what the count line above the table
        and #modeNote already say -- which fare the price is, and what the list
@@ -368,9 +368,14 @@ __THEME_TOGGLE__
        they are not shortened; they are below the results, which is where the
        primary asset is not competing with them for the fold. -->
   <details class="method">
-    <summary>Where these prices come from, and how they were calculated</summary>
+    <summary>Where these prices come from, and how they were calculated __CHEVRON__</summary>
     <p id="pricingBasis"></p>
     <p id="feedCoverage" class="tag"></p>
+    <!-- D4 of the 17 October 2026 critique: the window the timetable covers is
+         a date about a source, like the rest of this fold, and it was a
+         sentence of the freshness line above the table -- one of the two
+         blocks that put the first fare below a laptop's fold. -->
+    <p class="tag" id="timetableCoverage" hidden></p>
     <p id="railcardNote"></p>
     <p class="tag" id="priceSource" hidden></p>
     <p class="tag" id="restrictionReference" hidden></p>
@@ -379,8 +384,13 @@ __THEME_TOGGLE__
     <!-- Item 44 of the 14 October 2026 clarity audit, answered "the glossary
          only": the trade words the lines above quote are defined once, here,
          rather than glossed where each is met. The definitions come from the
-         route's shared script, so they cost the release nothing per page. -->
-    <details class="words"><summary>The words this page uses</summary><dl id="wordList"></dl></details>
+         route's shared script, so they cost the release nothing per page.
+
+         D7 of the 17 October 2026 critique: this was a second disclosure
+         nested inside the first, which gave the page's trust content two
+         entrances for one question. It is the last thing in this fold now. -->
+    <p class="tag" id="wordListLead">The words this page uses</p>
+    <dl id="wordList"></dl>
   </details>
   <nav class="footnav"><a href="__BASE__/">Station list</a> <a href="__BASE__/privacy/">Privacy</a></nav>
   <p id="copyStatus" role="status" class="sr-only"></p>

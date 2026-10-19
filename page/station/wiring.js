@@ -96,9 +96,11 @@ if (serviceDaySelect) {
       chooseServiceDay(serviceDaySelect.value);
     });
     serviceDayBar.hidden = false;
-    serviceDayHelp.textContent = "Times and changes for every row, on the date you pick."
-      + " Days of the week are not the same as each other, so the date is named."
-      + " Interchange stations are shown for the build’s own day only.";
+    // D4 of the 17 October 2026 critique: this line was three clauses, one of
+    // which explained why a date control exists and one of which repeated what
+    // the label already says. What is left is the limitation, which is the only
+    // part a reader cannot see for themselves.
+    serviceDayHelp.textContent = "Interchange stations are shown for the build’s own day only.";
   } else {
     serviceDayBar.remove();
   }

@@ -34,6 +34,83 @@ async function measureTheLayout(world) {
       Math.abs(gutters.margin - gutters.size / 2) < 1,
       JSON.stringify(gutters)
     );
+    // C3 of the 17 October 2026 critique: on a common laptop the answer started
+    // below the fold. The fold is a budget, and this is it measured: at
+    // 1366x768 -- with the demo's synthetic banner, which production does not
+    // carry -- one whole destination row is on screen before any scrolling.
+    // Measured on arrival, with the refinements folded, because that is the
+    // state the finding was about: open() unfolds the panel and moves the table
+    // 316px further down, so measuring after it tests the panel's height.
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto(world.url);
+    const fold = await page.evaluate(() => {
+      const first = document.querySelector("#rows tr[data-crs]");
+      if (!first) return null;
+      const box = first.getBoundingClientRect();
+      return {
+        top: Math.round(box.top + window.scrollY),
+        height: Math.round(box.height),
+        viewport: window.innerHeight,
+      };
+    });
+    check(
+      "at 1366x768 one whole destination row is above the fold",
+      fold === null
+        ? notExercised("this page shows no rows")
+        : fold.top + fold.height <= fold.viewport,
+      JSON.stringify(fold)
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(facts.affordable);
+    // C4, C6 and C7 of the 17 October 2026 critique, each measured rather than
+    // read off the stylesheet: the footer's measure, the two disclosures' drawn
+    // marks, and which of the row's two actions carries the border.
+    const chrome = await page.evaluate(() => {
+      const footer = document.querySelector("footer");
+      const style = getComputedStyle(footer);
+      const sample = document.createElement("span");
+      sample.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+      sample.style.fontSize = style.fontSize;
+      sample.style.fontFamily = style.fontFamily;
+      sample.textContent = "0".repeat(20);
+      document.body.append(sample);
+      const ch = sample.getBoundingClientRect().width / 20;
+      sample.remove();
+      const box = (el) =>
+        el ? { w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null;
+      const buy = document.querySelector("#rows a.buy");
+      const expand = document.querySelector("#rows .row-expand");
+      return {
+        footerWidth: Math.round(footer.getBoundingClientRect().width),
+        measure: Math.ceil(ch * 80),
+        summaries: [".link-terms", ".method"].map((selector) => {
+          const summary = document.querySelector(selector + " summary");
+          return summary
+            ? { chevron: Boolean(summary.querySelector(".chevron")), text: summary.textContent.trim() }
+            : null;
+        }),
+        buy: box(buy),
+        buyBorder: buy ? getComputedStyle(buy).borderTopWidth : "",
+        expand: box(expand),
+        expandBorder: expand ? getComputedStyle(expand).borderTopWidth : "",
+      };
+    });
+    check(
+      "the footer is held to a readable measure rather than the whole page",
+      chrome.footerWidth <= chrome.measure,
+      `footer ${chrome.footerWidth}px, 80 characters ${chrome.measure}px`
+    );
+    check(
+      "both disclosures wear the page's drawn mark",
+      chrome.summaries.every((summary) => summary && summary.chevron && summary.text.length > 8),
+      JSON.stringify(chrome.summaries)
+    );
+    check(
+      "the ticket link is the bordered control and the expander the bare mark",
+      Boolean(chrome.buy) && chrome.buy.h >= 44 && chrome.buyBorder !== "0px" &&
+        Boolean(chrome.expand) && chrome.expand.h >= 44 && chrome.expandBorder === "0px",
+      JSON.stringify({ buy: chrome.buy, buyBorder: chrome.buyBorder, expand: chrome.expand, expandBorder: chrome.expandBorder })
+    );
     // Two controls that make one decision share a row.
     // Opened only if it is shut. The suite has already opened this panel
     // elsewhere, and a second click on an open one closes it, which measures
@@ -238,120 +315,65 @@ async function measureTheLayout(world) {
       check("a results row is tinted under the pointer", notExercised("this page lists fewer than three rows"));
     }
     // The stacked table, measured where the reader meets it: at 390px, on the
-    // rows the page actually paints. The overflow checks in the fare section
-    // ask whether the document is wider than the screen; these ask where the
-    // text landed, which is the half a scrollbar cannot see. A cell measured at
-    // 1px with its link painting 48px outside it passed every overflow check
-    // (E14 of the 17 October 2026 audit).
-    //
-    // The design each check holds the page to: two tracks per cell, the label
-    // in the first and every painted run of the value in the second; the value
-    // track is what is left of the cell rather than a width of its own; a
-    // number and the ticket link are one line each; and the headings are hidden
-    // from sight rather than from a screen reader. Each of those was a string
-    // assertion in tests/test_build_demo_page.py, and all five passed with the
-    // defect in place (E16): a text assertion cannot see the interaction
-    // between `td > *` and a bare text node.
+    // rows the page actually paints. A phone row was a label track and a value
+    // track per cell -- six lines, 275px, a page of twenty destinations in
+    // 5,500px (C13/D8 of the 17 October 2026 critique). It is two lines now,
+    // and these are the claims that make it one: the row's height, the line
+    // each fact lands on, and the fact that no value paints outside the cell
+    // that holds it.
     await page.setViewportSize({ width: 390, height: 720 });
     await open(facts.affordable);
     const stacked = await page.evaluate(() => {
       const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
-      const root = parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const rectsOf = (node) => {
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        return Array.from(range.getClientRects()).map((rect) => ({
-          left: rect.left,
-          right: rect.right,
-        }));
+      const rect = (node) => {
+        const box = node.getBoundingClientRect();
+        return { top: Math.round(box.top), bottom: Math.round(box.bottom),
+                 left: box.left, right: box.right };
       };
-      const cells = [];
-      const numbers = [];
-      for (const tr of rows) {
-        for (const cell of tr.cells) {
-          const style = getComputedStyle(cell);
+      const cellOf = (tr, label) => tr.querySelector('td[data-label="' + label + '"]');
+      const measured = rows.map((tr) => {
+        const cells = Array.from(tr.cells);
+        const station = cellOf(tr, "Station");
+        const price = cellOf(tr, "Price");
+        const time = cellOf(tr, "Time");
+        const tickets = cellOf(tr, "Tickets");
+        // Every painted line of a cell, including the anonymous text nodes: a
+        // long name wraps inside its own cell rather than widening the row.
+        const outside = [];
+        for (const cell of cells) {
           const box = cell.getBoundingClientRect();
-          const tracks = (style.gridTemplateColumns || "")
-            .split(" ")
-            .map(parseFloat)
-            .filter((size) => !Number.isNaN(size));
-          const gap = parseFloat(style.columnGap) || 0;
-          // The tracks are laid inside the cell's padding and border, and the
-          // hold cell keeps a few pixels of padding from the desktop rule it
-          // inherits, so the value track does not start at the cell's edge.
-          const inset =
-            (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.borderLeftWidth) || 0);
-          const start = box.left + inset + (tracks.length > 1 ? tracks[0] + gap : 0);
-          const runs = cell.children.length ? Array.from(cell.children) : [cell];
-          const measured = runs.map((run) => ({
-            cls: String(run.className || run.tagName).slice(0, 30),
-            lines: window.valueLines(run),
-            rects: rectsOf(run),
-          }));
-          // Every line of text the cell paints, including the anonymous ones: a
-          // bare text node in a grid container is an item with no element and
-          // no class, so a detector that walked `children` could not see it --
-          // which is how "NO" then "(" got under the label track with every
-          // check green (C1 of the 17 October 2026 critique, E14 of the audit).
-          const painted = rectsOf(cell);
-          // Where each run starts against the value track, and whether any of
-          // it paints outside the cell at all.
-          const early = painted.filter((rect) => rect.left < start - 1);
-          const outside = painted.filter(
-            (rect) => rect.left < box.left - 1 || rect.right > box.right + 1
-          );
-          cells.push({
-            label: cell.dataset.label || "",
-            display: style.display,
-            tracks: tracks.length,
-            labelTrack: Math.round(tracks[0] || 0),
-            valueTrack: Math.round(tracks[1] || 0),
-            gap: Math.round(gap),
-            // What the two tracks and the gap leave of the cell's own content
-            // box: nothing, but for the sub-pixel rounding of three sizes.
-            slack:
-              Math.round(
-                (box.width -
-                  (parseFloat(style.paddingLeft) || 0) -
-                  (parseFloat(style.paddingRight) || 0) -
-                  (parseFloat(style.borderLeftWidth) || 0) -
-                  (parseFloat(style.borderRightWidth) || 0) -
-                  (tracks[0] + tracks[1] + gap)) *
-                  10
-              ) / 10,
-            width: Math.round(box.width),
-            row: Math.round(tr.getBoundingClientRect().width),
-            early: early.length,
-            worst: early.length ? Math.round(Math.min(...early.map((rect) => rect.left)) - start) : 0,
-            outside: outside.length,
-            painted: getComputedStyle(cell, "::before").content,
-          });
-          // The runs the design fixes at one line: every number, and the word
-          // on the ticket link. `num missing` is the sentence a day with no
-          // journey prints, which is prose in a number's column.
-          for (const run of measured) {
-            if (/^(num|price|changes-count|fare-kind|buy)$/.test(run.cls)) {
-              numbers.push({ label: cell.dataset.label, cls: run.cls, lines: run.lines });
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          for (const run of range.getClientRects()) {
+            if (run.width === 0) continue;
+            if (run.left < box.left - 1 || run.right > box.right + 1) {
+              outside.push((cell.dataset.label || cell.tagName).slice(0, 24));
             }
           }
         }
-      }
+        return {
+          height: Math.round(tr.getBoundingClientRect().height),
+          stationTop: station ? rect(station).top : 0,
+          priceTop: price ? rect(price).top : 0,
+          timeTop: time ? rect(time).top : null,
+          ticketTop: tickets ? rect(tickets).top : 0,
+          outside: outside.length,
+          width: Math.round(tr.getBoundingClientRect().width),
+          cells: cells.length,
+        };
+      });
       const heads = Array.from(document.querySelectorAll("thead th"));
       const head = document.querySelector("thead");
       const headBox = head ? head.getBoundingClientRect() : null;
       const headStyle = head ? getComputedStyle(head) : null;
       return {
         rowCount: rows.length,
-        root,
-        cells,
-        numbers,
+        rows: measured,
+        heights: measured.map((row) => row.height).sort((a, b) => a - b),
         headers: heads.map((th) => ({
           label: th.textContent.trim(),
           display: getComputedStyle(th).display,
         })),
-        // The headings are hidden by clipping the whole `thead` to a pixel, not
-        // by taking each cell out of the layout, so the box to measure is the
-        // one that carries the clip.
         head: headBox
           ? {
               width: Math.round(headBox.width * 10) / 10,
@@ -362,70 +384,43 @@ async function measureTheLayout(world) {
           : null,
       };
     });
-    const bad = (wanted) => stacked.cells.filter(wanted).slice(0, 4);
-    const tracks = bad((cell) => cell.tracks !== 2 || Math.abs(cell.labelTrack - stacked.root * 5) > 1);
+    const median = stacked.heights.length
+      ? stacked.heights[Math.floor(stacked.heights.length / 2)]
+      : 0;
     check(
-      "at 390px every cell stacks into a 5rem label track and a value track",
-      stacked.cells.length === 0
+      "at 390px the typical row is two lines rather than six",
+      // 120 rather than the audit's 90: the shortlist checkbox and the ticket
+      // action are both 44px targets, and each one sets the height of a line.
+      // Measured on this page, a row is 111px -- twenty of them in 2,220px,
+      // against the 5,500px the six-line row cost.
+      stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
-        : tracks.length === 0,
-      tracks.length
-        ? JSON.stringify(tracks)
-        : `${stacked.cells.length} cells, label track ${stacked.cells[0] ? stacked.cells[0].labelTrack : 0}px at a ${stacked.root}px root`
+        : median <= 120,
+      `${stacked.rows.length} rows, median ${median}px, tallest ${stacked.heights[stacked.heights.length - 1] || 0}px`
     );
-    const narrow = bad((cell) => Math.abs(cell.slack) > 1.5);
+    const offLine = stacked.rows
+      .filter(
+        (row) =>
+          row.stationTop === 0 ||
+          Math.abs(row.priceTop - row.stationTop) > 2 ||
+          (row.timeTop !== null && row.timeTop <= row.stationTop) ||
+          (row.timeTop !== null && Math.abs(row.ticketTop - row.timeTop) > 4)
+      )
+      .slice(0, 4);
     check(
-      "and the value track is the rest of the cell rather than a width of its own",
-      stacked.cells.length === 0
+      "at 390px the place and its price share the first line, the time and the ticket the second",
+      stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
-        : narrow.length === 0,
-      narrow.length
-        ? JSON.stringify(narrow.map((cell) => ({
-            label: cell.label,
-            width: cell.width,
-            slack: cell.slack,
-          })))
-        : `${stacked.cells.length} cells measured`
+        : offLine.length === 0,
+      offLine.length ? JSON.stringify(offLine) : `${stacked.rows.length} rows measured`
     );
-    const early = bad((cell) => cell.early > 0);
-    check(
-      "at 390px every value starts in the value track, never under its own label",
-      stacked.cells.length === 0
-        ? notExercised("this page shows no rows at a phone width")
-        : early.length === 0,
-      early.length
-        ? JSON.stringify(early.map((cell) => ({ label: cell.label, runs: cell.early, worst: cell.worst + "px" })))
-        : `${stacked.cells.length} cells measured`
-    );
-    const spilled = bad((cell) => cell.outside > 0 || cell.width < cell.row - 1);
+    const spilled = stacked.rows.filter((row) => row.outside > 0).slice(0, 4);
     check(
       "at 390px no value paints outside the cell that holds it",
-      stacked.cells.length === 0
+      stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
         : spilled.length === 0,
-      spilled.length
-        ? JSON.stringify(spilled.map((cell) => ({ label: cell.label, width: cell.width, row: cell.row, outside: cell.outside })))
-        : `${stacked.cells.length} cells measured, each the width of its row`
-    );
-    const wrappedNumbers = stacked.numbers.filter((run) => run.lines !== 1).slice(0, 6);
-    check(
-      "at 390px a price, a count, a time and the ticket link each paint one line",
-      stacked.numbers.length === 0
-        ? notExercised("this page shows no number and no ticket link to measure")
-        : wrappedNumbers.length === 0,
-      wrappedNumbers.length
-        ? JSON.stringify(wrappedNumbers)
-        : `${stacked.numbers.length} number runs and links measured`
-    );
-    const unlabelled = stacked.cells.filter((cell) => cell.painted !== `"${cell.label}"`).slice(0, 4);
-    check(
-      "at 390px each cell names itself where its column heading is hidden",
-      stacked.cells.length === 0
-        ? notExercised("this page shows no rows at a phone width")
-        : unlabelled.length === 0,
-      unlabelled.length
-        ? JSON.stringify(unlabelled.map((cell) => ({ label: cell.label, painted: cell.painted })))
-        : `${stacked.cells.length} cells paint their own label`
+      spilled.length ? JSON.stringify(spilled) : `${stacked.rows.length} rows measured`
     );
     // The headings are hidden from sight rather than from a screen reader: the
     // `thead` is a clipped pixel, and the cells inside it are still table cells

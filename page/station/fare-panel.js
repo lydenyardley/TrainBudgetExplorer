@@ -46,7 +46,11 @@ function fareDetails(destination) {
   // each ticket's condition in its own line of the list instead.
   if (destination.tickets) {
     panel.append(twoTicketList(destination), twoTicketCaveat());
-  } else if (restricted) {
+  } else if (restricted && destination.restrictionDescribed) {
+    // Only where the feed has wording. Where it does not, the lead sentence
+    // above is the payload's own sentence about the missing condition, and a
+    // paragraph under it repeated the same fact (D3 of the 17 October 2026
+    // critique).
     const readable = document.createElement("p");
     readable.className = "condition";
     readable.textContent = destination.restrictionDescription ||

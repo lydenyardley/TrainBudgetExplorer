@@ -296,9 +296,19 @@ class ChooserTest(PageTestCase):
             '<p class="muted">the RSP fares feed</p>',
             render_privacy("the RSP fares feed", "", "a@b.test"),
         )
-        self.assertIn(
+        # D6 of the 17 October 2026 critique: on a synthetic page the banner at
+        # the top is the note's only copy, so the footer carries none; a real
+        # page with a note of its own still gets its paragraph.
+        self.assertNotIn(
             "<p>the RSP fares feed</p>",
             render_page(dict(self.payload, note="the RSP fares feed"), budget_pounds=20),
+        )
+        self.assertIn(
+            "<p>the RSP fares feed</p>",
+            render_page(
+                dict(self.payload, note="the RSP fares feed", synthetic=False),
+                budget_pounds=20,
+            ),
         )
 
     def test_the_chooser_heading_is_the_station_pages_sentence(self) -> None:

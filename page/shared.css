@@ -49,7 +49,15 @@
        the mark looks the same either way and its contrast does not have to be
        re-earned per theme. */
     --nre-plate: #141b3d; --nre-ink: #ffffff;
-    --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem); --h1: clamp(2rem, 7vw, 7rem);
+    /* The heading is the identity carrier, so it keeps its weight and its
+       wrapping; what it does not keep is a size the viewport width decides
+       alone. At 1366x768 -- a common laptop -- 7vw alone made the question
+       208px tall and pushed the first fare below the fold (C3 of the 17
+       October 2026 critique). The vh term is the fold's own budget: on a
+       short screen the heading gives way before the answer does, and on a
+       tall one the width still sets it. 6rem caps the very wide cases. */
+    --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem);
+    --h1: clamp(2rem, min(7vw, 9vh), 6rem);
   }
   /* The reader's choice, which beats the system preference: the tokens are
      already resolved by light-dark(), so naming the scheme is the whole of it,
@@ -240,6 +248,11 @@
   .chevron { width: 1em; height: 1em; flex: none; align-self: center;
              transition: transform .18s ease-out; }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+  /* A disclosure's mark says which way it opens. `<details>` already reports
+     its own state to the browser and to a screen reader, so this is the sight
+     half only: the same drawn mark the filter bar uses, turned over when the
+     thing it names is open. */
+  details[open] > summary .chevron { transform: rotate(180deg); }
   /* C29: one main landmark per route, so landmark navigation works. It wraps
      the route's own content only; the back link and the footer stay outside it
      as the navigation landmarks they are. */
@@ -269,8 +282,13 @@
      a rule that caught the paths alone would leave those in NRE's blue. */
   .nre-logo svg * { fill: var(--nre-ink) !important; }
   .nre-logo svg { display: block; height: 2rem; width: auto; }
+  /* The footer is the page's conscience, and it was the only text on the page
+     held to no measure: at 1280 its paragraphs ran to 178 characters a line,
+     against the 75ch the body copy above them keeps (C4 of the 17 October 2026
+     critique). 75ch of this type is about the measure the paragraphs ask for,
+     and the border above it is shorter for the same reason a column is. */
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
-           color: var(--muted); font-size: .85rem; }
+           color: var(--muted); font-size: .85rem; max-width: 75ch; }
   .footnav { margin-top: 1.5rem; }
   .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
   .back-link a { color: var(--accent); }

@@ -544,7 +544,11 @@ async function checkTheShortlist(world) {
       );
       check(
         "and it is labelled, described by its help text, and on show",
-        /^Times for$/.test(dayControl.label) && dayControl.help.length > 0 && dayControl.helpIsDescribedBy && dayControl.visible,
+        // D4 of the 17 October 2026 critique: the help line is one clause about
+        // the limitation, not three about why the control exists.
+        /^Times for$/.test(dayControl.label) && dayControl.help.length > 0 &&
+          dayControl.help.length <= 90 && /interchange/i.test(dayControl.help) &&
+          dayControl.helpIsDescribedBy && dayControl.visible,
         JSON.stringify({ label: dayControl.label, help: dayControl.help, described: dayControl.helpIsDescribedBy, shown: dayControl.visible })
       );
       check(
