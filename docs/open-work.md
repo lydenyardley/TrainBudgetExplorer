@@ -754,7 +754,7 @@ poteto audit). This file is what is open, and it stays that way.
 
 ## Where this came from
 
-All twelve files below are gone from the working tree; each was removed by the
+All fourteen files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
 above. `git show <commit>` reads one back. Most were removed on 14 October 2026,
 in the commit that settled their findings here; the route audit below was removed
@@ -770,11 +770,17 @@ date is its recommendation 6, the entry above. The reviews filed on 17 October a
 the plan filed on 18 October sit beside them. A review with nothing open does not
 keep a file.
 
-`docs/audits/2026-10-17-poteto-audit.md` was pruned on 18 October 2026 to the
-findings still open (E4–E7, E9's open row, E10–E12, E14–E16, E19). The seven it
-answered, and the state half of E9, are recorded in its "Answered since this was
-written" table with the check that holds each one.
+`docs/audits/2026-10-17-poteto-audit.md` is the most recent removal: it closed its
+last two findings on 18 October 2026, named no open item, and its nineteen
+findings and the checks that hold them moved to `docs/settled-work.md` on
+19 October 2026.
 
+- `docs/audits/2026-10-17-poteto-audit.md` — the engineering audit of the three
+  routes, the build, the tools and the checks. Its nineteen findings are settled
+  in the table above, with the two argued recommendations (E5, E6) carrying the
+  reason the recommendation changed; its measurements are page measurements of a
+  3-station demo. Removed on 19 October 2026, in the commit that moved its
+  findings into `docs/settled-work.md`.
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in
   `826dfeb`.

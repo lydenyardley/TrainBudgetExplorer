@@ -209,6 +209,63 @@ of rows inside £20.00 on a page carrying 331 of them (53).
 | 42 | the built line promised a publication that had not happened | the line dates the build ("This notice describes the build dated ..."), so it is true of a build nobody deployed and of a deployed one | `build_render.py`; `tests/test_build_provenance.py`, which holds the line to the date and to no claim of publication |
 | 44 | nothing defined the trade vocabulary the page quotes | one glossary inside the method disclosure, written from the route's shared script and not per page, and no gloss where the words are met | `page/station/provenance.js`; the placeholder in `page_templates.py`; `tests/browser/station-render.cjs`, "the trade words the page quotes are defined together, in the method disclosure" |
 
+### The 17 October 2026 poteto audit
+
+`docs/audits/2026-10-17-poteto-audit.md` was removed on 19 October 2026, after
+its last two findings landed on 18 October 2026 and it named no open item. All
+nineteen are settled here,
+each with the check that would fail if it came back, because the check is the part
+that keeps a closure closed. Two were argued before they were fixed, and the
+argument is in their rows: E5's recommendation, to take the keep-list from the
+release manifest, cannot answer the question, because the names that must survive
+belong to pages this build did not write; and E6's second dispatch is one keyword
+on the load dispatch that already existed.
+
+| Finding | Closed by | Held by |
+|---|---|---|
+| E1, the page-size tool reported 0 payload and 0 rows for every station page | the templates own the payload markers and the two gating tools are held to them, and `page_bytes` exits 2 on a page that names a payload it did not parse | `python -m tools.page_bytes _demo_site/from/grantham/index.html` reports 39 KB total, 19 KB payload and 16 rows; `tools/test_page_bytes.py` measures a page `render_page` wrote |
+| E2, every station page blocked parsing on the network's station list | `build_assets.station_asset_tag` writes `defer` | `tests/test_build_demo_page.py` reads the tag out of a rendered page |
+| E3, 42 substitutions, two of them asserted | `build_render.refuse_unfilled` sweeps the whole document on all three routes | its tests render each route, assert no placeholder survives, and assert that a note naming one is refused |
+| E4, the resume key was weaker than the cache key | `build_state.resumable_signature` and the shard agreement key on `feed_content_digest`, not on names, sizes and mtimes | `tests/test_atoc_knowledgebase.py` gives two feeds of equal size and the same mtime different bytes and gets different keys |
+| E5, tidying the release read the whole release | `prune_shared_assets` is given the pages this build wrote and does not read them, because a page it rendered requests its own names and nothing else; only a page an earlier build wrote can name an older asset | `tests/test_page_output.py` records every `read_text` the prune makes, asserts the station page it wrote is not among them, and holds that a leftover page naming a stale asset still protects it |
+| E6, the shard merge parsed the whole fares feed to answer a set question | `FaresDb.load_feed(..., locations_only=True)` reads the `.loc` file through the same `read_feed_files` dispatch, and `merge_shards` asks only the locations question | `tests/test_atoc_fares.py` proves the cheap load returns the map the full one returns and reads only `rjfaf.loc`; on the real feed the load went 37.7 s to 0.3 s over the same 3,436 stations (measured 18 October 2026) |
+| E7, the opening budget was a literal in five places | `build_release.OPENING_BUDGET_POUNDS` is the one constant, the shard manifest carries it in `release`, and the merge opens at the shard's figure | `tests/test_page_runner.py` refuses a `budget_pounds=<number>` literal and reads the manifest |
+| E8, the privacy contact was the one unescaped substitution | `render_privacy` escapes it | the provenance tests read an address carrying `<` and `&` |
+| E9, an open row closed on every render | `STATE.openCrs` holds the row a reader opened and `reopenOpenRow` puts it back after the rows are rebuilt, so the panel and the fare inside it survive a budget move | `tests/browser/station-rows.cjs` opens a row and then types a budget; with the state half removed it reported `stillOpen: false` |
+| E10, one sentence had two owners | `emptyListSentence(cap, what)` is the one composition, called by the count line and by the empty state | `tests/browser/station-filters.cjs` asserts the two are the same sentence character for character on a page with an empty list |
+| E11, the railcard list was rebuilt at the budget's drag frequency | `writeRailcardOptions` runs only when the party changes, because nothing in the list depends on the budget | the browser suite marks the list and types a budget; with the guard removed it reported `kept: false` |
+| E12, page-level elements were owned by the wrong panel | `#summary`, `#empty`, `#more`, `#pagination`, `#pageStatus` and the two pager buttons are read in `page/station/payload.js`, the one place the page's elements are read | `filters.js` and `service-day.js` keep only what they write, and `tools/check_page_state.py` counts what each panel reads |
+| E13, order-dependent top-level statements | `DEFAULT_MODE` is `STATE.mode` and the comment names the ordering as the invariant it depends on | the browser suite loads the built asset on every page it drives |
+| E14, the phone table was exercised for overflow and never for where text landed | the stacked row's two tracks | `tests/browser/station-layout.cjs` measures every cell of every row at 390px; with the station cell's wrapper removed it reported `worst: -89px` |
+| E15, the wrap detector existed with the two broken cells excluded | the detector measures every run of every cell, prose runs excluded by class, and the station and tickets cells are in the set | `tests/browser/station-render.cjs`; a 3rem `.station-value` at desktop reports `{"cell":"Station","lines":3}` |
+| E16, the mobile layout's rules were asserted as text | `tests/test_build_demo_page.py` keeps the media query and the markup-is-a-table claim; everything else it asserted is now geometry | `tests/browser/station-layout.cjs` at 390px |
+| E17, a chip's count leaked into the sentence that named it | `typeLabel()` reads the label span | the browser suite checks the sentence for every chip it presses; with the old read put back it reported `in cities (1)` |
+| E18, three housekeeping faults in one shared namespace | no local declaration shadows a shared function, no top-level constant only renames another, and every option the shared station field reads is passed by a caller | `tests/test_page_assets.py`; the last check found a second unread option (`onUse`) and the shadow check a second shadow (`unit` in `url-state.js`) |
+| E19, `docs/open-work.md` carried two thirds of a closed record | the settled record moved to this file on 18 October 2026, with the audit-item numbers code comments cite | `docs/open-work.md` is open work only, and this file is the closed record |
+
+**What the pass said is worth keeping.** Failure modes refuse rather than guess: a
+public build with no notices stops, a missing brand mark stops, a slice index with
+a gap names the codes before the build starts, and for a page whose numbers are
+the product that default is the product. The cache identities are content digests
+with the reason written down (ADR-0031); E4 was a mismatch between two identities,
+not a flaw in either. `page_is_current` compares the markup around the payload
+byte for byte and the asset names are part of the resume signature, so a template
+or `page/*` change already cannot be resumed past. The browser suite's skip budget
+is the right shape for pages that differ enormously in what they can exercise: a
+check a page cannot exercise is a skip, and the budget stops skipping from reading
+as a pass.
+
+**What the pass could not establish.** No real-feed build, so every figure was of
+a 3-station demo page and nothing measured the 2,712-page release. E4's key is
+pinned by a unit test over two files of equal size and the same mtime, and the
+end-to-end case, a resumed build that must not skip, still has no fixture. E11's
+platform behaviour, an open native select dismissed when its options are replaced,
+is inferred rather than observed, because the session drove headless Chromium,
+whose select popup is not the platform's. And 390px in Chromium is a viewport
+rather than a device, so the row heights and fragment positions are exact for that
+viewport and should be re-measured on hardware before anyone quotes them as a
+device figure.
+
 ### The 18 October 2026 agent-friendliness plan
 
 `docs/audits/2026-10-18-agent-friendliness-plan.md` was removed on 18 October
