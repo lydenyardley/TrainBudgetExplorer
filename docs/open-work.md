@@ -130,84 +130,25 @@ the half that matters, the cheaper change is a smaller shared asset rather than 
 split payload, and `page/station/*` is already one file per panel, so the split
 is a build decision and not a rewrite.
 
-### The 17 October 2026 review's open asks: the phone's row, the fold, and where the vocabulary is chosen
+### The 17 October 2026 review's open asks: the page's title, and when the vocabulary is chosen
 
-**Severity:** P1 for the phone's row (C13/D8) and the fold (C3); P2 for most of
-the rest, P3 where marked.
-**Route:** the station page, the chooser and the privacy page, plus one
-cross-route item.
+**Severity:** P3 for the title, P2 for the vocabulary.
+**Routes:** the privacy page, and the station page's ticket control.
 **Raised:** the 17 October 2026 impeccable review,
-`docs/audits/2026-10-17-impeccable-review.md`. That file is the critique and
-the distill of the same date, combined on 19 October 2026 into one document, and
-it is the record: each ask below carries its 17 October 2026 measurement there,
-and the six that have landed (C5, C1, C2, C8, C16, D2) are in its "What landed"
-table. What the critique used to say about its own open items, that they lived in
-this file, was not true; they lived only in the critique and the distill, and
-this entry is what makes that claim true rather than repeating it.
+`docs/audits/2026-10-17-impeccable-review.md`, which is where each ask's
+17 October 2026 measurement lives. Twenty of its thirty findings landed on
+19 October 2026 and are rows in its "What landed" table, each naming the check
+that holds it; two were argued rather than fixed (C9 / D5 and the detector's
+one finding) and are in its "Design calls answered" table. What is left is these
+two, which the review keeps under "Findings".
 
-- **C3, P1, the station page.** The first destination row starts 724px down at
-  1366×768, so the fold holds no row. What would close it: a stated fold budget
-  ("one full row at 1366×768") and one of the three cuts the finding names.
-- **C4, P2, the station page.** The footer is the only text on the page with no
-  measure, at 124 to 178 characters a line against the body's 75ch. What would
-  close it: one `max-width` on `footer`.
-- **C6, P2, the station page.** The method, link-terms and words disclosures carry
-  no chevron, and their `display: flex` suppresses the default marker. What would
-  close it: the page's own `CHEVRON` on the three summaries.
-- **C7, P2, the station page.** The row's Tickets link is a 48×22 text link where
-  its expander is a 44×44 bordered button, so the secondary action carries the
-  weight. What would close it: the link bordered and the expander bare, or both
-  bare.
-- **C10, P3, the station page.** Half done: the click sentence is the first-use
-  note beside the heading now. What is left is the intro paragraph's promise half,
-  which is D1 below.
-- **C12 / D10, P2, the chooser.** Every row repeats "6 destinations this feed
-  prices". What would close it: the phrase once in the list's heading, and a bare
-  right-aligned number per row.
-- **C13 / D8, P1, the station page.** A phone row is 275px, twenty to a page,
-  against 61px above 704px. What would close it: below 44rem, drop the label
-  track and move the site proof and both actions into the row's own disclosure.
-- **C14 / D11, P3, the chooser.** An empty field reads "from station". What would
-  close it: `placeholder="your station"` and the string
-  `tests/test_build_chooser.py` pins, together.
-- **C15, P3, the chooser.** Intro, provenance and ordering note are three
-  equal-weight paragraphs before the list. What would close it: the ordering note
-  becomes the list's heading subtitle and the instruction folds into the
-  placeholder (C14).
-- **C17 / D12, P2, the privacy page.** Three bullets where two would do; the third
-  repeats the first two. What would close it: two bullets, cookies and analytics.
-- **C18, P3, the privacy page.** `<title>Privacy</title>` alone. What would close
-  it: "Privacy · Train fares".
-- **C19, P3, the privacy page.** Back link, then the theme switch, then the
-  heading: the one route whose title is not first. What would close it: the switch
-  after the heading, or aligned with the back link.
-- **C20 / D14, P3, the privacy page.** "This notice describes the build dated
-  ...", a sentence for a maintainer. What would close it: "Last updated ...", its
-  verb half having already landed with the clarity audit's item 42.
+- **C18, P3, the privacy page.** `<title>Privacy</title>` alone, against a
+  station page's "Train fares up to £30 from GRANTHAM". What would close it:
+  "Privacy · Train fares", or the release's own name once one exists.
 - **C21, P2, cross-route.** The ticket set's vocabulary is chosen above the table
   and defined below it, and the empty state asks it of a reader who is already
   lost. What would close it: a clause per option, or the mode note moved under the
-  control.
-- **D1, P2, the station page.** The intro paragraph still spends 48px of the fold
-  on the page's own claim, having lost only its instruction. What would close it:
-  the paragraph deleted and the instruction kept in the first-use note.
-- **D3, P2, the station page.** A restricted fare is explained twice inside the
-  open row. What would close it: one sentence, carrying the restriction code.
-- **D4, P2, the station page.** The day control's help is three clauses and the
-  freshness line a fourth. What would close it: the limitation in one clause, the
-  reason gone or in the options, the coverage window with the provenance.
-- **D6, P2, the station page.** On a demo build the synthetic-data note is a
-  footer paragraph beside the banner that already says it. What would close it:
-  the note deleted where the banner carries it.
-- **D7, P3, the station page.** The words list is a second summary nested in the
-  method disclosure. What would close it: one disclosure whose body ends with the
-  word list.
-- **D9, P2, the chooser.** The ordering note denies two orderings nobody offered.
-  What would close it: "most first" as the list's heading subtitle, the denial
-  gone, and `tests/browser/chooser.cjs`'s three-clause assertion with it.
-- **D13, P2, the privacy page.** The address-bar fact is one 90-word paragraph
-  plus two bullets that restate it. What would close it: one sentence, the seven
-  parameters as a line of short names, the two consequences as the two bullets.
+  control and shortened to the difference between the sets.
 
 ### C27 — the chooser requires a known station name or a code prefix
 

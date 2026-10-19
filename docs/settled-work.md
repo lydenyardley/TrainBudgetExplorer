@@ -237,6 +237,29 @@ pass should not re-file it.
 | 7 | the fare vocabulary had no home | the words the route quotes are defined once, in a definitions list inside the method disclosure, immediately below the provenance line — which is the "block beside the provenance" this recommendation offered as its first option, drawn as the second (clarity audit item 44 chose the same answer from the other end) | `tests/browser/station-render.cjs`'s "the trade words the page quotes are defined together, in the method disclosure", `page/station/provenance.js` |
 | 8 | no accelerator for the page's one job | `/` or `b` focuses the budget field, `n` and `p` press the pager's own buttons rather than repeating what they do, and one line on the always-visible strip names both — with the paging half promised only while a pager is on the page, because a hint for a key that does nothing is the failure the format's own counts are held to | `tests/browser/station-filters.cjs`'s accelerator checks, `page/station/wiring.js`'s keydown listener, `page/station/filters.js`'s `renderKeyHints`, `page/station/table.js`'s two calls to it |
 
+### The 17 October 2026 impeccable review
+
+`docs/audits/2026-10-17-impeccable-review.md` is still in `docs/audits/` because
+two of its findings are open (C18 and C21, in `docs/open-work.md`). Twenty of its
+thirty landed on 19 October 2026, and its own "What landed" table holds each row
+with the check that would fail if it came back; this entry names the tests once so
+a reader of this file does not have to open the audit to know what holds the pass.
+
+The pass also re-measured the two figures it changed rather than quoting the
+17 October ones: at 1366×768 a whole destination row now sits above the fold, and
+a 390px row is 111px over two lines rather than 275px over six.
+
+| Findings | What landed | Held by |
+|---|---|---|
+| C3, C4, C6, C7, C13 / D8 | a fold that holds a row, a footer at the body's measure, one drawn mark on all three disclosures, the ticket link as the bordered control and the expander bare, and the two-line phone row | `tests/browser/station-layout.cjs`, whose section names are the findings: "at 1366x768 one whole destination row is above the fold", "the footer is held to a readable measure rather than the whole page", "both disclosures wear the page's drawn mark", "the ticket link is the bordered control and the expander the bare mark", "at 390px the typical row is two lines rather than six" |
+| C10, D1 | the click sentence is the first-use note beside the heading and the intro paragraph that carried the rest is gone | `tests/browser/station-picker.cjs` for `#firstUse`, `tests/test_build_demo_page.py` for the note's wording |
+| D3 | a restricted fare is explained once, in a sentence composed by `build_payload.describe_restriction` and carrying the code | `tests/test_build_fares.py`, "a restriction the feed cannot describe says so plainly" |
+| D4, D7 | the day help is one clause and the coverage window is with the other dates; the trade words end the method disclosure | `tests/browser/station-shortlist.cjs`, `tests/browser/station-fares.cjs`, `tests/browser/station-render.cjs` |
+| D6 | a page with no feed note writes no note paragraph | `tests/test_build_chooser.py`, "a route without a note ships no empty paragraph" |
+| C11, C12 / D10, C14 / D11 | the chooser's panel opens under the field, the phrase is the list's heading, and the empty field says "your station" | `tests/browser/chooser.cjs`, three checks that read the panel's position, a row's bare count and the placeholder |
+| C15, D9 | the instruction paragraph is gone and "Most first." is the list's subtitle, with the denial of busyness and nearness deleted | `tests/test_build_chooser.py`, "the chooser is the index and carries no fares" and "the chooser says what its order is and is not" |
+| C17 / D12, C19, C20 / D14, D13 | two bullets rather than three, the back link and theme switch in one row of chrome, "Last updated" in place of the maintainer's sentence, and the address parameters as one line of short names | `tests/test_build_provenance.py`, which reads the privacy page's bullets, the chrome row's order, the date sentence and the parameter line |
+
 ### The 17 October 2026 poteto audit
 
 `docs/audits/2026-10-17-poteto-audit.md` was removed on 19 October 2026, after

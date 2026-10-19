@@ -11,11 +11,12 @@ keeps the number it was filed under, so the gaps in a later version are
 deliberate. Where the two asked for the same thing, the C number carries the row
 and the D number names it beside it.
 **Open state, verified 19 October 2026.** Every finding was re-read against the
-tree. What has fully landed is in "What landed" with the check that holds it; what
-was argued rather than fixed is in "Design calls answered" with the reason; and
-every finding under "Findings" carries its own state line, where anything but
-"still open" says which half is left. The figures are the measurements of
-17 October 2026 and were not re-measured in this pass.
+tree. Twenty of the thirty findings landed in that pass and are rows in
+"What landed" with the check that holds each; two were argued rather than fixed
+and are in "Design calls answered" with the reason; and what is left under
+"Findings" is the three that are still open. The figures are the measurements of
+17 October 2026, except the two the pass re-measured (C3's fold and C13's row
+height), and they say so where they are quoted.
 **Mode:** Operate, as the 14 October critique recorded: every route is a tool used
 to answer one question, and the design's job is to get out of the way of the
 answer.
@@ -128,229 +129,7 @@ re-filed.
 Severity follows the critique scale: P1 breaks or misleads a reader now, P2 costs
 them real effort, P3 is polish. Route is named per finding.
 
-### The station page
-
-**C3 [P1] On a common laptop the answer starts below the fold.** Measured with the
-demo's 38px synthetic banner, which production does not carry; subtract 54px for
-the real page. First destination row:
-
-| Viewport | First row top | Rows in view |
-|---|---|---|
-| 390×844 | 872 (818) | 0 |
-| 1280×720 | 760 (706) | 0 |
-| 1366×768 | 778 (724) | 0 (44px of one row) |
-| 1440×900 | 794 | 2 |
-| 1920×1080 | 829 | 5 |
-
-The heading alone is 208px at 1366 and 243px at 1920, at `clamp(2rem, 7vw, 7rem)`,
-and four blocks sit between it and the count line: the intro paragraph, the filter
-bar (which holds the slider, the folded refinements and the day control), the
-freshness line and the ticket-link summary. The heading is the identity carrier
-and should not be shrunk to a form label, but the fold is a budget and this page
-spends all of it above the table. Fix options, cheapest first: drop the intro
-paragraph's first sentence (it repeats the count line), fold the freshness line
-into the link-terms disclosure, and cap the heading at `6rem` with a `vh` term so
-a short laptop gets a smaller question. Recommendation: measure a 1366×768 build
-and require at least one full row.
-*Still open.* `--h1` is `clamp(2rem, 7vw, 7rem)` in `page/shared.css` with no
-viewport term, and the browser suite measures the count-to-first-row gap rather
-than a row above the fold.
-
-**C4 [P2] The page's trust content is the least readable text on it.** Every
-footer paragraph spans the full 1,176px at 1280, at 13.6px and 12.8px with 20.4px
-leading. Measured characters per line: 155, 177, 178, 148, 141, 127, 124. The
-railcard paragraph (424 characters) runs at 141 characters per line. The body copy
-above it is held to `75ch`; the footer, which is where the page keeps its honesty,
-is held to nothing. Fix: one `max-width: 75ch` on the footer, or a `--measure`
-token the `.sub` rule already implies.
-*Still open.* `.sub` carries `max-width: 75ch`; the `footer` rule carries no
-measure.
-
-**C6 [P2] Three disclosures look like prose.** "About the ticket link" (24px
-tall), "Where these prices come from…" and "The words this page uses" are
-`<summary>` elements with no marker, no chevron, no underline and the body colour.
-Measured: 143×24 at 390 and 24px tall at 1280. They sit in a column of muted
-paragraphs, so the reader has no way to know two of them open. The page already
-has one drawn disclosure mark (`CHEVRON`, used by the filter bar and the station
-slot and the row expander); the summaries are the only disclosures on the site
-that do not use it. Fix: the same chevron, and the same `aria-expanded` behaviour
-the filter bar has.
-*Still open.* `.method summary` is accent-coloured and neither it nor
-`.link-terms summary` renders a chevron; both are `display: flex`, which also
-suppresses the default marker, so the resting affordance is weaker than the
-critique found.
-
-**C7 [P2] The row's two actions have inverted weight.** The primary action is
-"Tickets", a 48×22 link with an 11px invisible slop ring. The secondary action is
-a 44×44 bordered button with a chevron. Measured at 1280: 44×44 for the expander,
-48×22 for the link. The row's target sizes are legal (WCAG 2.5.8 is met by the
-slop, and the checkbox sits in a 44px label: the eleven sub-24px boxes the
-measurement finds are all enclosed), but the eye is drawn to the disclosure rather
-than to the purchase. Fix: give the link the bordered treatment and the expander
-the bare one, or leave both bare.
-*Still open.* `.buy` is a text link with a 1px underline; `.row-expand` is a
-bordered 2.75rem button.
-
-**C10 [P3] The page's one instruction is in the wrong place.** "Click the station
-name to start from somewhere else" is how a reader learns that the heading's
-station is a control, and it sat in body copy 250px below the word it describes,
-in the same paragraph as a sentence about what the list contains. The station slot
-has no visible label of its own: its accessible name is "Change starting station:
-GRANTHAM", which is right for a screen reader and invisible to everyone else.
-Fix: attach the instruction to the control (a title, a hinted underline, or the
-picker's own first line) and drop the rest of the paragraph (D1).
-*Half landed.* The sentence is the first-use note beside the heading now
-(`build_render.first_use_sentence`, `#firstUse`), so it sits under the word it
-describes; `tests/browser/station-picker.cjs` reads `#firstUse` and requires it to
-name the station and not to say "Change". The intro paragraph kept the promise
-half, which is D1.
-
-**C13 / D8 [P2] A phone row is six lines where the list needs two.** Measured at
-390px: each row is 275px, made of a label column, a value column, a site-proof
-subline and an action line, with the station's parentheses on lines of their own
-(C1, since fixed) and the ticket label inline with its link (C2, since fixed).
-Twenty rows at 275px is 5,500px per page, and the real Grantham page holds 334
-destinations. Measured row height on a phone: 275px at 360, 390, 414, 640 and 704,
-against 61px at 768 and above. `PAGE_SIZE` is 20, so a phone page is 5,500px of
-rows before the pager. That is arithmetic from a measured row height, not a scroll
-test. The stacked row is the right call (a seven-column table cannot fit 390px);
-its height is the defect. Fix: below 44rem drop the label column entirely, put the
-name and the price on the first line, the time and fare type on the second, and
-move the site proof and both actions into the row's existing disclosure. Two lines
-is about 90px, which is a page of twenty in 1,800px. This is the largest single
-reduction available on the site.
-*Still open.* The phone block still gives every cell a 5rem label track
-(`page/station.css`), so the row's height is unchanged.
-
-**D1 [P2] The intro paragraph is a third copy of the page's own claim.** `#pageIntro`
-was 29 words and 48px of the fold: "Every destination this feed prices from the
-station above, inside the budget, with the fastest time and the fewest changes.
-Click the station name to start from somewhere else." The heading says the budget
-and the station; the count line says the destinations and the number; the table's
-headers say time and changes. What is left that a reader needs is the click
-instruction, and it belongs on the control (critique C10). Recommend: delete the
-paragraph, keep the instruction where the station is, and recover 48px of a fold
-the critique is already short of (C3).
-*Half landed.* The paragraph is one promise of fourteen words now and the
-instruction moved out of it into the first-use note (C10). The paragraph itself
-remains, so the 48px is still on the fold's bill.
-
-**D3 [P2] The restricted-fare panel explains itself twice.** A row opened on the
-demo's Nottingham fare shows: "Restricted fare — the fare's own condition is not
-in this feed, so check the seller's terms." and, directly beneath, "This fare
-carries restriction 00, which this feed does not describe, so the condition has to
-be read from the seller's own terms." The second is the first with the restriction
-code in it. Where the feed does describe the condition the two do differ; where it
-does not, they collapse. Recommend: one sentence, carrying the code when there is
-one ("Restriction 00 is not described in this feed, so check the seller's terms"),
-and the panel's first line becomes that sentence rather than a headline plus a
-restatement.
-*Still open.* Both sentences are still composed: the row's own line in
-`page/station/row-cells.js`, the code clause in `build_payload.destination_row`.
-
-**D4 [P2] The day control has two explanations and needs one.** `#serviceDayHelp`
-is 31 words in three clauses ("Times and changes for every row, on the date you
-pick. Days of the week are not the same as each other, so the date is named.
-Interchange stations are shown for the build's own day only.") and `#freshness` is
-a further sentence about the timetable's coverage window. Between them they occupy
-64px above the count line. The second clause is the reason the control exists and
-the third is a limitation of the build. Recommend: the help line keeps the
-limitation in one clause; the reason ("a Saturday is not a Monday") moves into the
-control's own option labels or goes; the coverage window joins the provenance
-below the table, where the rest of the feed's dates already are.
-*Still open.* `page/station/wiring.js` still writes all three clauses.
-
-**D6 [P2] The footer is five paragraphs and two disclosures where two paragraphs
-would do.** The visible footer was the destination-type sources (27 words), the
-synthetic-data note (18), the ITX/Advance note (30) and the timetable note (34),
-then the method disclosure and "The words this page uses". The first is a
-data-source credit and must stay. The synthetic-data note only exists on a demo
-build and is already carried by the banner at the top of the page, so it is
-duplicated. The timetable note is the one that was untrue on a prices-only build
-(critique C5, since fixed), so it is the one that needed rewriting rather than
-shortening. Recommend: three visible paragraphs (credit, fares caveat, timetable
-caveat), the dataset note deleted where the banner already says it, and everything
-else inside the existing method disclosure. That is about 40 words and 60px off
-every page of the release.
-*Partly landed.* The service-claim paragraph is now the payload's own sentence
-(C5) and the words list sits inside the method disclosure. The synthetic-data note
-is still its own footer paragraph on a demo build, beside the banner that says the
-same thing.
-
-**D7 [P3] Two of the three disclosures could be one.** "Where these prices come
-from, and how they were calculated" and "The words this page uses" are both
-answers to "can I trust this number", and the second nests inside the first. The
-first is 78 words of provenance; the second is a definition list. Recommend: one
-disclosure, "About these numbers", whose body ends with the word list. One summary
-label fewer, one chevron fewer, and the page's trust content acquires a single
-entrance (which is also critique C6's fix).
-*Partly landed.* The words list nests inside the method disclosure now, which is
-the direction asked for, but it is a second `<summary>` rather than the end of the
-first.
-
-### The chooser
-
-**C11 [P2] The filtered list appears 200px below the field that opened it.**
-Typing in the heading's station field switches `#picks` to a fixed-position panel
-placed at the list's original document position. Measured: the field's bottom is
-at y=349 and the panel's top at y=552 at 1280 (a 204px gap); 223px at 390. In
-between sits the intro prose, which the panel does not cover, so the menu looks
-detached from the sentence and floats over the paragraph and the footer note. The
-comment in `page_templates.py` says anchoring to the list keeps prose clickable,
-and it does; the cost is that the answer is nowhere near the question. Fix: anchor
-the panel to the field (the station page's picker already does exactly this) and
-let the prose below the fold stay where it is.
-**Answered, not changed.** See "Design calls answered".
-
-**C12 / D10 [P2] Every chooser row repeats the same phrase.** "6 destinations this
-feed prices" is the last third of every row. In the demo that is three
-repetitions; on the real release it is 2,712, and the phrase is the same in all of
-them. The row is a name, a code and a count, and the count has no heading of its
-own. Fix: a heading for the list that carries the phrase once ("Destinations this
-feed prices"), and a bare number per row, right-aligned in a fixed column so the
-numbers line up. On 2,712 stations this is the difference between a directory and
-a paragraph repeated 2,712 times.
-*Still open.* `page/chooser.js` writes the phrase per row.
-
-**C14 / D11 [P3] The empty heading reads "from station".** With nothing typed, the
-sentence is "Train fares up to £20 from station". The placeholder is the muted
-word "station" under a dashed underline, and the instruction below explains it. It
-is not wrong, it is not English either. Fix: the placeholder is the prompt ("your
-station"), which is a word the sentence can take, and the instruction paragraph
-goes.
-*Still open.* The field is `placeholder="station"`, and `tests/test_build_chooser.py`
-asserts that string, so the wording change and the test go together.
-
-**C15 [P3] Three paragraphs of equal weight before the list.** Instruction,
-provenance line and ordering note, at 18.4px, 13.6px and 13.6px, each its own
-paragraph. The ordering note is the one that is genuinely about the list, and it
-reads as another apology. Fix: the ordering note becomes the list's heading
-subtitle (C12's heading), the provenance line stays, the instruction folds into
-the field's placeholder (C14).
-*Still open.* The chooser still renders intro, provenance and ordering as three
-`<p>` elements (`build_render.render_chooser`).
-
-**D9 [P2] The ordering note argues with nobody.** "Every station this page prices
-journeys from, most first — not by how busy it is, and not by how near it is." The
-first clause is the list's heading in disguise and the last two are a defence
-against an expectation the page has not created: nothing on the screen suggests
-busyness or distance, and the picker cannot offer either (`PRODUCT.md` says the
-feed carries no geography). Recommend: keep "most first" as the list's heading
-subtitle and delete the denial. If a reader does wonder why Grantham is above
-Lincoln, the count beside the name is the answer.
-*Still open.* The denial is still in `build_render.render_chooser`, and
-`tests/browser/chooser.cjs` asserts all three clauses, so the wording change and
-that check go together.
-
 ### The privacy page
-
-**C17 / D12 [P2] Three bullets say one thing.** "No cookies are set by this
-site." / "No analytics run. If analytics are ever added to this site, this page
-will name them here first." / "This site does not collect visit data." The third
-is the union of the first two and adds a claim (visit data) that the second has
-already narrowed. Fix: two bullets, cookies and analytics, and keep the forward
-promise attached to analytics where it belongs.
-*Still open.* `build_render.render_privacy` still writes the third bullet.
 
 **C18 [P3] The page's title is a single word.** `<title>Privacy</title>`, against
 "Train fares up to £30 from GRANTHAM" and "Train fares up to £20 · pick your
@@ -359,34 +138,6 @@ one of them is indistinguishable from any other site's privacy notice. Fix:
 "Privacy · Train fares" or the release's own name once there is one (it is
 undecided, `PRODUCT.md`).
 *Still open.* The privacy template's title is `Privacy`.
-
-**C19 [P3] The first thing on the page is a back link, then a switch, then the
-title.** The back link is outside `main` (correct for the landmark), the theme
-switch is pinned right and sits between the link and the heading, so the reading
-order on a 900px screen is: banner, link, switch, "Privacy". It is the only route
-where the heading is not the first thing under the banner. Fix: put the switch
-after the heading on this route, or accept it as chrome and align it with the back
-link.
-*Still open.* The privacy template keeps `__THEME_TOGGLE__` between the back-link
-nav and the `h1`.
-
-**C20 / D14 [P3] The build date is the page's only date, in the page's voice.**
-"This notice describes the build dated 17 October 2026." That is a sentence for a
-maintainer. A reader wants to know when the policy changed, which is the same date
-on a static site, phrased as a fact about the notice. Fix: "Last updated 17
-October 2026" and drop the sentence.
-*Still open.* The verb half landed with clarity audit item 42, which replaced a
-claim of publication with a statement of the build date; the sentence is still
-addressed to a maintainer.
-
-**D13 [P2] The address-bar section is one 90-word paragraph plus two bullets for
-one fact.** The fact: your search is in the url, so the host sees it and a shared
-link carries it. It takes a paragraph that lists all seven parameters, then two
-bullets that re-state the consequences. The list of parameters is the part a
-reader cannot guess and the part worth keeping. Recommend: one sentence, the
-parameter list as a single line of short names, and the two consequences as the
-two bullets. About 40% fewer words, same disclosure.
-*Still open.* The paragraph is unchanged in the privacy template.
 
 ### Cross-route
 
@@ -408,11 +159,11 @@ the table.
 
 ## Persona red flags
 
-**Casey, phone, one hand, interrupted.** 275px rows mean three destinations per
-screen and no sense of a list; the count line is 872px down; the pager is 5,500px
-further. Nothing in the thumb zone except the row it happens to be on. The dock,
-when it appears, is well built: it clears the footer by 16px at full scroll and
-gets 119px of body padding.
+**Casey, phone, one hand, interrupted.** 111px rows mean six or seven
+destinations per screen, so the list reads as a list; the pager that was 5,500px
+away is about 2,220px away. The dock, when it appears, is well built: it clears
+the footer by 16px at full scroll and gets 119px of body padding. What is left for
+her is the count line above the table and the ticket vocabulary C21 describes.
 
 **Jordan, first timer.** "Cheapest available" is checked and nothing on screen
 says what it means; the sentence that would explain it is 900px below the control
@@ -431,8 +182,8 @@ focus to `<body>`.
 ## Questions to consider
 
 - If the phone row were two lines instead of six (C13), would C1, C2 and the pager
-  problem all disappear at once? The row's height is the parent defect. C1 and C2
-  are fixed and the height is not.
+  problem all disappear at once? The row's height was the parent defect, and it
+  landed in the 19 October pass: all three went with it.
 - What is the page's fold budget, in numbers, and who owns it? A stated budget
   ("one full row at 1366×768") would have caught C3 before this audit did.
 - The footer is the page's conscience. Why is it the only text on the page with no
@@ -450,16 +201,35 @@ focus to `<body>`.
 | C8 [P2] changing the budget closes the row the reader opened | the open row is `STATE.openCrs` and every render reopens it, so the panel and the fare inside survive a budget move. Landed 18 October 2026 | `tests/browser/station-rows.cjs`, "a row the reader opened is still open when the budget moves"; with the state half removed it reports `stillOpen: false` |
 | C16 [P3] the chooser's footer is not the station page's footer | the chooser keeps the same `.footnav` and omits the route it is already on, so it is `Privacy` in a nav rather than a bare paragraph | the chooser template in `page_templates.py`, and the shared `.footnav` rule in `page/shared.css` |
 | D2 [P2] the empty state says the same sentence twice | `emptyListSentence(cap, what)` is the one composition, called by the count line and by the empty state, so the two cannot diverge | `tests/browser/station-filters.cjs` asserts the two are the same sentence character for character on a page with an empty list; with a clause added to the empty state it reported two different ones |
+| C10 [P3] the page's one instruction is in the wrong place | the instruction is the first-use note under the heading, beside the control it describes, and the paragraph that carried the rest of it is gone with D1 | `tests/browser/station-picker.cjs`, which reads `#firstUse` and requires it to name the station without saying "Change" |
+| C3 [P1] the answer starts below the fold on a laptop | the heading's viewport-height term was capped at 10vh and the intro paragraph left (D1), which moves a whole row above the fold at 1366×768: measured on arrival at row top 690, height 64, viewport 768, with the demo's 38px banner still on the page | `tests/browser/station-layout.cjs`, "at 1366x768 one whole destination row is above the fold", measured with the refinements folded and the panel's own 316px excluded |
+| C4 [P2] the trust content is the least readable text | the footer is held to 75ch, the measure the body copy above it already has | `tests/browser/station-layout.cjs`, "the footer is held to a readable measure rather than the whole page" |
+| C6 [P2] three disclosures look like prose | the ticket and method disclosures wear the page's drawn chevron, turned over when open, so all three openers are one mark in one place | the same section, "both disclosures wear the page's drawn mark" |
+| C7 [P2] the row's actions have inverted weight | the ticket link is the bordered 44px control and the row expander is the bare mark beside it, in that order | the same section, "the ticket link is the bordered control and the expander the bare mark", and the a11y matrix's target-size measurement |
+| C13 / D8 [P2] a phone row is six lines | at 390px the row is two lines, place and price then time, count, fare and ticket, measured at 111px, so a page of twenty is 2,220px rather than 5,500 | `tests/browser/station-layout.cjs`, "at 390px the typical row is two lines rather than six" |
+| D1 [P2] the intro paragraph is a third copy of the claim | `#pageIntro` is gone; its one non-redundant sentence is the first-use note under the heading | `tests/test_build_demo_page.py`, "the station page says which control changes station" |
+| D3 [P2] the restricted-fare panel explains itself twice | an undescribed condition is one sentence carrying the code, composed once in `build_payload.describe_restriction` and printed once | `tests/test_build_fares.py`, "a restriction the feed cannot describe says so plainly", and the browser suite's condition checks |
+| D4 [P2] the day control has two explanations | the help line is one clause about the limitation; the timetable's coverage window moved into the method fold with the other dates | `tests/browser/station-shortlist.cjs`, "and it is labelled, described by its help text, and on show"; `station-fares.cjs`, "the timetable sentence carries the feed's own service window" |
+| D6 [P2] the footer is five paragraphs and two disclosures | a page with no feed note writes no note paragraph, so a synthetic build's footer is the banner only and a real build's is banner and note | `tests/test_build_chooser.py`, "a route without a note ships no empty paragraph" |
+| D7 [P3] two disclosures could be one | the trade words are the end of the method disclosure rather than a second disclosure inside it | `tests/browser/station-render.cjs`, "the trade words the page quotes are defined together, in the method disclosure" |
+| C11 [P2] the filtered list appears below the field that opened it | the chooser's panel is anchored to the field that opened it, the same rule the station page's picker follows, so the answer is under the question and the prose behind it stays reachable | `tests/browser/chooser.cjs`, "the panel opens under the field rather than over the prose it is written below" |
+| C12 / D10 [P2] every chooser row repeats the phrase | the phrase is the list's heading, written once as "Destinations this feed prices", and each row carries a bare number | `tests/browser/chooser.cjs`, "every option carries its name, its code and a bare count" |
+| C14 / D11 [P3] the empty heading reads "from station" | the placeholder is "your station", a word the sentence can take | `tests/browser/chooser.cjs`, "the station it has no answer for is a field holding the prompt"; `tests/test_build_chooser.py` carries the budget into the link |
+| C15 [P3] three paragraphs of equal weight | the instruction paragraph is gone; the ordering note is the list's subtitle | `tests/test_build_chooser.py`, "the chooser is the index and carries no fares" |
+| D9 [P2] the ordering note argues with nobody | "Most first." is the subtitle and the denial of busyness and nearness is deleted | `tests/test_build_chooser.py`, "the chooser says what its order is and is not", and `tests/browser/chooser.cjs` |
+| C17 / D12 [P2] three bullets say one thing | the visit-data bullet is gone; the cookies and analytics bullets are the list, and the forward promise stays with analytics | `tests/test_build_provenance.py`, "the privacy page describes the build that was made" |
+| C19 [P3] the page opens with a back link, then a switch, then the title | the back link and the theme switch share one row of chrome above the document, so the reading order under it is the title | the same test, which checks the chrome row holds both and sits above `main` |
+| C20 / D14 [P3] the build date is in the page's voice | "Last updated 17 October 2026." in place of the maintainer's sentence | the same test |
+| D13 [P2] the address section is one paragraph and two bullets | the parameters are one line of short names, then the two consequences as the two bullets | the same test, which reads the parameter line and the absent sentence |
 
 ## Design calls answered
 
-Three findings were argued rather than fixed, and the record is the reason so the
+Two findings were argued rather than fixed, and the record is the reason so the
 same request is not re-derived.
 
 | Finding | The answer | Where it is recorded |
 |---|---|---|
 | C9 / D5 [P3] the budget hint is 130 characters for a 44px slider, and "Stops at £126, the highest fare here" would do | kept as it is. The ceiling is party-aware, so the sentence has to name the party it was resolved for or it is a number without a subject, and the two extra words were judged worth them beside a control that is four lines in total | ADR-0048, "The budget names where it stops" |
-| C11 [P2] the filtered list appears 200px below the field that opened it | the mechanism is working as its comment intends. The chooser's panel is anchored to the list's place in the document on purpose, so the prose between the field and the list stays readable and clickable; the station page's picker anchors to the field because it has no prose under it. Moving the chooser's panel to the field is a design call, not a defect, and it has not been taken | the comment on `anchor` in `page_templates.STATION_FIELD_JS`, which names the four-dimension audit's R1 |
 | the detector's one finding, `cramped-padding` on `.origin-slot-wrap` | the border it flags is the dashed underline that is the station slot's whole affordance | "Rejected designs, with the reason" in `docs/open-work.md` |
 
 ## Run notes
