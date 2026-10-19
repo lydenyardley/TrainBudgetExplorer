@@ -380,6 +380,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         [".fare-line", "the fare in words on the row"],
         [".origin-picker-label", "the change-station field label"],
         [".chipcount", "a chip's count"],
+        [".more-types-count", "the facet disclosure's count"],
         [".condition", "the readable condition"],
         [".validity", "the fare validity"],
         ["#facetNotice", "a filter-change notice"],
@@ -525,6 +526,15 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       const expander = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded='false']");
       const firstPanel = document.querySelector("#rows tr.detail") ? null : expander;
       if (firstPanel) firstPanel.click();
+      // The thematic facet chips are one press away, and the sweep skips
+      // anything inside [hidden]: opening the disclosure is what puts those ten
+      // chips on the measured list, and closing it after leaves the page as it
+      // was found. A page with no facet, or a route with no disclosure, has
+      // nothing to open.
+      const facetsToggle = document.getElementById("moreTypes");
+      const openedFacets = Boolean(facetsToggle) && !facetsToggle.hidden &&
+        facetsToggle.getAttribute("aria-expanded") === "false";
+      if (openedFacets) facetsToggle.click();
       for (const el of document.querySelectorAll(
         "button, a[href], input, select, textarea, summary, [role=button]"
       )) {
@@ -551,6 +561,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
           w: Math.round(box.w),
           h: Math.round(box.h),
           raw: `${Math.round(box.rawW || box.w)}x${Math.round(box.rawH || box.h)}`,
+          inFold: Boolean(el.closest("#moreTypesPanel")),
           html: el.outerHTML.slice(0, 70),
         };
         seen.push(record);
@@ -566,8 +577,9 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
           el.id === "moreFiltersToggle" || !!filterControl;
         if (promised && Math.min(box.w, box.h) + 0.5 < PROMISED) underPromised.push(record);
       }
+      if (openedFacets) facetsToggle.click();
       if (firstPanel) firstPanel.click();
-      return { small, underPromised, inlineInText, seen };
+      return { small, underPromised, inlineInText, seen, facets: openedFacets };
     });
     check(
       `every pointer target is at least 24px in ${scheme}`,
@@ -580,6 +592,17 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       `the controls promised at 44px are at least 44px in ${scheme}`,
       targets.underPromised.length === 0,
       targets.underPromised.length ? JSON.stringify(targets.underPromised.slice(0, 5)) : "row actions and the phone control"
+    );
+    // The sweep skips [hidden], and the facet chips live behind a disclosure:
+    // opening it is what put them on the measured list, so a sweep that stopped
+    // opening it would go on passing without measuring ten controls. This says
+    // so instead, the same way the row condition is held above.
+    check(
+      `the chips behind the facet disclosure are measured for target size in ${scheme}`,
+      !targets.facets || targets.seen.some((record) => record.inFold),
+      targets.facets
+        ? `${targets.seen.filter((record) => record.inFold).length} chips behind the fold measured`
+        : "this route offers no facet disclosure"
     );
     // ------------------------------------------------------------------ zoom
     // 320px is what 200% zoom leaves of a 640px screen: the width at which a

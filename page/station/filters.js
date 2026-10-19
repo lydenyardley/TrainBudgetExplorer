@@ -8,6 +8,16 @@ const destinationTypeInputs = Array.from(document.querySelectorAll('input[name="
 const destinationType = document.getElementById("destinationTypes");
 const PAGE_SIZE = 20;
 const clearTypes = document.getElementById("clearTypes");
+// The facets disclosure: the ten thematic chips are one press away from the
+// row of four settlement bands the build writes them beside (critique item 3,
+// second half), and the count in the disclosure is kept true by the same
+// function that hides the chips.
+const moreTypes = document.getElementById("moreTypes");
+const moreTypesPanel = document.getElementById("moreTypesPanel");
+const moreTypesCount = moreTypes ? moreTypes.querySelector(".more-types-count") : null;
+const facetInputs = moreTypesPanel
+  ? Array.from(moreTypesPanel.querySelectorAll('input[name="destinationType"]'))
+  : [];
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
 const keyHints = document.getElementById("keyHints");
@@ -27,6 +37,19 @@ const filterState = document.getElementById("filterState");  // The refinements 
   if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
     setFiltersOpen(moreFilters.dataset.open !== "true");
   });
+
+// The facets are one press away inside the refinements panel above (#moreFiltersPanel,
+// which the stylesheet leaves display:none until #moreFilters opens it). The
+// fold is the reader's, exactly as that panel's fold is: the markup arrives
+// closed and this only flips it, so no render reads it back and a reader who
+// opens it and then narrows something keeps it open. A page whose script did
+// not arrive is no worse off, because these chips are already inside a panel
+// that only that script opens.
+if (moreTypes && moreTypesPanel) moreTypes.addEventListener("click", () => {
+  const open = moreTypes.getAttribute("aria-expanded") === "true";
+  moreTypesPanel.hidden = open;
+  moreTypes.setAttribute("aria-expanded", String(!open));
+});
 
 // What is narrowed, said in the summary, so a reader who has collapsed the
 // refinements on a phone can still see that a filter is on.
@@ -178,6 +201,23 @@ function syncDestinationTypeChips(available, cap) {
   }
   const all = destinationTypeInputs.find((input) => input.value === "all");
   if (all) all.checked = STATE.types.length === 0;
+  // The disclosure says how many facets are behind it, and stands down when the
+  // budget has taken every one of them: a press into an empty row is the dead
+  // end this function already refuses a chip for (S20), and the number in the
+  // chip row is read as the count of what it would show -- so it follows the
+  // chips rather than the taxonomy.
+  if (moreTypes) {
+    const offeredFacets = facetInputs.filter((input) => !input.closest("label").hidden).length;
+    moreTypes.hidden = offeredFacets === 0;
+    if (moreTypesCount) moreTypesCount.textContent = "(" + offeredFacets + ")";
+    // A fold left open over no chips is the dead end the chips themselves are
+    // refused for (S20), and the control that would close it is gone with them,
+    // so the panel goes back to folded.
+    if (offeredFacets === 0 && moreTypesPanel) {
+      moreTypesPanel.hidden = true;
+      moreTypes.setAttribute("aria-expanded", "false");
+    }
+  }
   STATE.lastSyncedMode = mode;
   // Announced whenever something changed, not only on a mode change: the budget
   // can take a chip away too, and a filter that changed the result set without

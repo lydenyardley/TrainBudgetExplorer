@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from atoc_fares import DESTINATION_TYPE_FILTERS
+from atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS
 # The asset names come from the module that writes the assets, so a release
 # that renames one (a script edit, a stylesheet edit) renames it for the pages
 # and the prune in the same place, and a test that changes the assets patches
@@ -246,6 +246,19 @@ def refuse_unfilled(page: str, route: str) -> str:
     return page
 
 
+def destination_type_chip(value: str, label: str) -> str:
+    """One destination-type chip, with the count slot its own label carries.
+
+    The count lives in the chip, not beside it, so the number and the thing it
+    counts are one target and one label. render() fills it in from the page's own
+    rows at the budget on screen.
+    """
+    return (
+        f'<label class="choice-chip"><input type="checkbox" name="destinationType" value="{html.escape(value)}"> '
+        f'<span>{html.escape(label)}</span> <span class="chipcount" data-count-for="{html.escape(value)}"></span></label>'
+    )
+
+
 def render_page(
     payload: dict,
     *,
@@ -293,20 +306,50 @@ def render_page(
         for row in payload["destinations"] + payload.get("singleDestinations", []) + payload.get("anytimeDestinations", [])
         for kind in row.get("destinationTypes") or [row.get("destinationType", "other")]
     }
-    destination_filters = ['<label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>']
-    # The count lives in the chip, not beside it, so the number and the thing
-    # it counts are one target and one label. render() fills it in from the
-    # page's own rows at the budget on screen.
-    destination_filters.extend(
-        f'<label class="choice-chip"><input type="checkbox" name="destinationType" value="{html.escape(value)}"> '
-        f'<span>{html.escape(label)}</span> <span class="chipcount" data-count-for="{html.escape(value)}"></span></label>'
-        for value, label in DESTINATION_TYPE_FILTERS
-        if value in used
+    # The four settlement bands and the ten thematic facets answer two different
+    # questions -- how big a place is, and what it has -- and the row used to put
+    # all fifteen chips at one decision point. The bands stay where they are; the
+    # facets are one press away behind the chip row's own last chip, so "the
+    # other ten" is found where the first five are rather than under a heading a
+    # reader has to be told to read (critique item 3, second half). Which chips
+    # are which is the same split DESTINATION_TYPE_FILTERS is built from: the
+    # facet registry, not a second list that could drift from it.
+    facet_keys = {facet.key for facet in DESTINATION_FACET_SOURCES}
+    bands = [(value, label) for value, label in DESTINATION_TYPE_FILTERS
+             if value not in facet_keys and value in used]
+    facets = [(value, label) for value, label in DESTINATION_TYPE_FILTERS
+              if value in facet_keys and value in used]
+    more_types = ""
+    fold = ""
+    if facets:
+        # "More types (10)" counts the kinds behind it, not the destinations --
+        # which is why the number is not a `.chipcount`: that class is the count
+        # of destinations a chip would show, and it is read as exactly that by
+        # the checks on it. render() keeps it true as the budget narrows what is
+        # offered, because the number sits in the chip row where every other
+        # number beside a chip is the count of destinations now.
+        more_types = (
+            '<button type="button" class="choice-chip more-types" id="moreTypes"'
+            ' aria-expanded="false" aria-controls="moreTypesPanel">'
+            f'<span>More types</span> <span class="more-types-count">({len(facets)})</span>'
+            f'{CHEVRON}</button>'
+        )
+        fold = (
+            '<div class="filter-options" id="moreTypesPanel" role="group"'
+            ' aria-label="More destination types" hidden>'
+            + "".join(destination_type_chip(value, label) for value, label in facets)
+            + "</div>"
+        )
+    destination_filters = (
+        ['<label class="choice-chip"><input type="radio" name="destinationType" value="all" checked> <span>All</span></label>']
+        + [destination_type_chip(value, label) for value, label in bands]
+        + [more_types]
     )
     script_tag = station_script_tag(payload.get("scriptSrc", ""))
     page = (
         TEMPLATE.replace("__DATA__", embedded)
         .replace("__DESTINATION_TYPE_FILTERS__", "".join(destination_filters))
+        .replace("__DESTINATION_FACET_FILTERS__", fold)
         .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
         .replace("__STATIONS_SRC__", station_asset_tag(payload.get("stationsSrc")))
         .replace("__ORIGIN_CONTROL__", origin_control(payload))

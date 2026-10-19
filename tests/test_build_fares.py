@@ -12,7 +12,7 @@ import tempfile
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from atoc_fares import FLOW_F, FaresDb
+from atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS, FLOW_F, FaresDb
 from build_demo_page import build_payload, render_page
 from make_synthetic_feed import _line, build_synthetic_feed
 from tests.page_harness import page_markup, page_script, setUpModule, tearDownModule, PageTestCase
@@ -425,7 +425,11 @@ class FaresPayloadTest(PageTestCase):
         # The counts and the clear are driven by the browser suite.
         self.assertIn('class="chipcount"', self.html)
         self.assertIn('id="clearTypes"', self.html)
-        self.assertIn("Each count is how many destinations of that type are inside the budget now.", self.html)
+        self.assertIn(
+            "Each count is how many destinations of that type are inside the budget now. "
+            "The number on More types is how many kinds are behind it.",
+            self.html,
+        )
 
     def test_a_narrowed_search_returns_to_the_first_page(self) -> None:
         # S22: the cheapest rows are what a narrowed search wants first, and the
@@ -697,6 +701,51 @@ class FaresPayloadTest(PageTestCase):
         self.assertNotIn('name="destinationType" value="seaside"', head)
         self.assertNotIn('name="destinationType" value="university"', head)
         self.assertNotIn('name="destinationType" value="island"', head)
+        # ...and a page whose list carries no facet is offered no disclosure
+        # either: a press that opens an empty row is the same dead end, one
+        # control up (critique item 3, second half).
+        self.assertNotIn('id="moreTypes"', head)
+        self.assertNotIn('id="moreTypesPanel"', head)
+
+    def test_the_settlement_bands_stay_in_the_row_and_the_facets_go_behind_it(self) -> None:
+        # Critique item 3, second half: the group was still `All` plus fourteen
+        # chips at one decision point, well past the four a reader holds at once.
+        # The four settlement bands -- how big a place is -- stay in the chip row
+        # and the thematic facets -- what it has -- are one press away behind the
+        # chip that row ends with. Which type is which is the registry's own
+        # split rather than a list written here: the bands are
+        # DESTINATION_TYPE_FILTERS minus DESTINATION_FACET_SOURCES, which is
+        # exactly how build_render splits them.
+        head = page_markup(self.html)
+        facet_keys = {facet.key for facet in DESTINATION_FACET_SOURCES}
+        carried = {
+            kind
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in self.payload[key]
+            for kind in (row["destinationTypes"] or [row["destinationType"]])
+        }
+        offered = [value for value, _label in DESTINATION_TYPE_FILTERS if value in carried]
+        bands = [value for value in offered if value not in facet_keys]
+        facets = [value for value in offered if value in facet_keys]
+        self.assertTrue(bands and facets, f"the fixture must carry both halves: {offered}")
+        row_start = head.index('id="destinationTypes"')
+        panel_start = head.index('<div class="filter-options" id="moreTypesPanel"')
+        row = head[row_start:panel_start]
+        folded_start = head.index(">", panel_start) + 1
+        folded = head[folded_start:head.index("</div>", folded_start)]
+        chips = lambda text: re.findall(r'name="destinationType" value="([a-z_]+)"', text)
+        self.assertEqual(chips(row), ["all"] + bands)
+        self.assertEqual(chips(folded), facets)
+        # The disclosure is the row's own last chip and says how many kinds are
+        # behind it, and the group it opens arrives closed: a reader who never
+        # presses it is shown the four sizes and told the rest are there.
+        self.assertIn(
+            '<button type="button" class="choice-chip more-types" id="moreTypes"'
+            ' aria-expanded="false" aria-controls="moreTypesPanel">'
+            f'<span>More types</span> <span class="more-types-count">({len(facets)})</span>',
+            row,
+        )
+        self.assertIn('id="moreTypesPanel" role="group" aria-label="More destination types" hidden>', head)
 
     def test_a_type_only_the_singles_carry_still_reaches_the_page(self) -> None:
         # The build narrows chips by the union of the three modes, because it
@@ -894,8 +943,13 @@ class FaresPayloadTest(PageTestCase):
         # the screen: `.choice-chip` is an inline-flex box, and a flex container
         # drops the whitespace-only text between its items. Measured on the
         # Grantham page, the rendered chip read "Small towns(0)".
+        #
+        # The rule carries the facets disclosure's own count as well, which is
+        # why the selector list is allowed a second name here: the separation
+        # this holds is the same one, between a label and the number beside it,
+        # whether that number counts destinations or the kinds behind a press.
         self.assertRegex(
             self.stylesheet,
-            r"\.chipcount \{[^}]*margin-left: [^;}]+;",
+            r"\.chipcount,[^{}]*\{[^}]*margin-left: [^;}]+;",
             "the count is separated from the type name by a margin",
         )

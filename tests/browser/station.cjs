@@ -275,23 +275,52 @@ async function runPage(browser, index, given, file, body, base) {
   // can only ever return nothing reads as a broken control rather than an empty
   // result, so the page does not offer one -- which makes the budget half of the
   // rule, the same half the count beside the chip is counting.
+  // A facet chip is one press away: the ten thematic types live behind the
+  // "More types" chip the settlement bands end their row with (critique item 3,
+  // second half), so a step that presses one presses that disclosure first --
+  // on the control the page offers, the way a reader reaches it, rather than by
+  // un-hiding the group behind it. Nothing happens for a chip already in reach.
+  const revealType = async (chip) => {
+    if (!(await page.locator(chip).count())) return false;
+    const folded = await page.locator(chip).evaluate((el) => {
+      const panel = document.getElementById("moreTypesPanel");
+      return !!panel && panel.hidden && panel.contains(el);
+    });
+    if (!folded) return false;
+    await page.click("#moreTypes");
+    return true;
+  };
   const checkChip = async (type, offered, matched) => {
     const expected = await expectedFor(type);
     const chip = `input[name="destinationType"][value="${type}"]`;
+    // The page's own offer, read off the label the page hides rather than off
+    // the screen: a chip behind the fold is off screen whether or not the page
+    // offers it, so visibility alone cannot tell those two apart.
+    const onOffer = (await page.locator(chip).count())
+      ? await page.locator(chip).evaluate((el) => !el.closest("label").hidden)
+      : false;
     if (!expected.rows.length) {
       check(
         offered,
-        !(await page.locator(chip).isVisible()),
+        !onOffer,
         `${type} chip ${expected.carried ? "carried only above this budget" : "carried by nothing"} in this mode`
       );
       return expected;
     }
-    if (!(await page.locator(chip).isVisible())) {
+    if (!onOffer) {
       check(
         offered,
         false,
         `${type} chip hidden although ${expected.rows.length} destinations inside the budget carry it`
       );
+      return expected;
+    }
+    // Offered, so it has to be reachable: for a facet that is one press, and a
+    // chip the page offers and a press does not reach is the same broken
+    // control as a chip that was never offered.
+    await revealType(chip);
+    if (!(await page.locator(chip).isVisible())) {
+      check(offered, false, `${type} chip is offered but not on screen, disclosure and all`);
       return expected;
     }
     await page.check(chip);
@@ -378,6 +407,7 @@ async function runPage(browser, index, given, file, body, base) {
     installReader,
     rows,
     checkChip,
+    revealType,
     budgetFor,
     kind,
     context,

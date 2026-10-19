@@ -9,7 +9,7 @@
  */
 const { daysSince, notExercised } = require("./harness.cjs");
 async function checkTheFareDetails(world) {
-  const { page, check, notExercised, open, facts, pair } = world;
+  const { page, check, notExercised, open, facts, pair, revealType } = world;
     // 7. At a phone width the ticket action is on-screen, without horizontal
     // scroll (ADR-0019's blocker). Measured, not assumed.
     await page.setViewportSize({ width: 390, height: 720 });
@@ -270,12 +270,19 @@ async function checkTheFareDetails(world) {
     // is an inline-flex box and a flex container drops the whitespace-only
     // text between its items, so the rendered chip read "Small towns(0)".
     const chipGap = await page.evaluate(() => {
-      // The first chip that is on screen: a chip the budget cannot reach is
-      // hidden now (filters.js), and a hidden label has no box for a gap to be
-      // measured across, so reading the first one in the DOM read "Cities(0)"
-      // at zero gap on the prices-only page (criteria item 3, 15 October 2026).
-      const count = Array.from(document.querySelectorAll(".choice-chip .chipcount"))
-        .find((node) => !node.closest("label").hidden);
+      // The first chip with a box to measure across: a chip the budget cannot
+      // reach has no box now (filters.js), and neither has one behind the
+      // "More types" fold until it is pressed, so the fold is pressed the way a
+      // reader presses it. Reading the first one in the DOM read "Cities(0)" at
+      // zero gap on the prices-only page (criteria item 3, 15 October 2026).
+      const measure = () => Array.from(document.querySelectorAll(".choice-chip .chipcount"))
+        .find((node) => !node.closest("label").hidden && node.getBoundingClientRect().width > 0);
+      let count = measure();
+      if (!count) {
+        const more = document.getElementById("moreTypes");
+        if (more && !more.hidden && more.getAttribute("aria-expanded") !== "true") more.click();
+        count = measure();
+      }
       const name = count ? count.previousElementSibling : null;
       if (!count || !name) return null;
       return {
@@ -378,6 +385,10 @@ async function checkTheFareDetails(world) {
       check("the address carries the party", notExercised("this page has no party price a pair could be shown"));
     }
     if (aChip) {
+      // A facet chip is one press away, so the disclosure is pressed first, as
+      // a reader reaches it: the address then carries a chip a reader could have
+      // chosen rather than one the suite reached past the fold for.
+      await revealType(`input[name="destinationType"][value="${aChip}"]`);
       await page.check(`input[name="destinationType"][value="${aChip}"]`);
       check("the address carries the destination type", new RegExp("[?&]types=" + aChip + "(&|$)").test(await address()), await address());
     } else {
@@ -1347,12 +1358,15 @@ function saysMoreThan(condition, code) {
       facets.length > 0 && facets.every((facet) => facet.shown === `(${facet.count})`),
       JSON.stringify(facets)
     );
+    // Two numbers wear the same dress here, so the line has to say which is
+    // which: a chip's count is destinations, the disclosure's is kinds. Audit
+    // item 18, 14 October 2026 kept the line on the useful half of the old
+    // sentence, and this half is what tells the pair apart.
+    const typeRule = (await page.textContent("#typeRule")) || "";
     check(
-      "the chips say what the count beside each one is",
-      // Audit item 18, 14 October 2026: the line stands on the useful half.
-      // The plural-selection sentence described a state a reader holding one
-      // chip is not in, and the list itself shows what two chips mean.
-      /inside the budget now/.test((await page.textContent("#typeRule")) || "")
+      "the chips say what each count beside them is",
+      /inside the budget now/.test(typeRule) && /how many kinds are behind it/.test(typeRule),
+      typeRule
     );
     const cleared = await page.evaluate(() => {
       const all = document.querySelector('input[name="destinationType"][value="all"]');

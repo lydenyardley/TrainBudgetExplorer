@@ -94,6 +94,23 @@
   .choice-chip span { pointer-events: none; }
   .choice-chip input { position: absolute; opacity: 0; }
   .choice-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Critique item 3, second half: the ten thematic facets are one press away,
+     behind a disclosure that wears the chip's own dress because it sits in the
+     chip row as that row's last chip -- which is how a reader looking at the
+     four settlement sizes finds the other ten. A button brings a font of its
+     own, which no chip beside it has, so the line below hands the row's font
+     back. The open state is the accent border the selected chips already wear,
+     plus the chevron turned over, which is the same "this opened" the
+     refinements toggle gives one row up. */
+  button.choice-chip { font-family: inherit; }
+  .more-types[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+  .more-types .chevron { width: .8em; height: .8em; margin-left: .35rem; }
+  .more-types[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+  /* The facets are more of the same chips rather than a group of their own, so
+     the row they land in sits one chip-gap under the row that opened it: the
+     same rhythm as the chips beside each other, and no second heading a reader
+     has to be told the row above is not. */
+  #moreTypesPanel { margin-top: .45rem; }
   input[type=range] { width: 100%; accent-color: var(--accent); height: 2.75rem; margin: 0; }
   .filter-bar input[type=checkbox] { accent-color: var(--accent); }
   .railcard-choice { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; }
@@ -275,8 +292,11 @@
   .site-proof a { color: inherit; text-underline-offset: .15em; }
   .site-proof a:hover, .site-proof a:focus-visible { color: var(--accent); }
   /* A chip's count is part of its label, so it sits inside the chip and is
-     never the only thing carrying the type's name. */
-  .chipcount { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em;
+     never the only thing carrying the type's name. The disclosure's own count
+     shares the rule and not the class: it is the number of kinds behind the
+     press, where a chipcount is the number of destinations a chip would show,
+     and the two must not be read as the same number. */
+  .chipcount, .more-types-count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8em;
                margin-left: .35rem; }
   #typeRule { display: block; margin: .35rem 0 0; }
   #clearTypes { margin-top: .35rem; }

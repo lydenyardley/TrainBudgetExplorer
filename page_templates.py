@@ -233,7 +233,14 @@ __THEME_TOGGLE__
   <fieldset class="destination-filter">
     <legend>Destination type</legend>
     <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
-  <span class="tag" id="typeRule">Each count is how many destinations of that type are inside the budget now.</span>
+    <!-- Critique item 3, second half: the four settlement bands stay in the row
+         above and the ten thematic facets arrive here, behind the "More types"
+         chip that row ends with. The build writes both, and writes nothing at
+         all here on a page whose destinations carry no facet: a disclosure that
+         opens onto nothing is the dead end the chips beside it are already
+         refused for. -->
+    __DESTINATION_FACET_FILTERS__
+  <span class="tag" id="typeRule">Each count is how many destinations of that type are inside the budget now. The number on More types is how many kinds are behind it.</span>
   <p id="facetNotice" class="tag" role="status" hidden></p>
   <button id="clearTypes" class="toggle" type="button" hidden>Show all destination types</button>
   </fieldset>

@@ -10,7 +10,7 @@
  */
 const { notExercised } = require("./harness.cjs");
 async function driveTheFilters(world) {
-  const { page, url, check, notExercised, open, installReader, rows, facts, checkChip, budgetFor, initial } = world;
+  const { page, url, check, notExercised, open, installReader, rows, facts, checkChip, budgetFor, initial, revealType } = world;
     // 2. Dragging the budget slider to the floor empties the list. It starts
     // from a budget that reaches every row the page has: a station whose own
     // cheapest fare is a pound has nothing left to drop from that budget, and
@@ -233,6 +233,130 @@ async function driveTheFilters(world) {
           .every((type) => carriedTypes.offered.includes(type)),
       `offered ${carriedTypes.offered.join(", ")}; reachable ${carriedTypes.affordable.join(", ")}; carried ${carriedTypes.carried.join(", ")}`
     );
+    // Critique item 3, second half: the four settlement bands and All stay in
+    // the row, and the thematic facets are one press away behind the chip that
+    // row ends with. Which chip belongs to which half is the build's split, and
+    // that is held in tests/test_build_fares.py against the registry; what is
+    // read here is the behaviour a reader meets -- where the disclosure sits,
+    // what it says, and what the press does. Read on the page rather than
+    // named here, so a page whose list carries no facet is asked for nothing.
+    const readArrangement = () => page.evaluate(() => {
+      const row = document.getElementById("destinationTypes");
+      const panel = document.getElementById("moreTypesPanel");
+      const toggle = document.getElementById("moreTypes");
+      const inPanel = panel ? Array.from(panel.querySelectorAll("label.choice-chip")) : [];
+      const inRow = Array.from(row.querySelectorAll("label.choice-chip"));
+      return {
+        exists: !!panel && !!toggle,
+        rowChips: inRow.length,
+        panelChips: inPanel.length,
+        offered: inPanel.filter((label) => !label.hidden).length,
+        // A hidden panel is a claim about the attribute; this is the claim about
+        // the pixels, so a stylesheet that stopped hiding it fails here too.
+        onScreen: inPanel.filter((label) => label.getBoundingClientRect().height > 0).length,
+        rowOffered: inRow.filter((label) => !label.hidden).length,
+        lastInRow: !!toggle && row.lastElementChild === toggle,
+        expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
+        controls: toggle ? toggle.getAttribute("aria-controls") : "",
+        panelId: panel ? panel.id : "",
+        hidden: panel ? panel.hidden : null,
+        toggleHidden: toggle ? toggle.hidden : null,
+        count: toggle ? (toggle.querySelector(".more-types-count") || {}).textContent : "",
+      };
+    });
+    // The page is opened again first: the fold is the reader's, so it stays
+    // where an earlier chip check left it, and "arrives folded" is a claim
+    // about a page nobody has pressed anything on yet.
+    await open(facts.affordable);
+    let arrangement = await readArrangement();
+    if (arrangement.exists && arrangement.offered === 0) {
+      // The opening budget reaches no facet, so the page offers no disclosure
+      // to press. The budget goes to this mode's ceiling, the way the chip
+      // checks above raise it, and the page is handed back afterwards: a page
+      // with a facet somewhere inside it is the page this is about.
+      await page.evaluate(() => { setBudget(budgetCeiling()); STATE.page = 1; render(); });
+      arrangement = await readArrangement();
+    }
+    if (arrangement.exists && arrangement.offered > 0) {
+      check(
+        "the facets arrive folded, behind the last chip in the row of sizes",
+        arrangement.lastInRow &&
+          arrangement.panelChips > 0 &&
+          arrangement.rowChips > 0 &&
+          arrangement.hidden === true &&
+          arrangement.expanded === "false" &&
+          arrangement.onScreen === 0,
+        JSON.stringify(arrangement)
+      );
+      check(
+        "and the facet disclosure says how many it holds",
+        arrangement.count === `(${arrangement.offered})` &&
+          arrangement.controls === arrangement.panelId,
+        JSON.stringify(arrangement)
+      );
+      await page.click("#moreTypes");
+      const revealed = await page.evaluate(() => {
+        const panel = document.getElementById("moreTypesPanel");
+        const row = document.getElementById("destinationTypes");
+        const offered = (root) => Array.from(root.querySelectorAll("label.choice-chip"))
+          .filter((label) => !label.hidden);
+        return {
+          hidden: panel.hidden,
+          expanded: document.getElementById("moreTypes").getAttribute("aria-expanded"),
+          onScreen: offered(panel).filter((label) => label.getBoundingClientRect().height > 0).length,
+          offered: offered(panel).length,
+          rowOnScreen: offered(row).filter((label) => label.getBoundingClientRect().height > 0).length,
+        };
+      });
+      check(
+        "one press offers them, and the row above does not move",
+        revealed.hidden === false &&
+          revealed.expanded === "true" &&
+          revealed.offered > 0 &&
+          revealed.onScreen === revealed.offered &&
+          revealed.rowOnScreen === arrangement.rowOffered,
+        JSON.stringify({ arrangement, revealed })
+      );
+      await page.click("#moreTypes");
+      const refolded = await readArrangement();
+      check(
+        "and a second press folds them away again",
+        refolded.hidden === true && refolded.expanded === "false",
+        JSON.stringify(refolded)
+      );
+      // S20's rule, one control up: the disclosure is offered on the chips
+      // behind it, so a budget that reaches no facet takes the disclosure with
+      // the chips -- a press into an empty row is the dead end the chips
+      // themselves are already refused for. Both directions, because a
+      // disclosure that never comes back is a filter the reader cannot reach.
+      await page.evaluate(() => { setBudget(Number(document.getElementById("budget").min)); render(); });
+      const flooredOut = await readArrangement();
+      await page.evaluate(() => { setBudget(budgetCeiling()); render(); });
+      const raisedBack = await readArrangement();
+      check(
+        "a budget that reaches no facet takes the disclosure with it, and gives it back",
+        flooredOut.offered === 0 && flooredOut.toggleHidden === true &&
+          // The panel is shut behind the vanished control rather than left open
+          // over no chips, and its number is the zero that took it away.
+          flooredOut.hidden === true && flooredOut.expanded === "false" &&
+          flooredOut.count === "(0)" &&
+          raisedBack.offered > 0 && raisedBack.toggleHidden === false,
+        JSON.stringify({ flooredOut, raisedBack })
+      );
+      await open(facts.affordable);
+    } else {
+      check(
+        "the facets arrive folded, behind the last chip in the row of sizes",
+        notExercised("this page's list carries no thematic facet for any budget in this mode")
+      );
+      check("and the facet disclosure says how many it holds", notExercised("see above"));
+      check("one press offers them, and the row above does not move", notExercised("see above"));
+      check("and a second press folds them away again", notExercised("see above"));
+      check(
+        "a budget that reaches no facet takes the disclosure with it, and gives it back",
+        notExercised("see above")
+      );
+    }
     await page.locator('.ticket-filter label').filter({ hasText: "Single" }).click();
     // An advance single is train-specific whatever the feed calls it, so the
     // flag is asserted against the rows the payload says are advance singles in
@@ -404,7 +528,7 @@ async function driveTheFilters(world) {
         // whose every destination carries no type at all offers no chip, and
         // then the check reports that there was nothing to press rather than
         // failing.
-        const boxes = Array.from(document.querySelectorAll('#destinationTypes input[type="checkbox"]'));
+        const boxes = Array.from(document.querySelectorAll('.destination-filter input[type="checkbox"]'));
         const chipsWithRows = () => boxes.filter((box) => {
           const count = document.querySelector(`[data-count-for="${box.value}"]`);
           return count && Number(count.textContent.replace(/\D/g, "")) > 0;
@@ -418,6 +542,12 @@ async function driveTheFilters(world) {
         const input = withRows[0] || boxes[0] || null;
         if (!input) return { pressed: false, rows: 0, label: "", name: "", noneLeft: true };
         const name = input.parentElement.querySelector("span").textContent.trim();
+        // A chip behind the "More types" fold is pressed after the press that
+        // offers it, the way a reader reaches it: this check is about a
+        // refinement made inside the disclosure, and reaching past a fold
+        // nobody opened would be a state no reader is in.
+        const panel = document.getElementById("moreTypesPanel");
+        if (panel && panel.hidden && panel.contains(input)) document.getElementById("moreTypes").click();
         const before = document.querySelectorAll("#rows tr").length;
         input.click();
         return {
@@ -459,7 +589,7 @@ async function driveTheFilters(world) {
       // the checks below exercise every control, which on a phone means
       // opening the disclosure each time, and that is what section 7a is for.
       await page.evaluate(() => {
-        for (const input of document.querySelectorAll('#destinationTypes input[type="checkbox"]')) {
+        for (const input of document.querySelectorAll('.destination-filter input[type="checkbox"]')) {
           if (input.checked) input.click();
         }
       });
@@ -531,8 +661,11 @@ async function driveTheFilters(world) {
         `${budgetBefore} -> ${budgetAfter}`
       );
       // All is the unfiltered state and stays offered in every mode; what an
-      // empty mode must not offer is a type that nothing in it carries.
-      const chipLabels = await page.locator("#destinationTypes label").evaluateAll((labels) =>
+      // empty mode must not offer is a type that nothing in it carries. Both
+      // chip rows are read, because the facets are behind the disclosure now: a
+      // chip the empty mode has taken away is hidden wherever it sits, and the
+      // disclosure that holds it is in the read too.
+      const chipLabels = await page.locator(".destination-filter label").evaluateAll((labels) =>
         labels
           .filter((label) => !label.hidden)
           .map((label) => label.querySelector("input"))
@@ -590,6 +723,9 @@ async function driveTheFilters(world) {
     // is worked out from the data rather than by adding the two counts.
     const pair = carriedTypes.offered.slice(0, 2);
     if (pair.length === 2) {
+      // A facet in the pair is one press away, so the press that reaches it is
+      // the disclosure's, exactly as a reader makes it.
+      for (const type of pair) await revealType(`input[name="destinationType"][value="${type}"]`);
       await page.check(`input[name="destinationType"][value="${pair[0]}"]`);
       await page.check(`input[name="destinationType"][value="${pair[1]}"]`);
       const unionRows = await rows();
