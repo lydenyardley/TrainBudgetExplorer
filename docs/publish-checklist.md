@@ -13,7 +13,7 @@ answer, and "I think that's fine" is not an answer.
 the deploy workflow refuses to publish anything it does not clear. Run
 
 ```
-python -m tools.check_release_clearance --release fares
+python -m tools.check_release_clearance --release fares,timetable
 ```
 
 to see where the project stands today. The shape the workflow publishes is

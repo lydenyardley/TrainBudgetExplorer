@@ -597,6 +597,34 @@ timed from rather than the DTD one beside it. What is left is measurement rather
 than code: the first real run is the whole-network build in the release's own
 shape that the P1 byte-budget finding above asks for.
 
+**The first real run of that wiring is still owed, and on 19 October 2026 the
+reason it had not happened was a repository setting.** A push run stopped at the
+download's own gate, which refuses a run whose `SCHEDULE_URL` is empty rather
+than publishing prices under a shape the workflow no longer builds — the gate
+behaving exactly as the paragraph above says it should. That run carried the DTD
+credential and not the CIF one, and its message had lost the flag it names to a
+backtick, which bash ran as a command and printed nothing in place of; the words
+now say what they were written to say, and `tests/test_workflows.py` holds every
+line of shell in a `run:` block to carrying no backtick at all. Setting
+`SCHEDULE_URL` — and `SCHEDULE_USERNAME`/`SCHEDULE_PASSWORD` if the address wants
+them — is a settings-page action, and `docs/github-pages-deployment.md` is the
+route; publishing prices only instead is a licensed shape too, at the cost of the
+two-place edit that document names. That runbook was still describing the
+prices-only release the workflow stopped building on 16 October 2026 — five
+sentences of it, including the manifest check's own rule backwards — and they are
+corrected by the commit that carries this note.
+
+`docs/publish-checklist.md`'s licence section carries the same stale shape in
+three places: the DTD terms paragraph's "how a prices-only page meets them" and
+"that is why the release is prices-only", the Darwin bullet's "the published
+pages carry prices only", and the Darwin-consistency bullet's "on a prices-only
+page". `docs/dtd-licensing-and-data-access.md` carries it in three more, each an
+assertion about this release rather than about a hypothetical page: "which is why
+the release is prices-only", "the release this project ships is prices-only", and
+"what the prices-only release does today". Each is a licence reading the owner
+holds rather than a sentence a fact settles, so what is owed there is a
+re-reading, not a rewrite by whoever notices.
+
 ### `docs/build-performance-findings.md` is a rule with no enforcer
 
 `AGENTS.md` used to carry "Measured figures live in one place" in its rule table,
@@ -761,8 +789,8 @@ Five comments were seen and deliberately kept, each for the same shape of reason
 ## What is waiting on a person
 
 Everything else in this file is work. These are decisions, and each one changes
-what gets built, so each is written as the choice it is. None of them is blocked
-on a tool.
+what gets built or published, so each is written as the choice it is. None of them
+is blocked on a tool.
 
 1. **Where would a "find my station" answer come from, if anywhere?** C27 and S08.
    A traveller who knows their town but not the station's name or three-letter
@@ -794,6 +822,13 @@ on a tool.
    2026**: is there community traction, and is the thing worth keeping. S44 is the
    argument about what to measure before that date, and it is measured at the
    community posts rather than on the page. Nothing is built for this.
+7. **Does this repository publish times?** The release declares
+   `fares,timetable`, and the gate that stopped the push run of 19 October 2026
+   wants the `SCHEDULE_URL` variable set — a settings page, with the two secrets
+   beside it, both written out in `docs/github-pages-deployment.md`; or publishing
+   prices alone, and the trade is in "The journey times are dropped from the
+   release, and the source that brings them back" above. Nothing is left to build
+   either way.
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
 is one of a collection with none selected by default (ADR-0052), the runner

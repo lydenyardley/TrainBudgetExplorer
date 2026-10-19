@@ -164,7 +164,7 @@ jobs:
           SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL, plus SCHEDULE_USERNAME and SCHEDULE_PASSWORD if the address wants a credential, in the repository settings; or point the build at no timetable and declare `--release fares` again."
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL, plus SCHEDULE_USERNAME and SCHEDULE_PASSWORD if the address wants a credential, in the repository settings; or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
             exit 1
           fi
           python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
@@ -780,7 +780,7 @@ jobs:
           PY
           ) || { echo "::error title=journeys::the journey check could not run, so this build's shape is unverified"; exit 1; }
           if [ -n "$JOURNEYS" ]; then
-            echo "::error title=journeys::these station pages carry no journey times, so this build published prices under a workflow that declares the timetable: $JOURNEYS. The release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073); load the timetable in the build above, or declare `--release fares` again and build without it."
+            echo "::error title=journeys::these station pages carry no journey times, so this build published prices under a workflow that declares the timetable: $JOURNEYS. The release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073); load the timetable in the build above, or declare --release fares again and build without it."
             exit 1
           fi
           echo "every station page carries journey times, as the fares-and-timetable release declares"
