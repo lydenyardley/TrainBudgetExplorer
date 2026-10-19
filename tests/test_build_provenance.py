@@ -171,6 +171,16 @@ class ProvenanceTest(PageTestCase):
         quiet = build_demo_page.render_privacy("note", "/base", "a@b.test", plain)
         self.assertIn("No analytics run", quiet)
         self.assertNotIn("__PRACTICES__", quiet)
+        # C19 of the 17 October 2026 critique: the back link and the theme
+        # switch are one row of chrome above the document, so the reading order
+        # under it is the title.
+        self.assertIn('<div class="route-top">', quiet)
+        self.assertLess(quiet.index('class="route-top"'), quiet.index('id="themeToggle"'))
+        self.assertLess(quiet.index('id="themeToggle"'), quiet.index("<main>"))
+        # D13 of the same critique: the address section names its parameters in
+        # one line of short names rather than listing them in a sentence.
+        self.assertIn("<code>budget</code>, <code>mode</code>", quiet)
+        self.assertNotIn("whether the budget covers one adult or two", quiet)
         # One sentence per bullet, pointing at its own section rather than
         # restating it (audit item 17, 9 October 2026): the paragraph and the
         # two bullets below that list entry make the same point with room to
@@ -199,7 +209,12 @@ class ProvenanceTest(PageTestCase):
         dated = build_demo_page.render_privacy(
             "note", "", "a@b.test", plain, built_at="2026-10-11T09:15:00Z"
         )
-        self.assertIn("This notice describes the build dated 11 October 2026.", dated)
+        # C20/D14 of the 17 October 2026 critique: the line is a fact about the
+        # notice, not a sentence addressed to a maintainer.
+        self.assertIn("Last updated 11 October 2026.", dated)
+        # C17/D12: the third bullet was the union of the cookie and analytics
+        # sentences, so it is gone rather than restated.
+        self.assertNotIn("does not collect visit data", quiet)
         # And it dates the build rather than claiming a publication: a build
         # nobody deployed is not published, and the phrase is false of every
         # build that never reached the deploy job (clarity audit item 42).
@@ -211,7 +226,7 @@ class ProvenanceTest(PageTestCase):
             "a dated notice nobody can read is not a dated notice",
         )
         self.assertNotIn("__BUILT_LINE__", dated)
-        self.assertNotIn("build dated", quiet, "an undated build says so by omitting the line")
+        self.assertNotIn("Last updated", quiet, "an undated build says so by omitting the line")
         self.assertIn("injects an analytics snippet", build_demo_page.render_privacy("note", "", "a@b.test", measured))
         self.assertIn(
             "affiliate network",

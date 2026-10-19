@@ -471,13 +471,17 @@ def render_privacy(
             if features.get("analytics")
             else "No analytics run. If analytics are ever added to this site, this page will name them here first."
         ),
-        (
+    ]
+    # C17/D12 of the 17 October 2026 critique: the list used to end with "This
+    # site does not collect visit data", which was the union of the cookie and
+    # analytics sentences already above it and added nothing a reader could act
+    # on. A build that does track a click still says so, because that is a
+    # third practice rather than a restatement.
+    if features.get("trackedLinks"):
+        practices.append(
             "Ticket buttons carry a tracked link, so the seller is told which page sent "
             "the reader. The fare pages say so in their footer."
-            if features.get("trackedLinks")
-            else "This site does not collect visit data."
-        ),
-    ]
+        )
     if features.get("affiliate"):
         practices.append(
             "Ticket buttons pass through the " + features["affiliate"] +
@@ -491,8 +495,11 @@ def render_privacy(
     # the ones a run reached the deploy job with (clarity audit item 42,
     # answered 16 October 2026). The date is what the sentence needs, and the
     # date is true either way.
+    # C20/D14 of the 17 October 2026 critique: "This notice describes the build
+    # dated ..." is a sentence for a maintainer. A reader of a static notice
+    # wants to know when the notice last changed, which is the same date.
     built_line = (
-        '<p class="muted" id="builtLine">This notice describes the build dated '
+        '<p class="muted" id="builtLine">Last updated '
         + html.escape(human_date(built_at[:10]))
         + ".</p>"
         if built_at

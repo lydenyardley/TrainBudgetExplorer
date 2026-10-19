@@ -5,5 +5,10 @@
      as a marketing hero and competes with the document's own title. The same
      argument is why the chooser no longer carries one. */
   :root { --h1: 2rem; --page-max: 42rem; }
+  /* C19: the back link and the theme switch are one row of chrome above the
+     document, not two lines the title has to follow. */
+  .route-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .route-top .back-link { margin-bottom: 0; }
+  .route-top #themeToggle { margin: 0; }
   h1 { margin: 0 0 1rem; }
   h2 { font-size: 1.15rem; }

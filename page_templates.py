@@ -105,8 +105,14 @@ __SHARED_CSS__
 </head>
 <body data-synthetic="__SYNTHETIC__">
 __SYNTHETIC_BANNER__
+<!-- C19 of the 17 October 2026 critique: the back link, then the theme switch,
+     then the title was a reading order that made the switch look like the
+     document's second line. The two pieces of chrome share a row above the
+     content now, so what follows is the title. -->
+<div class="route-top">
 <nav class="back-link"><a href="__BASE__/">Back to the station list</a></nav>
 __THEME_TOGGLE__
+</div>
 <main>
 <h1>Privacy</h1>
 <p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
@@ -115,7 +121,7 @@ __BUILT_LINE__
 <ul>
 __PRACTICES__</ul>
 <h2>What stays in the address bar</h2>
-<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. That search &mdash; the budget, the ticket type, whether the budget covers one adult or two, which railcard you chose, the day the times are for, the destination types you selected, and any places you shortlisted &mdash; is written into the page's own address as short query parameters. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
+<p>A fare page keeps your search in the web address, so that a refresh, the Back button, or a link you share all return the same results. The search is the parameters <code>budget</code>, <code>mode</code>, <code>party</code>, <code>card</code>, <code>types</code>, <code>page</code>, <code>short</code> and <code>day</code>. It is never sent to this site, because this site has no server to receive it. It does leave your device in two ways that are worth naming plainly:</p>
 <ul>
 <li>the host serving these static files sees the full address, including that search, in its ordinary request logs; and</li>
 <li>if you share or bookmark such an address, the whole search travels with it, so a link you hand to somebody carries your budget, any railcard you chose and the places you shortlisted to whoever opens it.</li>
