@@ -1092,10 +1092,119 @@ async function driveTheFilters(world) {
         still.status === paging.status && still.first === paging.first,
         JSON.stringify({ paging, after: still })
       );
+      // The shape that reaches this branch is the one no fixture prices, so
+      // there is nothing here to temper with a check: the key that is not
+      // promised is the key the check above proved inert. The pager itself is
+      // exercised on the fixture built for it, which is the demo feed.
+    }
+    // The tab order a keyboard reader walks, on the controls the fold added:
+    // the disclosure is a stop, a folded chip is not, and pressing it decides
+    // which. Read by pressing Tab from the top of the document, the way a
+    // keyboard reader moves, rather than by asking the DOM what it thinks its
+    // order is.
+    await open();
+    // The readers below are installed after the load: open() navigates, and a
+    // navigation drops everything the page had on window.
+    await open();
+    await page.evaluate(() => {
+      window.__entry = (el) => {
+        if (!el || el === document.body) return "body";
+        if (el.id) return el.id;
+        if (el.name === "destinationType") {
+          // A radio group is one stop in a browser, so the group is named after
+          // its one reachable control rather than four times.
+          const group = el.closest("#destinationTypes");
+          if (group && el.type === "radio") return "destinationTypes";
+          return "chip:" + el.value;
+        }
+        if (el.name) return el.name + ":" + el.value;
+        return el.tagName.toLowerCase() + ":" + (el.textContent || "").trim().slice(0, 20);
+      };
+      const toggle = document.getElementById("moreTypes");
+      const panel = document.getElementById("moreTypesPanel");
+      window.__foldedFacets = panel
+        ? Array.from(panel.querySelectorAll('input[name="destinationType"]'))
+            .filter((input) => !input.closest("label").hidden)
+            .map((input) => "chip:" + input.value)
+        : [];
+      window.__facetState = () => ({
+        offered: !!toggle && !toggle.hidden,
+        folded: !!panel && panel.hidden,
+        expanded: toggle ? toggle.getAttribute("aria-expanded") : null,
+      });
+    });
+    // Twelve Tabs from the top of a freshly loaded page reaches the row: the
+    // heading's budget controls, the change control, the refinements toggle and
+    // its own controls come first. The walk stops at the table.
+    const walk = async () => {
+      const steps = [];
+      for (let step = 0; step < 20; step += 1) {
+        await page.keyboard.press("Tab");
+        const entry = await page.evaluate(() => window.__entry(document.activeElement));
+        if (entry === "body") break;
+        steps.push(entry);
+      }
+      return steps;
+    };
+    const focusEntry = (entry) => page.evaluate((label) => {
+      const el = label.startsWith("chip:")
+        ? document.querySelector(`input[name="destinationType"][value="${label.slice(5)}"]`)
+        : document.getElementById(label);
+      if (!el) return false;
+      el.focus();
+      return window.__entry(document.activeElement) === label;
+    }, entry);
+    const nextStop = async () => {
+      await page.keyboard.press("Tab");
+      return page.evaluate(() => window.__entry(document.activeElement));
+    };
+    const facet = await page.evaluate(() => window.__facetState());
+    if (facet.offered) {
+      const folded = await walk();
+      const at = folded.indexOf("moreTypes");
+      const facetValues = await page.evaluate(() => window.__foldedFacets);
+      // What follows the disclosure with the facets folded, for the comparison
+      // below: the fold must not change it.
+      const afterFolded = folded[at + 1];
       check(
-        "n and p turn the page when the pager is on screen",
-        notExercised("every page this fixture builds fits one page of rows, so there is no second page for the keys to reach")
+        "the facet disclosure is a stop at the end of the chip row, and a folded chip is not",
+        facet.folded && at !== -1 &&
+          folded[at - 1] && folded[at - 1].startsWith("chip:") &&
+          // Nothing behind the fold is reached, and nothing after the
+          // disclosure is a chip: the row ends where the disclosure says.
+          folded.slice(at + 1).every((entry) => !entry.startsWith("chip:")) &&
+          facetValues.length > 0 &&
+          !folded.some((entry) => facetValues.includes(entry)),
+        JSON.stringify({ folded, facet, facetValues })
       );
+      const opened = await page.evaluate(() => {
+        document.getElementById("moreTypes").click();
+        return window.__facetState();
+      });
+      await focusEntry("moreTypes");
+      const firstOpen = await nextStop();
+      check(
+        "pressing the disclosure puts its chips next in the tab order",
+        opened.expanded === "true" && facetValues.includes(firstOpen) &&
+          firstOpen !== afterFolded,
+        JSON.stringify({ opened, firstOpen, afterFolded, facetValues })
+      );
+      await focusEntry("moreTypes");
+      const closed = await page.evaluate(() => {
+        document.getElementById("moreTypes").click();
+        return window.__facetState();
+      });
+      const firstClosed = await nextStop();
+      check(
+        "and closing it again takes them out, leaving the stop that follows it unchanged",
+        closed.expanded === "false" && closed.folded &&
+          firstClosed === afterFolded && !firstClosed.startsWith("chip:"),
+        JSON.stringify({ closed, firstClosed, afterFolded })
+      );
+    } else {
+      check("the facet disclosure is a stop at the end of the chip row, and a folded chip is not", notExercised("this page offers no facet disclosure"));
+      check("pressing the disclosure puts its chips next in the tab order", notExercised("see above"));
+      check("and closing it again takes them out, leaving the stop that follows it unchanged", notExercised("see above"));
     }
     await open();
 }

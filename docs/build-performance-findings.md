@@ -766,6 +766,31 @@ one on the chooser, one on every station page -- and the four it renamed (the
 chip rule, the pager, the shortlist announcement and the no-service row) ran
 under their new names.
 
+Measured 19 October 2026, after the thematic facets moved behind the chip row's
+disclosure, the tab order through that fold became a check of its own, and the
+demo feed gained `--long-list`: **937 checks passed of 937, none failed, 26
+skipped (2.8%), exit 0** -- demo station 291/291 (3 skipped), chooser 77/77
+(1), privacy 33/33, one-page station 285/285 (6), prices-only 251/251 (16).
+Three things moved the count. The tab order is walked on every station page: the
+disclosure is a stop with the facets folded, a folded chip is not, and pressing
+it is what puts the first chip next. A page whose script does not arrive is now
+asked the same question on every route that fetches one, because a fold the
+script owns must arrive closed and out of the tab order, which is what "no worse
+off without the script" means measured rather than argued. And the paging checks
+are no longer skipped: `--long-list` prices Grantham to twenty-two destinations,
+so the pager has a second page and `n`/`p` are read turning it, which needed the
+block to raise the budget to every row first -- the opening budget is this
+mode's cheapest price, so it left even a two-page list one page long. The one
+check removed is the not-exercised stand-in for a page whose list fits one page:
+the branch that reads "one page" now has no fixture behind it, and what it would
+have said is the check above it, that the unpromised key leaves the list where
+it is.
+
+The fixture's own cost is 14 records: `--long-list` is off by default, because
+every parser test counts records in the base feed, and only the demo feed the
+browser suite drives passes it (`tools/verify.py` and the deploy workflow's
+browser job).
+
 ## The verify suite's own runtime, measured
 
 The figures in `AGENTS.md` and `README.md` said `--fast` was "about three

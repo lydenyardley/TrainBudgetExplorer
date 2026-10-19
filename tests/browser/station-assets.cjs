@@ -20,6 +20,7 @@ async function checkWithoutTheScript(world) {
   const WITHOUT_SCRIPT = [
     "a page whose script does not arrive says its list needs the code",
     "and the list it would have drawn stays empty",
+    "and the controls that script opens arrive closed and out of the tab order",
   ];
   if (kind === "station" || kind === "chooser" || kind === "release") {
     const asset = kind === "station" ? "**/station-*.js" : "**/chooser-*.js";
@@ -28,11 +29,37 @@ async function checkWithoutTheScript(world) {
       route.fulfill({ status: 404, contentType: "text/plain", body: "no such script" })
     );
     await bare.goto(url);
+    // The two folds the script owns: the refinements panel and the facet chips
+    // behind the chip row's disclosure. A page whose code never ran cannot open
+    // either, and a chip inside a fold nobody can open is a control a keyboard
+    // reader must not be sent into -- which is what "no worse off without the
+    // script" means when it is measured rather than argued.
     const without = await bare.evaluate(() => ({
       note: (document.getElementById("scriptNote") || {}).hidden,
       noteText: ((document.getElementById("scriptNote") || {}).textContent || "").trim(),
       rows: document.querySelectorAll("#rows tr[data-crs], #picks li").length,
+      facetsFolded: (() => {
+        const panel = document.getElementById("moreTypesPanel");
+        return panel ? panel.hidden : null;
+      })(),
+      refinements: (() => {
+        const filters = document.getElementById("moreFilters");
+        return filters ? filters.dataset.open : null;
+      })(),
     }));
+    // The tab order, read by pressing Tab rather than by asking the DOM: a
+    // control inside a closed fold must not be reached at all.
+    const reached = [];
+    for (let step = 0; step < 40; step += 1) {
+      await bare.keyboard.press("Tab");
+      reached.push(await bare.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return "body";
+        return (el.closest("#moreTypesPanel") ? "folded:" : "reachable:") + (el.id || el.name || el.tagName);
+      }));
+      if (reached[reached.length - 1] === "body") break;
+    }
+    without.reached = reached;
     check(
       WITHOUT_SCRIPT[0],
       without.note === false && /did not load/.test(without.noteText),
@@ -42,6 +69,19 @@ async function checkWithoutTheScript(world) {
       WITHOUT_SCRIPT[1],
       without.rows === 0,
       `${without.rows} row(s) listed without the code`
+    );
+    // A route with no fold of its own (the chooser) answers null for both, and
+    // is asked only what every route can answer: no folded control is reached.
+    check(
+      WITHOUT_SCRIPT[2],
+      without.facetsFolded !== false &&
+        (without.refinements === null || without.refinements === "false") &&
+        !without.reached.some((entry) => entry.startsWith("folded:")),
+      JSON.stringify({
+        facetsFolded: without.facetsFolded,
+        refinements: without.refinements,
+        reached: without.reached.filter((entry) => entry.startsWith("folded:")),
+      })
     );
     await bare.close();
   } else {
