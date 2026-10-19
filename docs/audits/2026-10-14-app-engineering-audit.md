@@ -13,7 +13,8 @@ tests, a fresh real-feed single-origin build (`feeds/fares` +
 `feeds/timetable`, notices `nre,rdg,ogl,accuracy`) served at
 `127.0.0.1:8899` and driven in Chromium, `tools/page_bytes.py`, plus the
 measurements below. This pass shares its date with
-[the impeccable critique](2026-10-14-impeccable-critique.md); that document owns
+[the impeccable critique](../settled-work.md#the-14-october-2026-impeccable-critique),
+removed on 19 October 2026 once its last recommendation landed; that document owned
 the UX and copy findings, this one owns structure and cost. Neither repeats the
 other's items.
 

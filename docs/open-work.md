@@ -130,30 +130,6 @@ the half that matters, the cheaper change is a smaller shared asset rather than 
 split payload, and `page/station/*` is already one file per panel, so the split
 is a build decision and not a rewrite.
 
-### The critique's last ask: the chip arrangement
-
-**Severity:** P2. **Route:** the station page.
-**Raised:** the 14 October 2026 critique, recommendation 3's second half. That
-file is `docs/audits/2026-10-14-impeccable-critique.md`, pruned to this one ask.
-Its recommendation 5 — the licence notices on the routes that show no fare — was
-settled on 16 October 2026 by the reading in `licences/release-clearance.md` and
-`tools/check_source_credit.py`, which closed the route audit's items [20] and
-[21] with it. Its recommendation 7 landed on 18 October 2026, a definitions list
-inside the method disclosure held by `tests/browser/station-render.cjs`, and its
-recommendation 8 on 19 October 2026, the budget and paging keys held by
-`tests/browser/station-filters.cjs`. This entry went on listing 7 and 8 as open
-after each landed, and it was corrected against the tree on 19 October 2026
-rather than against its own list.
-
-- **The chip arrangement (3, second half).** The three chips that could only ever
-  select an empty list are no longer offered, so the dead ends are gone; what is
-  left is that `All` plus fourteen chips sit at one decision point. What would
-  close it: the four settlement bands ahead of the ten thematic facets, behind one
-  "More types" disclosure. Four arrangements were mocked up on 19 October 2026 for
-  the reading that choice needs, drawn in the page's own stylesheet; the mockup is
-  a throwaway and is not in the tree, so what would close this is the answer it
-  asks for.
-
 ### The 17 October 2026 review's open asks: the phone's row, the fold, and where the vocabulary is chosen
 
 **Severity:** P1 for the phone's row (C13/D8) and the fold (C3); P2 for most of
@@ -856,16 +832,17 @@ inside the method disclosure, with no gloss where the page meets them.
 
 ## Settled work, and where the record is
 
-The closed record -- every item settled before 18 October 2026, with the ADR and
-the test that hold each one, including the audit-item numbers code comments cite --
-moved to `docs/settled-work.md` on 18 October 2026 (E19 of the 17 October 2026
-poteto audit). This file is what is open, and it stays that way.
+The closed record -- every item settled before 18 October 2026, and everything
+closed since, with the ADR and the test that hold each one, including the
+audit-item numbers code comments cite -- moved to `docs/settled-work.md` on
+18 October 2026 (E19 of the 17 October 2026 poteto audit). This file is what is
+open, and it stays that way.
 
 ---
 
 ## Where this came from
 
-All fifteen files below are gone from the working tree; each was removed by the
+All sixteen files below are gone from the working tree; each was removed by the
 commit named with it, and the findings they held are either fixed or restated
 above. `git show <commit>` reads one back. Most were removed on 14 October 2026,
 in the commit that settled their findings here; the route audit below was removed
@@ -873,14 +850,16 @@ on 16 October 2026, with the reading that closed its last two items. Their
 rejections are under "Rejected designs, with the reason" and their figures are in
 `docs/build-performance-findings.md`.
 
-Two reviews from 14 October are still in `docs/audits/`, each pruned to what it
-still asks for. `2026-10-14-impeccable-critique.md` is recommendations 3's second
-half and 8, which are the entry above; its item 7 is answered by the trade words
-that are now defined once. The app-engineering audit of the same
-date is its recommendation 6, the entry above. The impeccable review of 17 October
-sits beside them as one file, the critique and the distill of that date combined
-on 19 October 2026; it is the entry near the top of this file, and it holds its own
-measurements. The plan filed on 18 October was removed on the day its items
+Two reviews from 14 October used to sit in `docs/audits/`, each pruned to what
+it still asked for. One is left: the app-engineering audit of that date, whose
+recommendation 6 is the entry above. The impeccable critique of the same date
+landed its last recommendation on 19 October 2026 and was removed with it; its
+eight recommendations, the checks that hold them and its detector's one false
+positive are in `docs/settled-work.md`, where the commits that carry them are
+named beside them. The impeccable review of 17 October sits
+beside the audit as one file, the critique and the distill of that date combined
+on 19 October 2026; it is the entry near the top of this file, and it holds its
+own measurements. The plan filed on 18 October was removed on the day its items
 landed. A review with nothing open does not keep a file.
 
 `docs/audits/2026-10-17-poteto-audit.md` and the distill below it were the two
@@ -899,6 +878,12 @@ folded into that date's review.
   on the three routes did not earn its place. Combined on 19 October 2026 into
   that date's review, `docs/audits/2026-10-17-impeccable-review.md`, which is
   where its findings now live under their D numbers. Removed on 19 October 2026.
+- `docs/audits/2026-10-14-impeccable-critique.md` — the design critique of the
+  chooser, the station page and the privacy page. Its eight recommendations are
+  settled in the table above, the last of them on 19 October 2026, and its
+  degraded method and its detector's one false positive are recorded there too.
+  Removed on 19 October 2026, in the commit that moved its findings into
+  `docs/settled-work.md`.
 - `docs/audits/2026-09-27-impeccable-critique.md` — the public route audit.
   Thirty-one findings, thirty closed across five passes, C27 open. Removed in
   `826dfeb`.

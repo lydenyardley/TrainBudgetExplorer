@@ -209,6 +209,34 @@ of rows inside £20.00 on a page carrying 331 of them (53).
 | 42 | the built line promised a publication that had not happened | the line dates the build ("This notice describes the build dated ..."), so it is true of a build nobody deployed and of a deployed one | `build_render.py`; `tests/test_build_provenance.py`, which holds the line to the date and to no claim of publication |
 | 44 | nothing defined the trade vocabulary the page quotes | one glossary inside the method disclosure, written from the route's shared script and not per page, and no gloss where the words are met | `page/station/provenance.js`; the placeholder in `page_templates.py`; `tests/browser/station-render.cjs`, "the trade words the page quotes are defined together, in the method disclosure" |
 
+### The 14 October 2026 impeccable critique
+
+`docs/audits/2026-10-14-impeccable-critique.md` was removed on 19 October 2026,
+when its last recommendation landed. Its eight recommendations are settled here,
+and the commits that carry them are `e20582d` (1, 2, 3's first half, 4 and 6, in
+one pass), `9a204b8` with `b16b95a` (7), `f79c07f` (8) and `dcd2271` (3's second
+half). Recommendation 5 was settled as a reading rather than a change, so it has
+its paper in `licences/release-clearance.md` instead of a commit. The pass was
+run degraded and said so: no sub-agent was exposed to that session, so the design
+review and the detector evidence were not independent, and no screenshot was
+available, so every finding was measured from the live DOM rather than seen. Its
+detector's one finding, `cramped-padding` on `.origin-slot-wrap`, was a false
+positive — that border is the station slot's own dashed underline — and the 9
+October route audit recorded the same finding and the same verdict, so a later
+pass should not re-file it.
+
+| Recommendation | What it asked | What landed | Held by |
+|---|---|---|---|
+| 1 | the chooser printed the download date twice | the provenance is a structured pair — the source names the feed, the date travels beside it, and each route composes one sentence from the two | `tests/test_build_chooser.py`'s entry-provenance test, `build_provenance.dtd_download_entry`, `page/station/provenance.js` |
+| 2 | two counts for one question | the count is the places the page carries, two-ticket rows included: measured on the real feed, Grantham's 50 became 334, and the number a reader arriving from the chooser sees is the page's own set | `tests/test_build_demo_page.py`'s `test_the_page_carries_more_places_than_the_selectors_price`, `tests/test_page_caches.py`'s timetable-key test, `build_demo_page._priced_destinations` |
+| 3 (first half) | three of fourteen chips could not succeed | a chip is offered only when a destination of its type is inside the budget on screen, which is the same rule the count beside it already stated | `tests/browser/station-filters.cjs`'s chip checks, both directions, `page/station/filters.js`'s `syncDestinationTypeChips` |
+| 3 (second half) | the group was `All` plus fourteen chips at one decision point, well past the four a reader holds at once | the four settlement bands stay in the row and the ten thematic facets are one press away, behind the chip that row ends with — the arrangement chosen on 19 October 2026 from four mocked up in the page's own stylesheet, a throwaway that is not in the tree | `tests/test_build_fares.py`'s `test_the_settlement_bands_stay_in_the_row_and_the_facets_go_behind_it`, `tests/browser/station-filters.cjs`'s five disclosure checks, `build_render.destination_type_chip`, `page/station/filters.js`'s `syncDestinationTypeChips` |
+| 4 | the empty state named the budget and not the cause | the count line names the active refinement in the same words the paragraph below the table uses, and the empty state's own "Clear the destination type" is one press away | `tests/browser/station-filters.cjs`, `page/station/table.js`'s `render` |
+| 5 | the routes that show no fares carry no licence notices | settled on 16 October 2026 as a reading, not a change: the credit travels with the page that shows a fare, the chooser's station index and the privacy notice show none, and the alternative reading is named beside it in the record. The build check the same reading asked for landed with it, and it closes route audit items [20] and [21] | the section "Which pages carry the acknowledgement" in `licences/release-clearance.md`, `tools/check_source_credit.py`, `tools/test_check_source_credit.py` |
+| 6 | the smallest type on the page was 11.52px | `.75rem` is the floor for type on this route, and the letter-spacing carries the small-caps effect | `tests/test_page_assets.py`, `page/station.css` |
+| 7 | the fare vocabulary had no home | the words the route quotes are defined once, in a definitions list inside the method disclosure, immediately below the provenance line — which is the "block beside the provenance" this recommendation offered as its first option, drawn as the second (clarity audit item 44 chose the same answer from the other end) | `tests/browser/station-render.cjs`'s "the trade words the page quotes are defined together, in the method disclosure", `page/station/provenance.js` |
+| 8 | no accelerator for the page's one job | `/` or `b` focuses the budget field, `n` and `p` press the pager's own buttons rather than repeating what they do, and one line on the always-visible strip names both — with the paging half promised only while a pager is on the page, because a hint for a key that does nothing is the failure the format's own counts are held to | `tests/browser/station-filters.cjs`'s accelerator checks, `page/station/wiring.js`'s keydown listener, `page/station/filters.js`'s `renderKeyHints`, `page/station/table.js`'s two calls to it |
+
 ### The 17 October 2026 poteto audit
 
 `docs/audits/2026-10-17-poteto-audit.md` was removed on 19 October 2026, after
