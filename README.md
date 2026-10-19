@@ -601,10 +601,14 @@ unrestricted one; and a row in the opening list names the ticket it is priced as
 which is what the count line's mix is counting.
 
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --long-list
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 python build_demo_page.py --feed feeds/fares --timetable feeds/timetable --origin GRA --out demo.html
 ```
+
+`--long-list` prices Grantham to more than twenty destinations, because the
+table shows twenty rows before it offers a pager: without it no demo page has a
+second page, and the pager's keys have nothing to turn.
 
 Each destination carries a link to a ticket seller and one expander per row, holding
 the next few journeys with the fare in words, the condition it carries, the
@@ -1246,7 +1250,7 @@ that names the station rather than offering a search over a list of one —
 a prices-only build, and `--feed feeds/fares --timetable feeds/timetable` for
 the real licensed feeds. The demo feed is rebuilt first if `_demo_feed/` is
 missing: `python make_synthetic_feed.py _demo_feed --unserved-station
---third-origin`.
+--third-origin --return-network --long-list`.
 
 A real-feed run carries the same licence notices the deploy workflow passes,
 without being asked, so the page you preview is the page that ships. `--notices`
@@ -1255,7 +1259,7 @@ crediting NRE for invented prices would be false attribution.
 
 The individual commands behind it, if you want them separately:
 ```
-python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network
+python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --long-list
 python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 python -m http.server 8000 --directory _demo_site   # then open http://localhost:8000/
 python -m unittest discover -s tests -p "test_*.py"

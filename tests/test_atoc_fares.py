@@ -899,6 +899,23 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual([reachable.crs for reachable in results], ["LCN", "NOT"])
         self.assertEqual([reachable.best_pence for reachable in results], [870, 1160])
 
+    def test_the_long_list_prices_a_page_and_more_from_grantham(self) -> None:
+        # The browser suite's pager checks need a list longer than one page: the
+        # table shows twenty rows before it offers a pager, and the demo feed is
+        # the only caller that asks for the long list. The flag is off by
+        # default, because every parser test counts the base feed's records.
+        with tempfile.TemporaryDirectory() as tmp:
+            long_feed = build_synthetic_feed(Path(tmp) / "long", include_long_list=True)
+            long_db = FaresDb().load_feed(long_feed)
+        # Eighteen standard fares are priced directly from Grantham; the
+        # timetable's split rows are what carry the demo page past the twenty
+        # its pager starts at. The browser suite is what proves that page, and
+        # this holds the fixture the page is built from.
+        self.assertLess(len(self.db.destinations_within("GRN", 1_000_000)), 18)
+        self.assertGreaterEqual(len(long_db.destinations_within("GRN", 1_000_000)), 18)
+        self.assertNotIn("SLR", self.db.locations_by_crs, "the base fixture keeps its record count")
+        self.assertEqual(long_db.locations_by_crs["SLR"].name, "SLEAFORD")
+
     def test_focused_load_keeps_the_same_origin_answer_without_unrelated_fares(self) -> None:
         # A focused load keeps the origin's fares and its change stations'
         # fares (ADR-0061), and nothing else. Every flow in the base fixture

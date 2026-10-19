@@ -1293,6 +1293,12 @@ function saysMoreThan(condition, code) {
       setBudget(budgetCeiling());
       STATE.page = 1;
       render();
+      // A row an earlier check left open would answer this with its own click
+      // closing it, and the check would read "panel never shown" on a page that
+      // behaves. The row under test is closed first, through the control a
+      // reader presses.
+      const left = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded=true]");
+      if (left) left.click();
       const row = document.querySelector("#rows tr:not(.detail)");
       const button = row && row.querySelector(".row-expand");
       if (!button) return null;

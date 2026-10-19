@@ -878,8 +878,10 @@ jobs:
           # every station page the suite drives has more than one row. With a
           # single destination a page cannot exercise the shortlist, the party
           # switch, the railcard or a type chip, and those checks became
-          # silent skips on two pages out of three.
-          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --knowledgebase _demo_kb
+          # silent skips on two pages out of three. --long-list prices the
+          # driven Grantham page above twenty rows, which is the one thing that
+          # gives the pager a second page for the n/p keys to reach.
+          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --long-list --knowledgebase _demo_kb
           # A single-origin build is a site (S01, S04): the chooser is the root
           # index.html and each station sits at its canonical /from/<slug>/
           # route. The demo site is built --all-origins so the synthetic feed's

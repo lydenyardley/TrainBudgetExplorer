@@ -983,7 +983,15 @@ async function driveTheFilters(world) {
     // is worse than no hint, and a key that fires while the reader is typing a
     // station name is worse than no key. A listener installed after the page's
     // own is what reads defaultPrevented, because the page's handler runs first.
+    // The budget reaches every row this mode carries: the pager half is about a
+    // list longer than one page, and the page's own opening budget is a price,
+    // not a length, so it left even a twenty-two-row page on one page.
+    // Read after a fresh load, because the mode an earlier check left behind
+    // decides which list this is about.
     await open();
+    const walkAll = await page.evaluate(() =>
+      Math.ceil(TYPES.dearest((d) => TYPES.priceOf(d)) / 100));
+    await open(walkAll);
     await page.evaluate(() => {
       window.__keys = [];
       document.addEventListener("keydown", (event) => {
@@ -1044,6 +1052,14 @@ async function driveTheFilters(world) {
       first: (document.querySelector("#rows tr[data-crs]") || { dataset: {} }).dataset.crs || "",
       shown: !document.getElementById("pagination").hidden,
     }));
+    // The pager is on screen only when the list is longer than a page, so the
+    // budget is put where every row of this mode fits before the pager is read:
+    // a two-page fixture whose opening budget hides page two is one page of
+    // rows to this block, and a page that behaves would read as no pager.
+    const everyRow = await page.evaluate(() =>
+      Math.ceil(TYPES.dearest((d) => TYPES.priceOf(d)) / 100));
+    await page.fill("#budgetNumber", String(everyRow));
+    const hintAfter = await page.evaluate(() => document.getElementById("keyHints").textContent.trim());
     const paging = await pageAt();
     await nothingFocused();
     if (paging.shown) {
@@ -1059,14 +1075,14 @@ async function driveTheFilters(world) {
       );
       check(
         "and the hint promises the pager the page has",
-        hint.text.includes("n or p"),
-        JSON.stringify({ text: hint.text, paging })
+        hintAfter.includes("n or p"),
+        JSON.stringify({ text: hintAfter, paging })
       );
     } else {
       check(
         "the hint promises a pager only when a pager is on the page",
-        hint.text.includes("/") && !hint.text.includes("n or p"),
-        JSON.stringify({ text: hint.text, paging })
+        hintAfter.includes("/") && !hintAfter.includes("n or p"),
+        JSON.stringify({ text: hintAfter, paging })
       );
       await pressed("n");
       await pressed("p");

@@ -193,7 +193,10 @@ def browser() -> Step:
     if shutil.which("node") is None:
         return step.done(None, "node is not on PATH")
     steps = [
-        (["python", "make_synthetic_feed.py", DEMO_FEED, "--unserved-station", "--third-origin", "--return-network", "--knowledgebase", DEMO_KB], "the demo feed"),
+        # --long-list is what gives the driven station page a second page: the
+        # table shows twenty rows before it offers a pager, so a fixture whose
+        # every origin prices fewer cannot exercise page two or the n/p keys.
+        (["python", "make_synthetic_feed.py", DEMO_FEED, "--unserved-station", "--third-origin", "--return-network", "--long-list", "--knowledgebase", DEMO_KB], "the demo feed"),
         (["python", "build_demo_page.py", "--feed", DEMO_FEED, "--timetable", DEMO_FEED, "--knowledgebase", DEMO_KB, "--all-origins", "--date", SERVICE_DATE, "--out", f"{DEMO_SITE}/index.html"], "the demo site"),
         # --third-origin and --return-network for the same reason the demo feed
         # takes them: without them this feed's secondary origins are priced to

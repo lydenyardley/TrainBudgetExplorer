@@ -166,6 +166,67 @@ RETURN_NETWORK_TIMETABLE_TRAINS = (
     ("T20006", ("GRNT", "0830"), (("NOTT", "0915", "0918"),), ("BULW", "0945"), "1111110", "P"),
 )
 
+# One origin with more than a page of destinations, off by default with the rest
+# of the optional blocks.
+#
+# The table shows twenty rows before it offers a pager, so a fixture whose every
+# origin prices fewer than twenty-one places cannot exercise the second page or
+# the n/p keys: the suite reported both as not exercised on every page it drove.
+# These are destinations Grantham is priced to directly, chosen so the demo
+# page the suite drives has a second page to turn to. The all-origins demo build
+# is the only caller, so the fixtures every parser test counts stay untouched.
+LONG_LIST_STATIONS = (
+    ("8500", "SLR", "SLEAFORD"),
+    ("8600", "BSN", "BOSTON"),
+    ("8700", "NCT", "NEWARK CASTLE"),
+    ("8800", "WRK", "WORKSOP"),
+    ("8900", "MFT", "MANSFIELD"),
+    ("9000", "DBY", "DERBY"),
+    ("9100", "OKM", "OAKHAM"),
+    ("9200", "SMD", "STAMFORD"),
+    ("9300", "SPA", "SPALDING"),
+    ("9400", "CBG", "CAMBRIDGE"),
+    ("9500", "NMP", "NORTHAMPTON"),
+    ("9600", "KET", "KETTERING"),
+    ("9700", "ELY", "ELY"),
+    ("9800", "HUN", "HUNTINGDON"),
+)
+LONG_LIST_TYPES = {
+    "SLR": "small_town",
+    "BSN": "town",
+    "NCT": "town",
+    "WRK": "town",
+    "MFT": "town",
+    "DBY": "city",
+    "OKM": "small_town",
+    "SMD": "town",
+    "SPA": "small_town",
+    "CBG": "city",
+    "NMP": "town",
+    "KET": "town",
+    "ELY": "small_town",
+    "HUN": "town",
+}
+# (origin NLC, destination NLC, fare pence). Every one is a direct Grantham
+# flow, because a row the split rule composes would make the page's length a
+# property of the timetable rather than of the feed.
+LONG_LIST_FARES = (
+    ("1000", "8500", 640),
+    ("1000", "8600", 890),
+    ("1000", "8700", 1120),
+    ("1000", "8800", 780),
+    ("1000", "8900", 960),
+    ("1000", "9000", 1340),
+    ("1000", "9100", 710),
+    ("1000", "9200", 830),
+    ("1000", "9300", 1050),
+    ("1000", "9400", 2450),
+    ("1000", "9500", 1890),
+    ("1000", "9600", 1520),
+    ("1000", "9700", 1680),
+    ("1000", "9800", 1180),
+)
+
 # The shapes a real feed has and a tidy invented one does not. Off by default,
 # so tests about budget arithmetic read a feed with nothing puzzling in it.
 #
@@ -378,6 +439,7 @@ def build_synthetic_feed(
     include_restrictions: bool = False,
     include_third_origin: bool = False,
     include_return_network: bool = False,
+    include_long_list: bool = False,
     minimum_fares: tuple[tuple[str, ...], ...] | None = None,
 ) -> Path:
     """Write the fares feed.
@@ -389,8 +451,10 @@ def build_synthetic_feed(
     destination, so a published site has a picker with more than one option. The
     return network gives the two secondary origins a set of destinations to
     price, so a page the browser suite drives has more than one row to choose
-    from. The restrictions file is off by default so existing fixtures keep
-    their five files; tests for the publishable selector turn it on.
+    from. The long list gives Grantham more than a page of them, so the pager
+    and its keys have a second page to reach. The restrictions file is off by
+    default so existing fixtures keep their five files; tests for the
+    publishable selector turn it on.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -416,6 +480,13 @@ def build_synthetic_feed(
             restriction = "1A" if (origin, destination) in RETURN_NETWORK_RESTRICTED else ""
             flows += ((flow_id, origin, destination, "00000"),)
             fares += ((flow_id, "SDR", pence, restriction),)
+    if include_long_list:
+        stations += LONG_LIST_STATIONS
+        types.update(LONG_LIST_TYPES)
+        for number, (origin, destination, pence) in enumerate(LONG_LIST_FARES, start=60):
+            flow_id = f"{number:07d}"
+            flows += ((flow_id, origin, destination, "00000"),)
+            fares += ((flow_id, "SDR", pence, ""),)
 
     flow_lines: list[str] = []
     for flow_id, origin, destination, route_code in flows:
@@ -1300,6 +1371,14 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--long-list",
+        action="store_true",
+        help=(
+            "price Grantham to more than twenty destinations, so a driven page "
+            "has a second page and the pager's keys can be exercised"
+        ),
+    )
+    parser.add_argument(
         "--knowledgebase",
         metavar="PATH",
         help=(
@@ -1323,6 +1402,7 @@ if __name__ == "__main__":
                 include_restrictions=True,
                 include_third_origin=arguments.third_origin,
                 include_return_network=arguments.return_network,
+                include_long_list=arguments.long_list,
             )
         )
     if arguments.kind in {"timetable", "both"}:
