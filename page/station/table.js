@@ -129,6 +129,7 @@ function render() {
     renderEmptyMode();
     more.hidden = true;
     pagination.hidden = true;
+    renderKeyHints();
     pageStatus.textContent = "";
     // The shortlist is a list of places this mode can price, so a mode that
     // prices none of them empties it rather than leaving a list of names with
@@ -211,6 +212,7 @@ function render() {
   renderEmpty(available, wanted, cap, basis);
   more.hidden = true;
   pagination.hidden = pageCount <= 1;
+  renderKeyHints();
   // "Page 1 of 2 of 30 results" was two facts sharing one "of" twice over
   // (audit item 12, 9 October 2026). The page and the count keep one each:
   // "1 of 2 pages · 30 destinations". The singular is spelled rather than

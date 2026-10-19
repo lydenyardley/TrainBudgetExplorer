@@ -239,6 +239,15 @@ __THEME_TOGGLE__
   </fieldset>
     </div>
   </div>
+<!-- Critique item 8: the page's two accelerators, named on the strip that is
+     on screen at every width and in every state, which is this one and not the
+     fold above it: the fold is the refinements, and a key a reader cannot see
+     until they open a drawer is a key they will not press. Written by
+     renderKeyHints() rather than here, because the paging half is only a
+     promise while the pager is on screen, and only the page's own render knows
+     that. Empty and hidden until then, so a page whose script did not arrive
+     claims no key it cannot honour. -->
+<p class="tag" id="keyHints" hidden></p>
 <!-- The day the times are for. It is not a filter and is not inside the filter
      panel: it does not hide rows, it changes what the Time and Changes columns
      report. It is on the always-visible strip beside the budget rather than

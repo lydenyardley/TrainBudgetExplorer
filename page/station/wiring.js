@@ -36,6 +36,35 @@ for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEv
 for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => chooseMode(radio.value));
 previousPage.addEventListener("click", () => { STATE.page -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 nextPage.addEventListener("click", () => { STATE.page += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+// Critique item 8: the page's two accelerators. Setting the budget is the
+// page's whole question, and the pager is the other control a keyboard reader
+// walks a whole tab order to reach. `/` is the convention a reader already
+// carries from a search field, and `b` is the same action for a layout where
+// `/` needs a shift. A keystroke inside a field belongs to the field, so a
+// reader typing a budget, a station name or a railcard keeps every key they
+// press, and a held modifier is never an accelerator.
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target;
+  const tag = target && target.tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" ||
+      (target && target.isContentEditable)) return;
+  const key = event.key.toLowerCase();
+  if (key === "/" || key === "b") {
+    event.preventDefault();
+    budgetNumber.focus();
+    budgetNumber.select();
+    return;
+  }
+  // The pager's own buttons decide what paging does, so the keys press them
+  // rather than repeat their three statements: one place changes the page, and
+  // a key on the first or last page does nothing the button would not do.
+  const button = key === "n" ? nextPage : key === "p" ? previousPage : null;
+  if (button && pagination && !pagination.hidden && !button.disabled) {
+    event.preventDefault();
+    button.click();
+  }
+});
 applyState(readState());
 // The day control is written from the payload rather than from markup, so a
 // page whose build carried no week shows no control at all rather than an empty

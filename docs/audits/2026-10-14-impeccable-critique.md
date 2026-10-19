@@ -16,13 +16,13 @@ computed styles, geometry, accessible names and console output. **No screenshots
 the preview webview produced no composited frames in this environment, so every
 finding below is measured from the live DOM rather than seen. A visual pass with a
 screenshot-capable browser is still owed.
-**Pruned:** 15 October 2026, again on 16 October 2026 when item 5 was settled, and
-again on 18 October 2026 when item 7 landed. Recommendations 1, 2, 4, 6 and 7 are
-implemented, and 3's first half with them; each is held by the test named beside it
-in the table below, and the commits that carry them are found with
-`git log --grep="critique item"`. The numbers keep their original values, so a gap
-in the sequence is deliberate, and what is left is what still asks for something:
-3's second half and 8.
+**Pruned:** 15 October 2026, again on 16 October 2026 when item 5 was settled,
+again on 18 October 2026 when item 7 landed, and again on 19 October 2026 when
+item 8 landed. Recommendations 1, 2, 4, 6, 7 and 8 are implemented, and 3's first
+half with them; each is held by the test named beside it in the table below, and
+the commits that carry them are found with `git log --grep="critique item"`. The
+numbers keep their original values, so a gap in the sequence is deliberate, and
+what is left is what still asks for something: 3's second half.
 
 ## Still open
 
@@ -32,11 +32,6 @@ in the sequence is deliberate, and what is left is what still asks for something
   the four a reader holds at once. What is left of the fix is the arrangement:
   group the four settlement bands ahead of the ten thematic facets behind one
   "More types" disclosure.
-- **[8] [P3] No accelerator for the page's one job.** The primary action is
-  setting the budget, and it is reachable only by tabbing through the heading
-  controls or grabbing the slider. Fix: `/` or `b` to focus the budget field,
-  `n`/`p` for the next and previous page, and say so in the folded bar's summary
-  line.
 
 ## What landed
 
@@ -49,6 +44,7 @@ in the sequence is deliberate, and what is left is what still asks for something
 | [6] [P3] the smallest type on the page was 11.52px | `.75rem` is the floor for type on this route, and the letter-spacing carries the small-caps effect | `tests/test_page_assets.py`, `page/station.css` |
 | [5] [P2] the routes that show no fares carry no licence notices | settled on 16 October 2026 as a reading, not a change: the credit travels with the page that shows a fare, the chooser's station index and the privacy notice show none, and the alternative reading is named beside it in the record. The build check the same reading asked for landed with it, and it closes route audit items [20] and [21] | the section "Which pages carry the acknowledgement" in `licences/release-clearance.md`, `tools/check_source_credit.py`, `tools/test_check_source_credit.py` |
 | [7] [P3] the fare vocabulary had no home | the words the route quotes are defined once, in a definitions list inside the method disclosure, immediately below the provenance line — which is the "block beside the provenance" this recommendation offered as its first option, drawn as the second (clarity audit item 44 chose the same answer from the other end) | `tests/browser/station-render.cjs`'s "the trade words the page quotes are defined together, in the method disclosure", `page/station/provenance.js` |
+| [8] [P3] no accelerator for the page's one job | `/` or `b` focuses the budget field, `n` and `p` press the pager's own buttons rather than repeating what they do, and one line on the always-visible strip names both — with the paging half promised only while a pager is on the page, because a hint for a key that does nothing is the failure the format's own counts are held to | `tests/browser/station-filters.cjs`'s accelerator checks, `page/station/wiring.js`'s keydown listener, `page/station/filters.js`'s `renderKeyHints`, `page/station/table.js`'s two calls to it |
 
 ## The detector's one finding, and why it is not one
 

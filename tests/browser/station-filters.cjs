@@ -841,5 +841,110 @@ async function driveTheFilters(world) {
         : notExercised("this page has no row to copy"),
       JSON.stringify(cheapestCopy)
     );
+    // Critique item 8: the page's accelerators, and the line that says they
+    // exist. Both are read against what the page does rather than against the
+    // string the page writes: a hint promising a key the page does not honour
+    // is worse than no hint, and a key that fires while the reader is typing a
+    // station name is worse than no key. A listener installed after the page's
+    // own is what reads defaultPrevented, because the page's handler runs first.
+    await open();
+    await page.evaluate(() => {
+      window.__keys = [];
+      document.addEventListener("keydown", (event) => {
+        window.__keys.push({
+          key: event.key,
+          prevented: event.defaultPrevented,
+          active: document.activeElement ? document.activeElement.id : "",
+        });
+      });
+    });
+    const pressed = async (stroke) => {
+      await page.keyboard.press(stroke);
+      return page.evaluate(() => window.__keys[window.__keys.length - 1] || null);
+    };
+    const nothingFocused = () => page.evaluate(() => {
+      if (document.activeElement) document.activeElement.blur();
+    });
+    await nothingFocused();
+    const slash = await pressed("/");
+    check(
+      "/ focuses the budget field",
+      !!slash && slash.prevented === true && slash.active === "budgetNumber",
+      JSON.stringify(slash)
+    );
+    await nothingFocused();
+    const bee = await pressed("b");
+    check(
+      "b focuses the same field, for a layout where / needs a shift",
+      !!bee && bee.prevented === true && bee.active === "budgetNumber",
+      JSON.stringify(bee)
+    );
+    // The budget field holds focus after the key above, so the next two are
+    // typed at a reader who is mid-keystroke: the field keeps them.
+    const keyInField = await pressed("b");
+    const slashInField = await pressed("/");
+    check(
+      "a key pressed inside a field belongs to the field",
+      !!keyInField && keyInField.prevented === false &&
+        !!slashInField && slashInField.prevented === false &&
+        slashInField.active === "budgetNumber",
+      JSON.stringify({ keyInField, slashInField })
+    );
+    const hint = await page.evaluate(() => {
+      const line = document.getElementById("keyHints");
+      return {
+        exists: !!line,
+        visible: !!line && !line.hidden && line.offsetWidth > 0,
+        text: line ? line.textContent.trim() : "",
+      };
+    });
+    check(
+      "the strip that stays on screen names the budget keys",
+      hint.exists && hint.visible && hint.text.includes("/") && hint.text.includes("b"),
+      JSON.stringify(hint)
+    );
+    const pageAt = () => page.evaluate(() => ({
+      status: document.getElementById("pageStatus").textContent.trim(),
+      first: (document.querySelector("#rows tr[data-crs]") || { dataset: {} }).dataset.crs || "",
+      shown: !document.getElementById("pagination").hidden,
+    }));
+    const paging = await pageAt();
+    await nothingFocused();
+    if (paging.shown) {
+      await pressed("n");
+      const next = await pageAt();
+      await pressed("p");
+      const back = await pageAt();
+      check(
+        "n turns to the next page and p turns back",
+        next.status !== paging.status && back.status === paging.status &&
+          back.first === paging.first,
+        JSON.stringify({ paging, next, back })
+      );
+      check(
+        "and the hint promises the pager the page has",
+        hint.text.includes("n or p"),
+        JSON.stringify({ text: hint.text, paging })
+      );
+    } else {
+      check(
+        "the hint promises a pager only when a pager is on the page",
+        hint.text.includes("/") && !hint.text.includes("n or p"),
+        JSON.stringify({ text: hint.text, paging })
+      );
+      await pressed("n");
+      await pressed("p");
+      const still = await pageAt();
+      check(
+        "a page turn when there is one page leaves the list where it is",
+        still.status === paging.status && still.first === paging.first,
+        JSON.stringify({ paging, after: still })
+      );
+      check(
+        "n and p turn the page when the pager is on screen",
+        notExercised("every page this fixture builds fits one page of rows, so there is no second page for the keys to reach")
+      );
+    }
+    await open();
 }
 module.exports = { driveTheFilters };

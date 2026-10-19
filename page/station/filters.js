@@ -10,6 +10,7 @@ const PAGE_SIZE = 20;
 const clearTypes = document.getElementById("clearTypes");
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
+const keyHints = document.getElementById("keyHints");
 const filterState = document.getElementById("filterState");  // The refinements are folded at every width, and the reader is the only thing
   // that opens them. The control is a button carrying aria-expanded, so the
   // state is announced without any of this: the markup opens folded and this
@@ -52,6 +53,17 @@ function filterStateText() {
 }
 function renderFilterState() {
   if (filterState) filterState.textContent = filterStateText();
+}
+// The page's accelerators, named in the strip that stays on screen while the
+// refinements are folded, because a key nobody is told about is not offered.
+// The paging half is only promised while the pager is on screen, and only the
+// render that decides the pager's visibility knows that, so this is called from
+// there rather than from here at load.
+function renderKeyHints() {
+  if (!keyHints) return;
+  keyHints.textContent = "Press / or b to set the budget" +
+    (pagination && !pagination.hidden ? ", and n or p to change page." : ".");
+  keyHints.hidden = false;
 }
 // The chips as the reader has them. This is the one adapter that reads the
 // controls rather than the state, because a chip's own click is the only place

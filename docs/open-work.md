@@ -130,32 +130,29 @@ the half that matters, the cheaper change is a smaller shared asset rather than 
 split payload, and `page/station/*` is already one file per panel, so the split
 is a build decision and not a rewrite.
 
-### The critique's small remaining asks: the chip arrangement, the fare vocabulary, and an accelerator
+### The critique's last ask: the chip arrangement
 
-**Severity:** P2 for the first, P3 for the other two. **Route:** the station
-page.
-**Raised:** the 14 October 2026 critique, recommendations 3's second half, 7 and
-8. That file is `docs/audits/2026-10-14-impeccable-critique.md`, pruned to those
-three. Its recommendation 5 — the licence notices on the routes that show no
-fare — was settled on 16 October 2026 by the reading in
-`licences/release-clearance.md` and `tools/check_source_credit.py`, which closed
-the route audit's items [20] and [21] with it. Its other five recommendations
-landed on 15 October 2026, held by the tests named in that file's own table.
+**Severity:** P2. **Route:** the station page.
+**Raised:** the 14 October 2026 critique, recommendation 3's second half. That
+file is `docs/audits/2026-10-14-impeccable-critique.md`, pruned to this one ask.
+Its recommendation 5 — the licence notices on the routes that show no fare — was
+settled on 16 October 2026 by the reading in `licences/release-clearance.md` and
+`tools/check_source_credit.py`, which closed the route audit's items [20] and
+[21] with it. Its recommendation 7 landed on 18 October 2026, a definitions list
+inside the method disclosure held by `tests/browser/station-render.cjs`, and its
+recommendation 8 on 19 October 2026, the budget and paging keys held by
+`tests/browser/station-filters.cjs`. This entry went on listing 7 and 8 as open
+after each landed, and it was corrected against the tree on 19 October 2026
+rather than against its own list.
 
 - **The chip arrangement (3, second half).** The three chips that could only ever
   select an empty list are no longer offered, so the dead ends are gone; what is
   left is that `All` plus fourteen chips sit at one decision point. What would
   close it: the four settlement bands ahead of the ten thematic facets, behind one
-  "More types" disclosure.
-- **The fare vocabulary (7).** "Regular", "Restricted", "Advance", "changes",
-  "two tickets" and the minimum-fare note are explained one disclosure at a time,
-  inside a row's own panel, so a reader comparing six rows holds words nobody has
-  given them. What would close it: one short block beside the provenance, or a
-  definitions list the row links to.
-- **An accelerator for the page's one job (8).** Setting the budget is reachable
-  only by tabbing through the heading controls or grabbing the slider. What would
-  close it: `/` or `b` to focus the budget field, `n`/`p` to page, and the folded
-  bar saying so.
+  "More types" disclosure. Four arrangements were mocked up on 19 October 2026 for
+  the reading that choice needs, drawn in the page's own stylesheet; the mockup is
+  a throwaway and is not in the tree, so what would close this is the answer it
+  asks for.
 
 ### The 17 October 2026 review's open asks: the phone's row, the fold, and where the vocabulary is chosen
 
