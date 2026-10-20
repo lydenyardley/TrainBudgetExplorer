@@ -1101,14 +1101,18 @@ function saysMoreThan(condition, code) {
         ` rows=${conditions.rows} toggles=${conditions.toggles}`
     );
     check(
-      "and the row names the fare in a word while the feed's code stays folded",
+      "and the row names the fare in a phrase while the feed's code stays folded",
+      // S4 of the 19 October 2026 critique: the cell carries its own noun, so
+      // the word survives the phone layout, where the column heading that
+      // explained it is clipped. The three phrases are named rather than
+      // matched loosely, so a cell that dropped back to "Restricted" fails.
       conditions.found.length > 0 &&
         conditions.found.every(
           (cell) =>
             cell.summary &&
             cell.record.length >= 2 &&
             cell.code.length > 0 &&
-            ["Advance", "Restricted", "Regular"].includes(cell.word)
+            ["Advance fare", "Restricted fare", "Regular fare"].includes(cell.word)
         ),
       JSON.stringify(conditions.found[0] || null)
     );

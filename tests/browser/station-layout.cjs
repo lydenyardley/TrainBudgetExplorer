@@ -381,6 +381,14 @@ async function measureTheLayout(world) {
           outside: outside.length,
           width: Math.round(tr.getBoundingClientRect().width),
           cells: cells.length,
+          // What the stacked row says the fare is (S4 of the 19 October 2026
+          // critique). Read off the cell the reader sees rather than off the
+          // payload, so a cell that lost its noun is what fails.
+          fareWord: ((cellOf(tr, "Fare type") || {}).textContent || "").trim(),
+          // A row that names the station it changes at carries two lines in
+          // that cell by design (`.changes`, row-cells.js). Its second line is
+          // the tightest one on the page, and the line check below says so.
+          via: Boolean(tr.querySelector("td.changes")),
         };
       });
       const heads = Array.from(document.querySelectorAll("thead th"));
@@ -419,21 +427,52 @@ async function measureTheLayout(world) {
         : median <= 120,
       `${stacked.rows.length} rows, median ${median}px, tallest ${stacked.heights[stacked.heights.length - 1] || 0}px`
     );
+    // A row that carries a via note is the one row the second line cannot hold
+    // in four facts: measured at 390px on the demo page, such a row needs 397px
+    // of content in 366 -- the ticket takes a third line and no shorter
+    // spelling of the facts buys it back. The promise it keeps instead is the
+    // one a reader needs: the time on the second line, and the ticket with the
+    // facts it buys. Every other row is held to the full claim, and a page whose
+    // rows all carry a via note reports not exercised rather than passing on
+    // rows that were never measured.
     const offLine = stacked.rows
       .filter(
         (row) =>
           row.stationTop === 0 ||
           Math.abs(row.priceTop - row.stationTop) > 2 ||
           (row.timeTop !== null && row.timeTop <= row.stationTop) ||
-          (row.timeTop !== null && Math.abs(row.ticketTop - row.timeTop) > 4)
+          (row.timeTop !== null && !row.via && Math.abs(row.ticketTop - row.timeTop) > 4)
       )
       .slice(0, 4);
+    const plain = stacked.rows.filter((row) => !row.via).length;
     check(
       "at 390px the place and its price share the first line, the time and the ticket the second",
       stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
+        : plain === 0
+        ? notExercised(`every row names a change station (${stacked.rows.length})`)
         : offLine.length === 0,
-      offLine.length ? JSON.stringify(offLine) : `${stacked.rows.length} rows measured`
+      offLine.length
+        ? JSON.stringify(offLine)
+        : `${stacked.rows.length} rows measured, ${stacked.rows.length - plain} with a via note`
+    );
+    // S4 of the 19 October 2026 critique: the stacked layout clips the `<thead>`
+    // for assistive technology, so nothing on the screen says that
+    // "Restricted" is the fare rather than a third fact about the journey. The
+    // cell carries its own noun now, and "Two tickets" already is one.
+    const wordless = stacked.rows
+      .filter((row) => row.fareWord && !/^(Advance|Restricted|Regular) fare$|^Two tickets$/.test(row.fareWord))
+      .slice(0, 4);
+    check(
+      "at 390px the fare cell says what kind of thing it names",
+      stacked.rows.length === 0
+        ? notExercised("this page shows no rows at a phone width")
+        // Every row has to carry one of the four phrases. A page that painted
+        // no fare word at all is a broken cell, not a page with nothing to say.
+        : wordless.length === 0 && stacked.rows.every((row) => row.fareWord),
+      wordless.length
+        ? JSON.stringify(wordless)
+        : `${stacked.rows.length} rows: ${Array.from(new Set(stacked.rows.map((row) => row.fareWord))).join(", ")}`
     );
     const spilled = stacked.rows.filter((row) => row.outside > 0).slice(0, 4);
     check(

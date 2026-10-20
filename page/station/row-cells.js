@@ -152,7 +152,7 @@ function interchangeLine(destination) {
   return line;
 }
 
-// The fare in the reader's own three words. The feed's code is a seller’s
+// The fare in the reader's own three phrases. The feed's code is a seller’s
 // vocabulary -- SDR, 2AS, BPS -- and it was the column, on every row, in front
 // of the one number the reader came for. It is still here, in the row's own
 // disclosure under "Feed record", which is where a code belongs: available
@@ -171,11 +171,19 @@ function fareTypeCell(destination) {
   return cell;
 }
 
+// The word carries its own noun (S4 of the 19 October 2026 critique). On a
+// phone the `<thead>` is clipped for assistive technology, so the second line
+// read "45m · Direct · Restricted · Tickets" and nothing on the row said that
+// "Restricted" was the fare rather than a third fact about the journey -- the
+// glossary that defines it is about 2,000px below, in the footer. Five
+// characters are cheaper than the label track the stacked row gave up, and
+// "Regular" needed the noun most of all: it is the common case and it was
+// reading as a quiet default.
 function fareTypeWord(destination) {
   if (destination.tickets) return "Two tickets";
-  if (destination.isAdvance) return "Advance";
-  if (destination.restrictionCode) return "Restricted";
-  return "Regular";
+  if (destination.isAdvance) return "Advance fare";
+  if (destination.restrictionCode) return "Restricted fare";
+  return "Regular fare";
 }
 
 // The one word beside the code, and only where the row differs from its

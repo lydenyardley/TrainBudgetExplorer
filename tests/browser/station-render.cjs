@@ -86,7 +86,11 @@ async function renderThePage(world) {
               code: wanted.ticket || "",
             }
             : null,
-          code: row1.isAdvance ? "Advance" : row1.restrictionCode ? "Restricted" : "Regular",
+          // S4 of the 19 October 2026 critique: the cell carries its noun, so
+          // the word a reader sees is a fare type rather than a third fact
+          // about the journey. The expectation is the page's own three phrases,
+          // not a looser match that would accept both shapes.
+          code: row1.isAdvance ? "Advance fare" : row1.restrictionCode ? "Restricted fare" : "Regular fare",
           word: (row.querySelector(".fare-kind") || {}).textContent || "",
         };
       });
