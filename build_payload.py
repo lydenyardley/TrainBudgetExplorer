@@ -475,7 +475,7 @@ def destination_row(
     *,
     quality: str,
     journey_db: TimetableDb | None,
-    with_departures: bool = True,
+    departures_seen: dict[tuple[int, str], list[dict]] | None = None,
 ) -> tuple[dict, TicketLink]:
     # The journey belongs to the origin and the destination, not to the
     # ticket type, so it is read once per destination from the first
@@ -510,15 +510,40 @@ def destination_row(
         if found:
             journey, journey_source = found, db
             break
-    # The departures do not fall back. They are the times this fare is good
-    # on, and an advance single's are only knowable from the separate
-    # outbound-single timetable; a return-set train listed under an advance
-    # single would be a time the reader cannot travel on that ticket.
-    options = (
-        journey_db.departures(origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit)
-        if journey_db and with_departures
-        else []
-    )
+    # The departures belong to the journey rather than to the fare record that
+    # prices it: every fare set that prices the same journey from the same
+    # timetable names the same trains. A single-mode row carried none at all
+    # when the build loaded no separate outbound-single timetable, so the
+    # cheapest row on the page opened a panel holding a duration and no times,
+    # beside a return to the same place that opened onto four (S1 of the 19
+    # October 2026 critique). The narrower timetable still wins where the build
+    # has one, which is why the row's own list is asked first and the page's
+    # timetable is only the fallback.
+    #
+    # Asked once per journey per page: departures() is a second one-change
+    # search, and the three fare lists are walked one after another over the
+    # same destinations, so the page that prices a place three times pays for
+    # its times once.
+    journey_timetable = journey_db or context.timetable
+    if journey_timetable is None:
+        options: list[dict] = []
+    else:
+        key = (id(journey_timetable), crs)
+        shared = departures_seen.get(key) if departures_seen is not None else None
+        if shared is None:
+            shared = [
+                {
+                    "depart": option.departure,
+                    "arrive": option.arrival,
+                    "changes": option.changes,
+                }
+                for option in journey_timetable.departures(
+                    origin.crs, crs, max_changes=max_changes, day=day, limit=departure_limit
+                )
+            ]
+            if departures_seen is not None:
+                departures_seen[key] = shared
+        options = shared
     # Q2 (ADR-0045): a journey with a change is where a split ticket
     # can undercut the through fare, and the station it would change at is
     # one fact the build already holds. The page names it and claims no
@@ -622,10 +647,7 @@ def destination_row(
         # the build can carry it and the page never sees it.
         "_journeySource": journey_source,
         "link": {"url": link.url, "label": link.label, "rel": link.rel},
-        "departures": [
-            {"depart": option.departure, "arrive": option.arrival, "changes": option.changes}
-            for option in options
-        ],
+        "departures": options,
     }
     if two_part:
         # Both tickets, each with its own price and its own restriction,
@@ -834,6 +856,9 @@ def build_payload(
     destinations: list[dict] = []
     single_destinations: list[dict] = []
     anytime_destinations: list[dict] = []
+    # One list of departure times per journey, shared by every fare list that
+    # prices it (S1 of the 19 October 2026 critique).
+    departures_seen: dict[tuple[int, str], list[dict]] = {}
     # The row and its link come back together, because the page's two
     # disclosure facts are every row's link folded into one: the payload says
     # once whether this page's links are tracked and what it discloses.
@@ -845,6 +870,7 @@ def build_payload(
             one,
             quality="standard return",
             journey_db=timetable,
+            departures_seen=departures_seen,
         )
         destinations.append(row)
         tracked = tracked or link.tracked
@@ -855,9 +881,9 @@ def build_payload(
             pool,
             crs,
             one,
-            with_departures=single_timetable is not None,
             quality="outbound single",
             journey_db=single_timetable,
+            departures_seen=departures_seen,
         )
         single_destinations.append(row)
         tracked = tracked or link.tracked
@@ -870,6 +896,7 @@ def build_payload(
             one,
             quality="unrestricted Anytime Day Return",
             journey_db=timetable,
+            departures_seen=departures_seen,
         )
         anytime_destinations.append(row)
         tracked = tracked or link.tracked

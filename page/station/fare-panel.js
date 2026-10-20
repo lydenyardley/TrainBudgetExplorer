@@ -203,6 +203,7 @@ function toggleDetail(row, destination, toggle, reveal) {
   detail.className = reveal ? "detail reveal" : "detail";
   const cell = document.createElement("td");
   cell.colSpan = columnCount();
+  const journey = journeyFor(destination);
   if (destination.departures.length) {
     const list = document.createElement("ul");
     for (const option of destination.departures) {
@@ -212,6 +213,18 @@ function toggleDetail(row, destination, toggle, reveal) {
       list.append(item);
     }
     cell.append(list);
+  } else if (DATA.hasJourneys && journey.found) {
+    // S1 of the 19 October 2026 critique: a row with a duration and no times
+    // opened a panel holding the condition and the record, and said nothing
+    // about the absence -- so the cheapest row on the page read as broken, or
+    // as a page with no times. The times belong to the journey, so this should
+    // be rare; where a fare set still has none, the panel says so beside the
+    // duration it explains rather than leaving the reader to infer it.
+    const absent = document.createElement("p");
+    absent.className = "no-departures";
+    absent.textContent = "This build has no departure times for this fare; " +
+      duration(journey.minutes) + " is the fastest journey.";
+    cell.append(absent);
   }
   // The fare in words and its condition, in the panel the row already had. A
   // build with no timetable has no times to list and still has a fare to

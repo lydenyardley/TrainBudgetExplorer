@@ -1127,6 +1127,110 @@ function saysMoreThan(condition, code) {
         )
       )
     );
+    // S1 of the 19 October 2026 critique: a row with a duration opened a panel
+    // that listed the condition, the record and Copy, and said nothing about the
+    // times it did not show -- so the cheapest row on the page read as broken,
+    // or as a page with no times at all. The times belong to the journey now
+    // (build_payload), so a timed row opens onto them; the sentence is for the
+    // fare set that still has none. A two-ticket row's own list is not times, so
+    // the count leaves it out.
+    const timedPanels = await page.evaluate(() => {
+      const timesIn = (detail) =>
+        detail
+          ? Array.from(detail.querySelectorAll("ul li")).filter((li) => !li.closest(".two-tickets")).length
+          : 0;
+      // The predicate is the page's own: a row is timed when the day on screen
+      // times it, which is what its duration cell reads (service-day.js). The
+      // build's `journeyState` is day zero's answer and is not the same claim on
+      // a page the reader has turned to another day.
+      const timed = new Set(
+        TYPES.list().filter((d) => journeyFor(d).found).map((d) => d.crs)
+      );
+      return Array.from(document.querySelectorAll("#rows tr[data-crs]"))
+        .filter((row) => timed.has(row.dataset.crs))
+        .map((row) => {
+          const toggle = row.querySelector(".row-expand");
+          if (toggle) toggle.click();
+          const detail = row.nextElementSibling &&
+            row.nextElementSibling.classList.contains("detail")
+            ? row.nextElementSibling
+            : null;
+          const read = {
+            crs: row.dataset.crs,
+            times: timesIn(detail),
+            sentence: detail
+              ? ((detail.querySelector(".no-departures") || {}).textContent || "")
+              : "",
+          };
+          if (toggle) toggle.click();
+          return read;
+        });
+    });
+    check(
+      "every row the build timed opens onto its departures, or says it has none",
+      timedPanels.length === 0
+        ? notExercised("this page times no row")
+        : timedPanels.every(
+            (row) => row.times > 0 || /no departure times for this fare/.test(row.sentence)
+          ),
+      JSON.stringify(timedPanels.slice(0, 3)) + ` ${timedPanels.length} row(s)`
+    );
+    // The other half, on a row whose fare set really holds no times: the page's
+    // own payload is changed to the shape a build with a separate outbound-single
+    // timetable sends, the row is opened, and the sentence is read. The payload
+    // is put back and the page re-rendered, so nothing after this block reads a
+    // page the reader never saw.
+    const withoutTimes = await page.evaluate(() => {
+      // The budget and the pager are put where this block needs them, and put
+      // back afterwards: an earlier check leaves the page empty at £0, and a row
+      // the table is not painting cannot be opened. The row is chosen from the
+      // ones on screen, so a filter this check did not set cannot make it
+      // report a page state no reader is looking at.
+      const keptBudget = STATE.budget;
+      setBudget(budgetCeiling());
+      const painted = (d) => document.querySelector('#rows tr[data-crs="' + d.crs + '"]');
+      const wanted = activeDestinations().find(
+        (d) => journeyFor(d).found && (d.departures || []).length && painted(d)
+      );
+      if (!wanted) {
+        setBudget(keptBudget);
+        render();
+        return null;
+      }
+      const kept = wanted.departures;
+      wanted.departures = [];
+      STATE.page = 1;
+      render();
+      const row = document.querySelector('#rows tr[data-crs="' + wanted.crs + '"]');
+      const toggle = row ? row.querySelector(".row-expand") : null;
+      if (toggle) toggle.click();
+      const detail = row && row.nextElementSibling &&
+        row.nextElementSibling.classList.contains("detail")
+        ? row.nextElementSibling
+        : null;
+      const read = {
+        crs: wanted.crs,
+        sentence: detail
+          ? ((detail.querySelector(".no-departures") || {}).textContent || "")
+          : "",
+        times: detail
+          ? Array.from(detail.querySelectorAll("ul li")).filter((li) => !li.closest(".two-tickets")).length
+          : 0,
+      };
+      wanted.departures = kept;
+      setBudget(keptBudget);
+      render();
+      return read;
+    });
+    check(
+      "and a fare set with no times says so, beside the duration it explains",
+      withoutTimes === null
+        ? notExercised("this page times no row")
+        : withoutTimes.times === 0 &&
+          /no departure times for this fare/.test(withoutTimes.sentence) &&
+          /\d+(h \d+)?m is the fastest journey/.test(withoutTimes.sentence),
+      JSON.stringify(withoutTimes)
+    );
     // The rule above is the one the whole check rests on, and it was wrong once
     // already: it used to reject a condition for opening with one to four
     // capitals, which rejects 624 of the 841 descriptions in the real file. A

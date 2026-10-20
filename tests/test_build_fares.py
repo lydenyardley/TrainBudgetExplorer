@@ -915,15 +915,28 @@ class FaresPayloadTest(PageTestCase):
             any(row["minutes"] is not None for row in single.values()),
             "no single-mode row carries a journey",
         )
-        # The one thing that does NOT fall back. These are the times the fare is
-        # good on, and an advance single's are only knowable from the separate
-        # outbound-single timetable; a return-set train listed under an advance
-        # single would be a time the reader cannot travel on that ticket.
-        self.assertTrue(
-            any(row["minutes"] is not None and not row["departures"]
-                for row in single.values()),
-            "a single-mode row is carrying departure times it has no timetable for",
-        )
+        # The times belong to the journey too (S1 of the 19 October 2026
+        # critique). This build loads no separate outbound-single timetable, so
+        # a single is timed from the page's timetable -- and it used to be timed
+        # there and given no departures at all, which left the cheapest row on
+        # the page opening a panel with a duration and no times beside a return
+        # to the same place that opened onto four. Every timed single now
+        # carries the same departures as the return for that place, because the
+        # two lists read one journey.
+        returns = {row["crs"]: row for row in self.payload["destinations"]}
+        timed = [row for row in single.values() if row["minutes"] is not None]
+        self.assertTrue(timed, "no single-mode row carries a journey")
+        for row in timed:
+            self.assertTrue(
+                row["departures"],
+                f"{row['crs']} is timed at {row['minutes']}m and carries no departures",
+            )
+            if row["crs"] in returns:
+                self.assertEqual(
+                    row["departures"],
+                    returns[row["crs"]]["departures"],
+                    f"{row['crs']} is timed with different departures in two fare lists",
+                )
         # A build with no timetable at all still says so, because that sentence
         # now turns on whether any timetable was searched rather than on whether
         # this row's own list had one.

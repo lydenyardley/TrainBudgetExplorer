@@ -270,6 +270,10 @@
      (finding, 29 September 2026). The condition keeps the muted .restriction
      voice it had in the cell: same sentence, same measured contrast. */
   tr.detail .fare-line { margin: .55rem 0 0; font-weight: 600; }
+  /* S1 of the 19 October 2026 critique: the sentence a fare set with no times
+     says in place of the list. It is the panel's first line where it appears,
+     so it carries the same top margin as the fare sentence under it. */
+  tr.detail .no-departures { margin: 0; }
   tr.detail .condition { margin: .15rem 0 0; }
   tr.detail .two-tickets { margin: .15rem 0 0; padding-left: 1.1rem; }
   tr.detail .two-ticket-note { margin: .15rem 0 0; }
@@ -576,8 +580,15 @@
        wide and made "No service that day" four lines -- a 151px row. Flex lets
        each line size itself, and the ticket wraps to a third line on a 320px
        screen rather than pushing the page sideways. */
+    /* .45rem rather than .6rem since S4 of the 19 October 2026 critique: the
+       fare cell carries its own noun now ("Regular fare"), which is about five
+       characters the second line did not have. Measured at 390px on the demo
+       page, .6rem split every row into three lines -- the time, the count, the
+       fare and the ticket need 366px and had 358 -- and .45rem buys back the
+       7px that puts them on one. The gaps are the cheapest place to find it:
+       nothing loses a word, and the two 44px targets are untouched. */
     #rows > tr[data-crs] { display: flex; flex-wrap: wrap; align-items: baseline;
-                           column-gap: .6rem; row-gap: .1rem;
+                           column-gap: .45rem; row-gap: .1rem;
                            padding: .5rem 0; border-bottom: 1px solid var(--line); }
     /* The line break between the place and its facts. A full-width, zero-height
        flex item is how a wrapping row is told where the first line ends. */
