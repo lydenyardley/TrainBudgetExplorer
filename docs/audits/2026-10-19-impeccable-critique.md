@@ -27,32 +27,23 @@ otherwise: a 17-destination list at £20, 16 returns and 1 single. That is enoug
 for layout and interaction; it is not enough for the paging arithmetic, which is
 stated as arithmetic.
 **Read-only:** no source file, template, stylesheet or test was changed.
-**Status:** five of its twelve findings are closed and removed from this file
-rather than left to be re-derived: S6 (the empty list's duplicate sentence and
-its empty table head), S9 (the shortlist's invisible copy confirmation) and S10
-(a keyboard hint shown to a phone, naming two keys) landed on 19 October 2026;
-S8 (the ticket sets chosen before they are explained) landed on 20 October 2026
-as C21 of the review before this one, and S12 (the privacy page's one-word
-title) is the owner's rejection of C18 on 19 October 2026, so `<title>Privacy</title>`
-stands. The four that landed are rows in `docs/settled-work.md` with the check
-that holds each. The score below is the one measured before those fixes; seven
-findings still ask for work and that is why this review stays.
+**Status:** eleven of its twelve findings are closed and removed from this file
+rather than left to be re-derived. S6, S9 and S10 landed on 19 October 2026 with
+DS1, DL4 and DS3 of the distill and delight passes; S8 landed on 20 October 2026
+as C21 of the review before this one; S12 is the owner's rejection of C18 on
+19 October 2026, so `<title>Privacy</title>` stands; and S1, S2, S3, S4, S7 and
+S11 landed on 20 October 2026. Each is a row in `docs/settled-work.md` with the
+check that holds it. S5, the phone's fold budget, is the one finding still open:
+it needs a measured budget set before it can be implemented, and that is why this
+review stays.
 
 ## Design health score
 
-| # | Heuristic | Score | The finding that costs it |
-|---|---|---|---|
-| 1 | Visibility of system status | 3 | The count line, the live regions, the freshness line and the URL all report state. A row whose panel has no times says nothing about it (S1). |
-| 2 | Match system / real world | 3 | "Restricted" loses its column label on a phone and its definition is about 2,000px below (S4); "your station" reads as a value rather than an instruction (S2). |
-| 3 | User control and freedom | 3 | Every filter clears, the budget clamps, and the URL is an undo. Clearing the shortlist still drops focus to `<body>` (S7). |
-| 4 | Consistency and standards | 2 | The chooser has no first-use note while the station page does (S2). |
-| 5 | Error prevention | 4 | No input can produce an error: the budget clamps, chips are withdrawn when they would empty the list, and the page has no dead ends. Genuinely good. |
-| 6 | Recognition rather than recall | 2 | The fare vocabulary lives in the footer, not where it is chosen; the chooser's list gives a bare count; a phone row's second line has no labels (S4, S11). |
-| 7 | Flexibility and efficiency | 3 | `/`, `b`, `n` and `p` exist and the pager works. |
-| 8 | Aesthetic and minimalist design | 3 | At 1366×768 one whole row is above the fold; at 390×844 58px of one row is; at 320×640 no row is (S5). The opened refinements panel is 315px. |
-| 9 | Error recovery | 2 | The empty state offers four doors at £0, and three of them lead to another empty list (S3). |
-| 10 | Help and documentation | 4 | The method fold, the trade-word glossary, the privacy page and the provenance line are thorough and in the right place. |
-| **Total** | | **29/40** | **Good (73%). An authored page with three P1s at its hand-offs.** |
+Measured on 19 October 2026, before any of the findings above landed: **29 of 40,
+good, with three P1s at the page's hand-offs.** Six of the seven findings that
+cost it are closed, so the figure is a reading of that page rather than a score
+to hold this one to; the per-heuristic table it was taken from went with the
+findings it described.
 
 ## Design specificity verdict
 
@@ -63,13 +54,12 @@ rather than a form. That idea is not a template, and the heading's scale,
 weight, and wrapping carry it without an illustration, a logo or a webfont. The
 table is category-standard, which is correct here.
 
-Where the idea thins is at the hand-offs rather than in the composition.
-Entering on the chooser, the one control the page exists for looks like the rest
-of the heading; recovering at £0 leads back to £0; opening the cheapest row can
-show no times at all; and on a phone the second line of a row drops the column
-names that make "Restricted" mean a fare. The page reads as authored at the
-question and assembled at the entry, the recovery and the row. The visual world
-is coherent; the behaviour at its edges is what costs this reading.
+Where the idea thinned was at the hand-offs rather than in the composition:
+the entry, the £0 recovery and the row's own times. All three landed on
+20 October 2026 and are rows in `docs/settled-work.md` rather than findings here.
+What still costs the reading is the phone's first screen: the composition is
+authored, and the screen a reader on a phone meets first does not yet contain the
+answer (S5).
 
 **Deterministic scan.** `impeccable detect --json` over the three built routes
 returned one finding, `cramped-padding` on `.origin-slot-wrap`, the station
@@ -85,14 +75,15 @@ through a script-injected overlay. No user-visible overlay is claimed.
 
 The page is closer to its own idea than it was on 17 October: the fold holds a
 row at 1366, the phone row is two lines, the disclosures share one mark, and the
-empty state's doors are the right shape. The next pass is not a visual one. It is
-the three hand-offs — the chooser's field, the £0 recovery and the row's own
-times — where the page stops behaving like the sentence it opens with. Fix those
-and the restraint stops being a place where controls go missing.
+empty state's doors are the right shape. The pass's own next step was not a
+visual one but the three hand-offs — the chooser's field, the £0 recovery and the
+row's own times — and all three landed on 20 October 2026. What is left is S5:
+the phone has no fold budget, so on the first screen the page still does not
+answer its own question.
 
-**Priority issues, in order:** S1 (a row with no times), S2 (a field that does
-not look like one), S3 (doors that open onto nothing), S5 (a phone with no fold
-budget).
+**Priority issues, in order:** S5 (a phone with no fold budget). The other
+three -- the row with no times, the field that did not look like one, and the
+doors that opened onto nothing -- landed on 20 October 2026.
 
 ## What is working, and should not be traded away
 
@@ -117,115 +108,6 @@ budget).
 ## Findings and numbered suggestions
 
 Severity: P1 breaks or misleads a reader now, P2 costs real effort, P3 is polish.
-
-### S1 [P1] The cheapest row can open a panel with no times, and say nothing about it
-
-At £20 the NOTTINGHAM row reads £7.00, 45m, Direct. Its expander opens a panel
-containing the restriction sentence, the feed record and "Copy journey" — no
-departures, no note. The payload explains it: the row is priced on the
-`singleDestinations` record (`SDS`, `departures: []`), while the `destinations`
-record for the same station (`CDR`, £11.60) carries four departures. LINCOLN, one
-row down, opens onto two departures, so the omission is not the timetable
-refusing the day; it is the cheaper fare set not carrying the times the other set
-has.
-
-**Why it matters.** `PRODUCT.md` promises "an expander holding the next few
-departures", and the row states a duration and a change count. A reader who
-opens the cheapest row to plan the day gets a panel that looks broken, or worse,
-concludes the page has no times. "Say the unflattering thing on the page" is
-principle 2; this is the one place it is not said.
-
-**Fix.** Attach the departures to the journey (the legs the row shares) rather
-than to one fare record, so every fare set that prices the same journey opens
-onto the same times. If a fare set genuinely has no departures, the panel must
-say so in one sentence — "This build has no departures for this fare; 45m is the
-fastest journey" — beside the time it explains.
-
-**Verify.** A browser check that every row with a positive duration and
-`journeyState: "found"` opens either at least one departure or the sentence.The synthetic fixture already has the two cases (NOT and LCN).
-
-**Suggested command:** `$impeccable harden`, then `$impeccable clarify` for the
-sentence.
-
-### S2 [P1] The chooser's station field looks like the heading, not a control
-
-`Train fares up to £20 from your station` is a sentence with a field in it, and
-the field is the page's whole job. It has an underline and, because the page
-focuses it on load, a caret; it has no visible instruction, no label and no word
-that says typing is possible. The station page spends a 24px sentence on exactly
-this ("Click the station name to start from somewhere else."); the chooser spends
-nothing. Its fallback is a list capped
-at 40 stations, so on the real release a reader whose station is not in the first
-40 has to discover the field or leave.
-
-**Why it matters.** The page is reached from a community post by a first-timer
-who is deciding in seconds whether the site is worth a click. "Your station" is
-a value phrase, not a verb; a reader can reasonably read the whole line as a
-title. This is the one control where the identity's restraint turns into an
-invisible affordance.
-
-**Fix.** One short line under the heading, in the station page's own voice:
-"Type your station's name, or pick one below." Keep the heading as it is. If the
-line is judged too much, make the placeholder a verb ("type a station") and keep
-the line for the empty list only. Either way it must be visible before the list,
-not a tooltip.
-
-**Verify.** The chooser's browser suite reads the line from the page and the
-field's accessible name; a first-time walkthrough should reach a station without
-opening the list.
-
-**Suggested command:** `$impeccable clarify`.
-
-### S3 [P2] Three of the four empty-state doors lead to another empty state
-
-At £0 the empty state offers "Raise the budget to £7.00", "Show the 21 Anytime
-Day Returns", "Show the 22 returns" and "Show the one single". Measured: clicking
-"Show the 21 Anytime Day Returns" switches the ticket mode to Anytime and leaves
-the budget at £0, so the list stays empty and the empty state now offers "Show
-the 22 cheapest fares". The three set doors change the filter; they do not open
-the door they name. The "Raise the budget" door is the only one that produces a
-destination.
-
-**Why it matters.** This is the state where a reader is most likely to leave, and
-the page's best recovery idea is spent on three labels that promise a result and
-deliver another apology. It also exposes a scope problem: "21 Anytime Day
-Returns" is a whole-feed count, while the count line above the table is the
-within-budget mix; the two numbers sit in the same state without saying they are
-different sums.
-
-**Fix.** Make each set door set the budget to that set's cheapest fare (the payload already has it) and switch the mode, so the label is true. If a set has
-no fare inside the current ceiling, do not offer the door. Name the floor on the
-label — "Anytime Day Returns, from £6.40" — and move the whole-feed count to a
-clause that says so ("21 in the feed"), so both numbers have a scope.
-
-**Verify.** A browser test at `?budget=0` that every door leaves a non-empty
-list, and that the button's label and the resulting count agree.
-
-**Suggested command:** `$impeccable harden`.
-
-### S4 [P2] On a phone, "Restricted" loses the column that explains it
-
-At 390px the `<thead>` is clipped for assistive technology and the row's second
-line reads "45m · Direct · Restricted · Tickets". The word "Restricted" is the
-fare type, but nothing on the visible row says so; the glossary that defines it
-is in the footer, about 2,000px below. "Regular" has the same problem and is
-the common case, so it reads as a third fact about the journey rather than a
-quiet default.
-
-**Why it matters.** The fare type is the distinction the page exists to make —
-"the headline is a one-way price list" is a fact a reader has to be able to read
-off the row, not recover from a footer. On a phone the row's compactness is
-paid for by the one label that carries the product's honesty.
-
-**Fix.** Let the cell's text carry its noun: "Restricted fare" / "Regular fare"
-(or "Advance fare"), which adds five characters and survives the flex row at 390
-and at 320. The row's disclosure already carries the condition, so the cell only
-needs the category.
-
-**Verify.** The 390px layout check asserts the visible fare cell includes "fare",
-and the row still fits two lines at 390 and three at 320.
-
-**Suggested command:** `$impeccable clarify`.
 
 ### S5 [P2] The phone has no fold budget, and at 320×640 it has no answer above it
 
@@ -268,56 +150,11 @@ the 1366 one, with the banner on the page.
 
 **Suggested command:** `$impeccable adapt`.
 
-### S7 [P2] Clearing the shortlist drops focus to `<body>`
-
-Measured: focus `#shortlistDockClear`, press it, and `document.activeElement` is
-`BODY`. The dock removes itself with the focus inside it. The 17 October review
-fixed the same class of loss when the budget closed an open row; this is the
-remaining one.
-
-**Why it matters.** A keyboard or screen-reader reader who clears the list is
-returned to the top of the document with no announcement of where they are. The
-page already has a status region for the clear; the focus is the half that is
-missing.
-
-**Fix.** Before removing the dock, move focus to the summary line (or the first
-row's checkbox when a row exists) and announce "Shortlist cleared." Keep the
-status region. The same rule the row's own panel follows when it closes.
-
-**Verify.** A browser check that presses Clear from the keyboard and asserts the
-active element is not `<body>` and that the status names the clear.
-
-**Suggested command:** `$impeccable harden`.
-
-### S11 [P3] The chooser's destination count is a bare number
-
-The list reads "GRANTHAM GRN 22", "NOTTINGHAM NOT 6", "LINCOLN LCN 6". The
-number has an `aria-label` ("22 destinations") and a `title`, so a screen reader
-is told what it is; a sighted reader sees a number after a code with nothing above
-it that names the column. The heading "Destinations this feed prices" says what
-the list is, not what the third column is.
-
-**Why it matters.** The count is the one piece of evidence that tells a reader
-whether a station is worth opening; it should not need a hover to decode.
-
-**Fix.** Put a small column line above the grid — "Station · Code · Destinations"
-— or write "22 destinations" in the row where the title currently is. The first
-keeps the row clean; the second is unambiguous at the cost of a wider row.
-
-**Verify.** A chooser screenshot at 1366 and 390, plus the existing accessible
-name check.
-
-**Suggested command:** `$impeccable clarify`.
-
 ## Persona red flags
 
-**Jordan, first timer, arrives from a community post.** On the chooser, "your
-station" reads as the end of a title; there is no line telling them to type, and
-the list is a directory rather than a prompt (S2). On a station page, "Restricted"
-is the third word on the row's second line with no column label on a phone (S4),
-and the sentence that defines it is in the footer. At £0, three of the four
-doors lead to another empty list (S3). Jordan can use the page only after
-guessing the field and the vocabulary.
+The obstacles each reader met on the 19 October build, pruned to the ones still
+open. The rest landed on 20 October 2026 and are rows in
+`docs/settled-work.md`.
 
 **Casey, phone, one hand, interrupted.** The first destination starts at 786px
 on an 844px screen; at 320 nothing is visible (S5). The budget is 2,372px above
@@ -327,48 +164,30 @@ pass).
 
 **Sam, keyboard and screen reader.** The focus ring is clear and every control is
 reachable; the table keeps its headings for assistive technology when the phone
-layout clips them. Clearing the shortlist drops focus to `<body>` (S7), and the
-cheapest row's panel gives no times without saying why (S1). The count line is a
-polite live region, so a budget drag is announced, but the empty state's doors
-switch modes silently apart from the status.
+layout clips them. The two losses this pass measured — clearing the shortlist
+dropped focus to `<body>`, and the cheapest row's panel gave no times without
+saying why — landed on 20 October 2026. The count line is a polite live region,
+so a budget drag is announced.
 
 ## Minor observations
 
 - The opened refinements panel leaves a 160px void in its left column, because
   the ticket-type fieldset is short and the party/railcard column is tall. The
   panel is a two-column grid with one long row and one short one.
-- The budget hint is 117 characters: one line at 1366, two at 390, three at 320.
-  It names the party and the mode, which is the right content; the length is the
-  cost.
-- "Show the one single" is grammatical but reads oddly beside "Show the 22
-  returns"; "Show the single" is the same offer in four fewer characters.
-- The empty state's counts (21 Anytime, 22 returns, 1 single) and the count
-  line's mix (16 returns, 1 single at £20) are different scopes. S3 asks for the
-  floor on the door; the labels should say "at any budget" if they keep the
-  whole-feed count.
 - The heading's budget field is 37×36px on a phone; it meets the 24px floor the
   matrix holds every target to, and sits under the 44px the row actions promise.
   The field is the identity's own interaction, so the 44px promise is worth
   deciding deliberately rather than by omission.
-- The chooser's page fits 768px exactly at 1366 with the demo's three stations.
-  The release caps the list at 40, so the page grows by 37 rows there; the
-  header and the list heading are the only things above it.
 - The privacy page is 1,468px tall at 1366 and 600px wide, with the document
   starting at 127px. Its body is the best-measured prose on the site.
 
 ## Questions to consider
 
-- If the chooser's field is the page's only control, why is the station page the
-  only route that explains its control?
-- Should a door at £0 be allowed to switch ticket mode when the budget cannot
-  reach that set? A door that changes the question without changing the answer
-  is worse than no door.
 - What is the phone's fold budget, in numbers, and who owns it? The laptop has
-  one and a check; the phone has neither.
-- When a fare set has no departures, is the row's speed a promise or a summary?
-  The page currently treats it as a promise and then withholds the evidence.
-- Can "Restricted" be understood from the row alone, or is the glossary's
-  position an admission that it cannot?
+  one and a check; the phone has neither (S5).
+- Should the heading's budget field be held to the 44px the row actions promise?
+  The field is the identity's own interaction, so the answer is a decision rather
+  than an omission.
 
 ## Run notes
 

@@ -312,6 +312,33 @@ probe of the demo's own rows, not of the licensed Grantham page, and the gate
 will report the licensed page's own figure the first time the release suite
 runs it.
 
+### The 19 October 2026 impeccable critique
+
+`docs/audits/2026-10-19-impeccable-critique.md` stays for one finding, S5, the
+phone's fold budget: it has to be given a stated budget in numbers before it can
+be implemented, and that is an owner's decision rather than an edit. Eleven of
+its twelve findings are settled here. S8 is C21 of the 17 October review above and
+S12 is that review's rejected C18, so both already have their rows. S6, S9 and S10
+landed on 19 October 2026 with DS1, DL4 and DS3 of the distill and delight passes
+and share their checks. S1, S2, S3, S4, S7 and S11 landed on 20 October 2026.
+
+The six that landed on 20 October changed one thing the pass could only see from
+the outside: a fact that belonged to the journey was being copied out of one fare
+record instead of read once. The departures are the clearest case, and the payload
+now shares one list per journey across the fare lists that price it (S1).
+
+| Finding | What it asked | What landed | Held by |
+|---|---|---|---|
+| S1 [P1] | the cheapest row opened a panel with no times and said nothing about it | the departures belong to the journey: one list per destination, read once from the timetable the row's journey came from and shared by every fare set that prices it; a fare set that still has none says so in the panel, beside the duration it explains | `tests/test_build_fares.py`, `test_the_journey_is_the_same_fact_in_all_three_fare_lists`; `tests/browser/station-fares.cjs`, "every row the build timed opens onto its departures, or says it has none" and "and a fare set with no times says so, beside the duration it explains" |
+| S2 [P1] | the chooser's station field looked like the end of a title | "Type your station's name, or pick one below." under the heading and above the list, on the route that has a field to point at; a release that priced one station keeps its own sentence | `tests/test_build_chooser.py`, `test_the_chooser_says_what_to_do_with_the_field_it_offers`; `tests/browser/chooser.cjs`, "the chooser says what its field is for, under the heading and above the list" |
+| S3 [P2] | three of the four £0 doors led to another empty list | each set door sets the budget to that set's cheapest fare and switches the mode in one gesture, so the list it promises is the list it opens; it is not offered when the set has nothing the type chips can show, and its label names the floor and scopes the count ("Show returns, from £6.40 (22 in the feed)") | `tests/browser/station-filters.cjs`, "and every ticket-set door lands on the set it names, at the price it names"; `page/station/state.js`, `chooseModeAt` |
+| S4 [P2] | "Restricted" lost the column that explained it on a phone | the cell carries its noun -- "Restricted fare", "Regular fare", "Advance fare" -- so the row reads as a fare type without the clipped heading, and "Two tickets" already carried one | `tests/browser/station-layout.cjs`, "at 390px the fare cell says what kind of thing it names"; `tests/browser/station-fares.cjs`, "and the row names the fare in a phrase while the feed's code stays folded" |
+| S7 [P2] | clearing the shortlist dropped focus to `<body>` | the clear announces "Shortlist cleared." and moves focus out of the dock before the dock goes -- to the first row's checkbox, or to the count line when the list has no rows; the live region now sits outside the dock, because a region inside a hidden subtree is announced to nobody | `tests/browser/station-shortlist.cjs`, "and clearing it from the keyboard leaves the focus on the page"; `page_templates.py`, the count line's `tabindex` and the status region's place |
+| S11 [P3] | the chooser's destination count was a bare number | one column line above the list, "Station · Code · Destinations", written once rather than in every row; it is for the eye, because each row's accessible name already says what the count counts | `tests/test_build_chooser.py`, `test_the_chooser_names_the_three_columns_its_rows_carry`; `tests/browser/chooser.cjs`, "the chooser's destination count is named by a column line above the list" |
+| S6 [P1] | the empty list said its sentence twice, over an empty table head | landed on 19 October 2026 with DS1: the count line owns the sentence and the table stands down with the list | the two DS1 checks in `tests/browser/station-filters.cjs` |
+| S9 [P2] | the shortlist's copy confirmation was invisible | landed on 19 October 2026 with DL4: the dock's Copy says "Copied" for two seconds, and "Select below" when the clipboard refuses | `tests/browser/station-shortlist.cjs`, "the dock's Copy acknowledges the copy to the eye as well as the region" |
+| S10 [P2] | a keyboard hint was shown to a phone, naming two keys | landed on 19 October 2026 with DS3: one key, and the line only on a fine pointer | `tests/browser/station-filters.cjs`, "the strip that stays on screen names the budget key" |
+
 ### The 17 October 2026 poteto audit
 
 `docs/audits/2026-10-17-poteto-audit.md` was removed on 19 October 2026, after
