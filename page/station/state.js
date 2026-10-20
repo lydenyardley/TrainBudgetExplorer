@@ -104,6 +104,30 @@ function chooseMode(name) {
   render();
   writeUrl();
 }
+// S3 of the 19 October 2026 critique: a door in the empty list names a ticket
+// set and the fare its cheapest row costs, so the mode and the budget are one
+// gesture. Set here rather than as two calls from the door, because two
+// renders would show the reader a page the door never promised -- the new set
+// at the old, empty budget -- for one frame.
+function chooseModeAt(mode, pounds) {
+  const chosen = document.querySelector('input[name="ticketMode"][value="' + mode + '"]');
+  if (!chosen) return;
+  STATE.mode = mode;
+  for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
+    input.checked = input === chosen;
+  }
+  // The figure this mode remembers is the one the door just named. Without it
+  // the render's clamp restores whatever the reader last set in that mode -- 0,
+  // if they had looked at it at an empty budget -- and the door lands on the
+  // empty list it was pressed to leave. The clamp also restores a figure above
+  // the stop of the list the reader was looking at, which setBudget would
+  // otherwise have clipped to that stop on the way here.
+  STATE.budgetByMode[mode] = pounds;
+  setBudget(pounds);
+  STATE.page = 1;
+  render();
+  writeUrl({ budget: true });
+}
 function chooseCard(key) {
   // A card this build does not price is not a card the reader holds, which is
   // the same rule a shared link is held to.

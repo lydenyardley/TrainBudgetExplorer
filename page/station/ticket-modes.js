@@ -78,6 +78,17 @@ function showLabel(mode) {
   const nouns = SHOW_NOUNS[mode] || [modeLabels()[mode], modeLabels()[mode] + "s"];
   return "Show the " + countWord(count) + " " + nouns[count === 1 ? 0 : 1];
 }
+// S3 of the 19 October 2026 critique: a set door at £0 switched the filter and
+// left the budget where it was, so it promised a set and delivered another
+// empty list. The label now names the floor the door will set, and the count
+// carries its own scope -- the whole feed's count is not the number of rows the
+// press will show, so it says which sum it is rather than being read as one.
+function setDoorLabel(mode, floor) {
+  const count = modeCount(mode);
+  const nouns = SHOW_NOUNS[mode] || [modeLabels()[mode], modeLabels()[mode] + "s"];
+  return "Show " + nouns[count === 1 ? 0 : 1] + ", from " + money(floor) +
+    " (" + countWord(count) + " in the feed)";
+}
 // The fare a row is priced as, in the words the build's own price-quality
 // phrases use. The cheapest list holds one fare per place, so this is what
 // names the ticket on a row the reader chose by price rather than by type.
@@ -290,11 +301,20 @@ function renderEmpty(available, wanted, cap, what) {
       offer("Price it for two adults", () => chooseUnit("party"));
     }
   }
-  // Another ticket type on this origin, with its own count.
+  // Another ticket type on this origin, with its own count -- and its own
+  // floor (S3 of the 19 October 2026 critique). The door sets the budget to the
+  // cheapest fare the reader can actually see in that set, so the label is
+  // true when pressed: pressing it used to leave the budget at £0 and the list
+  // empty. A set whose fares the current type chips hide is not offered, for
+  // the same reason the raise-budget door above filters by the chips: a door
+  // that changes the question without changing the answer is worse than none.
   for (const mode of Object.keys(modeLabels())) {
-    if (mode !== ticketMode() && modeCount(mode)) {
-      offer(showLabel(mode), () => chooseMode(mode));
-    }
+    if (mode === ticketMode()) continue;
+    const rows = (mode === CHEAPEST_MODE ? cheapestDestinations() : (DATA[MODE_LISTS[mode]] || []))
+      .filter((destination) => matchesType(destination, wantedTypes));
+    const floor = rows.reduce((low, destination) => Math.min(low, priceOf(destination)), Infinity);
+    if (!rows.length || !Number.isFinite(floor)) continue;
+    offer(setDoorLabel(mode, floor), () => chooseModeAt(mode, Math.ceil(floor / 100)));
   }
   if (actions.childElementCount) {
     actions.prepend(document.createTextNode("Try: "));

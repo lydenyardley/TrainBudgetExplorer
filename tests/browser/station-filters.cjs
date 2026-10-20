@@ -85,6 +85,115 @@ async function driveTheFilters(world) {
       /£[0-9.,]+ reaches /.test(floored.lead) && floored.doors.some((door) => /^Raise the budget to £/.test(door)),
       JSON.stringify({ lead: floored.lead, doors: floored.doors })
     );
+    // S3 of the 19 October 2026 critique: three of the four doors at £0 changed
+    // the ticket set and left the budget at £0, so each promised a set and
+    // delivered another empty list. Each one now names the cheapest fare that
+    // set holds and sets the budget to it, so the check is that promise: press
+    // it, and hold the floor on the label against the price the page actually
+    // shows and the budget the count line actually states.
+    const setDoors = await page.evaluate(() => {
+      const openedMode = ticketMode();
+      const reset = () => {
+        setBudget(Number(document.getElementById("budget").min));
+        chooseMode(openedMode);
+      };
+      reset();
+      const labels = Array.from(document.querySelectorAll("#empty button"))
+        .map((button) => button.textContent)
+        // "Show all destination types" is a filter door, not a ticket set.
+        .filter((label) => /^Show (?!all )/.test(label));
+      const doors = [];
+      for (const label of labels) {
+        reset();
+        // Re-read each time: pressing a door rebuilds the empty state it sat
+        // in, so the node that was read a moment ago is no longer on the page.
+        const button = Array.from(document.querySelectorAll("#empty button"))
+          .find((candidate) => candidate.textContent === label);
+        if (!button) continue;
+        button.click();
+        const shown = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
+        const price = shown.length ? shown[0].querySelector("td.num .price") : null;
+        doors.push({
+          label,
+          mode: ticketMode(),
+          rows: shown.length,
+          price: price ? price.textContent.trim() : "",
+          summary: document.getElementById("summary").textContent,
+          // The budget the door set, because the door names a floor and the
+          // page's whole-pound budget is what the count line reports.
+          budget: STATE.budget,
+        });
+      }
+      // The same doors pressed by a reader who has already been in the set they
+      // name, at £0: that mode remembers 0, and a door that only switched the
+      // filter would be overruled by the clamp and land on the empty list it
+      // promised to leave. The visit is the reader's own gesture -- the mode
+      // chip, the budget down, the chip back.
+      const revisited = [];
+      for (const door of doors) {
+        reset();
+        chooseMode(door.mode);
+        setBudget(Number(document.getElementById("budget").min));
+        render();
+        reset();
+        const button = Array.from(document.querySelectorAll("#empty button"))
+          .find((candidate) => candidate.textContent === door.label);
+        if (!button) continue;
+        button.click();
+        revisited.push({
+          label: door.label,
+          rows: document.querySelectorAll("#rows tr[data-crs]").length,
+          budget: STATE.budget,
+        });
+      }
+      reset();
+      return { openedMode, doors, revisited };
+    });
+    // The door's own promise, in pence: the figure between "from" and the
+    // scope clause.
+    const promisedPence = (label) => {
+      const match = / from £([0-9.]+) \(/.exec(label);
+      return match ? Math.round(Number(match[1]) * 100) : null;
+    };
+    const brokenDoors = setDoors.doors.filter((door) => {
+      const promised = promisedPence(door.label);
+      const shown = Math.round(Number(door.price.replace(/[^0-9.]/g, "")) * 100);
+      return (
+        door.rows < 1 ||
+        promised === null ||
+        // The cheapest row the door produces is the price the door named.
+        promised !== shown ||
+        // The budget it set is the whole pound above that floor, so the count
+        // line says the number the door promised and no other.
+        Math.ceil(promised / 100) !== door.budget ||
+        !door.summary.includes("for up to £" + Number(door.budget).toFixed(2)) ||
+        // A door that leaves the reader in the set they were already in has
+        // changed nothing.
+        door.mode === setDoors.openedMode
+      );
+    });
+    check(
+      "and every ticket-set door lands on the set it names, at the price it names",
+      setDoors.doors.length === 0
+        ? notExercised("this page offers no ticket-set door at an empty budget")
+        : brokenDoors.length === 0,
+      JSON.stringify({ openedMode: setDoors.openedMode, broken: brokenDoors, doors: setDoors.doors })
+    );
+    const stuckDoors = setDoors.revisited.filter((door) => {
+      const promised = promisedPence(door.label);
+      return (
+        promised === null ||
+        door.rows < 1 ||
+        Math.ceil(promised / 100) !== door.budget
+      );
+    });
+    check(
+      "and a door still lands when its set is the last one the reader looked at",
+      setDoors.revisited.length === 0
+        ? notExercised("this page offers no ticket-set door at an empty budget")
+        : stuckDoors.length === 0,
+      JSON.stringify(stuckDoors)
+    );
     // S17: the slider has always stopped somewhere the page never said out
     // loud, so a reader could not predict whether a fare at the boundary was
     // included without dragging the control to find out. The figure is read
