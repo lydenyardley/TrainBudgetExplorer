@@ -1147,3 +1147,71 @@ gate will take it the first time the release suite runs, and the 101-destination
 probe above is the demo's rows repeated, not the real feed's. It also does not
 time the paint itself, only the statements plus the layout they force, so a
 compositor cost on a slow device is outside it.
+
+## The shard build against its 150-minute bound, 20 October 2026
+
+**What happened.** Every share of the six-shard release build ran into the
+shard step's `timeout-minutes: 150` and published no page, in the run of
+20 October 2026. The only earlier figure is run 38353105980 (13 October 2026):
+six shares of about 450 pages at 114, 111, 106, 87, 95 and 103 minutes, with the
+bound set 36 minutes above the slowest of them. That headroom is spent.
+
+**What the failure is and is not.** It is a bound, not a measurement: the run
+says every share passed 150 minutes and not by how much, so nothing here knows
+whether a share was 151 minutes or 300. No per-share figure is quoted, and none
+should be read into the change below.
+
+**What changed, and the arithmetic behind it.** Six shares became twelve of
+about 226 pages each, in `.github/workflows/deploy.yml`, with the bound left
+where it is. A share's cost has two parts and only one of them shrinks with the
+share: the pages, which scale, and the whole fares feed plus the whole national
+timetable every share loads for itself, which does not. Halving the pages
+therefore halves the larger part and leaves the fixed part paid twice over --
+minutes, against the hours the pages take.
+
+**What is ruled out by measurement.** The release's timetable became Network
+Rail's whole CIF on 16 October 2026 (ADR-0073), so the obvious suspect was that
+the CIF is a much bigger index than the DTD feed the earlier figures were taken
+on. It is not: the CIF in `feeds/timetable-nwr` (99,816,417 bytes) holds
+**488,796 passenger schedules and 7,373,060 calling points** after the loader's
+own filter, against the DTD feed's **419,589 schedules and 7,700,987 calling
+points** -- 17% more schedules and 4% fewer calling points. That is not a
+doubling of what a worker holds, so the switch is not the 150-minute story on
+its own.
+
+**What this does not establish.** Which part of a share the extra minutes went
+to. Twelve shares is the workflow's own rule for a share that nears its bound
+(the rule its comment states), not a diagnosis of a regression: a code change
+between 13 and 20 October that costs per page would show up exactly this way,
+and the figure that would separate "more work per page" from "the same work,
+slower hardware" is a per-share timing from a successful run. The first
+twelve-share run is that measurement, and it belongs in this section.
+
+**Reproduce the CIF count** (no build, no credentials; the file is the release's
+own download):
+
+```python
+import gzip
+import atoc_timetable as t
+
+def field(line, layout, name):
+    pos = 0
+    for key, width in layout:
+        if key == name:
+            return line[pos:pos + width]
+        pos += width
+
+kept = calls = 0
+with gzip.open("feeds/timetable-nwr/nwr-schedule.CIF.gz", "rt", encoding="latin-1", newline="") as feed:
+    keep = False
+    for line in feed:
+        if line[:2] == "BS":
+            keep = t.is_passenger_service(
+                field(line, t.CIF_SCHEDULE, "status").strip().upper(),
+                field(line, t.CIF_SCHEDULE, "category"),
+            )
+            kept += keep
+        elif line[:2] in ("LO", "LI") and keep:
+            calls += 1
+print(kept, calls)
+```

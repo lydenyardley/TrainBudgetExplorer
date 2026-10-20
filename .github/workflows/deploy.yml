@@ -416,14 +416,30 @@ jobs:
   # 2,705 pages in the 300 minutes the build step was allowed (run
   # 38312084609, 12-13 October 2026): about 6.2 pages a minute on four
   # workers, so the whole network needs some 440 minutes on one runner -- past
-  # the step bound and close to GitHub's 360-minute job limit. Six shards of
-  # every sixth origin (the split interleaves, so cheap and dear stations
-  # spread evenly) are about 450 pages each, run side by side. Measured in run
+  # the step bound and close to GitHub's 360-minute job limit. The split takes
+  # every Mth origin (it interleaves, so cheap and dear stations spread
+  # evenly), and the twelve shares below are about 226 pages each, run side by
+  # side. The six it replaced were about 450 each. Measured in run
   # 38353105980 (13 October 2026): shares 1 to 6 took 114, 111, 106, 87, 95
   # and 103 minutes -- slower than the 75 the single-runner rate predicted,
   # because each share loads the whole feed and timetable itself. The assemble job merges them through --merge, which
   # proves they partition the feed's origins and were built from the same
   # inputs and code before it writes a page.
+  #
+  # Twelve shares since 20 October 2026. That day every share of the six ran
+  # into the step's 150-minute bound having published no page, which is the
+  # signal that bound's own comment names: split further rather than raise it.
+  # What a share costs is not only its pages -- each one loads the whole fares
+  # feed and the whole national timetable itself, and that floor does not
+  # shrink when the share does -- so twelve shares of about 226 pages halve the
+  # part that scales, and the fixed part they pay twice over is minutes.
+  #
+  # That is arithmetic rather than a measurement: the failed run says each
+  # share passed 150 minutes and not by how much, so the claim here is only
+  # that the page work halves against an unchanged bound. A share that still
+  # nears the bound means 24 shares, not a longer timeout, and it is
+  # `docs/build-performance-findings.md` that records the figure when one is
+  # taken.
   shard:
     needs: build
     if: needs.build.outputs.changed == 'true'
@@ -431,7 +447,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v4
 
@@ -592,16 +608,18 @@ jobs:
         # That table was measured on a 12-CPU desktop. The hosted runner is
         # slower: run 38312084609 wrote 1,821 pages in 300 minutes on four
         # workers, so the whole network was about 440 minutes on one runner.
-        # Hence the shards above. A share is about 450 pages; run 38353105980
-        # measured 87 to 114 minutes per share. The bound leaves the slowest of
-        # those 36 minutes of headroom and still stops a hung share well inside
-        # the job limit; a share that nears it is the signal to split further
-        # rather than to raise it.
+        # Hence the shards above. Six shares of about 450 pages measured 87 to
+        # 114 minutes each in run 38353105980, and on 20 October 2026 all six
+        # passed this bound without writing a page -- so the 36 minutes of
+        # headroom it was set with are gone, and the shards are twelve of about
+        # 226 pages rather than the bound being raised. It still stops a hung
+        # share well inside the job limit; a share that nears it is the signal
+        # to split further rather than to raise it.
         timeout-minutes: 150
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
           PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
-          SHARD: ${{ matrix.shard }}/6
+          SHARD: ${{ matrix.shard }}/12
         run: |
           BASE_ARGS=()
           if [ -n "$SITE_BASE_PATH" ]; then
