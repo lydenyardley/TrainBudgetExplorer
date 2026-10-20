@@ -24,6 +24,11 @@
      list. */
   #picksHeading { margin: 1.6rem 0 0; }
   #orderingNote { margin: 0; }
+  /* S11 of the 19 October 2026 critique: the one line that names the three
+     columns the rows carry. It sits with the other small labels rather than
+     with the heading, and its left padding is the row's own (.4rem) so the
+     word "Station" begins where the first station's name begins. */
+  #picksColumns { margin: .7rem 0 .1rem; padding-left: .4rem; }
   /* One cell per station, as many across as the column holds: at 78rem a
      single row per station put a station's own count most of a screen away
      from its name, so the three facts of a row stopped being one thing. The

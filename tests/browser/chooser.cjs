@@ -75,6 +75,57 @@ async function checkChooser(page, url, check) {
         heading.name === "Train fares up to £" + heading.field + " from your starting station"),
     JSON.stringify(heading)
   );
+  // S2 of the 19 October 2026 critique: the field in the heading is the page's
+  // whole job, and it read as the end of a title -- no verb, no label, nothing
+  // that said typing was possible. The station page spends a sentence on the
+  // same control; this is the chooser's, under the heading and above the list,
+  // and the field's own name has to say what it is for as well.
+  const instruction = await page.evaluate(() => {
+    const hint = document.getElementById("chooserHint");
+    const heading = document.getElementById("pageHeading").getBoundingClientRect();
+    const list = document.getElementById("picks").getBoundingClientRect();
+    const box = hint ? hint.getBoundingClientRect() : null;
+    const field = document.getElementById("originSearch");
+    return {
+      text: hint ? hint.textContent.trim() : "",
+      painted: Boolean(box) && box.height > 0 && box.width > 0 && !hint.hidden,
+      belowHeading: Boolean(box) && box.top >= heading.bottom - 1,
+      aboveList: Boolean(box) && box.bottom <= list.top + 1,
+      name: field ? field.getAttribute("aria-label") || "" : "",
+    };
+  });
+  check(
+    "the chooser says what its field is for, under the heading and above the list",
+    instruction.painted &&
+      /type/i.test(instruction.text) &&
+      /pick|choose|below/i.test(instruction.text) &&
+      instruction.belowHeading &&
+      instruction.aboveList &&
+      /station/i.test(instruction.name),
+    JSON.stringify(instruction)
+  );
+  // S11 of the 19 October 2026 critique: a row read "GRANTHAM GRN 22", and only
+  // the row's own accessible name said what the number counted -- nothing above
+  // the list named the third column. One column line names all three, and it
+  // sits with the list rather than with the heading.
+  const columns = await page.evaluate(() => {
+    const line = document.getElementById("picksColumns");
+    const heading = document.getElementById("picksHeading").getBoundingClientRect();
+    const list = document.getElementById("picks").getBoundingClientRect();
+    const box = line ? line.getBoundingClientRect() : null;
+    return {
+      text: line ? line.textContent.trim() : "",
+      painted: Boolean(box) && box.height > 0 && box.width > 0 && !line.hidden,
+      belowHeading: Boolean(box) && box.top >= heading.bottom - 1,
+      aboveList: Boolean(box) && box.bottom <= list.top + 1,
+    };
+  });
+  check(
+    "the chooser's destination count is named by a column line above the list",
+    columns.painted && /destination/i.test(columns.text) &&
+      columns.belowHeading && columns.aboveList,
+    JSON.stringify(columns)
+  );
   // The chooser's field is the same control as a station page's, so the three
   // behaviours are checked here as well and against this page's own list.
   const wholeList = await page.evaluate(() => ({
@@ -655,6 +706,26 @@ async function checkChooser(page, url, check) {
     return Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
   });
   check("at 390px nothing overflows horizontally", overflow <= 0, `${overflow}px`);
+  // S2 and S11 of the 19 October 2026 critique, measured where the list is
+  // first met: the sentence that says what to do with the field and the line
+  // that names the columns are both still painted at a phone width, so neither
+  // is a legend that only fits a laptop.
+  const atPhone = await page.evaluate(() => {
+    const read = (id) => {
+      const el = document.getElementById(id);
+      const box = el ? el.getBoundingClientRect() : null;
+      return {
+        present: Boolean(box) && box.height > 0 && box.width > 0 && !el.hidden,
+        text: el ? el.textContent.trim() : "",
+      };
+    };
+    return { hint: read("chooserHint"), columns: read("picksColumns") };
+  });
+  check(
+    "at 390px the field's instruction and the column line are both still shown",
+    atPhone.hint.present && atPhone.columns.present,
+    JSON.stringify(atPhone)
+  );
   await page.fill("#originSearch", longQuery);
   const narrowOverflow = await page.evaluate(() => ({
     overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,

@@ -326,6 +326,52 @@ class ChooserTest(PageTestCase):
             self.assertIn('<span class="heading-lead">from</span>', chooser)
             self.assertNotIn("originClause\"> from <", chooser)
 
+    def test_the_chooser_says_what_to_do_with_the_field_it_offers(self) -> None:
+        # S2 of the 19 October 2026 critique: the field in the heading is the
+        # page's whole job and it looked like the end of the title -- no verb,
+        # no label, nothing that said typing was possible. The sentence is
+        # under the heading and before the list, and it is only there when the
+        # page has a field to point at: a one-station release names its station
+        # instead and says so in its own paragraph.
+        many = render_chooser(
+            [
+                {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1},
+                {"crs": "GRN", "name": "GRANTHAM", "slug": "grantham", "destinations": 3},
+            ],
+            budget_pounds=20,
+        )
+        self.assertIn('<p class="sub" id="chooserHint">Type your station’s name', many)
+        # Before the list, not after it and not in a tooltip.
+        self.assertLess(many.index('id="chooserHint"'), many.index('id="picks"'))
+        one = render_chooser(
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            budget_pounds=20,
+        )
+        self.assertNotIn('id="chooserHint"', one)
+
+    def test_the_chooser_names_the_three_columns_its_rows_carry(self) -> None:
+        # S11 of the 19 October 2026 critique: a row read "GRANTHAM GRN 22" and
+        # only the row's accessible name said what the number counted. One
+        # column line above the grid, written once, is what the count needed;
+        # the row still does not repeat the phrase (C12 of the 17 October 2026
+        # critique), and the line is for the eye because each row's own name
+        # already carries the count.
+        for index in (
+            [{"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1}],
+            [
+                {"crs": "NOT", "name": "NOTTINGHAM", "slug": "nottingham", "destinations": 1},
+                {"crs": "GRN", "name": "GRANTHAM", "slug": "grantham", "destinations": 3},
+            ],
+        ):
+            chooser = render_chooser(index, budget_pounds=20)
+            self.assertIn('id="picksColumns"', chooser)
+            self.assertIn("Station &middot; Code &middot; Destinations", chooser)
+            self.assertLess(chooser.index('id="picksColumns"'), chooser.index('<ul id="picks"'))
+            self.assertNotIn(" this feed prices</span>", chooser)
+        # A page that priced nothing has no list for a column line to label, and
+        # the line would be the only thing in that section.
+        self.assertNotIn("id=\"picksColumns\"", render_chooser([], budget_pounds=20))
+
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
         from page_templates import CHOOSER_SCRIPT
 

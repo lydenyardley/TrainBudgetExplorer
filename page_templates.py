@@ -472,6 +472,15 @@ __CHOOSER_INTRO__
      and each row carries the number alone, in the same column. -->
 <h2 id="picksHeading">Destinations this feed prices</h2>
 __ORDERING_NOTE__
+<!-- S11 of the 19 October 2026 critique: the row's number was a bare count after
+     a code, and nothing above it named the column -- the heading says what the
+     list is, not what the third column is. One column line, written once, is
+     what the count needed; the row still does not repeat the phrase. It is for
+     the eye only: each row's own accessible name already says "22
+     destinations", so a screen reader would hear the legend and then the same
+     fact on every link. A build that priced no station writes nothing here: a
+     column line over an empty list names columns that are not on the page. -->
+__PICKS_COLUMNS__
 <ul id="picks" aria-labelledby="picksHeading"></ul>
 <p id="nomatch" hidden></p>
 <!-- The station list is drawn by the route's own code, so a chooser whose copy

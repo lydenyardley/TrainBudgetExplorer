@@ -583,6 +583,18 @@ def render_chooser(
         ensure_ascii=False,
         separators=(",", ":"),
     ).replace("</", "<\\/")
+    # S11 of the 19 October 2026 critique: one line names the three columns every
+    # row carries, because a row read "GRANTHAM GRN 22" and only its own
+    # accessible name said what the number counted. It is written once and for
+    # the eye -- each row's name already carries the count -- and a build that
+    # priced no station leaves it out rather than labelling a list that is not
+    # there.
+    columns = (
+        '<p class="eyebrow" id="picksColumns" aria-hidden="true">'
+        "Station &middot; Code &middot; Destinations</p>"
+        if index
+        else ""
+    )
     if len(index) == 1:
         only = index[0]
         origin_clause = (
@@ -611,17 +623,27 @@ def render_chooser(
             'aria-label="The station you are starting from" aria-describedby="pickStatus" '
             'aria-controls="picks"></span></span>'
         )
-        # C15/D9: the instruction folded into the placeholder, so there is no
-        # paragraph here. The ordering note is the list's subtitle now, and the
-        # denial it used to carry -- not busy, not near -- was a defence against
-        # a question nothing on the screen had asked.
-        intro = ""
+        # S2 of the 19 October 2026 critique: the field in the heading is the
+        # page's whole job and it looked like the end of the title -- no verb, no
+        # label, nothing that says typing is possible. The station page spends a
+        # sentence on the same control; this is that sentence, under the same
+        # heading, before the list rather than in a tooltip.
+        # A build that priced nothing has no field left by the time its script
+        # has run (the station clause is hidden and the page says there is
+        # nothing here yet), so there is nothing for the sentence to point at.
+        intro = (
+            '<p class="sub" id="chooserHint">Type your station\u2019s name, or pick '
+            "one below.</p>"
+            if index
+            else ""
+        )
         ordering = '<p class="tag" id="orderingNote">Most first.</p>'
         title_suffix = "pick your station"
     chooser = (
         CHOOSER_TEMPLATE.replace("__STATIONS__", stations)
         .replace("__ORIGIN_CLAUSE__", origin_clause)
         .replace("__CHOOSER_INTRO__", intro)
+        .replace("__PICKS_COLUMNS__", columns)
         .replace("__PROVENANCE__", html.escape(provenance))
         .replace("__ORDERING_NOTE__", ordering)
         .replace("__TITLE_SUFFIX_HTML__", html.escape(title_suffix))
