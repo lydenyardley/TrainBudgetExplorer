@@ -664,31 +664,32 @@ async function compareTheDockWithTheTable(world) {
         notExercised("no destination on this page changes")
       );
     }
-    // The composition note reads as part of the table rather than as another
-    // paragraph above it. It is reference material about how the list was built,
-    // the same class of sentence the provenance block holds, and the gap it
-    // leaves above the first row is the reason it moved.
+    // C21 of the 17 October 2026 review, closed on 20 October 2026: the note
+    // that says what the open ticket set contains sits with the options that
+    // choose it, not below the table where the choice has already been made.
+    // It was moved for that reason, and it is read here in the panel.
     const notePlacement = await page.evaluate(() => {
       const note = document.getElementById("modeNote");
-      const first = document.querySelector("#rows tr[data-crs]");
+      const control = document.querySelector('.ticket-filter .segmented');
       const table = document.querySelector("table");
-      if (!note || !first || !table) return null;
-      const afterFirstRow = note.getBoundingClientRect().top > first.getBoundingClientRect().top;
-      // compareDocumentPosition answers where the note is relative to the
-      // table, so a note after the table comes back as FOLLOWING.
+      if (!note || !table) return null;
+      const inPanel = Boolean(document.querySelector(".ticket-filter #modeNote"));
+      // A note after the table comes back as FOLLOWING relative to the table.
       const afterTable = Boolean(table.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const belowControl = control
+        ? note.getBoundingClientRect().top >= control.getBoundingClientRect().bottom
+        : false;
       return {
         text: (note.textContent || "").trim(),
-        afterFirstRow,
+        inPanel,
         afterTable,
-        top: Math.round(note.getBoundingClientRect().top),
-        firstRowTop: Math.round(first.getBoundingClientRect().top),
+        belowControl,
       };
     });
     check(
-      "how the list was composed is said below the rows, not above them",
+      "what the ticket set contains is said under the options that choose it",
       notePlacement && notePlacement.text.length > 0 &&
-        notePlacement.afterFirstRow && notePlacement.afterTable,
+        notePlacement.inPanel && !notePlacement.afterTable && notePlacement.belowControl,
       JSON.stringify(notePlacement)
     );
     // The first column is a membership mark, and a membership mark reads as

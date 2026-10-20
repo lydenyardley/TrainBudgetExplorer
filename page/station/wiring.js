@@ -10,9 +10,30 @@
 // the input coalesces one render per frame, and the release settles the wording.
 // The number field above keeps chooseBudget(), because typing is one decision
 // per keystroke and its value is the sentence's own number.
-budget.addEventListener("input", () => dragBudget(budget.value));
+// One handler for both sliders, because they are one gesture: the rail is the
+// control it stands in for, heard while that control is scrolled away. Two
+// copies of this line would be two places to keep the drag's answer in step.
+const dragBudgetFrom = (event) => dragBudget(event.target.value);
+budget.addEventListener("input", dragBudgetFrom);
 budget.addEventListener("change", settleBudgetDrag);
 budgetNumber.addEventListener("input", () => chooseBudget(budgetNumber.value));
+if (railBudget) {
+  railBudget.addEventListener("input", dragBudgetFrom);
+  railBudget.addEventListener("change", settleBudgetDrag);
+}
+// OV4 of the 19 October 2026 overdrive pass: the rail is a shortcut to a control
+// the reader has scrolled past, so it appears only while that control is out of
+// view. A page with no IntersectionObserver keeps the rail hidden and loses
+// nothing it had before.
+if (budgetRail && "IntersectionObserver" in window) {
+  new IntersectionObserver((entries) => {
+    const away = !entries[entries.length - 1].isIntersecting;
+    budgetRail.hidden = !away;
+    // The sticky column headings and the row scroll margin move down while the
+    // rail is up, or the two would cover each other.
+    document.body.dataset.rail = away ? "on" : "off";
+  }, { threshold: 0 }).observe(budget);
+}
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
     budgetNumber.focus();

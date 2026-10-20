@@ -200,11 +200,12 @@ class FaresPayloadTest(PageTestCase):
         # Composed in the page, so it costs no payload bytes, and one row per
         # destination: the cheaper of the fares that destination is priced at.
         # Both sentences are asserted whole, because they are the product: the
-        # note above the table and the line beside the prices each say which
-        # list this is, and half a sentence names nothing.
+        # note under the control that chooses the set, and the line beside the
+        # prices, each say which list this is, and half a sentence names nothing.
+        # C21 of the 17 October 2026 review shortened the note to the difference
+        # between the sets, so "cheapest single or return" is now what it says.
         self.assertIn(
-            "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; "
-            "a restricted fare's condition is in the row's details.",
+            "The cheapest single or return for each place, and the row says which it is.",
             page_script(self.html),
         )
         self.assertIn(
@@ -222,8 +223,7 @@ class FaresPayloadTest(PageTestCase):
         self.assertIn("MIX_WORDS", page_script(self.html))
         self.assertIn('"for the two of us, two of the fare each row names"', page_script(self.html))
         self.assertIn(
-            "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; "
-            "a restricted fare's condition is in the row's details.",
+            "The cheapest single or return for each place, and the row says which it is.",
             page_script(self.html),
         )
         self.assertIn(

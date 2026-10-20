@@ -152,6 +152,10 @@
      finger is on the slider, and the page's answer is not a caption. */
   #budgetNext { margin: 0 0 .3rem; font-size: .875rem; }
   #empty p { margin: .4rem 0; }
+  /* C21 of the 17 October 2026 review: the definition of the open ticket set,
+     under the options that choose it. 14px rather than the 12 of a caption,
+     because it is the sentence the choice is read against. */
+  #modeNote { margin: .5rem 0 0; color: var(--muted); font-size: .875rem; max-width: 58ch; }
   /* DS3 of the 19 October 2026 distill pass: an accelerator hint is addressed
      to a keyboard, so a touch-only device is not told about one. The keys keep
      working everywhere; only the line is conditional. */
@@ -191,6 +195,25 @@
   /* A row brought into view from the shortlist lands under the stuck heading
      unless it reserves the heading's height first. */
   #rows > tr[data-crs] { scroll-margin-top: 3.2rem; }
+  /* OV4 of the 19 October 2026 overdrive pass: the budget keeps a 56px rail at
+     the top of the screen once its own control has scrolled away, so a reader at
+     row 40 does not scroll back to change it. Two controls must never exist on
+     screen at once, which is why the rail is hidden by default and the observer
+     in wiring.js is what shows it. */
+  .budget-rail { position: fixed; top: 0; left: 0; right: 0; z-index: 30; height: 3.5rem;
+                 display: flex; align-items: center; gap: .75rem;
+                 padding: 0 max(1rem, calc((100vw - 78rem) / 2));
+                 background: var(--bg); border-bottom: 1px solid var(--line); }
+  .budget-rail[hidden] { display: none; }
+  .budget-rail-label { font-weight: 700; white-space: nowrap; }
+  .budget-rail input[type=range] { flex: 1; min-width: 4rem; accent-color: var(--accent); }
+  .budget-rail-now { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .budget-rail .tag { margin: 0; white-space: nowrap; }
+  /* The stuck headings and the row margin follow the rail down rather than
+     sitting underneath it: the two surfaces would otherwise cover each other at
+     the moment the rail arrives. */
+  body[data-rail="on"] thead th { top: 3.5rem; }
+  body[data-rail="on"] #rows > tr[data-crs] { scroll-margin-top: 6.7rem; }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
             border-radius: .3rem; font: inherit; font-size: .875rem; padding: .3rem .55rem;
             margin-left: .75rem; cursor: pointer; position: relative; }

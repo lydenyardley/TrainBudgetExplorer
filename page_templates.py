@@ -157,6 +157,18 @@ __STATION_STYLE__
 __SYNTHETIC_BANNER__
 __THEME_TOGGLE__
 <main>
+<!-- OV4 of the 19 October 2026 overdrive pass: the budget in a 56px rail, shown
+     only while its own control is out of view, so the page never offers two
+     sliders for one number at once and the shortcut arrives at the row where a
+     reader has scrolled past the control. Hidden until the observer says the
+     control is gone, which is also what keeps it out of the tab order on a page
+     that does not need it. -->
+<div class="budget-rail" id="budgetRail" hidden>
+  <label class="budget-rail-label" for="railBudget">Fares up to</label>
+  <input id="railBudget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="railStop">
+  <span class="budget-rail-now" id="railNow">&pound;__BUDGET__</span>
+  <span class="tag" id="railStop">__CEILING_NOTE__</span>
+</div>
 <h1 id="pageHeading" aria-label="Train fares up to &pound;__BUDGET__ from __ORIGIN__">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- D1 of the 17 October 2026 critique: the paragraph that opened the page was
      a third copy of its own claim. The heading states the budget and the
@@ -220,6 +232,14 @@ __THEME_TOGGLE__
       <label><input type="radio" name="ticketMode" value="return"> Any return</label>
       <label><input type="radio" name="ticketMode" value="single"> Single</label>
     </div>
+    <!-- C21 of the 17 October 2026 review, closed on 20 October 2026: the four
+         sets were chosen here and defined below the table, more than a screen
+         away, and the empty state asked a lost reader to read the definition
+         first. The sentence that says what the open set contains sits under the
+         options it explains, shortened to the difference between them rather
+         than to a paragraph about all four; the count line still names the mix
+         in the list itself. -->
+    <p id="modeNote"></p>
   </fieldset>
   <fieldset class="party-filter">
     <legend class="eyebrow">The budget covers</legend>
@@ -318,11 +338,6 @@ __THEME_TOGGLE__
 </table>
 <div id="empty" hidden></div>
 <p id="more" hidden></p>
-<!-- How the list was put together. It says what the rows in the table are, so
-     it reads as part of the table rather than as a note above it, and it was
-     19px between the count and the first row on a laptop and 58px on a phone
-     for a sentence a reader only wants once they have decided to read. -->
-<p class="tag" id="modeNote"></p>
 <nav id="pagination" hidden aria-label="Results pages">
   <button id="previousPage" type="button" class="toggle">Previous</button>
   <span id="pageStatus" role="status"></span>

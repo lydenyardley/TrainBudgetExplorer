@@ -212,6 +212,92 @@ async function driveTheFilters(world) {
       `${twoAdultStop.stated} against ${oneAdultStop.stated} for one adult`
     );
     await page.check('input[name="unit"][value="adult"]');
+    // OV4 of the 19 October 2026 overdrive pass: the budget keeps a rail at the
+    // top of the screen once its own slider has scrolled away, so a reader at
+    // row 40 changes it without scrolling back. The state is driven by a real
+    // scroll, and every reading follows two frames, because the observer
+    // reports on the next one rather than during this one.
+    const railState = () => page.evaluate(() => {
+      const rail = document.getElementById("budgetRail");
+      const slider = document.getElementById("budget");
+      if (!rail) return null;
+      const box = rail.getBoundingClientRect();
+      return {
+        hidden: rail.hidden,
+        height: Math.round(box.height),
+        top: Math.round(box.top),
+        railValue: document.getElementById("railBudget").value,
+        now: document.getElementById("railNow").textContent,
+        stop: document.getElementById("railStop").textContent,
+        stated: document.getElementById("budgetHint").textContent,
+        inlineVisible: slider.getBoundingClientRect().bottom > 0,
+        inert: document.getElementById("railBudget").offsetParent === null,
+      };
+    });
+    const settleFrame = () => page.evaluate(() => new Promise((done) =>
+      requestAnimationFrame(() => requestAnimationFrame(done))));
+    const budgetBeforeRail = await page.evaluate(() => STATE.budget);
+    const atTop = await railState();
+    check(
+      "the budget's rail is not offered while its own slider is on screen",
+      atTop && atTop.hidden && atTop.inlineVisible && atTop.inert,
+      JSON.stringify(atTop)
+    );
+    await page.evaluate(() => window.scrollTo(0, Math.round(document.body.scrollHeight / 2)));
+    await settleFrame();
+    const away = await railState();
+    check(
+      "and scrolling past the slider brings the budget back in a 56px rail",
+      away && !away.hidden && away.height === 56 && away.top === 0 && !away.inlineVisible,
+      JSON.stringify(away)
+    );
+    check(
+      "and the rail states the same stop as the control it stands in for",
+      away && away.stated.includes(away.stop) && away.stop.length > 0 && away.now === "\u00a3" + budgetBeforeRail,
+      JSON.stringify(away && { stop: away.stop, stated: away.stated, now: away.now })
+    );
+    const beforeRail = await page.evaluate(() => document.getElementById("summary").textContent);
+    const railed = await page.evaluate(() => {
+      const slider = document.getElementById("railBudget");
+      const want = Math.max(0, STATE.budget - 5);
+      slider.value = String(want);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        budget: STATE.budget,
+        inline: document.getElementById("budgetNumber").value,
+        now: document.getElementById("railNow").textContent,
+        address: window.location.search,
+      };
+    });
+    const afterRail = await page.evaluate(() => document.getElementById("summary").textContent);
+    check(
+      "and dragging the rail moves the search rather than a copy of it",
+      railed.now === "\u00a3" + railed.budget && railed.inline === String(railed.budget) &&
+        afterRail !== beforeRail &&
+        afterRail.includes("up to \u00a3" + railed.budget + ".00") &&
+        railed.address.includes("budget=" + railed.budget),
+      JSON.stringify({ railed, beforeRail, afterRail })
+    );
+    const stuckHeadings = await page.evaluate(() => {
+      const rail = document.getElementById("budgetRail").getBoundingClientRect();
+      const th = document.getElementById("rows").closest("table").querySelector("thead th");
+      return { railBottom: Math.round(rail.bottom), thTop: Math.round(th.getBoundingClientRect().top) };
+    });
+    check(
+      "and the column headings sit below the rail rather than under it",
+      stuckHeadings.thTop >= stuckHeadings.railBottom,
+      JSON.stringify(stuckHeadings)
+    );
+    await page.fill("#budgetNumber", String(budgetBeforeRail));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleFrame();
+    const returned = await railState();
+    check(
+      "and the rail leaves again when the slider is back in view",
+      returned && returned.hidden && returned.inert,
+      JSON.stringify(returned)
+    );
     // C17, the one state the existing reading cannot reach. Doubling every
     // price leaves an order untouched, so the adult and two-adult readings
     // above cannot tell a page that re-sorts from one that happens to be

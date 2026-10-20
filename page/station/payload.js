@@ -115,6 +115,14 @@ const summary = document.getElementById("summary");
 // The line under the count that names what the next pound buys (DL1). Read
 // here, with the rest of the table's furniture; budget.js writes it.
 const budgetNext = document.getElementById("budgetNext");
+// The rail that keeps the budget in reach once its own control has scrolled
+// away (OV4 of the 19 October 2026 overdrive pass). Read here with the page's
+// other elements: budget.js writes it, wiring.js listens to it and decides when
+// it is shown.
+const budgetRail = document.getElementById("budgetRail");
+const railBudget = document.getElementById("railBudget");
+const railNow = document.getElementById("railNow");
+const railStop = document.getElementById("railStop");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
 const pagination = document.getElementById("pagination");

@@ -921,12 +921,57 @@ class DemoPageTest(PageTestCase):
         # open mode means, and the footer keeps only the limitations. The
         # browser suite drives the note and the count line.
         self.assertIn("MODE_NOTE", page_script(self.html))
-        self.assertIn('Each row is the cheapest fare of any ticket type', page_script(self.html))
+        self.assertIn("The cheapest single or return for each place", page_script(self.html))
         self.assertIn("ITX placeholder fares are excluded", self.html)
         # The sentence that repeated the mix is gone, and the standard-class
         # fact it carried is still in the method note where it belongs.
         self.assertNotIn("and on the list this page opens in", self.html)
         self.assertIn("cheapest displayable standard-class fare found in the feed", self.html)
+
+    def test_the_ticket_set_is_defined_where_it_is_chosen(self) -> None:
+        # C21 of the 17 October 2026 review, closed on 20 October 2026: the four
+        # sets were chosen in the folded refinements and defined below the
+        # table, more than a screen away from the choice and from the empty
+        # state that asks a confused reader to read it. The paragraph is inside
+        # the ticket fieldset now, directly under the options.
+        panel = self.html.split('class="ticket-filter"')[1].split("</fieldset>")[0]
+        self.assertIn('id="modeNote"', panel)
+        self.assertLess(panel.index('class="filter-options segmented"'), panel.index('id="modeNote"'))
+        # And nowhere else: a second copy below the table is the defect again.
+        self.assertEqual(1, self.html.count('id="modeNote"'))
+        # One sentence per set, saying what makes it different from the others.
+        script = page_script(self.html)
+        for sentence in (
+            "The cheapest single or return for each place",
+            "Unrestricted Anytime Day Returns: the same fare on any train.",
+            "Every standard-class return the feed prices, restricted and advance included.",
+            "Outbound singles rather than returns.",
+        ):
+            self.assertIn(sentence, script)
+        self.assertIn("#modeNote { margin: .5rem 0 0; color: var(--muted); font-size: .875rem;", self.stylesheet)
+
+    def test_the_budget_is_kept_in_reach_once_its_control_scrolls_away(self) -> None:
+        # OV4 of the 19 October 2026 overdrive pass: at row 40 the budget is two
+        # screens back. The rail holds it in 56px at the top of the viewport, and
+        # appears only while the slider itself is out of view, so the page never
+        # offers two controls for one number at once.
+        rail = self.html.split('id="budgetRail"')[1].split("</div>")[0]
+        # Hidden in the markup: a rail over a page whose own slider is on screen
+        # would be a second control for one number.
+        self.assertTrue(rail.lstrip().startswith("hidden"))
+        self.assertIn('id="railBudget"', rail)
+        self.assertIn('for="railBudget"', rail)
+        self.assertIn('aria-describedby="railStop"', rail)
+        self.assertRegex(self.html, r'id="railNow">&pound;\d+</span>')
+        self.assertIn('id="railStop"', rail)
+        # Whether it appears when the slider leaves is the browser's fact, held by
+        # the four rail checks in `station-filters.cjs`; this test holds the
+        # markup a reader is given and the offsets that keep the two surfaces
+        # from covering each other.
+        # The stuck column headings move down while the rail is up, or the two
+        # surfaces cover each other at the moment the rail arrives.
+        self.assertIn('body[data-rail="on"] thead th { top: 3.5rem; }', self.stylesheet)
+        self.assertIn("height: 3.5rem", self.stylesheet)
 
     def test_no_numeric_column_can_wrap(self) -> None:
         # Measured on the real Grantham page: the Price column was 56px wide

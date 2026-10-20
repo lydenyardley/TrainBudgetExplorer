@@ -162,11 +162,15 @@ const MODE_WHY = {
 // it always was -- a restricted off-peak fare is a real price a reader can buy
 // -- and whichever set is open, a restricted fare is not interchangeable with
 // an unrestricted one, and the page cannot decode the feed's own validity text.
+// C21 of the 17 October 2026 review: one sentence per set, saying what makes it
+// different from the other three rather than describing all four. The note sits
+// under the control that chooses the set, so it can be short; the row's own
+// details carry a restriction's condition, and the count line carries the mix.
 const MODE_NOTE = {
-  cheapest: "Each row is the cheapest fare of any ticket type. An advance fare needs a chosen train; a restricted fare's condition is in the row's details.",
-  anytime: "Unrestricted Anytime Day Returns: valid on any train on the route, so these prices compare with each other directly.",
-  return: "Every standard-class return the feed prices, restricted off-peak and advance included. A restricted fare is not valid on every train or at every time — its condition is in the row's details.",
-  single: "Outbound singles rather than returns. An advance single needs a chosen train, and is labelled where it appears.",
+  cheapest: "The cheapest single or return for each place, and the row says which it is.",
+  anytime: "Unrestricted Anytime Day Returns: the same fare on any train.",
+  return: "Every standard-class return the feed prices, restricted and advance included.",
+  single: "Outbound singles rather than returns. An advance single needs a chosen train.",
 };
 function renderModeNote() {
   const note = document.getElementById("modeNote");
