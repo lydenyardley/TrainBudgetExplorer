@@ -27,13 +27,16 @@ otherwise: a 17-destination list at £20, 16 returns and 1 single. That is enoug
 for layout and interaction; it is not enough for the paging arithmetic, which is
 stated as arithmetic.
 **Read-only:** no source file, template, stylesheet or test was changed.
-**Status:** three of its twelve findings landed on 19 October 2026 and are
-removed from this file rather than left to be re-derived: S6 (the empty list's
-duplicate sentence and its empty table head), S9 (the shortlist's invisible copy
-confirmation) and S10 (a keyboard hint shown to a phone, naming two keys). Each
-is a row in `docs/settled-work.md` with the check that holds it. The score below
-is the one measured before those fixes; nine findings still ask for work and
-that is why this review stays.
+**Status:** five of its twelve findings are closed and removed from this file
+rather than left to be re-derived: S6 (the empty list's duplicate sentence and
+its empty table head), S9 (the shortlist's invisible copy confirmation) and S10
+(a keyboard hint shown to a phone, naming two keys) landed on 19 October 2026;
+S8 (the ticket sets chosen before they are explained) landed on 20 October 2026
+as C21 of the review before this one, and S12 (the privacy page's one-word
+title) is the owner's rejection of C18 on 19 October 2026, so `<title>Privacy</title>`
+stands. The four that landed are rows in `docs/settled-work.md` with the check
+that holds each. The score below is the one measured before those fixes; seven
+findings still ask for work and that is why this review stays.
 
 ## Design health score
 
@@ -44,7 +47,7 @@ that is why this review stays.
 | 3 | User control and freedom | 3 | Every filter clears, the budget clamps, and the URL is an undo. Clearing the shortlist still drops focus to `<body>` (S7). |
 | 4 | Consistency and standards | 2 | The chooser has no first-use note while the station page does (S2). |
 | 5 | Error prevention | 4 | No input can produce an error: the budget clamps, chips are withdrawn when they would empty the list, and the page has no dead ends. Genuinely good. |
-| 6 | Recognition rather than recall | 2 | The ticket sets are chosen before they are explained (S8); the fare vocabulary lives in the footer, not where it is chosen; the chooser's list gives a bare count; a phone row's second line has no labels (S4, S11). |
+| 6 | Recognition rather than recall | 2 | The fare vocabulary lives in the footer, not where it is chosen; the chooser's list gives a bare count; a phone row's second line has no labels (S4, S11). |
 | 7 | Flexibility and efficiency | 3 | `/`, `b`, `n` and `p` exist and the pager works. |
 | 8 | Aesthetic and minimalist design | 3 | At 1366×768 one whole row is above the fold; at 390×844 58px of one row is; at 320×640 no row is (S5). The opened refinements panel is 315px. |
 | 9 | Error recovery | 2 | The empty state offers four doors at £0, and three of them lead to another empty list (S3). |
@@ -89,7 +92,7 @@ and the restraint stops being a place where controls go missing.
 
 **Priority issues, in order:** S1 (a row with no times), S2 (a field that does
 not look like one), S3 (doors that open onto nothing), S5 (a phone with no fold
-budget), S8 (the ticket sets chosen before they are explained).
+budget).
 
 ## What is working, and should not be traded away
 
@@ -286,37 +289,6 @@ active element is not `<body>` and that the status names the clear.
 
 **Suggested command:** `$impeccable harden`.
 
-### S8 [P2] The ticket-set vocabulary is still chosen before it is explained
-
-The refinements panel offers four ticket sets — "Cheapest available", "Anytime
-Day Return", "Any return", "Single" — with no clause saying what each contains.
-The sentence that defines them is `#modeNote`, which sits at 1,778px on the demo
-page, below the table (which ends at 1,775px) and about 1,200px below the control
-when the panel is open at 1366; on a phone it is at 2,694px on the page. The empty state
-asks the same vocabulary of a reader who is already lost: at £0 it offers "Show
-the 21 Anytime Day Returns", "Show the 22 returns" and "Show the one single"
-side by side.
-
-**Why it matters.** The four sets are the product's central distinction — a
-restricted return is a real price, an unrestricted Anytime Day Return is the
-return the page promises, a single is the headline's unit. A reader choosing a filter is
-choosing which of those questions to ask; a reader who has to open a footer or
-scroll past the answer to learn the difference will leave the default on without
-knowing what it excludes.
-
-**Fix.** Put one clause on each option where it is chosen: "Anytime Day Return
-(unrestricted)", "Any return (may be restricted)", "Single (one way)", and let
-"Cheapest available" stay bare because it is the default. Keep the full note
-below the table for the reader who wants the arithmetic. Alternatively, move a
-one-sentence version of the difference directly under the fieldset and leave
-only the counts below the table.
-
-**Verify.** The opened panel's four labels each carry a clause (or the note is
-within 100px of the fieldset); a browser check reads the labels and the note's
-position.
-
-**Suggested command:** `$impeccable clarify`.
-
 ### S11 [P3] The chooser's destination count is a bare number
 
 The list reads "GRANTHAM GRN 22", "NOTTINGHAM NOT 6", "LINCOLN LCN 6". The
@@ -334,20 +306,6 @@ keeps the row clean; the second is unambiguous at the cost of a wider row.
 
 **Verify.** A chooser screenshot at 1366 and 390, plus the existing accessible
 name check.
-
-**Suggested command:** `$impeccable clarify`.
-
-### S12 [P3] The privacy page's title is a single word
-
-`<title>Privacy</title>` against "Train fares up to £20 from GRANTHAM" and
-"Train fares up to £20 · pick your station". In a row of tabs it is the only
-route whose title could belong to any site.
-
-**Fix:** "Privacy · Train fares", or the release's own name once `PRODUCT.md` has
-one. The name is explicitly undecided, so the generic form is the honest one for
-now.
-
-**Verify:** the privacy template test asserts the title contains "Train fares".
 
 **Suggested command:** `$impeccable clarify`.
 
@@ -376,10 +334,6 @@ switch modes silently apart from the status.
 
 ## Minor observations
 
-- The station page sets eight type sizes at 1366, six of them between 11.5px and 14.4px
-  (`11.52`, `12`, `12.8`, `13.6`, `14.4`, `16`, `18.4`, `69.12`). The trust
-  content is at the small end; it measures 4.5:1 or better, but the hierarchy is
-  carried by six near-neighbours.
 - The opened refinements panel leaves a 160px void in its left column, because
   the ticket-type fieldset is short and the party/railcard column is tall. The
   panel is a two-column grid with one long row and one short one.
@@ -400,8 +354,7 @@ switch modes silently apart from the status.
   The release caps the list at 40, so the page grows by 37 rows there; the
   header and the list heading are the only things above it.
 - The privacy page is 1,468px tall at 1366 and 600px wide, with the document
-  starting at 127px. Its title is S12; its body is the best-measured prose on the
-  site.
+  starting at 127px. Its body is the best-measured prose on the site.
 
 ## Questions to consider
 

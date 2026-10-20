@@ -11,14 +11,14 @@
 **Mode:** Operate. This is a data-heavy tool used on a phone, often one-handed,
 often at night. "Extraordinary" here is not a visual effect; it is an interface
 that never hesitates and a budget that behaves like a physical instrument.
-**Status:** four of the nine suggestions landed on 19 October 2026 — the
+**Status:** five of the nine suggestions landed, four on 19 October 2026 — the
 next-place line (OV2), the cross-document view transition (OV6), the
 interaction budget as a check (OV8) and the fallbacks those two need (OV9, for
-the transitions and the reveal). What is left is OV1, OV3, OV4, OV5 and OV7, and
-each needs a decision only the owner can make: a new visual language on the
-track, a second control that spends 56px of every viewport, or a morph. The pass
-that shipped them is recorded in `docs/settled-work.md` with the check that
-holds each.
+the transitions and the reveal). The budget rail (OV4) landed on 20 October 2026
+after the owner saw it mocked up, with one condition that is now part of it: it
+appears only once the page's own slider is out of view. What is left is OV1,
+OV3, OV5 and OV7. The pass is recorded in `docs/settled-work.md` with the check
+that holds each item.
 
 ## What extraordinary means for this product
 
@@ -100,6 +100,25 @@ the layout section; the view transition's fallback is the browser's own
 instant navigation, which is the page as it shipped before this pass. The
 canvas fallback in OV1 has no implementation to fall back from yet.
 
+### OV4 — the budget rail
+
+A 56px rail at the top of the viewport holding the budget, shown only while the
+slider above the table is out of view: the owner's condition, and the reason the
+page never offers two live controls for one number. It is a second view of one
+value rather than a second value — `setBudget` writes the rail's slider, its
+figure and its stop note — and its drag is the same gesture as the page's own,
+through one shared handler, so the drag still answers in places. The sticky
+column headings and the row scroll margin move down 56px while it is up. No
+`IntersectionObserver` means no rail, which is the page as it was.
+
+**Check:** `tests/browser/station-filters.cjs` reads it hidden at the top,
+visible after a real scroll (56px, `top: 0`, the slider off screen), the same
+stop sentence as the control it stands in for, a drag that moves `STATE` and the
+address, headings below it rather than under it, and the rail gone again at the
+top. `tests/test_build_demo_page.py`'s
+`test_the_budget_is_kept_in_reach_once_its_control_scrolls_away` holds the markup
+and the hidden default.
+
 ## What is left, and the decision each needs
 
 ### OV1 [P2] Draw the fare horizon on the track
@@ -119,9 +138,19 @@ put up to 101 nodes in the control. The line under the count already says what
 the next pound buys (OV2), so the ticks must add the shape of the list rather
 than repeat the sentence. A tick that reads as "the best place" is a lie.
 
+**What the 20 October 2026 mockup changed.** Both forms were drawn over the
+built page and measured before the owner was asked. On a £126 ceiling every fare
+in the demo list is inside the left fifth of the track (22 distinct fares, the
+furthest short of £19 at 172px of 528), so the ticks read as a smudge beside the
+thumb rather than as a horizon, and the single far fare sits alone at the right
+end. The one-tick form (DL6) survives that ceiling; the full track needs a
+non-linear scale or only the next few fares to say anything. That is evidence
+against OV1 as this section first described it, not against the direction.
+
 **What would prove it.** At 101 rows the draw is under 8ms and the drag holds
 60fps; with reduced motion the ticks still appear; without the ticks the drag is
-blind again.
+blind again. And the ticks must read as a shape at the ceiling the page actually
+opens on, which the left-fifth smear above says they do not yet.
 
 ### OV3 [P3] Keep the drag at 60fps on a mid-range phone
 
@@ -135,25 +164,23 @@ the handler beyond the one the count line already does; measure the long tasks
 on the interaction. If the phone figure is under the budget, record it and close
 this; if not, coalesce.
 
-### OV4 + OV5 [P2] The sticky budget rail, and the two sticky surfaces
+### OV5 [P2] The dock under the rail
 
-**Decision needed:** 56px of every viewport, forever, in exchange for the budget
-being one gesture away at row 101. It changes the page's rhythm: the heading is
-the question, and a second control that repeats it is a statement about how the
-page should be read. This is the owner's call, not a defect.
+**What is left of the two sticky surfaces.** OV4 shipped and took the results
+table's sticky heading with it: while the rail is up the headings sit 56px down,
+and a row scrolled to reserves 6.7rem rather than 3.2rem. The shortlist dock at
+the foot of the screen was not part of that, so a page with places shortlisted,
+scrolled to the last row, now has a rail at the top and a dock at the bottom and
+about 700px between them at 390.
 
-**The shape, if yes.** A sentinel at the heading toggles a class; the rail is a
-second range input that writes through `chooseBudget`, so there is one source of
-truth. Its accessible name says which control it is ("Budget, compact") and its
-description is the same ceiling sentence. On desktop the table's sticky header
-moves under the rail; on a phone the header is already hidden, so the rail owns
-the top. It retires when the heading returns and never covers the shortlist dock.
+**Decision needed:** whether the dock yields to the rail (a shorter list, or a
+height cap) or whether the two simply coexist. It is a measurement first: the
+dock's height depends on how many places are in it, and the rail is only up when
+the reader is deep in the list, which is exactly when the shortlist matters.
 
-**What would prove it.** At the last row the budget is one gesture away at 390
-and 1366; the rail's value and the heading's value are always equal; the header
-and the dock do not overlap it; keyboard focus reaches both controls with one
-source of truth. The assertions that measure the height above the table or count
-range inputs will see the rail and must be updated deliberately.
+**What would prove it.** At 390 with two places shortlisted and the page scrolled
+to the last row, the number of rows visible between the rail and the dock, and
+whether the dock's own Copy is reachable without covering the row above it.
 
 ### OV7 [P3] Morph the chosen station
 

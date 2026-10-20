@@ -239,11 +239,12 @@ pass should not re-file it.
 
 ### The 17 October 2026 impeccable review
 
-`docs/audits/2026-10-17-impeccable-review.md` is still in `docs/audits/` because
-two of its findings are open (C18 and C21, in `docs/open-work.md`). Twenty of its
-thirty landed on 19 October 2026, and its own "What landed" table holds each row
-with the check that would fail if it came back; this entry names the tests once so
-a reader of this file does not have to open the audit to know what holds the pass.
+`docs/audits/2026-10-17-impeccable-review.md` was removed on 20 October 2026,
+when C21 landed and the review named no open item. Twenty of its thirty findings
+landed on 19 October 2026, C21 landed the next day, and two were answered rather
+than changed: C9 / D5, argued in ADR-0048, and C18, rejected by the owner on
+19 October 2026. The rows below name the tests once, so a reader of this file does
+not have to open the audit to know what holds the pass.
 
 The pass also re-measured the two figures it changed rather than quoting the
 17 October ones: at 1366×768 a whole destination row now sits above the fold, and
@@ -259,6 +260,8 @@ a 390px row is 111px over two lines rather than 275px over six.
 | C11, C12 / D10, C14 / D11 | the chooser's panel opens under the field, the phrase is the list's heading, and the empty field says "your station" | `tests/browser/chooser.cjs`, three checks that read the panel's position, a row's bare count and the placeholder |
 | C15, D9 | the instruction paragraph is gone and "Most first." is the list's subtitle, with the denial of busyness and nearness deleted | `tests/test_build_chooser.py`, "the chooser is the index and carries no fares" and "the chooser says what its order is and is not" |
 | C17 / D12, C19, C20 / D14, D13 | two bullets rather than three, the back link and theme switch in one row of chrome, "Last updated" in place of the maintainer's sentence, and the address parameters as one line of short names | `tests/test_build_provenance.py`, which reads the privacy page's bullets, the chrome row's order, the date sentence and the parameter line |
+| C21 [P2] the ticket set is chosen above the table and defined below it | the sentence that says what the open set contains sits under the options that choose it, one sentence per set shortened to the difference between them; the old paragraph below the table is gone rather than moved twice | `tests/browser/station-shortlist.cjs`, "what the ticket set contains is said under the options that choose it"; `tests/test_build_demo_page.py`, `test_the_ticket_set_is_defined_where_it_is_chosen`; `tests/test_build_fares.py`, `test_the_page_opens_on_the_cheapest_fare_of_any_type` |
+| C18 [P3] the privacy page's title is a single word | rejected by the owner on 19 October 2026, so `<title>Privacy</title>` stands. The review's suggestion ("Privacy · Train fares", or the release's own name once one exists) is not built, and a later pass should not re-file it | nothing, deliberately: the finding was argued against rather than fixed |
 
 ### The 19 October 2026 impeccable distill and delight passes
 
@@ -288,13 +291,17 @@ ones a check now holds.
 | DL5 | a row's panel and the shortlist dock appeared with no transition | one 120ms opacity-and-4px reveal, on the panel the reader opened and on the dock's contents rather than its fixed box, with no motion under `prefers-reduced-motion` | the browser suite's "and with motion allowed the panel arrives in one reveal" and "a reader who asked for less motion gets no reveal" |
 | OV6 | moving between stations painted a blank frame | `@view-transition { navigation: auto; }` at the chevron's .18s, none under reduced motion, ignored by a browser without the API; the shared-station morph (OV7) is not shipped | `test_the_route_asks_for_a_cross_fade_and_can_turn_it_off`; the suite navigates every route and the accessibility matrix runs after each navigation |
 | OV8 | the budget's re-render had no budget | a reading on every station page, named with its row count: input handler, render and forced layout under 50ms | the browser suite's "a budget change re-renders this page inside the input-to-paint budget" |
+| OV4 | at row 40 the budget is two screens back | a 56px rail at the top of the viewport, shown only while the page's own slider is out of view (the owner's condition, 20 October 2026), carrying one value in two views and the sticky headings' offset | the browser suite's four rail checks in `station-filters.cjs`; `test_the_budget_is_kept_in_reach_once_its_control_scrolls_away` |
 | OV9 | each fallback was a paragraph rather than a test | no script: the existing `checkWithoutTheScript`; reduced motion: the reveal check above; no canvas: not applicable, because OV1 did not ship; no view transitions: the at-rule is ignored, and every route still navigates | `tests/browser/station-assets.cjs`, `station-layout.cjs` |
 
-**What the pass did not do.** OV1 (the canvas fare horizon) and OV4/OV5 (the
-sticky budget rail) are direction choices the overdrive audit says the owner
-makes before code, and DL6 (the tick at the cheapest fare) is OV1's smallest
-form; none is in this pass. DL3 (the shortlist total) is a product decision
-about what the dock is for, and it stays open with DL6.
+**What the pass did not do.** OV1 (the canvas fare horizon) and DL6 (the tick at
+the cheapest fare) are one visual direction the owner has not chosen, and the
+mockups of 20 October 2026 are evidence against the first form of it: on a £126
+ceiling the ticks bunch into the left fifth of the track. OV4 (the sticky budget
+rail) landed on 20 October 2026, after the owner saw it mocked up, on the
+condition that it appears only while the page's own slider is out of view. OV5
+(the dock under that rail) is what is left of the pair. DL3 (the shortlist total)
+is a product decision about what the dock is for.
 
 **What the numbers were.** On the demo, the next fare above £20 was £22.40 to
 PETERBOROUGH, which is the sentence the browser check reads; at £0 the door

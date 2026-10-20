@@ -130,42 +130,17 @@ the half that matters, the cheaper change is a smaller shared asset rather than 
 split payload, and `page/station/*` is already one file per panel, so the split
 is a build decision and not a rewrite.
 
-### The 17 October 2026 review's open asks: the page's title, and when the vocabulary is chosen
+### The 19 October 2026 delight and overdrive asks: the shortlist total, the dock under the rail, and two directions
 
-**Severity:** P3 for the title, P2 for the vocabulary.
-**Routes:** the privacy page, and the station page's ticket control.
-**Raised:** the 17 October 2026 impeccable review,
-`docs/audits/2026-10-17-impeccable-review.md`, which is where each ask's
-17 October 2026 measurement lives. Twenty of its thirty findings landed on
-19 October 2026 and are rows in its "What landed" table, each naming the check
-that holds it; two were argued rather than fixed (C9 / D5 and the detector's
-one finding) and are in its "Design calls answered" table. What is left is these
-two, which the review keeps under "Findings": one was rejected by the owner on
-19 October 2026 and the other waits on a mockup.
-
-- **C18, P3, the privacy page — rejected by the owner on 19 October 2026.**
-  `<title>Privacy</title>` alone stands: the review's suggestion ("Privacy ·
-  Train fares", or the release's own name once one exists) is marked REJECT in
-  the review. It is kept here only so the file and the review agree; no work is
-  owed.
-- **C21, P2, cross-route — waiting on a mockup.** The ticket set's vocabulary is
-  chosen above the table and defined below it, and the empty state asks it of a
-  reader who is already lost. The owner's note on the review is "produce a mockup
-  before I can confirm", so the next step is a mockup of the two closing options
-  (a clause per option, or the mode note moved under the control and shortened to
-  the difference between the sets) rather than an edit to the page.
-
-### The 19 October 2026 delight and overdrive asks: the shortlist total, and two directions
-
-**Severity:** P2 for the shortlist total and the sticky rail, P3 for the rest.
+**Severity:** P2 for the shortlist total, P3 for the rest.
 **Routes:** the station page's shortlist dock and its budget control; the chooser
 and station page's navigation.
 **Raised:** the 19 October 2026 delight and overdrive passes,
 `docs/audits/2026-10-19-impeccable-delight.md` and
 `docs/audits/2026-10-19-impeccable-overdrive.md`, each pruned to what it still
-asks. The four suggestions that landed that day (DL1, DL2, DL4, DL5, plus OV2,
-OV6, OV8 and OV9 from the overdrive list) are rows in `docs/settled-work.md`,
-each naming the check that holds it.
+asks. The suggestions that landed on 19 and 20 October 2026 (DL1, DL2, DL4, DL5, plus
+OV2, OV6, OV8 and OV9 from the overdrive list, and OV4 since) are rows in
+`docs/settled-work.md`, each naming the check that holds it.
 
 What is left, and why each waits:
 
@@ -173,14 +148,17 @@ What is left, and why each waits:
   £13.40 for one adult." It is a product decision about what the dock is for (a
   comparison list, or the beginning of a plan) before it is code, and the sum
   must be of the rendered rows' own party price, not a second array.
-- **OV4 and OV5, P2, the sticky budget rail.** 56px of every viewport in exchange
-  for the budget being one gesture away at row 101, plus the table header's
-  sticky offset and the dock's. A change to the page's rhythm, so the owner
-  decides it rather than a pass.
+- **OV5, P2, the dock under the rail.** The rail shipped on 20 October 2026 and
+  took the table header's sticky offset with it; the shortlist dock's own offset
+  was not part of that, so a page with a shortlist, scrolled far enough, shows the
+  rail and the dock pinned at once. It needs a measurement before it is a change,
+  because the dock's height depends on the rows in it.
 - **OV1, P2, and DL6, P3, the fare horizon.** A drawn track (1px ticks at every
   distinct visible fare) and its smallest form, one tick at the cheapest fare.
-  A visual direction: the line under the count already says what the next pound
-  buys, so the ticks must add the shape of the list rather than repeat it.
+  A visual direction, and the mockups of 20 October 2026 argue against the drawn
+  track as first described: on a £126 ceiling every fare is inside the left
+  fifth of the slider, so the ticks read as a smudge rather than as a shape. A
+  non-linear scale or the next few fares only is the version worth drawing.
 - **OV7, P3, the shared-station morph.** Naming the chosen row's station token
   for the length of the click, so it arrives in the heading. OV6 shipped without
   it, and it stays unshipped if it is not clean at 390.
@@ -855,8 +833,15 @@ folded into that date's review.
   findings into `docs/settled-work.md`.
 - `docs/audits/2026-10-17-impeccable-distill.md` — the same date's distill: what
   on the three routes did not earn its place. Combined on 19 October 2026 into
-  that date's review, `docs/audits/2026-10-17-impeccable-review.md`, which is
-  where its findings now live under their D numbers. Removed on 19 October 2026.
+  that date's review under its D numbers, and both are settled in the table
+  above. Removed on 19 October 2026.
+- `docs/audits/2026-10-17-impeccable-review.md` — the critique and the distill
+  combined, thirty findings across the chooser, the station page and the privacy
+  page. Twenty landed on 19 October 2026, C18 was rejected by the owner the same
+  day and C21 landed on 20 October 2026, so it named no open item and was
+  removed on 20 October 2026; its findings and the checks that hold them are in
+  `docs/settled-work.md` under its C and D numbers, which code comments still
+  cite.
 - `docs/audits/2026-10-14-impeccable-critique.md` — the design critique of the
   chooser, the station page and the privacy page. Its eight recommendations are
   settled in the table above, the last of them on 19 October 2026, and its
