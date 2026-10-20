@@ -44,29 +44,46 @@ async function driveTheFilters(world) {
     const floored = await page.evaluate(() => {
       if (document.getElementById("empty").hidden) {
         setBudget(Number(document.getElementById("budget").min));
-        currentPage = 1;
+        STATE.page = 1;
         render();
       }
-      const why = document.querySelector("#empty p");
+      const lead = document.querySelector("#empty p");
+      const table = document.getElementById("rows").closest("table");
+      const head = table.querySelector("thead");
       return {
         empty: document.getElementById("empty").hidden === false,
         summary: document.getElementById("summary").textContent,
-        reason: why ? why.textContent : "",
+        lead: lead ? lead.textContent : "",
+        // The table scaffold, and the seven column names over it.
+        tableHidden: table.hidden === true,
+        headPainted: Boolean(head && head.getBoundingClientRect().height),
+        sentenceCount: (document.body.innerText.match(/No destinations for up to/g) || []).length,
+        doors: Array.from(document.querySelectorAll("#empty button")).map((b) => b.textContent),
       };
     });
     check("an empty budget says so rather than showing nothing", floored.empty, JSON.stringify(floored));
     check("the summary counts what is left", /No destinations for up to/.test(floored.summary), floored.summary);
-    // E10 of the 17 October 2026 audit: the same sentence was composed twice,
-    // once into the count line and once into the empty state, so the two could
-    // drift and only one of them was ever read by a test. One function writes
-    // both now, and this is the visible half of that: they are the same
-    // sentence, character for character, on the page a reader sees.
+    // DS1 of the 19 October 2026 distill pass: the sentence has one owner. The
+    // count line is the live region, so it keeps it; the block below carries
+    // only the way out, and the empty table and its headings stand down rather
+    // than drawing seven column names over no rows.
     check(
-      "and the count line and the empty state are one sentence, not two",
-      floored.reason
-        ? floored.summary.trim() === floored.reason.trim()
-        : notExercised("this page shows no empty-state paragraph"),
-      JSON.stringify({ summary: floored.summary, reason: floored.reason })
+      "and the sentence is said once, in the count line rather than twice",
+      floored.sentenceCount === 1 && !/^No destinations for up to/.test(floored.lead),
+      JSON.stringify({ summary: floored.summary, lead: floored.lead, count: floored.sentenceCount })
+    );
+    check(
+      "and no table or column headings are left over an empty list",
+      floored.tableHidden && !floored.headPainted,
+      JSON.stringify({ tableHidden: floored.tableHidden, headPainted: floored.headPainted })
+    );
+    // DL2 of the 19 October 2026 delight pass: the door says what it unlocks.
+    // "£7.00 reaches SLEAFORD" is proof that pressing it shows something; the
+    // button keeps its own verb as its name.
+    check(
+      "and the door names the place the raised budget reaches",
+      /£[0-9.,]+ reaches /.test(floored.lead) && floored.doors.some((door) => /^Raise the budget to £/.test(door)),
+      JSON.stringify({ lead: floored.lead, doors: floored.doors })
     );
     // S17: the slider has always stopped somewhere the page never said out
     // loud, so a reader could not predict whether a fare at the boundary was
@@ -80,6 +97,102 @@ async function driveTheFilters(world) {
     }));
     // The empty-budget check above may have left the page priced for two
     // adults, so the one-adult figure is read from a state this block sets.
+    await page.check('input[name="unit"][value="adult"]');
+    // DL1 and OV2 of the 19 October 2026 passes: the drag answers in places. The
+    // threshold is computed from the page's own list and the party on screen,
+    // not from a name written here, so a page that is behaving correctly cannot
+    // fail for the shape of its fixture. The gesture is driven as a reader's
+    // pointer drives it -- pointerdown, input, change -- because the line is the
+    // gesture's own remark and only a real one produces it.
+    const crossing = await page.evaluate(() => {
+      const types = new Set(STATE.types);
+      const admitted = (d) => !types.size || TYPES.types(d).some((type) => types.has(type));
+      const prices = TYPES.list().filter(admitted).map((d) => TYPES.priceOf(d));
+      const cheapest = prices.reduce((low, price) => Math.min(low, price), Infinity);
+      if (!Number.isFinite(cheapest)) return null;
+      // The budget is whole pounds, so the first budget that shows anything is
+      // the cheapest fare rounded up. The threshold the drag names is the next
+      // fare above *that* budget, not the second fare in the list: two fares can
+      // round to the same pound.
+      const at = Math.ceil(cheapest / 100);
+      const above = prices.filter((price) => price > at * 100);
+      const next = above.reduce((low, price) => Math.min(low, price), Infinity);
+      if (!Number.isFinite(next)) return null;
+      return {
+        at,
+        price: next,
+        names: TYPES.list().filter((d) => admitted(d) && TYPES.priceOf(d) === next).map((d) => d.name),
+      };
+    });
+    if (crossing) {
+      // A drag with rows on the page, which is the state the line is for: at a
+      // floor the empty state already names the same place, and the page says so
+      // once.
+      await page.fill("#budgetNumber", String(crossing.at));
+      await page.evaluate((value) => {
+        const slider = document.getElementById("budget");
+        slider.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        slider.value = String(value);
+        slider.dispatchEvent(new Event("input", { bubbles: true }));
+      }, crossing.at);
+      const amount = "£" + (crossing.price / 100).toFixed(2);
+      // Waiting for a non-empty line is not enough: the previous gesture's
+      // settle sentence is still on the page. The frame this drag queued is the
+      // one that says what the next fare buys, so the line is read at that
+      // sentence rather than at whatever was there.
+      const during = await page.waitForFunction(
+        (prefix) => document.getElementById("budgetNext").textContent.trim().startsWith(prefix),
+        amount + " adds ",
+        { timeout: 3000 }
+      ).then(async () => page.evaluate(() => ({
+        text: document.getElementById("budgetNext").textContent.trim(),
+        hidden: document.getElementById("budgetNext").hidden,
+      }))).catch(() => page.evaluate(() => ({
+        text: document.getElementById("budgetNext").textContent.trim(),
+        hidden: document.getElementById("budgetNext").hidden,
+      })));
+      check(
+        "a drag names the next fare and the place it adds",
+        !during.hidden && during.text.startsWith(amount + " adds ") &&
+          (crossing.names.length === 1
+            ? during.text.includes(crossing.names[0])
+            : new RegExp("^£[0-9.,]+ adds " + crossing.names.length + " places\\.$").test(during.text)),
+        JSON.stringify({ during, expected: { amount, names: crossing.names } })
+      );
+      // The release is the second half: the same gesture crosses the threshold
+      // and lets go, so what it says is what the new budget gained.
+      const enough = Math.ceil(crossing.price / 100);
+      await page.evaluate((value) => {
+        const slider = document.getElementById("budget");
+        slider.value = String(value);
+        slider.dispatchEvent(new Event("input", { bubbles: true }));
+        slider.dispatchEvent(new Event("change", { bubbles: true }));
+      }, enough);
+      const settled = await page.evaluate(() => document.getElementById("budgetNext").textContent.trim());
+      // The figure is the difference between the two lists, composed from the
+      // payload rather than read off the page's own function: a gain measured
+      // from the wrong side of the pound would read as a plausible sentence.
+      const gained = await page.evaluate((values) => {
+        const types = new Set(STATE.types);
+        const admitted = (d) => !types.size || TYPES.types(d).some((type) => types.has(type));
+        const count = (pence) => TYPES.list().filter(
+          (d) => admitted(d) && TYPES.priceOf(d) <= pence).length;
+        return count(values.to * 100) - count(values.from * 100);
+      }, { from: crossing.at, to: Math.ceil(crossing.price / 100) });
+      const wantedGain = gained === 1 ? "One place added." : gained + " places added.";
+      check(
+        "and on release it says what the new budget gained",
+        gained > 0 && settled === wantedGain,
+        `${settled} (expected ${wantedGain} from ${JSON.stringify({ from: crossing.at, price: crossing.price })})`
+      );
+      // Back to a budget that reaches every row, so the checks after this one
+      // read the list they were written for.
+      const ceilingNow = await page.evaluate(() => budgetCeiling());
+      await page.fill("#budgetNumber", String(ceilingNow));
+    } else {
+      check("a drag names the next fare and the place it adds", notExercised("this page has no next fare to name"));
+      check("and on release it says what the new budget gained", notExercised("no next fare to reach"));
+    }
     await page.check('input[name="unit"][value="adult"]');
     const oneAdultStop = await statedStop();
     check(
@@ -476,6 +589,8 @@ async function driveTheFilters(world) {
         budgetVisible: !!budget && budget.getBoundingClientRect().height > 0,
         resultsVisible: !!firstRow && firstRow.getBoundingClientRect().height > 0,
         state: (document.getElementById("filterState") || {}).textContent || "",
+        stateVisible: !!document.getElementById("filterState") &&
+          document.getElementById("filterState").getBoundingClientRect().height > 0,
       };
     });
     check("the refinements arrive folded and the plate says so", folded.open === false, JSON.stringify(folded));
@@ -520,6 +635,19 @@ async function driveTheFilters(world) {
         "one tap opens the refinements",
         opened.open === true && opened.expanded === "true" && opened.panelVisible,
         JSON.stringify(opened)
+      );
+      // DS4 of the 19 October 2026 distill pass: the summary is the folded
+      // state's line, so the open panel does not repeat itself above the
+      // controls that show the same state -- and the toggle keeps the state in
+      // its name for the reader who cannot see either.
+      const openPlate = await page.evaluate(() => ({
+        visible: document.getElementById("filterState").getBoundingClientRect().height > 0,
+        label: document.getElementById("moreFiltersToggle").getAttribute("aria-label") || "",
+      }));
+      check(
+        "and the open panel does not repeat the state beside the controls that show it",
+        openPlate.visible === false && /^Filter this list\. Ticket: /.test(openPlate.label),
+        JSON.stringify(openPlate)
       );
       const chipValue = await page.evaluate(() => {
         // A chip is offered only when a destination of its type is inside the
@@ -577,6 +705,8 @@ async function driveTheFilters(world) {
           rows: document.querySelectorAll("#rows tr").length,
           rowVisible: !!row && row.getBoundingClientRect().height > 0,
           state: (document.getElementById("filterState") || {}).textContent || "",
+          stateVisible: document.getElementById("filterState").getBoundingClientRect().height > 0,
+          label: document.getElementById("moreFiltersToggle").getAttribute("aria-label"),
         };
       });
       check(
@@ -585,6 +715,11 @@ async function driveTheFilters(world) {
         JSON.stringify(closed)
       );
       check("and the summary still names what is narrowed", closed.state.trim().length > 0, closed.state);
+      check(
+        "and the folded plate shows it again rather than leaving it in a label",
+        closed.stateVisible === true && !closed.label,
+        JSON.stringify(closed)
+      );
       // Put the chips back, then hand the rest of the run a desktop viewport:
       // the checks below exercise every control, which on a phone means
       // opening the disclosure each time, and that is what section 7a is for.
@@ -1042,9 +1177,12 @@ async function driveTheFilters(world) {
         text: line ? line.textContent.trim() : "",
       };
     });
+    // DS3 of the 19 October 2026 distill pass: one key named, not two, and the
+    // line is only offered to a fine pointer -- the stylesheet's media query is
+    // what this reads, through the computed visibility rather than the text.
     check(
-      "the strip that stays on screen names the budget keys",
-      hint.exists && hint.visible && hint.text.includes("/") && hint.text.includes("b"),
+      "the strip that stays on screen names the budget key",
+      hint.exists && hint.visible && hint.text.includes("/") && !/\bor b\b/.test(hint.text),
       JSON.stringify(hint)
     );
     const pageAt = () => page.evaluate(() => ({

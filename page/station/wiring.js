@@ -5,7 +5,13 @@
 // first page, because the cheapest destinations are the ones a narrowed
 // search wants to see first and page 4 of the previous set is not where they
 // are now. The count and the page position are both re-announced by render().
-budget.addEventListener("input", () => chooseBudget(budget.value));
+// DL1 and OV3 of the 19 October 2026 passes: the slider has its own path. Its
+// first input opens a gesture whose gain is measured from the budget before it,
+// the input coalesces one render per frame, and the release settles the wording.
+// The number field above keeps chooseBudget(), because typing is one decision
+// per keystroke and its value is the sentence's own number.
+budget.addEventListener("input", () => dragBudget(budget.value));
+budget.addEventListener("change", settleBudgetDrag);
 budgetNumber.addEventListener("input", () => chooseBudget(budgetNumber.value));
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
@@ -40,9 +46,11 @@ nextPage.addEventListener("click", () => { STATE.page += 1; render(); writeUrl()
 // page's whole question, and the pager is the other control a keyboard reader
 // walks a whole tab order to reach. `/` is the convention a reader already
 // carries from a search field, and `b` is the same action for a layout where
-// `/` needs a shift. A keystroke inside a field belongs to the field, so a
-// reader typing a budget, a station name or a railcard keeps every key they
-// press, and a held modifier is never an accelerator.
+// `/` needs a shift -- kept for a reader who has met it, though only one key is
+// named now (DS3 of the 19 October 2026 distill pass): a hint is not a
+// dictionary. A keystroke inside a field belongs to the field, so a reader
+// typing a budget, a station name or a railcard keeps every key they press, and
+// a held modifier is never an accelerator.
 document.addEventListener("keydown", (event) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   const target = event.target;

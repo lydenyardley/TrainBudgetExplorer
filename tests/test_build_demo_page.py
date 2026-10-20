@@ -167,7 +167,9 @@ class DemoPageTest(PageTestCase):
         # table has a cell with no heading above it. It says the word the dock,
         # its count and its clear button say, and the stacked layout labels the
         # same cell with the same word (audit item 13, 9 October 2026).
-        self.assertIn('<th scope="col" class="hold">Shortlist</th>', self.html)
+        # DS7 of the 19 October 2026 distill pass: the column headings wear the
+        # one uppercase label rule, so the hold column carries both classes.
+        self.assertIn('<th scope="col" class="eyebrow hold">Shortlist</th>', self.html)
         from page_templates import STATION_STYLESHEET
 
         self.assertIn(
@@ -353,6 +355,13 @@ class DemoPageTest(PageTestCase):
         self.assertIn(SERVICE_CLAIM_WITHOUT_TIMES, without_times)
         self.assertNotIn("services listed", without_times)
         self.assertNotIn("options in the timetable", without_times)
+        # DS5 of the 19 October 2026 distill pass: the limitation is one
+        # paragraph, so the visible page says it once. The payload repeats the
+        # sentence in its own pricing note, which is not visible copy and is
+        # why the count stops at the payload.
+        visible = self.html.split("window.TBE_DATA")[0]
+        self.assertEqual(visible.count("qualifying train"), 1)
+        self.assertEqual(visible.count("Unrestricted fares are valid"), 1)
 
     def test_the_undated_schedule_caveat_sits_with_the_times(self) -> None:
         # C04: the warning that the times are typical rather than date-specific
@@ -403,10 +412,12 @@ class DemoPageTest(PageTestCase):
         # and a summary saying "3 destinations within £20" under a heading that
         # says "up to £20" is the same defect in different words.
         #
-        # The other two phrases rather than three: the count line and the empty
-        # list are one function now, because an empty list printed the sentence
-        # twice, a line apart (E10 of the 17 October 2026 audit). The phrasing
-        # itself is the claim, and the two call sites are one sentence of code.
+        # Two phrases, and each is now a different sentence: the count line's
+        # "N destinations for up to £X" and the empty list's "No destinations
+        # for up to £X". The empty block below the table no longer repeats the
+        # second one (DS1 of the 19 October 2026 distill pass), which is a fact
+        # about what a reader sees rather than about how many times the words
+        # appear in the script; the browser suite reads the rendered page.
         self.assertEqual(2, page_script(self.html).count("for up to "),
                          "the cap is named the old way somewhere")
         self.assertNotIn('"No destinations within "', page_script(self.html))
@@ -700,7 +711,7 @@ class DemoPageTest(PageTestCase):
         # heading above it, so the two are asserted here together rather than the
         # assignment that copies one to the other. Which cells carry which label
         # on a phone is read off the rendered rows by the browser suite.
-        self.assertIn('<th scope="col">Fare type</th>', self.html)
+        self.assertIn('<th scope="col" class="eyebrow">Fare type</th>', self.html)
         # C13/D8 of the 17 October 2026 critique: the phone row dropped the
         # label track, so the values are a two-line grid and the heading row is
         # the only place the column names are written.
@@ -883,9 +894,11 @@ class DemoPageTest(PageTestCase):
         # column is now the fare in the reader's own three words and the code
         # is in the row's disclosure (ADR-0053), so the header names what the
         # cells hold rather than what the feed calls them.
-        self.assertIn('<th scope="col">Fare type</th>', self.html)
+        # DS7 of the 19 October 2026 distill pass: every heading wears the one
+        # uppercase label rule.
+        self.assertIn('<th scope="col" class="eyebrow">Fare type</th>', self.html)
         self.assertNotIn('<th scope="col">Fare code</th>', self.html)
-        self.assertIn('<th scope="col">Tickets</th>', self.html)
+        self.assertIn('<th scope="col" class="eyebrow">Tickets</th>', self.html)
         self.assertNotIn("<th>Ticket</th><th>Tickets</th>", self.html)
         self.assertNotIn('<th scope="col">Fare</th>', self.html)
         self.assertNotIn('<th scope="col">Conditions</th>', self.html)
@@ -921,7 +934,11 @@ class DemoPageTest(PageTestCase):
         # "£10.1" over "0", which is a different number rather than a tighter
         # column. The header word was deciding the width, so neither half of
         # the table wraps, and the browser suite measures the painted lines.
-        self.assertIn("color: var(--muted); white-space: nowrap; }", self.stylesheet)
+        # DS7 of the 19 October 2026 distill pass: the heading's type is the one
+        # uppercase label rule now, and the nowrap that keeps a heading on one
+        # line is the table's own.
+        self.assertIn("th { white-space: nowrap; }", self.stylesheet)
+        self.assertIn("color: var(--muted); font-weight: 700; }", self.stylesheet)
         self.assertIn("font-variant-numeric: tabular-nums; white-space: nowrap; }", self.stylesheet)
         # The station's own code is the widest run of characters in the
         # first column, and it must not wrap either: "KINGS" over "X" is a
@@ -931,6 +948,20 @@ class DemoPageTest(PageTestCase):
             self.stylesheet,
         )
         self.assertNotIn(".ticket-code", self.stylesheet)
+
+    def test_the_route_asks_for_a_cross_fade_and_can_turn_it_off(self) -> None:
+        # OV6 of the 19 October 2026 overdrive pass: moving between the chooser
+        # and a station page is the same question with its subject changed, so
+        # the browser cross-fades the two documents at the chevron's own .18s
+        # rather than painting a white frame between them. A browser without
+        # the API ignores the at-rule, which is the page as it was before, and
+        # a reader who asked for less motion gets the cut.
+        self.assertIn("@view-transition { navigation: auto; }", self.stylesheet)
+        self.assertIn("animation-duration: .18s", self.stylesheet)
+        self.assertIn(
+            "::view-transition-old(root), ::view-transition-new(root) { animation: none; }",
+            self.stylesheet,
+        )
 
     def test_the_count_line_sits_on_its_table(self) -> None:
         # Finding, 29 September 2026: on the real page the count sat 205px above
@@ -999,7 +1030,11 @@ class DemoPageTest(PageTestCase):
         # disagreement between them is what fails.
         ceiling = int(re.search(r'id="budget"[^>]*max="(\d+)"', self.html).group(1))
         hint = re.search(r'(id="budgetHint">.*?)</span>\.', self.html, re.S).group(1)
-        self.assertIn("It stops at the highest fare", hint)
+        # DS2 of the 19 October 2026 distill pass: the figure is still the stop;
+        # the sentence around it no longer spends its first clause saying where
+        # the control is, because the heading is directly above it.
+        self.assertIn("Stops at", hint)
+        self.assertNotIn("in the heading", hint)
         self.assertIn("&pound;{}.00 for one adult".format(ceiling), hint)
         self.assertNotIn("__CEILING_NOTE__", self.html)
 

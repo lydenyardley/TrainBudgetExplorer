@@ -26,6 +26,13 @@ if (!DATA.hasJourneys) {
 // width. It read correctly by accident, and the count stopped meaning anything
 // the moment either table's headings changed.
 const columnCount = () => rows.closest("table").querySelectorAll("thead th").length;
+// The scaffold the rows are built into. DS1 of the 19 October 2026 distill pass:
+// a table with no rows under it is a failed load to a reader, and seven column
+// names over nothing is the page drawing its own failure. The table stands down
+// with the list it has no rows for, and the count line above it keeps the
+// sentence -- the live region still says what emptied the list, and the block
+// below says where to go instead.
+const resultsTable = rows.closest("table");
 function renderCoverage() {
   const coverage = document.getElementById("feedCoverage");
   if (!coverage || DATA.rawFareDestinationCount === undefined) return;
@@ -90,6 +97,12 @@ function render() {
   // same sentence as the tab title, so the two cannot disagree (audit item 13).
   const heading = document.getElementById("pageHeading");
   if (heading) heading.setAttribute("aria-label", document.title);
+  // The line under the count describes the gesture that just ended. Every other
+  // render is not that gesture, so the line goes; the drag's own frame writes it
+  // again after this render (queueBudgetFrame). Cleared before the early returns
+  // too, so a page that has just stood its table down is not still reporting the
+  // last drag it saw.
+  clearBudgetNext();
   // Before any price is read: the railcard changes the price of every row, and
   // a card ticked for a party of one is a number no reader could buy. It also
   // decides which row the cheapest list keeps for a destination, so that list
@@ -124,6 +137,7 @@ function render() {
     // bound, and clamping to the £1 ceiling of an empty list would silently
     // reset the reader's budget for every other mode they switch back to.
     rows.replaceChildren();
+    resultsTable.hidden = true;
     summary.textContent = "No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name;
     empty.hidden = false;
     renderEmptyMode();
@@ -154,6 +168,9 @@ function render() {
   sizeBudgetField();
   updateChipCounts(available, cap);
   renderFilterState();
+  // The list has rows again, so the scaffold they belong to returns; an empty
+  // list stands it down below.
+  resultsTable.hidden = false;
   rows.replaceChildren();
 
   const pageCount = Math.max(1, Math.ceil(wanted.length / PAGE_SIZE));
@@ -209,6 +226,10 @@ function render() {
     // while the chip that caused it sat inside the folded refinements.
     : available.length ? emptyListSentence(cap, basis) : "";
   empty.hidden = wanted.length > 0;
+  // DS1: no rows, no table. The count line is the one place the empty sentence
+  // is said, and the empty block below it is the way out rather than a second
+  // copy of the same news.
+  resultsTable.hidden = wanted.length === 0;
   renderEmpty(available, wanted, cap, basis);
   more.hidden = true;
   pagination.hidden = pageCount <= 1;

@@ -174,7 +174,7 @@ __THEME_TOGGLE__
      opens directly under it, because a reader who has just clicked a word
      looks at that word and not two paragraphs further down. -->
 <div id="originPicker" hidden>
-  <p class="origin-picker-label" id="originPicksLabel">Every station on this site</p>
+  <p class="eyebrow origin-picker-label" id="originPicksLabel">Every station on this site</p>
   <ul id="originPicks" aria-labelledby="originPicksLabel"></ul>
   <p id="originCap" hidden></p>
   <p id="originNomatch" hidden></p>
@@ -197,7 +197,12 @@ __THEME_TOGGLE__
     <legend class="sr-only">Budget</legend>
     <label class="sr-only" for="budget">Budget in pounds</label>
     <input id="budget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="budgetHint">
-    <span class="tag" id="budgetHint">Drag to change the budget in the heading. It stops at the highest fare <span id="budgetHintMode">in the list on screen</span> — <span id="budgetCeiling">__CEILING_NOTE__</span>.</span>
+    <!-- DS2 of the 19 October 2026 distill pass: the hint named where the control
+         was (the heading is directly above it), so it says what the drag does and
+         where it stops. The mode is named only when it is not the default one,
+         because a default needs no clause; the party and the ceiling stay, which
+         are the two facts the budget contract protects. -->
+    <span class="tag" id="budgetHint">Drag to set the budget. Stops at <span id="budgetCeiling">__CEILING_NOTE__</span><span id="budgetHintMode"></span>.</span>
   </fieldset>
   <div class="more-filters" id="moreFilters" data-open="false">
     <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
@@ -208,7 +213,7 @@ __THEME_TOGGLE__
     </button>
     <div class="more-filters-panel" id="moreFiltersPanel">
   <fieldset class="ticket-filter">
-    <legend>Ticket type</legend>
+    <legend class="eyebrow">Ticket type</legend>
     <div class="filter-options segmented">
       <label><input type="radio" name="ticketMode" value="cheapest" checked> Cheapest available</label>
       <label><input type="radio" name="ticketMode" value="anytime"> Anytime Day Return</label>
@@ -217,7 +222,7 @@ __THEME_TOGGLE__
     </div>
   </fieldset>
   <fieldset class="party-filter">
-    <legend>The budget covers</legend>
+    <legend class="eyebrow">The budget covers</legend>
     <div class="filter-options">
       <label class="railcard-choice"><input type="radio" name="unit" value="adult" checked> One adult</label>
       <label class="railcard-choice"><input type="radio" name="unit" value="party"> Two adults</label>
@@ -234,7 +239,7 @@ __THEME_TOGGLE__
     <span class="railcard-help" id="railcardHelp">No railcard selected, so these are standard fares.</span>
   </fieldset>
   <fieldset class="destination-filter">
-    <legend>Destination type</legend>
+    <legend class="eyebrow">Destination type</legend>
     <div class="filter-options" id="destinationTypes" role="group" aria-label="Destination type">__DESTINATION_TYPE_FILTERS__</div>
     <!-- Critique item 3, second half: the four settlement bands stay in the row
          above and the ten thematic facets arrive here, behind the "More types"
@@ -300,8 +305,15 @@ __THEME_TOGGLE__
      the real Grantham page it sat 205px above the first row, with six
      provenance paragraphs between them (finding, 29 September 2026). -->
 <p id="summary" role="status" aria-live="polite"></p>
+<!-- DL1 of the 19 October 2026 delight pass: the budget's own answer in places.
+     It sits under the count, so it speaks to the same question, and it is empty
+     and collapsed at rest, so a page that is not being dragged is the page it
+     was. Deliberately not a live region: a drag that announced every pound would
+     be worse for a screen-reader reader than silence, and the count line above
+     already speaks on settle. -->
+<p class="tag" id="budgetNext" hidden></p>
 <table>
-  <thead><tr><th scope="col" class="hold">Shortlist</th><th scope="col">Station</th><th scope="col" class="num">Price</th><th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th><th scope="col">Fare type</th><th scope="col">Tickets</th></tr></thead>
+  <thead><tr><th scope="col" class="eyebrow hold">Shortlist</th><th scope="col" class="eyebrow">Station</th><th scope="col" class="eyebrow num">Price</th><th scope="col" class="eyebrow num">Time</th><th scope="col" class="eyebrow num">Changes</th><th scope="col" class="eyebrow">Fare type</th><th scope="col" class="eyebrow">Tickets</th></tr></thead>
   <tbody id="rows"></tbody>
 </table>
 <div id="empty" hidden></div>
@@ -326,7 +338,7 @@ __THEME_TOGGLE__
      columns need the same names the results table gives them. -->
 <aside class="shortlist-dock" id="shortlistDock" hidden aria-label="Shortlisted destinations">
   <div class="shortlist-dock-head">
-    <span class="shortlist-label">Shortlist</span>
+    <span class="eyebrow shortlist-label">Shortlist</span>
     <span class="tag" id="shortlistDockCount"></span>
     <p class="tag" id="shortlistLimit"></p>
     <button id="shortlistCopy" class="toggle" type="button" hidden>Copy</button>
@@ -339,9 +351,9 @@ __THEME_TOGGLE__
     <span id="shortlistStatus" role="status" class="sr-only"></span>
   </div>
   <table>
-    <thead><tr><th scope="col">Station</th><th scope="col" class="num">Price</th>
-      <th scope="col" class="num">Time</th><th scope="col" class="num">Changes</th>
-      <th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
+    <thead><tr><th scope="col" class="eyebrow">Station</th><th scope="col" class="eyebrow num">Price</th>
+      <th scope="col" class="eyebrow num">Time</th><th scope="col" class="eyebrow num">Changes</th>
+      <th scope="col" class="eyebrow"><span class="sr-only">Remove</span></th></tr></thead>
     <tbody id="shortlistDockList"></tbody>
   </table>
 </aside>
@@ -359,12 +371,15 @@ __THEME_TOGGLE__
        and #modeNote already say -- which fare the price is, and what the list
        mixes (audit item 14, 9 October 2026). What is left is what only a
        limitation can say, and the standard-class fact is in the method note. -->
-  <p>ITX placeholder fares are excluded. Advance singles are shown when they are the cheapest single, but they require a qualifying train and their price and availability can change.</p>
-  <!-- C5 of the 17 October 2026 critique: this sentence named "the services
-       listed" on a build that lists no services. It is the payload's own
-       sentence now, chosen from hasJourneys, so the page cannot make a claim
-       its payload does not support (build_release.SERVICE_CLAIM). -->
-  <p>__SERVICE_CLAIM__</p>
+  <!-- DS5 of the 19 October 2026 distill pass: the Advance limitation was stated
+       twice, twenty pixels apart, and each copy had a clause the other did not.
+       One paragraph now, and the payload's own sentence is the one that carries
+       it: the excluded placeholder fares stay their own clause, because they are
+       a different fact about a different fare. -->
+  <p>ITX placeholder fares are excluded. __SERVICE_CLAIM__</p>
+  <!-- C5 of the 17 October 2026 critique: the sentence is the payload's own,
+       chosen from hasJourneys, so the page cannot make a claim its payload does
+       not support (build_release.SERVICE_CLAIM). -->
   <!-- Everything the page knows about where its numbers came from, in the one
        place a reader goes to check them. These four lines stood between the
        budget control and the first fare on every station page: the feed's

@@ -112,6 +112,9 @@ const budgetField = document.getElementById("budgetField");
 // files to learn what may write it (E12 of the 17 October 2026 audit), and this
 // is the file the page already reads its elements in.
 const summary = document.getElementById("summary");
+// The line under the count that names what the next pound buys (DL1). Read
+// here, with the rest of the table's furniture; budget.js writes it.
+const budgetNext = document.getElementById("budgetNext");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
 const pagination = document.getElementById("pagination");

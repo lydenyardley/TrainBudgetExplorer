@@ -23,6 +23,9 @@ const shortlistBox = document.getElementById("shortlistBox");
 const shortlistDockList = document.getElementById("shortlistDockList");
 const shortlistDockCount = document.getElementById("shortlistDockCount");
 const shortlistDockClear = document.getElementById("shortlistDockClear");
+// DL4's acknowledgement, declared before the first render reads it (see
+// settleCopyLabel at the foot of the file).
+let copyLabelTimer = null;
 
 function shortlisted() {
   const wanted = new Set(STATE.shortlist);
@@ -180,6 +183,14 @@ function renderShortlist() {
     padForDock();
   }
   const empty = kept.length === 0;
+  // A dock that has just emptied must not keep an acknowledgement for the next
+  // reader: removing the rows one at a time goes through here, not through the
+  // Clear button, which resets the label itself.
+  if (empty) {
+    window.clearTimeout(copyLabelTimer);
+    copyLabelTimer = null;
+    if (shortlistCopy) shortlistCopy.textContent = "Copy";
+  }
   for (const control of [shortlistCopy, shortlistShareBox]) {
     if (control) control.hidden = empty;
   }
@@ -237,6 +248,15 @@ function shortlistText() {
   lines.push("A shortlist of destinations, not a booking: no train is chosen and no ticket is held.");
   return lines.join("\n");
 }
+// DL4 of the 19 October 2026 delight pass: the dock's Copy acknowledges itself
+// to the eye, as the row's copy already does. The two-second window is the row's
+// own, and the live region keeps saying the sentence it always said.
+function settleCopyLabel(label) {
+  if (!shortlistCopy) return;
+  window.clearTimeout(copyLabelTimer);
+  shortlistCopy.textContent = label;
+  copyLabelTimer = window.setTimeout(() => { shortlistCopy.textContent = "Copy"; }, 2000);
+}
 if (shortlistCopy) {
   shortlistCopy.addEventListener("click", async () => {
     const text = shortlistText();
@@ -247,11 +267,13 @@ if (shortlistCopy) {
       shortlistBox.value = text;
       shortlistBox.hidden = false;
       if (shortlistShareBox) shortlistShareBox.open = true;
+      settleCopyLabel("Select below");
       shortlistStatus.textContent = "Could not copy automatically. The list is shown to copy by hand.";
     };
     if (!navigator.clipboard || !navigator.clipboard.writeText) return show();
     try {
       await navigator.clipboard.writeText(text);
+      settleCopyLabel("Copied");
       shortlistStatus.textContent = "Shortlist copied.";
     } catch (error) {
       show();
@@ -262,6 +284,10 @@ if (shortlistDockClear) {
   shortlistDockClear.addEventListener("click", () => {
     STATE.shortlist = [];
     setShortlistStatus("");
+    // The dock is about to be hidden, and a label left acknowledging a copy
+    // would be the next reader's first impression of it.
+    window.clearTimeout(copyLabelTimer);
+    if (shortlistCopy) shortlistCopy.textContent = "Copy";
     renderShortlist();
     writeUrl();
   });

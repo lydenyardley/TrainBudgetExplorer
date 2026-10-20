@@ -186,16 +186,21 @@ function reopenOpenRow(items) {
     STATE.openCrs = "";
     return;
   }
-  toggleDetail(row, destination, toggle);
+  toggleDetail(row, destination, toggle, false);
 }
 
-function toggleDetail(row, destination, toggle) {
+// `reveal` is whether this panel is appearing because the reader opened it, or
+// because a render put back the one they had open (E9). Only the first is a
+// surface the page just noticed them using (DL5 of the 19 October 2026 delight
+// pass): a budget drag that reopens the panel every frame must not animate it
+// on every frame.
+function toggleDetail(row, destination, toggle, reveal) {
   if (rowPanel.get(row)) {
     closePanel(row);
     return;
   }
   const detail = document.createElement("tr");
-  detail.className = "detail";
+  detail.className = reveal ? "detail reveal" : "detail";
   const cell = document.createElement("td");
   cell.colSpan = columnCount();
   if (destination.departures.length) {

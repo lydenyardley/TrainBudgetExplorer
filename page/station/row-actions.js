@@ -54,7 +54,7 @@ function cellWithLinks(row, destination, wanted) {
   toggle.title = times
     ? times + " departures and the fare for " + destination.name
     : "Fare details for " + destination.name;
-  toggle.addEventListener("click", () => toggleDetail(row, destination, toggle));
+  toggle.addEventListener("click", () => toggleDetail(row, destination, toggle, true));
   cell.append(toggle);
   row.append(cell);
 }

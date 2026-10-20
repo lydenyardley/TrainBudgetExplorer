@@ -46,6 +46,10 @@ const STATE = {
   rememberedCard: null,
   regionSeq: 0,
   budgetUrlTimer: null,
+  // The budget the slider was at when the current drag began (DL1). It is a
+  // gesture's memory rather than part of the search: it never reaches the
+  // address, and settleBudgetDrag() reads it once and clears it.
+  budgetDragFrom: null,
 };
 
 // The markup is the build's own statement of where the page opens, so the
@@ -69,6 +73,11 @@ seedState();
 // calls; the page number has no gesture of its own, because render() clamps
 // STATE.page against the list it just composed.
 function chooseBudget(value) {
+  // A typed or chosen figure ends any drag gesture in progress: a pointerdown
+  // that never moved the slider leaves an origin behind, and measuring the
+  // next key's gain from a click the reader abandoned is a sentence about the
+  // wrong pound.
+  STATE.budgetDragFrom = null;
   setBudget(value);
   STATE.page = 1;
   render();

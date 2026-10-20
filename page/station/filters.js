@@ -33,6 +33,9 @@ const filterState = document.getElementById("filterState");  // The refinements 
     if (!moreFilters) return;
     moreFilters.dataset.open = open ? "true" : "false";
     if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    // The toggle's name depends on which half of the fold it is showing (DS4),
+    // so opening or closing it re-writes the name as well as the state.
+    renderFilterState();
   }
   if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
     setFiltersOpen(moreFilters.dataset.open !== "true");
@@ -75,7 +78,21 @@ function filterStateText() {
     " · Destination: " + typeText;
 }
 function renderFilterState() {
-  if (filterState) filterState.textContent = filterStateText();
+  const text = filterStateText();
+  if (filterState) filterState.textContent = text;
+  // DS4 of the 19 October 2026 distill pass: the summary is hidden while the
+  // panel is open (the stylesheet does that), because the controls below it show
+  // the same state. A hidden line is not part of the toggle's name either, so the
+  // state travels in an aria-label for exactly as long as it is hidden -- and it
+  // is rewritten on every render, because a chip chosen with the panel open
+  // changes the state the toggle names.
+  if (moreFiltersToggle) {
+    if (moreFilters && moreFilters.dataset.open === "true") {
+      moreFiltersToggle.setAttribute("aria-label", "Filter this list. " + text);
+    } else {
+      moreFiltersToggle.removeAttribute("aria-label");
+    }
+  }
 }
 // The page's accelerators, named in the strip that stays on screen while the
 // refinements are folded, because a key nobody is told about is not offered.
@@ -84,7 +101,12 @@ function renderFilterState() {
 // there rather than from here at load.
 function renderKeyHints() {
   if (!keyHints) return;
-  keyHints.textContent = "Press / or b to set the budget" +
+  // DS3 of the 19 October 2026 distill pass: one key named, not two. `b` still
+  // works (wiring.js), because a reader who has met it once should not lose it;
+  // it is simply not one of the two keys a newcomer is asked to remember. The
+  // stylesheet shows this line only to a fine pointer, so a phone is not told
+  // about a keyboard it does not have.
+  keyHints.textContent = "Press / to set the budget" +
     (pagination && !pagination.hidden ? ", and n or p to change page." : ".");
   keyHints.hidden = false;
 }

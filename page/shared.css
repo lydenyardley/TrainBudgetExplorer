@@ -103,7 +103,7 @@
      padding. */
   h1 { font-size: var(--h1); line-height: 1.06; letter-spacing: -.03em; font-weight: 700;
        text-wrap: balance; margin: .5em 0; }
-  h2 { font-size: 1.05rem; margin: 1.5rem 0 .25rem; }
+  h2 { font-size: 1.125rem; margin: 1.5rem 0 .25rem; }
   p, li { margin: .4rem 0; }
   a { color: var(--accent); }
   /* A single unbroken run of characters must not decide the width of the
@@ -127,7 +127,12 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: .2rem; }
   ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
   .muted, .tag, .disclosure { color: var(--muted); }
-  .tag { font-size: .8rem; margin: .2rem 0; }
+  /* DS6 of the 19 October 2026 distill pass: five sizes below the display
+     heading -- 12 for labels and records, 14 for secondary prose and controls,
+     16 for body and cells, 18 for section headings -- rather than eight that
+     drifted between 11.5 and 18.4px. A reader cannot feel a difference of 0.8px
+     as hierarchy, so the near-neighbours were drift rather than a decision. */
+  .tag { font-size: .75rem; margin: .2rem 0; }
   .sub { color: var(--muted); max-width: 75ch; }
   .back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 1rem; }
   input[type=search], input[type=number], select { width: 100%; padding: .5rem; border: 1px solid var(--line);
@@ -248,6 +253,21 @@
   .chevron { width: 1em; height: 1em; flex: none; align-self: center;
              transition: transform .18s ease-out; }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+  /* OV6 of the 19 October 2026 overdrive pass: one document, not 2,712. Moving
+     between the chooser and a station page is the same question with its subject
+     changed, so the browser cross-fades the old page into the new one instead of
+     painting a white frame between them. The duration is the page's one existing
+     motion, the chevron's .18s, so there is one motion language rather than a
+     second. A browser without the API ignores the block and navigates as it
+     always did; a reader who has asked for less motion gets a cut. No element is
+     named here (OV7's shared-station morph is not shipped): the root is the whole
+     of this effect. */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) {
+    animation-duration: .18s; animation-timing-function: ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
   /* A disclosure's mark says which way it opens. `<details>` already reports
      its own state to the browser and to a screen reader, so this is the sight
      half only: the same drawn mark the filter bar uses, turned over when the
@@ -256,6 +276,14 @@
   /* C29: one main landmark per route, so landmark navigation works. It wraps
      the route's own content only; the back link and the footer stay outside it
      as the navigation landmarks they are. */
+  /* One uppercase small label, one rule (DS7 of the 19 October 2026 distill
+     pass): the filter legends, the results and dock column headings, the
+     shortlist label and the picker's label were five copies that had already
+     drifted on letter-spacing. The box each sits in is still its own -- a
+     legend's block display, a heading's nowrap -- so this carries the type and
+     nothing else. */
+  .eyebrow { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--muted); font-weight: 700; }
   main { display: block; padding-top: .5rem; }
   /* The footer, the back link and the footer nav are the same shape on every
      route: a quiet rule above, 44px of touch target for a phone. The height is
@@ -288,7 +316,7 @@
      critique). 75ch of this type is about the measure the paragraphs ask for,
      and the border above it is shorter for the same reason a column is. */
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
-           color: var(--muted); font-size: .85rem; max-width: 75ch; }
+           color: var(--muted); font-size: .875rem; max-width: 75ch; }
   .footnav { margin-top: 1.5rem; }
   .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
   .back-link a { color: var(--accent); }
@@ -301,5 +329,5 @@
   .synthetic-banner { display: block; margin: 0 0 1rem; padding: .5rem .7rem;
                       border: 1px solid var(--ochre); border-left-width: .3rem; border-radius: .35rem;
                       background: color-mix(in srgb, var(--ochre) 10%, transparent);
-                      color: var(--fg); font-size: .85rem; }
+                      color: var(--fg); font-size: .875rem; }
   .synthetic-banner strong { color: color-mix(in srgb, var(--ochre) 80%, var(--fg)); }

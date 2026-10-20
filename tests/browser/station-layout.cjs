@@ -204,6 +204,27 @@ async function measureTheLayout(world) {
       STATE.page = 1;
       render();
     });
+    // OV8 of the 19 October 2026 overdrive pass: the budget's re-render is the
+    // page's one hot path -- the slider can fire several input events a frame --
+    // so its cost is held to the input-to-paint budget rather than only described.
+    // The read after render() is what forces layout, so the figure includes what
+    // the browser has to lay out, not just the statements. The row count travels
+    // with the figure, because the budget is about a list and the same page is
+    // measured at whatever its own feed prices.
+    const budgetCost = await page.evaluate(() => {
+      const rows = document.querySelectorAll("#rows tr[data-crs]").length;
+      const start = performance.now();
+      render();
+      document.getElementById("summary").getBoundingClientRect();
+      return { ms: Math.round((performance.now() - start) * 10) / 10, rows };
+    });
+    check(
+      "a budget change re-renders this page inside the input-to-paint budget",
+      budgetCost.rows === 0
+        ? notExercised("this page shows no rows to re-render")
+        : budgetCost.ms < 50,
+      `${budgetCost.ms}ms for ${budgetCost.rows} rows (budget 50ms)`
+    );
     const stuckHeadings = await page.evaluate(() => {
       const table = document.getElementById("rows").closest("table");
       const th = table.querySelector("thead th");
@@ -437,6 +458,88 @@ async function measureTheLayout(world) {
           stacked.headers.every((th) => th.display !== "none"),
       JSON.stringify({ head, headers: stacked.headers.slice(0, 3) })
     );
+    // DL5 and OV9 of the 19 October 2026 passes: the two surfaces that appear in
+    // response to a reader -- a row's panel and the shortlist dock -- carry one
+    // 120ms reveal, and a reader who asked for less motion gets none of it. The
+    // panel's content is readable and focusable from its first frame either way;
+    // this measures the motion, not the content.
+    //
+    // The positive half comes first, or the reduced-motion check below would
+    // pass on a page with no motion rule at all: "none" is what a missing
+    // animation also reports.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const moving = await page.evaluate(() => {
+      const toggle = document.querySelector("#rows tr[data-crs] .row-expand")
+        || document.querySelector("#rows tr[data-crs] .toggle");
+      if (!toggle) return null;
+      if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
+      toggle.click();
+      const detail = document.querySelector("tr.detail");
+      const dock = document.querySelector(".shortlist-dock-head");
+      const read = {
+        opened: Boolean(detail),
+        detail: detail ? getComputedStyle(detail).animationName : "",
+        dock: dock ? getComputedStyle(dock).animationName : null,
+      };
+      // Put the row back as it was found, so the block below opens it itself.
+      if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
+      return read;
+    });
+    check(
+      "and with motion allowed the panel arrives in one reveal",
+      moving === null
+        ? notExercised("this page shows no row to open")
+        : moving.opened && moving.detail === "reveal-surface" &&
+          (moving.dock === null || moving.dock === "reveal-surface"),
+      JSON.stringify(moving)
+    );
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const quiet = await page.evaluate(() => {
+      const toggle = document.querySelector("#rows tr[data-crs] .row-expand")
+        || document.querySelector("#rows tr[data-crs] .toggle");
+      if (!toggle) return null;
+      toggle.click();
+      const detail = document.querySelector("tr.detail");
+      // The dock's box stays at the foot; what it holds is what animates.
+      const dock = document.querySelector(".shortlist-dock-head");
+      return {
+        opened: Boolean(detail),
+        detail: detail ? getComputedStyle(detail).animationName : "",
+        dock: dock ? getComputedStyle(dock).animationName : "",
+      };
+    });
+    check(
+      "a reader who asked for less motion gets no reveal",
+      quiet === null
+        ? notExercised("this page shows no row to open")
+        : quiet.opened && quiet.detail === "none" && quiet.dock === "none",
+      JSON.stringify(quiet)
+    );
+    // DS6 of the 19 October 2026 distill pass: a census of the sizes a reader
+    // actually meets, taken from the rendered page with a row open (so the
+    // panel's prose is in it) and with the display heading and drawn glyphs
+    // left out. Five steps are the hierarchy; six near-neighbours were drift.
+    const sizes = await page.evaluate(() => {
+      const seen = new Map();
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.nodeValue.trim()) continue;
+        const el = node.parentElement;
+        if (!el || !el.getBoundingClientRect().height) continue;
+        if (el.closest("h1") || el.closest('[aria-hidden="true"]') || el.closest(".sr-only")) continue;
+        const size = getComputedStyle(el).fontSize;
+        seen.set(size, (seen.get(size) || 0) + 1);
+      }
+      return Array.from(seen.keys()).sort((a, b) => parseFloat(a) - parseFloat(b));
+    });
+    check(
+      "and the page keeps five type sizes below the display heading",
+      sizes.length <= 5,
+      sizes.join(", ")
+    );
+    await page.emulateMedia({ reducedMotion: null });
     await page.setViewportSize({ width: 1280, height: 800 });
 }
 module.exports = { measureTheLayout };

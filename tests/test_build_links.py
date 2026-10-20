@@ -123,7 +123,12 @@ class TicketHandoffTest(PageTestCase):
         self.assertIn("navigator.clipboard", page_script(self.html))
         self.assertIn("Could not copy automatically", page_script(self.html))
         self.assertIn("Select below", page_script(self.html))
-        self.assertEqual(page_script(self.html).count('"Copied"'), 1)
+        # Two surfaces acknowledge a copy -- the row's button and the dock's,
+        # which DL4 of the 19 October 2026 delight pass gave the same two-second
+        # word -- and both acknowledgements live on the success path only. A
+        # third occurrence would be a failure path claiming one, or a second
+        # word for one action.
+        self.assertEqual(page_script(self.html).count('"Copied"'), 2)
 
     def test_the_copy_confirmation_is_announced_and_not_only_shown(self) -> None:
         self.assertIn('id="copyStatus" role="status"', self.html)

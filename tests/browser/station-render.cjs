@@ -311,7 +311,13 @@ async function renderThePage(world) {
       "the count line sits on the table it counts",
       measure.countToTable === null
         ? notExercised("this page shows no count and no table")
-        : measure.countToTable <= 12 && measure.afterCount.length === 0,
+        // The budget's next-place line (DL1 of the 19 October 2026 delight
+        // pass) sits between the count and the table on purpose: it is the
+        // count's own answer in places. It is empty and collapsed at rest, so
+        // the count still sits on its table; a third element would be a paragraph
+        // between the answer and the list it answers for.
+        : measure.countToTable <= 12 &&
+          measure.afterCount.every((id) => id === "budgetNext"),
       `count to table ${measure.countToTable}px; between: ${measure.afterCount.join(", ") || "nothing"}`
     );
     check(
@@ -320,7 +326,7 @@ async function renderThePage(world) {
         ? notExercised("this page shows no count and no first row")
         : measure.countToFirstRow <= 100 &&
           measure.afterProvenance.every((id) =>
-            ["dateNote", "linkTerms", "summary"].includes(id)
+            ["dateNote", "linkTerms", "summary", "budgetNext"].includes(id)
           ),
       `count to first row ${measure.countToFirstRow}px; after the provenance: ${measure.afterProvenance.join(", ") || "nothing"}`
     );

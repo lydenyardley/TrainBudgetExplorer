@@ -121,12 +121,14 @@ PRICING_NOTE = (
 # and the payload carries whichever sentence its own shape supports.
 SERVICE_CLAIM = (
     "The times on this page are options in the timetable, not a booking. "
-    "Unrestricted fares are valid on the services listed; an Advance single is "
-    "valid only on a qualifying train, so no train is picked for you."
+    "Unrestricted fares are valid on the services listed. An Advance single, "
+    "shown when it is the cheapest single, is valid only on a qualifying train, "
+    "and its price and availability can change — so no train is picked for you."
 )
 SERVICE_CLAIM_WITHOUT_TIMES = (
-    "Advance singles are valid only on a qualifying train, so no train is picked "
-    "for you. This build prices fares only, so no times are listed."
+    "An Advance single, shown when it is the cheapest single, is valid only on a "
+    "qualifying train, and its price and availability can change — so no train "
+    "is picked for you. This build prices fares only, so no times are listed."
 )
 
 

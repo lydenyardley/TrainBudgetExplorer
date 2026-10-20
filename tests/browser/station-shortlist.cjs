@@ -246,6 +246,19 @@ async function checkTheShortlist(world) {
         return null;
       });
       void copied;
+      // DL4 of the 19 October 2026 delight pass: the acknowledgement is visible,
+      // not only in the live region -- the row's copy has always said "Copied",
+      // and its twin in the dock saying nothing read as an oversight.
+      const acknowledged = await page.waitForFunction(
+        () => /^Copied$/.test((document.getElementById("shortlistCopy").textContent || "").trim()),
+        null,
+        { timeout: 2000 }
+      ).then(() => true).catch(() => false);
+      check(
+        "the dock's Copy acknowledges the copy to the eye as well as the region",
+        acknowledged,
+        (await page.textContent("#shortlistCopy")) || ""
+      );
       await page.waitForFunction(
         () => /copied|copy/i.test(document.getElementById("shortlistStatus").textContent || ""),
         null,

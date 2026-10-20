@@ -176,8 +176,16 @@ function renderModeNote() {
   // mode control is inside the folded refinements and "the ticket type you are
   // looking at" named nothing on screen (audit item 12). It is written in the
   // control's own words, so renaming the option renames this too.
+  //
+  // DS2 of the 19 October 2026 distill pass: the clause is written only when the
+  // mode is not the page's default, because a default needs no explanation; the
+  // ceiling and the party stay in the sentence either way (ADR-0048).
   const hintMode = document.getElementById("budgetHintMode");
-  if (hintMode) hintMode.textContent = "in " + (modeLabels()[ticketMode()] || "the list on screen");
+  if (hintMode) {
+    hintMode.textContent = ticketMode() === CHEAPEST_MODE
+      ? ""
+      : ", in " + (modeLabels()[ticketMode()] || "the list on screen");
+  }
 }
 function emptyModeMessage() {
   const labels = modeLabels();
@@ -214,12 +222,14 @@ function renderEmptyMode() {
 }
 
 // The one sentence for the one fact that the list is empty, and what emptied
-// it. It is composed here and read by both owners of that fact -- the count
-// line above the table and the empty state below it -- because it was written
-// out twice, and an empty list printed it twice, a line apart, from the same
-// inputs (E10 of the 17 October 2026 audit). `cap` is the clamped budget the
-// caller has already worked out, and `what` is its own phrase for the party
-// figure, which only the count line can word.
+// it. It was composed here for both owners of that fact -- the count line above
+// the table and the empty state below it -- because it had been written out
+// twice, a line apart, from the same inputs (E10 of the 17 October 2026 audit).
+// DS1 of the 19 October 2026 distill pass then gave it one owner: the count line
+// is the live region, so it keeps the sentence, and the block below the table
+// carries only the way out. `cap` is the clamped budget the caller has already
+// worked out, and `what` is its own phrase for the party figure, which only the
+// count line can word.
 //
 // C21: the predicate is price <= cap, so every place the budget is named says
 // "up to". "Within" and "under" both read as exclusive to a reader comparing
@@ -232,9 +242,6 @@ function emptyListSentence(cap, what) {
 function renderEmpty(available, wanted, cap, what) {
   empty.replaceChildren();
   if (wanted.length) return;
-  const why = document.createElement("p");
-  why.textContent = emptyListSentence(cap, what);
-  empty.append(why);
   const actions = document.createElement("p");
   actions.className = "empty-actions";
   const offer = (label, run) => {
@@ -245,18 +252,28 @@ function renderEmpty(available, wanted, cap, what) {
     button.addEventListener("click", run);
     actions.append(button);
   };
-  // The cheapest destination this mode carries, whatever the budget: the
-  // budget that would include it is the one number the reader is missing.
-  const cheapest = available.reduce(
+  // The cheapest destination the list could show at all, with the reader's own
+  // type filter applied: a door that raised the budget to a place the filter
+  // hides would be a control that changes a number and not the list.
+  const wantedTypes = selectedDestinationTypes();
+  const reachable = available.filter((destination) => matchesType(destination, wantedTypes));
+  const cheapest = reachable.reduce(
     (low, destination) => Math.min(low, priceOf(destination)), Infinity);
   if (Number.isFinite(cheapest) && cheapest > cap) {
     const enough = Math.ceil(cheapest / 100);
-    offer("Raise the budget to " + money(enough * 100), () => {
-      setBudget(enough);
-      STATE.page = 1;
-      render();
-      writeUrl({ budget: true });
-    });
+    // DL2 of the 19 October 2026 delight pass: the door says what it unlocks
+    // before it asks to be pressed. "£7.00 reaches SLEAFORD" is proof; "Raise
+    // the budget to £7.00" was a request to take it on trust. The button keeps
+    // its own explicit verb as its name, so a screen reader still hears what the
+    // action is. A tie is named as a count: two places at one price are not a
+    // recommendation of either.
+    const atPrice = reachable.filter((destination) => priceOf(destination) === cheapest);
+    const lead = document.createElement("p");
+    lead.className = "empty-lead";
+    lead.textContent = money(enough * 100) + " reaches " +
+      (atPrice.length === 1 ? atPrice[0].name : countWord(atPrice.length) + " places") + ".";
+    empty.append(lead);
+    offer("Raise the budget to " + money(enough * 100), () => chooseBudget(enough));
   }
   if (selectedDestinationTypes().size) {
     offer("Show all destination types", clearDestinationTypes);
