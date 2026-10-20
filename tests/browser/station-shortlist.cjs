@@ -280,12 +280,45 @@ async function checkTheShortlist(world) {
         text
       );
       await open(facts.affordable);
-      await page.evaluate(() => { document.getElementById("shortlistDockClear").click(); });
+      // Two places held again, because the copy checks above navigated away and
+      // this block needs a populated dock to clear. The tick is the reader's
+      // own gesture, and the clear is pressed from the keyboard: S7 of the 19
+      // October 2026 critique measured that pressing Clear left
+      // document.activeElement as BODY, because the dock went away with the
+      // focus inside it.
+      await page.evaluate(() => {
+        for (const row of Array.from(document.querySelectorAll("#rows tr[data-crs]")).slice(0, 2)) {
+          const box = row.querySelector(".hold-box");
+          if (box && !box.checked) box.click();
+        }
+        document.getElementById("shortlistDockClear").focus();
+      });
+      await page.keyboard.press("Enter");
+      const cleared = await page.evaluate(() => ({
+        active: document.activeElement === null
+          ? "none"
+          : document.activeElement.id || document.activeElement.className || document.activeElement.tagName,
+        isBody: document.activeElement === document.body,
+        status: (document.getElementById("shortlistStatus") || {}).textContent || "",
+        held: STATE.shortlist.length,
+        dockHidden: document.getElementById("shortlistDock").hidden,
+        rows: document.querySelectorAll("#shortlistDockList tr").length,
+        search: window.location.search,
+        count: (document.getElementById("shortlistDockCount") || {}).textContent || "",
+      }));
       check(
         "one control clears it",
-        (await page.evaluate(() => document.querySelectorAll("#shortlistDockList tr").length)) === 0 &&
-          !(await page.evaluate(() => window.location.search.includes("short="))),
-        (await page.evaluate(() => document.getElementById("shortlistDockCount").textContent)) || ""
+        cleared.held === 0 && cleared.rows === 0 && !cleared.search.includes("short="),
+        JSON.stringify(cleared)
+      );
+      // The focus is the half that was missing: the status region already said
+      // what happened, and the focus landed on <body> -- the top of the
+      // document, announced nowhere. It goes to the first row's checkbox while
+      // there is a row to act on, and to the count line otherwise.
+      check(
+        "and clearing it from the keyboard leaves the focus on the page",
+        !cleared.isBody && cleared.dockHidden && /cleared/i.test(cleared.status),
+        JSON.stringify(cleared)
       );
     }
     // 7e. The dock: the shortlist held at the foot of the screen, and the four

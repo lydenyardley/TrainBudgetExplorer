@@ -283,7 +283,20 @@ if (shortlistCopy) {
 if (shortlistDockClear) {
   shortlistDockClear.addEventListener("click", () => {
     STATE.shortlist = [];
-    setShortlistStatus("");
+    // S7 of the 19 October 2026 critique: the dock removes itself with the
+    // focus inside it, so a keyboard or screen-reader reader who cleared the
+    // list was returned to <body> with no announcement of where they were. The
+    // status region already carried the clear; the focus was the half that was
+    // missing. It moves before the dock goes, to the first row's own checkbox
+    // where there is a row to act on and to the count line otherwise -- the
+    // same rule the row's own panel follows when it closes. Only when the dock
+    // holds the focus, so a reader whose focus is elsewhere is left where it is.
+    if (shortlistDock.contains(document.activeElement)) {
+      const firstBox = document.querySelector("#rows input.hold-box");
+      const landing = firstBox || summary;
+      if (landing) landing.focus({ preventScroll: true });
+    }
+    setShortlistStatus("Shortlist cleared.");
     // The dock is about to be hidden, and a label left acknowledging a copy
     // would be the next reader's first impression of it.
     window.clearTimeout(copyLabelTimer);

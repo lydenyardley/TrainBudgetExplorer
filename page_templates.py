@@ -324,7 +324,11 @@ __THEME_TOGGLE__
 <!-- The count line belongs to the table below it, not to the panel above: on
      the real Grantham page it sat 205px above the first row, with six
      provenance paragraphs between them (finding, 29 September 2026). -->
-<p id="summary" role="status" aria-live="polite"></p>
+<!-- tabindex="-1": clearing the shortlist takes the dock away with the focus
+     inside it, so focus is moved to this line before the dock goes (S7 of the
+     19 October 2026 critique). It is not in the tab order -- it is a place to
+     arrive, not a stop on the way. -->
+<p id="summary" role="status" aria-live="polite" tabindex="-1"></p>
 <!-- DL1 of the 19 October 2026 delight pass: the budget's own answer in places.
      It sits under the count, so it speaks to the same question, and it is empty
      and collapsed at rest, so a page that is not being dragged is the page it
@@ -343,6 +347,14 @@ __THEME_TOGGLE__
   <span id="pageStatus" role="status"></span>
   <button id="nextPage" type="button" class="toggle">Next</button>
 </nav>
+<!-- S7 of the 19 October 2026 critique: the shortlist's live region, outside the
+     dock, because the dock hides itself when the last place leaves it and a live
+     region inside a hidden subtree is announced to nobody -- which is exactly
+     the clear this message exists for. It sits here rather than beside the count
+     line for a measured reason: anything between the count and the table's first
+     row pushes them apart, and two layout checks hold that gap to nothing.
+     Position means nothing to a live region; presence and visibility do. -->
+<span id="shortlistStatus" role="status" class="sr-only"></span>
 
 </main>
 
@@ -363,7 +375,6 @@ __THEME_TOGGLE__
       <textarea id="shortlistBox" class="copybox" rows="6" readonly hidden aria-label="Shortlist to copy"></textarea>
     </details>
     <button id="shortlistDockClear" class="toggle" type="button">Clear</button>
-    <span id="shortlistStatus" role="status" class="sr-only"></span>
   </div>
   <table>
     <thead><tr><th scope="col" class="eyebrow">Station</th><th scope="col" class="eyebrow num">Price</th>
