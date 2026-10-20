@@ -497,10 +497,11 @@ script against the dashboard's own endpoints with a bearer token from a scripted
 login. The owner chose Network Rail's own feed on 16 October 2026: it is the same
 CIF under the same licence, and it is the only one of the three that needs no new
 infrastructure and no undocumented front end. The address is the repository
-variable `SCHEDULE_URL`, and the credential is the `NRDP_USERNAME` and
-`NRDP_PASSWORD` secrets the fares download already holds: one account answers
-both products, so the workflow passes that pair under the names the downloader
-reads and there is no second pair to set or rotate.
+variable `SCHEDULE_URL`; its credential is `SCHEDULE_USERNAME` and
+`SCHEDULE_PASSWORD` from the account that holds the CIF subscription, with the
+fares download's `NRDP_USERNAME`/`NRDP_PASSWORD` pair as the fallback, because
+the endpoint refused that pair on 20 October 2026 (HTTP 401) while it
+downloaded the DTD feeds.
 `docs/dtd-licensing-and-data-access.md` holds the detail and
 `docs/github-pages-deployment.md` the configuration steps.
 
@@ -545,11 +546,13 @@ place of; the words now say what they were written to say, and
 carrying no backtick at all. Setting `SCHEDULE_URL` is a settings-page action,
 and `docs/github-pages-deployment.md` is the route; publishing prices only
 instead is a licensed shape too, at the cost of the two-place edit that document
-names. The variable needs no new secret beside it: the workflow passes the
-fares download's own NRDP pair under the names the timetable downloader reads,
-and a two-byte probe of the address now runs before any feed is downloaded, so
-a URL or an account the feed refuses costs one request rather than the run's
-wait. That runbook was still describing the prices-only release the workflow
+names. The credential it needs is a pair of its own, `SCHEDULE_USERNAME` and
+`SCHEDULE_PASSWORD`, with the fares pair as the fallback, and a two-byte probe
+of the address now runs before any feed is downloaded, so a URL or an account
+the feed refuses costs one request rather than the run's wait. The first run
+under that wiring, 20 October 2026, proved both halves: the probe answered in
+under a second, and its answer was that the fares pair is refused by the CIF
+endpoint with HTTP 401. That runbook was still describing the prices-only release the workflow
 stopped building on 16 October 2026 — five sentences of it, including the
 manifest check's own rule backwards — and they are corrected by the commit that
 carries this note.
@@ -764,9 +767,9 @@ is blocked on a tool.
    community posts rather than on the page. Nothing is built for this.
 7. **Does this repository publish times?** The release declares
 `fares,timetable`, and the gate that stopped the push run of 19 October 2026
-wants the `SCHEDULE_URL` variable set — a settings page, with the credential it
-needs already held as the `NRDP_USERNAME`/`NRDP_PASSWORD` secrets, both written
-out in `docs/github-pages-deployment.md`; or publishing prices alone, and the
+wants the `SCHEDULE_URL` variable set — a settings page, with a credential for
+the CIF subscription beside it and the fares pair as the fallback; all of it
+written out in `docs/github-pages-deployment.md`; or publishing prices alone, and the
 trade is in "The journey times are dropped from the release, and the source that
 brings them back" above. Nothing is left to build either way.
 Four questions this file used to carry are answered and their answers are in the

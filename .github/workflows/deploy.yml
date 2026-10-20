@@ -21,11 +21,13 @@
 # repository variable SCHEDULE_URL to that file's address before enabling the
 # schedule or pushing: the release declares `fares,timetable`, so a run without
 # a reachable CIF stops at the gate rather than publishing prices under a shape
-# it no longer builds. Its credential is the NRDP_USERNAME and NRDP_PASSWORD
-# secrets the fares download already uses -- one account, two products, so a
-# second pair would be a second thing to rotate for no extra proof -- and a
-# two-byte probe of that address runs before any feed is downloaded, so a
-# refused credential costs one request rather than the run.
+# it no longer builds. Its credential is SCHEDULE_USERNAME and SCHEDULE_PASSWORD,
+# from the account that holds the CIF subscription, falling back to the fares
+# download's NRDP pair when they are unset. The two products do not share an
+# entitlement: on 20 October 2026 the CIF endpoint refused the fares pair with
+# HTTP 401 while that pair downloaded the DTD feeds. A two-byte probe of the
+# address runs before any feed is downloaded, so a refused credential costs one
+# request rather than the run.
 #
 # The scheduled run is UTC 03:17 daily. GitHub may delay scheduled jobs, but
 # a failed audit prevents publication rather than deploying questionable data.
@@ -139,11 +141,11 @@ jobs:
         # told the timetable is missing.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL in the repository settings; the credential it needs is the NRDP_USERNAME and NRDP_PASSWORD secrets the fares download already uses. Or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL in the repository settings; the credential it needs is the SCHEDULE_USERNAME and SCHEDULE_PASSWORD secrets from the account that holds the CIF subscription, which is not the fares feed's NRDP pair. Or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
             exit 1
           fi
           python -m schedule_download --probe
@@ -186,8 +188,8 @@ jobs:
         # the environment and never from this file.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
         run: |
           python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
           # The file's own identity, in a form another job can compare. The
@@ -454,8 +456,8 @@ jobs:
         # own identity is part of what it compares, so this has to run before it.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
             echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
@@ -678,8 +680,8 @@ jobs:
         # own identity is part of what it compares, so this has to run before it.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
             echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."

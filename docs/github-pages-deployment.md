@@ -39,13 +39,13 @@ The journey times come from Network Rail's own CIF under the Open Government Lic
 
 1. Open **Settings → Secrets and variables → Actions**.
 2. On the **Variables** tab, select **New repository variable** and add `SCHEDULE_URL`, set to the address of the gzipped CIF.
-3. Its credential is the `NRDP_USERNAME` and `NRDP_PASSWORD` secrets the fares download already uses. Network Rail's feed answers HTTP Basic from the same account, so the workflow hands that pair to the downloader under the two names it reads and there is no second pair to set or rotate. A signed URL's query is itself a credential, which is why the downloader prints the address without it.
+3. Its credential is `SCHEDULE_USERNAME` and `SCHEDULE_PASSWORD`, added as **repository secrets**, from the account that holds the CIF subscription. The CIF is a different product from the DTD fares and timetable feed, and its endpoint refused the fares credential on 20 October 2026 (`HTTP 401`) while that credential downloaded the DTD feeds. Do not assume the two pairs are interchangeable. When these two secrets are absent the workflow falls back to `NRDP_USERNAME` and `NRDP_PASSWORD`, so an account that does cover both products needs nothing extra. A signed URL's query is itself a credential, which is why the downloader prints the address without it.
 
 ```yaml
 env:
   SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-  SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
-  SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+  SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+  SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
 ```
 
 The first step that touches the timetable asks that address for two bytes, before any feed is downloaded (`python -m schedule_download --probe`). The gzip magic proves the URL and the credential both answer, so a wrong one costs one request rather than the run's wait; an error page served with a 200 is refused there for the same reason.
