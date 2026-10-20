@@ -48,13 +48,32 @@ env:
   SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
 ```
 
-The first step that touches the timetable asks that address for two bytes, before any feed is downloaded (`python -m schedule_download --probe`). The gzip magic proves the URL and the credential both answer, so a wrong one costs one request rather than the run's wait; an error page served with a 200 is refused there for the same reason.
+### Where the data-feeds credential comes from
+
+Network Rail's feeds are their own account, separate from the National Rail Data Portal that holds the fares and the DTD timetable. That separation is measured rather than supposed: on 20 October 2026 the CIF endpoint answered `HTTP 401` to the fares credential in the same run that credential used to download the DTD feeds. Create the account at <https://publicdatafeeds.networkrail.co.uk/ntrod/create-account>, or sign in at <https://datafeeds.networkrail.co.uk/ntrod/> if one already exists. Registration is free, and Network Rail states that access is first come, first served and currently restricted to 1,000 users, so a place may not be free at the moment you ask. Request the `SCHEDULE` feed, the timetable product; `CIF_ALL_FULL_DAILY` is the file at the address `SCHEDULE_URL` names, not a subscription of its own.
+
+The credential is the username and password used to sign in to that site, sent as HTTP Basic. There is no token or API key. It belongs in the two secrets above and nowhere else, never on a command line and never in this file.
+
+Prove the pair before a run is spent on it. This reads the two environment variables and prints what answered, without the address's query:
+
+```bash
+read -r -p 'data-feeds username: ' SCHEDULE_USERNAME
+read -r -s -p 'data-feeds password: ' SCHEDULE_PASSWORD; echo
+export SCHEDULE_USERNAME SCHEDULE_PASSWORD
+python -m schedule_download --probe \
+  --url 'https://publicdatafeeds.networkrail.co.uk/ntrod/CifFileAuthenticate?type=CIF_ALL_FULL_DAILY&day=toc-full'
+unset SCHEDULE_USERNAME SCHEDULE_PASSWORD
+```
+
+`answered HTTP 200 with gzip bytes` is the pass. `HTTP 401` is the account not holding that feed yet, which is the same sentence the workflow's own probe prints. General enquiries about the feeds go to `opendata@networkrail.co.uk`, the address Network Rail names on its open-data page.
+
+The workflow runs that probe before any feed is downloaded. The gzip magic proves the URL and the credential both answer, so a wrong one costs one request rather than the run's wait; an error page served with a 200 is refused there for the same reason.
 
 A run with no `SCHEDULE_URL` stops at that step rather than publishing prices under a release that declares the times, because the release's shape and the pages it publishes have to agree. Nothing about the fares half needs any of it, and a build with no timetable at all is still a shape the builder renders and the browser suite drives; putting the release back to `--release fares` means removing `--timetable` from the build step as well, or the tripwire below is red.
 
 ### If secrets are missing
 
-The scheduled workflow fails at the download step and does not publish. That is intentional: publishing synthetic or unaudited data would make the provenance line false.
+The scheduled workflow fails at the probe step, before any feed is downloaded, and does not publish. That is intentional: publishing synthetic or unaudited data would make the provenance line false.
 
 You can still run the application locally with the synthetic feed, but a public real-feed deployment requires the credentials and the relevant RDG/DTD licence permissions.
 
