@@ -500,8 +500,10 @@ infrastructure and no undocumented front end. The address is the repository
 variable `SCHEDULE_URL`; its credential is `SCHEDULE_USERNAME` and
 `SCHEDULE_PASSWORD` from the account that holds the CIF subscription, with the
 fares download's `NRDP_USERNAME`/`NRDP_PASSWORD` pair as the fallback, because
-the endpoint refused that pair on 20 October 2026 (HTTP 401) while it
-downloaded the DTD feeds.
+the endpoint refused that pair on 20 October 2026 (HTTP 401). It is the pair
+the fares download uses, and the run of 19 October downloaded the DTD feeds
+with it before stopping at the missing address; the 20 October runs stopped at
+the probe, so that download never ran in them.
 `docs/dtd-licensing-and-data-access.md` holds the detail and
 `docs/github-pages-deployment.md` the configuration steps.
 
