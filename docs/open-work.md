@@ -497,9 +497,12 @@ script against the dashboard's own endpoints with a bearer token from a scripted
 login. The owner chose Network Rail's own feed on 16 October 2026: it is the same
 CIF under the same licence, and it is the only one of the three that needs no new
 infrastructure and no undocumented front end. The address is the repository
-variable `SCHEDULE_URL` and the credential is the `SCHEDULE_USERNAME` and
-`SCHEDULE_PASSWORD` secrets; `docs/dtd-licensing-and-data-access.md` holds the
-detail and `docs/github-pages-deployment.md` the configuration steps.
+variable `SCHEDULE_URL`, and the credential is the `NRDP_USERNAME` and
+`NRDP_PASSWORD` secrets the fares download already holds: one account answers
+both products, so the workflow passes that pair under the names the downloader
+reads and there is no second pair to set or rotate.
+`docs/dtd-licensing-and-data-access.md` holds the detail and
+`docs/github-pages-deployment.md` the configuration steps.
 
 **The build's side of it is done, 16 October 2026** (ADR-0073).
 `schedule_download.py` fetches a gzipped whole CIF from a URL with an optional
@@ -534,18 +537,22 @@ shape that the P1 byte-budget finding above asks for.
 reason it had not happened was a repository setting.** A push run stopped at the
 download's own gate, which refuses a run whose `SCHEDULE_URL` is empty rather
 than publishing prices under a shape the workflow no longer builds — the gate
-behaving exactly as the paragraph above says it should. That run carried the DTD
-credential and not the CIF one, and its message had lost the flag it names to a
-backtick, which bash ran as a command and printed nothing in place of; the words
-now say what they were written to say, and `tests/test_workflows.py` holds every
-line of shell in a `run:` block to carrying no backtick at all. Setting
-`SCHEDULE_URL` — and `SCHEDULE_USERNAME`/`SCHEDULE_PASSWORD` if the address wants
-them — is a settings-page action, and `docs/github-pages-deployment.md` is the
-route; publishing prices only instead is a licensed shape too, at the cost of the
-two-place edit that document names. That runbook was still describing the
-prices-only release the workflow stopped building on 16 October 2026 — five
-sentences of it, including the manifest check's own rule backwards — and they are
-corrected by the commit that carries this note.
+behaving exactly as the paragraph above says it should. That run held the fares
+feed's credential and no timetable address at all, and its message had lost the
+flag it names to a backtick, which bash ran as a command and printed nothing in
+place of; the words now say what they were written to say, and
+`tests/test_workflows.py` holds every line of shell in a `run:` block to
+carrying no backtick at all. Setting `SCHEDULE_URL` is a settings-page action,
+and `docs/github-pages-deployment.md` is the route; publishing prices only
+instead is a licensed shape too, at the cost of the two-place edit that document
+names. The variable needs no new secret beside it: the workflow passes the
+fares download's own NRDP pair under the names the timetable downloader reads,
+and a two-byte probe of the address now runs before any feed is downloaded, so
+a URL or an account the feed refuses costs one request rather than the run's
+wait. That runbook was still describing the prices-only release the workflow
+stopped building on 16 October 2026 — five sentences of it, including the
+manifest check's own rule backwards — and they are corrected by the commit that
+carries this note.
 
 `docs/publish-checklist.md`'s licence section carries the same stale shape in
 three places: the DTD terms paragraph's "how a prices-only page meets them" and
@@ -756,12 +763,12 @@ is blocked on a tool.
    argument about what to measure before that date, and it is measured at the
    community posts rather than on the page. Nothing is built for this.
 7. **Does this repository publish times?** The release declares
-   `fares,timetable`, and the gate that stopped the push run of 19 October 2026
-   wants the `SCHEDULE_URL` variable set — a settings page, with the two secrets
-   beside it, both written out in `docs/github-pages-deployment.md`; or publishing
-   prices alone, and the trade is in "The journey times are dropped from the
-   release, and the source that brings them back" above. Nothing is left to build
-   either way.
+`fares,timetable`, and the gate that stopped the push run of 19 October 2026
+wants the `SCHEDULE_URL` variable set — a settings page, with the credential it
+needs already held as the `NRDP_USERNAME`/`NRDP_PASSWORD` secrets, both written
+out in `docs/github-pages-deployment.md`; or publishing prices alone, and the
+trade is in "The journey times are dropped from the release, and the source that
+brings them back" above. Nothing is left to build either way.
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
 is one of a collection with none selected by default (ADR-0052), the runner

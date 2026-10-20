@@ -21,6 +21,10 @@ temporary name beside the destination, then decompressed far enough to see a CIF
 record, and only then moved into place: half a schedule publishes as confidently
 as a whole one, and it is wrong more often.
 
+``--probe`` is the same address and credential asked for two bytes, so a wrong
+URL or an account the feed refuses costs one request rather than a run that has
+already spent its minutes on the feeds beside it.
+
 Credentials come from ``SCHEDULE_USERNAME`` and ``SCHEDULE_PASSWORD``, never
 from the command line, and are never written to a log, a message, or the
 downloaded copy of the file. The URL is only ever printed without its query
@@ -338,6 +342,66 @@ def download_one(
     )
 
 
+@dataclass(frozen=True)
+class ScheduleProbe:
+    """What one short request to the timetable's address proved."""
+
+    source: str
+    final_url: str
+    status: int | None
+    seconds: float
+
+
+PROBE_BYTES = 2
+
+
+def probe(
+    url: str,
+    *,
+    username: str = "",
+    password: str = "",
+    opener: Opener | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> ScheduleProbe:
+    """Read the first bytes of *url* and refuse anything that is not a gzip.
+
+    Two bytes are the whole check this can buy, and they are the one a status
+    line cannot make: the gzip magic proves a schedule file answered, where an
+error page served with a 200 looks exactly like the feed from the outside.
+
+    One attempt, no retry. A 503 here is worth reporting where it is cheap to
+    read, and the download that follows is where a retry belongs.
+    """
+    request = _request(url, username, password)
+    request.add_header("Range", f"bytes=0-{PROBE_BYTES - 1}")
+    started = time.monotonic()
+    with _open_response(opener, request, timeout) as response:
+        status = _response_status(response)
+        _check_status(response, url, authenticating=bool(username or password))
+        final_url = _check_https(response, url)
+        # A server that ignores the range answers 200 and would stream the whole
+        # file, so the read stops at the magic either way and the response is
+        # closed under us.
+        head = bytes(getattr(response, "read")(PROBE_BYTES) or b"")
+    seconds = time.monotonic() - started
+    if not head:
+        raise FeedValidationError(f"{redacted(url)} answered with no bytes")
+    if head[:2] != GZIP_MAGIC:
+        if head.lstrip().startswith(b"<"):
+            raise FeedValidationError(
+                f"{redacted(url)} answered with a web page or XML, not a gzipped schedule"
+            )
+        raise FeedValidationError(
+            f"{redacted(url)} answered with {head[:2]!r}, which is not the gzip magic a CIF has"
+        )
+    return ScheduleProbe(
+        source=redacted(url),
+        final_url=redacted(final_url),
+        status=status,
+        seconds=seconds,
+    )
+
+
 def _other_feeds(destination: Path) -> list[str]:
     """Any other feed file in the folder the download was written to.
 
@@ -374,6 +438,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="do not send SCHEDULE_USERNAME/SCHEDULE_PASSWORD, for a URL that needs none",
     )
+    parser.add_argument(
+        "--probe",
+        action="store_true",
+        help="read two bytes from the URL and stop, proving the address and credential in seconds",
+    )
     parser.add_argument("--retries", type=int, default=DEFAULT_RETRIES)
     args = parser.parse_args(argv)
 
@@ -387,6 +456,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     username, password = ("", "") if args.no_credential else _credentials()
+    if args.probe:
+        try:
+            found = probe(args.url, username=username, password=password)
+        except DownloadError as error:
+            print(f"schedule probe failed: {error}", file=sys.stderr)
+            return 1
+        shown = f"HTTP {found.status}" if found.status is not None else "an answer"
+        print(f"{found.source} answered {shown} with gzip bytes in {found.seconds:.1f}s")
+        print(f"it answered from {found.final_url}")
+        return 0
+
     try:
         result = download_one(
             args.url,

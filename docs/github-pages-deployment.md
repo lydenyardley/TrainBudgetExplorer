@@ -39,14 +39,16 @@ The journey times come from Network Rail's own CIF under the Open Government Lic
 
 1. Open **Settings → Secrets and variables → Actions**.
 2. On the **Variables** tab, select **New repository variable** and add `SCHEDULE_URL`, set to the address of the gzipped CIF.
-3. If that address wants a credential — Network Rail's own feed answers HTTP Basic — add `SCHEDULE_USERNAME` and `SCHEDULE_PASSWORD` as **repository secrets**, not variables: a signed URL's query is itself a credential, which is why the downloader prints the address without it.
+3. Its credential is the `NRDP_USERNAME` and `NRDP_PASSWORD` secrets the fares download already uses. Network Rail's feed answers HTTP Basic from the same account, so the workflow hands that pair to the downloader under the two names it reads and there is no second pair to set or rotate. A signed URL's query is itself a credential, which is why the downloader prints the address without it.
 
 ```yaml
 env:
   SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-  SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
-  SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+  SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
+  SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
 ```
+
+The first step that touches the timetable asks that address for two bytes, before any feed is downloaded (`python -m schedule_download --probe`). The gzip magic proves the URL and the credential both answer, so a wrong one costs one request rather than the run's wait; an error page served with a 200 is refused there for the same reason.
 
 A run with no `SCHEDULE_URL` stops at that step rather than publishing prices under a release that declares the times, because the release's shape and the pages it publishes have to agree. Nothing about the fares half needs any of it, and a build with no timetable at all is still a shape the builder renders and the browser suite drives; putting the release back to `--release fares` means removing `--timetable` from the build step as well, or the tripwire below is red.
 

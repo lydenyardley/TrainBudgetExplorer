@@ -22,11 +22,13 @@ from make_synthetic_feed import build_synthetic_whole_cif
 from schedule_download import (
     DownloadError,
     FeedValidationError,
+    ScheduleProbe,
     _DropAuthRedirect,
     _other_feeds,
     _request,
     download_one,
     main,
+    probe,
     redacted,
     validate_download,
 )
@@ -46,6 +48,19 @@ class FakeResponse:
 
     def geturl(self) -> str:
         return self.url
+
+
+class CountingResponse(FakeResponse):
+    """A response that remembers how many bytes were taken from it."""
+
+    def __init__(self, body: bytes, **kwargs) -> None:
+        super().__init__(body, **kwargs)
+        self.read_bytes = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = super().read(size)
+        self.read_bytes += len(chunk)
+        return chunk
 
 
 class FakeOpener:
@@ -200,6 +215,40 @@ class DownloadTest(unittest.TestCase):
         self.assertEqual(_other_feeds(self.root / "nowhere" / "missing.CIF.gz"), [])
 
 
+class ProbeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+
+    def test_a_gzip_answer_is_proved_by_two_bytes(self) -> None:
+        # The price of the check is what it leaves unread, so the read is what
+        # is asserted: the probe stops at the magic whatever the body holds.
+        body = gzipped_fixture(self.root / "fixture")
+        response = CountingResponse(body)
+        found = probe("https://example.test/cif.gz?X-Amz-Signature=secret", opener=FakeOpener(response))
+        self.assertEqual(response.read_bytes, 2)
+        self.assertEqual(found.source, "https://example.test/cif.gz")
+        self.assertEqual(found.status, 200)
+
+    def test_a_page_served_with_200_is_refused(self) -> None:
+        # A wrong address answers with a sign-in page rather than an error, and
+        # the status line says the same thing a feed does.
+        opener = FakeOpener(FakeResponse(b"<!DOCTYPE html><html>Sign in</html>"))
+        with self.assertRaises(FeedValidationError) as caught:
+            probe("https://example.test/cif.gz", opener=opener)
+        self.assertIn("web page", str(caught.exception))
+
+    def test_a_refusal_costs_one_request_and_names_the_variable(self) -> None:
+        busy = urllib.error.HTTPError("https://example.test/cif.gz", 403, "Forbidden", {}, None)
+        opener = FakeOpener(busy)
+        with self.assertRaises(DownloadError) as caught:
+            probe("https://example.test/cif.gz", username="someone", password="hunter2", opener=opener)
+        self.assertEqual(len(opener.requests), 1)
+        self.assertIn("SCHEDULE_USERNAME", str(caught.exception))
+        self.assertNotIn("hunter2", str(caught.exception))
+
+
 class ValidateDownloadTest(unittest.TestCase):
     def test_a_plain_ungzipped_cif_is_a_feed(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -233,6 +282,33 @@ class CommandLineTest(unittest.TestCase):
                 code = main(["--url", "https://example.test/cif.gz"])
         self.assertEqual(code, 1)
         self.assertIn("schedule download failed", stderr.getvalue())
+
+    def test_the_probe_command_says_where_it_answered_without_the_query(self) -> None:
+        stdout = io.StringIO()
+        found = ScheduleProbe(
+            source="https://example.test/cif.gz",
+            final_url="https://s3.example.test/signed",
+            status=206,
+            seconds=1.25,
+        )
+        env = {"SCHEDULE_USERNAME": "", "SCHEDULE_PASSWORD": ""}
+        with mock.patch("schedule_download.probe", return_value=found), mock.patch.dict(os.environ, env):
+            with contextlib.redirect_stdout(stdout):
+                code = main(["--probe", "--url", "https://example.test/cif.gz?X-Amz-Signature=secret"])
+        printed = stdout.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("answered HTTP 206 with gzip bytes", printed)
+        self.assertIn("https://s3.example.test/signed", printed)
+        self.assertNotIn("secret", printed)
+
+    def test_a_failed_probe_is_exit_one(self) -> None:
+        stderr = io.StringIO()
+        failure = DownloadError("the feed refused https://example.test/cif.gz (HTTP 401)")
+        with mock.patch("schedule_download.probe", side_effect=failure):
+            with contextlib.redirect_stderr(stderr):
+                code = main(["--probe", "--url", "https://example.test/cif.gz"])
+        self.assertEqual(code, 1)
+        self.assertIn("schedule probe failed", stderr.getvalue())
 
 
 if __name__ == "__main__":

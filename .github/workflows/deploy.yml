@@ -18,11 +18,14 @@
 # The timetable the pages carry comes from a second product on a second host:
 # Network Rail's own CIF under the Open Government Licence, whose Schedule 1 §5
 # permits distribution where the DTD timetable's forbids it (ADR-0073). Set the
-# repository variable SCHEDULE_URL to that file's address, and, if the address
-# wants one, SCHEDULE_USERNAME and SCHEDULE_PASSWORD as secrets, before enabling
-# the schedule or pushing: the release declares `fares,timetable`, so a run
-# without a reachable CIF stops at the download rather than publishing prices
-# under a shape it no longer builds.
+# repository variable SCHEDULE_URL to that file's address before enabling the
+# schedule or pushing: the release declares `fares,timetable`, so a run without
+# a reachable CIF stops at the gate rather than publishing prices under a shape
+# it no longer builds. Its credential is the NRDP_USERNAME and NRDP_PASSWORD
+# secrets the fares download already uses -- one account, two products, so a
+# second pair would be a second thing to rotate for no extra proof -- and a
+# two-byte probe of that address runs before any feed is downloaded, so a
+# refused credential costs one request rather than the run.
 #
 # The scheduled run is UTC 03:17 daily. GitHub may delay scheduled jobs, but
 # a failed audit prevents publication rather than deploying questionable data.
@@ -123,6 +126,28 @@ jobs:
         # the same command runs on a developer's machine (F5).
         run: python -m tools.verify --fast
 
+      - name: Check the timetable address and its credential answer
+        # Two bytes, one request, before the feeds' minutes are spent. A wrong
+        # URL or an account the feed refuses is a settings question, and the
+        # download step that answers it sits after the DTD download, so without
+        # this a mistake there costs the run its wait before it is named. The
+        # probe reads the gzip magic as well as the status, because an error
+        # page served with a 200 looks like the feed from the outside.
+        #
+        # The empty-URL gate lives here rather than in the download below for
+        # the same reason: it is the earliest place the release's shape can be
+        # told the timetable is missing.
+        env:
+          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
+          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
+        run: |
+          if [ -z "$SCHEDULE_URL" ]; then
+            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL in the repository settings; the credential it needs is the NRDP_USERNAME and NRDP_PASSWORD secrets the fares download already uses. Or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
+            exit 1
+          fi
+          python -m schedule_download --probe
+
       - name: Restore the last successful feed manifest
         uses: actions/cache/restore@v4
         with:
@@ -154,19 +179,16 @@ jobs:
         # step is: an artifact of a public repository is downloadable by anyone
         # signed in, and this is licensed material.
         #
-        # `schedule_download` refuses an empty URL, and refuses anything that
-        # arrives and is not a schedule, rather than letting a web page become a
-        # timetable with no journeys in it. The credential it reads comes from
+        # `schedule_download` refuses anything that arrives and is not a
+        # schedule, rather than letting a web page become a timetable with no
+        # journeys in it. Its address and credential were proved by the probe
+        # above; this step pays for the file itself. The credential comes from
         # the environment and never from this file.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: |
-          if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL, plus SCHEDULE_USERNAME and SCHEDULE_PASSWORD if the address wants a credential, in the repository settings; or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
-            exit 1
-          fi
           python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
           # The file's own identity, in a form another job can compare. The
           # path is the same in every job, so these lines are too.
@@ -432,8 +454,8 @@ jobs:
         # own identity is part of what it compares, so this has to run before it.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
             echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
@@ -656,8 +678,8 @@ jobs:
         # own identity is part of what it compares, so this has to run before it.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD }}
+          SCHEDULE_USERNAME: ${{ secrets.NRDP_USERNAME }}
+          SCHEDULE_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: |
           if [ -z "$SCHEDULE_URL" ]; then
             echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."

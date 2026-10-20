@@ -143,10 +143,11 @@ the account holder can see the registered purpose.
       `licences/README.md` and the cleared section is in
       `licences/release-clearance.md`. Darwin's version of the same document stays
       excluded with its §5 reason. The **delivery route** is settled too: the
-      workflow reads `SCHEDULE_URL` (with `SCHEDULE_USERNAME` and
-      `SCHEDULE_PASSWORD` as secrets where the address wants them), fetches the CIF
-      with `schedule_download.py`, and builds the network with `--timetable`.
-      `docs/github-pages-deployment.md` holds the configuration steps.
+      workflow reads `SCHEDULE_URL` and the `NRDP_USERNAME`/`NRDP_PASSWORD`
+      secrets, probes the address for two bytes before any feed is downloaded,
+      fetches the CIF with `schedule_download.py`, and builds the network with
+      `--timetable`. `docs/github-pages-deployment.md` holds the configuration
+      steps.
 - [x] Read the current DTD/NRE terms and recorded the public-use/attribution
       answer — publication and commercial exploitation are permitted; see
       `docs/dtd-licensing-and-data-access.md`
