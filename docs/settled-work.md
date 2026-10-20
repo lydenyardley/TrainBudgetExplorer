@@ -260,6 +260,51 @@ a 390px row is 111px over two lines rather than 275px over six.
 | C15, D9 | the instruction paragraph is gone and "Most first." is the list's subtitle, with the denial of busyness and nearness deleted | `tests/test_build_chooser.py`, "the chooser is the index and carries no fares" and "the chooser says what its order is and is not" |
 | C17 / D12, C19, C20 / D14, D13 | two bullets rather than three, the back link and theme switch in one row of chrome, "Last updated" in place of the maintainer's sentence, and the address parameters as one line of short names | `tests/test_build_provenance.py`, which reads the privacy page's bullets, the chrome row's order, the date sentence and the parameter line |
 
+### The 19 October 2026 impeccable distill and delight passes
+
+`docs/audits/2026-10-19-impeccable-distill.md` was removed on 19 October 2026,
+when all seven of its suggestions landed. The delight audit keeps DL3 and DL6
+and the overdrive audit keeps its two directions and the shared-element morph,
+so both are still in `docs/audits/` pruned to what they ask for.
+
+The passes were read on `_demo_site`, built 19 October 2026 for service date
+5 October 2026: 17 destinations, a 23-row page of two ticket types, both
+palettes, 1366, 390 and 320px. What the new checks measured afterwards is in
+`docs/build-performance-findings.md`; the figures this section states are the
+ones a check now holds.
+
+| Item | What it asked | What landed | Held by |
+|---|---|---|---|
+| DS1 | an empty list said its sentence twice, around seven column names over no rows | the count line is the live region and owns the sentence; the table and its head stand down with the list, and the block below carries only the way out | `tests/browser/station-filters.cjs`, "and the sentence is said once, in the count line rather than twice" and "and no table or column headings are left over an empty list"; `tests/test_build_demo_page.py`, the `for up to ` count |
+| DS2 | the budget hint spent 41 characters saying where the control was | "Drag to set the budget. Stops at £X for one adult.", with the ticket mode named only when it is not the default | `test_the_page_says_where_the_slider_stops_and_the_figure_is_the_stop`; the browser suite's stated-stop checks |
+| DS3 | two keys were named to every device, including phones | one key, and the line is shown only to `(pointer: fine), (any-pointer: fine)`; `b` still works but is not advertised | the browser suite's "the strip that stays on screen names the budget key", and the media query in `page/station.css` |
+| DS4 | the folded summary repeated the controls while the panel was open | hidden while open, in the toggle's `aria-label` for exactly that time; the folded line returns on close | `tests/browser/station-filters.cjs`, "and the open panel does not repeat the state beside the controls that show it" and "and the folded plate shows it again rather than leaving it in a label" |
+| DS5 | the Advance limitation was two paragraphs, twenty pixels apart, each with a clause the other lacked | one paragraph: the excluded ITX fares, then the payload's own sentence, which now carries the cheapest-single rule and the price-change caveat | `test_the_sentence_about_times_names_only_what_this_build_has`, which also counts the visible copy of "qualifying train" once; `test_the_ticket_mix_is_stated_once` |
+| DS6 | eight type sizes, six of them between 11.5 and 18.4px | five: 12 for labels and records, 14 for secondary prose and controls, 16 for body and cells, 18 for section headings, and the display heading | the browser suite's "and the page keeps five type sizes below the display heading", a census of every rendered text node with a row open, so a sixth size fails the check rather than a stylesheet assertion |
+| DS7 | five copies of one uppercase label, already disagreeing on letter-spacing | one `.eyebrow` rule, worn by the legends, both tables' headings, the shortlist label and the picker's label | `test_table_headers_name_their_columns_and_scope`, the hold-column assertion in `test_build_demo_page.py` |
+| DL1 / OV2 / OV3 | the drag answered in numbers, not places, and re-rendered every row on every input event | the line under the count names the next fare and the place it adds ("£6.40 adds SLEAFORD."), the release says what the budget gained, and the render is coalesced to one per frame | `tests/browser/station-filters.cjs`, "a drag names the next fare and the place it adds" and "and on release it says what the new budget gained"; `queueBudgetFrame` in `page/station/budget.js` |
+| DL2 | the £0 door said "Raise the budget to £7.00" and asked the reader to trust it | "£7.00 reaches SLEAFORD." above the same button, with a count when the cheapest fare is tied | the browser suite's "and the door names the place the raised budget reaches" |
+| DL4 | the dock's Copy was silent to the eye while the row's said "Copied" | the same two-second word, "Select below" on a refused clipboard, and the timer cleared with the list | the browser suite's "the dock's Copy acknowledges the copy to the eye as well as the region"; `test_a_failed_copy_is_never_reported_as_a_copy` |
+| DL5 | a row's panel and the shortlist dock appeared with no transition | one 120ms opacity-and-4px reveal, on the panel the reader opened and on the dock's contents rather than its fixed box, with no motion under `prefers-reduced-motion` | the browser suite's "and with motion allowed the panel arrives in one reveal" and "a reader who asked for less motion gets no reveal" |
+| OV6 | moving between stations painted a blank frame | `@view-transition { navigation: auto; }` at the chevron's .18s, none under reduced motion, ignored by a browser without the API; the shared-station morph (OV7) is not shipped | `test_the_route_asks_for_a_cross_fade_and_can_turn_it_off`; the suite navigates every route and the accessibility matrix runs after each navigation |
+| OV8 | the budget's re-render had no budget | a reading on every station page, named with its row count: input handler, render and forced layout under 50ms | the browser suite's "a budget change re-renders this page inside the input-to-paint budget" |
+| OV9 | each fallback was a paragraph rather than a test | no script: the existing `checkWithoutTheScript`; reduced motion: the reveal check above; no canvas: not applicable, because OV1 did not ship; no view transitions: the at-rule is ignored, and every route still navigates | `tests/browser/station-assets.cjs`, `station-layout.cjs` |
+
+**What the pass did not do.** OV1 (the canvas fare horizon) and OV4/OV5 (the
+sticky budget rail) are direction choices the overdrive audit says the owner
+makes before code, and DL6 (the tick at the cheapest fare) is OV1's smallest
+form; none is in this pass. DL3 (the shortlist total) is a product decision
+about what the dock is for, and it stays open with DL6.
+
+**What the numbers were.** On the demo, the next fare above £20 was £22.40 to
+PETERBOROUGH, which is the sentence the browser check reads; at £0 the door
+reaches SLEAFORD for £7.00 and the list shows two places at £7.00. A render
+with 101 destinations in the payload and one page of 20 rows measured 7.4ms in
+Chromium on this machine (19 October 2026), against the 50ms gate; that is a
+probe of the demo's own rows, not of the licensed Grantham page, and the gate
+will report the licensed page's own figure the first time the release suite
+runs it.
+
 ### The 17 October 2026 poteto audit
 
 `docs/audits/2026-10-17-poteto-audit.md` was removed on 19 October 2026, after

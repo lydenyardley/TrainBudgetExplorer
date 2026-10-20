@@ -131,7 +131,7 @@ them real effort, P3 is polish. Route is named per finding.
 
 ### The privacy page
 
-**C18 [P3] The page's title is a single word.** `<title>Privacy</title>`, against
+LY: REJECT **C18 [P3] The page's title is a single word.** `<title>Privacy</title>`, against
 "Train fares up to £30 from GRANTHAM" and "Train fares up to £20 · pick your
 station". In a row of tabs a reader looking for the fare page has three titles and
 one of them is indistinguishable from any other site's privacy notice. Fix:
@@ -141,7 +141,7 @@ undecided, `PRODUCT.md`).
 
 ### Cross-route
 
-**C21 [P2] The ticket-set vocabulary is chosen before it is explained.** The four
+LY: PRODUCE A MOCKUP BEFORE I CAN CONFIRM **C21 [P2] The ticket-set vocabulary is chosen before it is explained.** The four
 options are "Cheapest available", "Anytime Day Return", "Any return" and "Single",
 and the paragraph that defines what the chosen set contains sits below the table
 (`#modeNote`), more than a screen away from the control once the panel that holds

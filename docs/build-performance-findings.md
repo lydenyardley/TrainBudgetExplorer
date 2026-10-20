@@ -1114,3 +1114,36 @@ answer. Nothing else here earns its place.
 corpus, checks that every variant reports the same broken links, then times them
 interleaved. `--runs` and `--pages` change the sample; the default is five runs at
 the release's 2,712 pages.
+
+## The budget's re-render while dragging, 19 October 2026
+
+**Plan, written before the figure.** A budget change is the page's hot path: a
+range input can fire several `input` events between two paints. Measure the
+synchronous cost of one `render()` followed by a forced layout read, on the demo
+page at a budget that reaches its rows, with the payload grown to 101
+destinations -- one page of 20 rows, because the table paginates at `PAGE_SIZE`
+rather than painting every destination. State the row count with the figure,
+because the list's length and the painted rows are two different numbers. The
+budget is 50ms (OV8 of the 19 October 2026 overdrive pass).
+
+**Figure.** `_demo_site/from/grantham`, Chromium 1366x768, this machine,
+19 October 2026: **7.4 ms**, twice over, with 101 destinations in the payload and
+20 rows painted. The same page's 17-destination render measured 6.3-14.3ms in the
+19 October audit's probe, which timed an input event to a forced layout rather
+than `render()` alone; that figure is not re-measured here.
+
+**Method.** The payload's own destinations were cloned to 101 with distinct CRSs,
+`render()` was called, and `document.getElementById("summary").getBoundingClientRect()`
+was read to force layout, all inside one `page.evaluate`. The clones reuse each
+row's journey facts, so the figure costs the DOM and the sort, not a second
+timetable lookup; `render()` reads no timetable.
+
+**Where it is held.** `tests/browser/station-layout.cjs` measures the same
+statements on every station page the suite drives and fails above 50ms, naming
+the figure and the row count. `python -m tools.verify --browser` is the command.
+
+**What it does not establish.** The licensed Grantham page's own figure: the
+gate will take it the first time the release suite runs, and the 101-destination
+probe above is the demo's rows repeated, not the real feed's. It also does not
+time the paint itself, only the statements plus the layout they force, so a
+compositor cost on a slow device is outside it.

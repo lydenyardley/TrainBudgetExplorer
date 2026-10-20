@@ -140,15 +140,53 @@ is a build decision and not a rewrite.
 19 October 2026 and are rows in its "What landed" table, each naming the check
 that holds it; two were argued rather than fixed (C9 / D5 and the detector's
 one finding) and are in its "Design calls answered" table. What is left is these
-two, which the review keeps under "Findings".
+two, which the review keeps under "Findings": one was rejected by the owner on
+19 October 2026 and the other waits on a mockup.
 
-- **C18, P3, the privacy page.** `<title>Privacy</title>` alone, against a
-  station page's "Train fares up to £30 from GRANTHAM". What would close it:
-  "Privacy · Train fares", or the release's own name once one exists.
-- **C21, P2, cross-route.** The ticket set's vocabulary is chosen above the table
-  and defined below it, and the empty state asks it of a reader who is already
-  lost. What would close it: a clause per option, or the mode note moved under the
-  control and shortened to the difference between the sets.
+- **C18, P3, the privacy page — rejected by the owner on 19 October 2026.**
+  `<title>Privacy</title>` alone stands: the review's suggestion ("Privacy ·
+  Train fares", or the release's own name once one exists) is marked REJECT in
+  the review. It is kept here only so the file and the review agree; no work is
+  owed.
+- **C21, P2, cross-route — waiting on a mockup.** The ticket set's vocabulary is
+  chosen above the table and defined below it, and the empty state asks it of a
+  reader who is already lost. The owner's note on the review is "produce a mockup
+  before I can confirm", so the next step is a mockup of the two closing options
+  (a clause per option, or the mode note moved under the control and shortened to
+  the difference between the sets) rather than an edit to the page.
+
+### The 19 October 2026 delight and overdrive asks: the shortlist total, and two directions
+
+**Severity:** P2 for the shortlist total and the sticky rail, P3 for the rest.
+**Routes:** the station page's shortlist dock and its budget control; the chooser
+and station page's navigation.
+**Raised:** the 19 October 2026 delight and overdrive passes,
+`docs/audits/2026-10-19-impeccable-delight.md` and
+`docs/audits/2026-10-19-impeccable-overdrive.md`, each pruned to what it still
+asks. The four suggestions that landed that day (DL1, DL2, DL4, DL5, plus OV2,
+OV6, OV8 and OV9 from the overdrive list) are rows in `docs/settled-work.md`,
+each naming the check that holds it.
+
+What is left, and why each waits:
+
+- **DL3, P2, the shortlist total.** One line under the dock's head: "Two places,
+  £13.40 for one adult." It is a product decision about what the dock is for (a
+  comparison list, or the beginning of a plan) before it is code, and the sum
+  must be of the rendered rows' own party price, not a second array.
+- **OV4 and OV5, P2, the sticky budget rail.** 56px of every viewport in exchange
+  for the budget being one gesture away at row 101, plus the table header's
+  sticky offset and the dock's. A change to the page's rhythm, so the owner
+  decides it rather than a pass.
+- **OV1, P2, and DL6, P3, the fare horizon.** A drawn track (1px ticks at every
+  distinct visible fare) and its smallest form, one tick at the cheapest fare.
+  A visual direction: the line under the count already says what the next pound
+  buys, so the ticks must add the shape of the list rather than repeat it.
+- **OV7, P3, the shared-station morph.** Naming the chosen row's station token
+  for the length of the click, so it arrives in the heading. OV6 shipped without
+  it, and it stays unshipped if it is not clean at 390.
+- **OV3, P3, the drag on a phone.** The desktop figure is 7.4ms against a 50ms
+  gate; a mid-range phone has not been profiled, and ADR-0032 wants the machine
+  named beside the figure.
 
 ### C27 — the chooser requires a known station name or a code prefix
 
