@@ -20,7 +20,7 @@ rather than assumed, and both were re-read on 28 September 2026:
   working assumption.
 
 What is open is compliance with the terms' requirements, and the shape of the
-release settles most of it. Before a fares-only page goes live:
+release settles most of it. Before a page publishing this feed goes live:
 
 1. [x] the account holds the separate **Fares, Routeing Guide and Timetable
    data** selection — evidenced by the two static-feed downloads recorded in
@@ -29,15 +29,16 @@ release settles most of it. Before a fares-only page goes live:
    and brand pack the terms name — served from `nationalrail.co.uk/developers/`
    rather than from the URL the terms give, which 404s — were found and read on
    28 September 2026;
-3. [x] **Time-Bound Data** has no subject on a prices-only page: the terms define
-   it as "any data … provided in conjunction with instruction for the timeliness
-   of its display; platform numbers for example", and the static fares feed
-   carries neither;
-4. [x] a prices-only page provides no **forecasted arrival and departure times**,
-   so the requirement to keep them consistent with Darwin has nothing to bite
-   on. A page that *does* show times raises it, and whether a static scheduled
-   time is "forecasted" in the terms' sense is a reading this project has not
-   taken (ADR-0021) — which is why the release is prices-only;
+3. [x] **Time-Bound Data** has no subject in this feed: the terms define it as
+   "any data … provided in conjunction with instruction for the timeliness of its
+   display; platform numbers for example", and the static fares feed carries
+   neither a time nor a platform number;
+4. [x] this feed provides no **forecasted arrival and departure times**, so the
+   requirement to keep them consistent with Darwin forecasts has nothing to bite
+   on. The times a page shows are NWR Schedule's rather than this feed's, cleared
+   on 16 October 2026 against its own terms, so whether a static scheduled time
+   is "forecasted" in *these* terms' sense is not a question the release puts to
+   them (ADR-0021, ADR-0073);
 5. [x] the National Rail Enquiries source acknowledgement is on every page
    (`--notices nre`), and the Knowledgebase data is credited to the Rail
    Delivery Group (`--notices rdg`) — a third credit, not a replacement;
@@ -253,9 +254,11 @@ suggests official status or NRE endorsement, which the page's wording avoids.
    not settle a page that *does* show times: this build computes them from the
    static timetable download rather than from Darwin, and whether a static
    scheduled time is a "forecasted" time in the terms' sense is a reading of the
-   terms, not something the Developer Guidelines supply. That reading is the
-   question that decides whether times may be published at all, and it is why
-   the release this project ships is prices-only (ADR-0021).
+   terms, not something the Developer Guidelines supply. That reading would
+   decide whether a time taken from this feed may be published at all, and the
+   release avoids needing it: its times are NWR Schedule's, cleared on
+   16 October 2026 (ADR-0021, ADR-0073), so no time on the page is this feed's
+   to ask the question about.
 
 The warranty position is as expected and is what the accuracy notice says: the
 Information is provided as is, with no representation or warranty and no
@@ -329,7 +332,7 @@ three colours, which is why it stood in the record as an open question.
 One thing the guidelines do not answer, and which no attribution can: whether a
 static computed time is a "forecasted" time under the terms. (How Time-Bound
 Data must be displayed is *not* open — the terms define what Time-Bound Data is,
-and a fares-only page carries none.) The Developer Pack is evidence on the
+and the fares this feed supplies carry none.) The Developer Pack is evidence on the
 first — the Darwin Timetable feed "do[es] not include any information about live
 train movements or delays", and Darwin *forecasts* the remainder of each
 schedule from matched external forecasts — which is an argument, not an answer.
@@ -437,8 +440,8 @@ Two conditions ride with it, and neither is a reason not to:
 - **"Consistent with Darwin forecasts".** The NRE fares terms ask that times the
   product provides are consistent with Darwin's forecasts. The CIF schedule is the
   input Darwin forecasts from, so a schedule-derived time is consistent with it by
-  construction; a page that shows no time at all meets the same condition, which is
-  what the prices-only release does today.
+  construction; and no time on the page is derived from the fares feed at all,
+  which is what the release does today.
 
 **How the file reaches the build, which is a separate question from the
 licence.** Read 16 October 2026, and it is the harder half. The Rail Data

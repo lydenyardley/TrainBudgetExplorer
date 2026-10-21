@@ -111,15 +111,17 @@ terms; it must not be treated as an OGL or RSP product by analogy.
 The licences themselves are in `licences/`, one PDF per product, with the register that
 these rows are drawn from and a test that keeps the two in step.
 
-The requirements the permission comes with, and how a prices-only page meets
-them: the acknowledgement is done (`--notices nre`, a link and the mark); the fee
-is nil on a published document; and the two time conditions have no subject on a
-page that shows no times and carries no platform numbers. **Time-Bound Data** is
-defined by the licence — "any data … provided in conjunction with instruction for
-the timeliness of its display; platform numbers for example" — so the display
-requirement has nothing to bite on. The **static computed time** question stays
-open only for a page that shows times, and this project has not taken the reading
-that a scheduled time is "forecasted"; that is why the release is prices-only.
+The requirements the permission comes with, and how the release meets them: the
+acknowledgement is done (`--notices nre`, a link and the mark); the fee is nil on
+a published document; and the two time conditions have no subject in this feed's
+own data, because the fares it supplies carry no time and no platform number.
+**Time-Bound Data** is defined by the licence — "any data … provided in
+conjunction with instruction for the timeliness of its display; platform numbers
+for example" — so the display requirement has nothing to bite on. The **static
+computed time** question would decide a page that shows this feed's times, and
+the release does not: every time a station page prints is NWR Schedule's, cleared
+on 16 October 2026 in `licences/release-clearance.md`. The reading is therefore
+owed by that product's section and not by this one.
 One thing no document can answer: the portal registration must be true, and only
 the account holder can see the registered purpose.
 
@@ -169,12 +171,12 @@ the account holder can see the registered purpose.
       painted white — one of the three colours the guidelines permit ("blue,
       black or white") — so the rendering is theirs rather than a reversal
       awaiting permission; the pale blue it replaced was none of the three
-- [x] The **Darwin-consistency** requirement has no subject on a prices-only
-      page: no arrival or departure times are provided, so nothing has to stay
-      consistent with Darwin forecasts. It stays a reading rather than an answer,
-      which is why times are switched off — the guidelines do not define a
-      "forecasted" time for a licensee, and any times this page showed would be
-      computed from a static schedule rather than from Darwin
+- [x] The **Darwin-consistency** requirement has no subject in this feed:
+      no arrival or departure time on a page is derived from it, so nothing from
+      it has to stay consistent with Darwin forecasts. The times a page shows are
+      NWR Schedule's, cleared on 16 October 2026 against its own terms, and
+      whether a static scheduled time is a "forecasted" one in these terms' sense
+      stays unread because no time on the page is theirs to ask about
 - [x] **A monitored contact route exists.** The privacy page names the public
       issue tracker (`https://github.com/lydenyardley/TrainBudgetExplorer/issues`,
       `DEFAULT_PRIVACY_CONTACT` in `build_demo_page.py`, ADR-0068) and prints no
