@@ -57,7 +57,15 @@ async function renderThePage(world) {
     await page.locator(".budget-prefix").click();
     await page.keyboard.type("7");
     const replacedAmount = (await page.inputValue("#budgetNumber")).trim();
-    check("clicking the £ selects the whole editable amount", replacedAmount === "7", replacedAmount);
+    // A page whose budget stops below £7 clamps a typed 7, so "7" cannot tell
+    // a selected amount from a clamped one: skelmersdale-bus stops at £1.
+    check(
+      "clicking the £ selects the whole editable amount",
+      ceiling < 7
+        ? notExercised(`this page's budget stops at £${ceiling}, so a typed 7 is clamped rather than held`)
+        : replacedAmount === "7",
+      replacedAmount
+    );
     await page.fill("#budgetNumber", String(facts.affordable));
     const initial = await rows();
     world.initial = initial;

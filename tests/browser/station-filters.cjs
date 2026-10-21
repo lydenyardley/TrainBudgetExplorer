@@ -380,12 +380,18 @@ async function driveTheFilters(world) {
       };
     });
     const afterRail = await page.evaluate(() => document.getElementById("summary").textContent);
+    // A page that prices nothing has no list for the budget to move, and its
+    // table is too short to scroll under the rail: both of the next two checks
+    // need rows, and skelmersdale-bus has none (21 October 2026).
+    const railRows = await page.evaluate(() => document.querySelectorAll("#rows tr[data-crs]").length);
     check(
       "and dragging the rail moves the search rather than a copy of it",
-      railed.now === "\u00a3" + railed.budget && railed.inline === String(railed.budget) &&
-        afterRail !== beforeRail &&
-        afterRail.includes("up to \u00a3" + railed.budget + ".00") &&
-        railed.address.includes("budget=" + railed.budget),
+      railRows === 0
+        ? notExercised("this page prices no destination, so the budget moves no list")
+        : railed.now === "\u00a3" + railed.budget && railed.inline === String(railed.budget) &&
+          afterRail !== beforeRail &&
+          afterRail.includes("up to \u00a3" + railed.budget + ".00") &&
+          railed.address.includes("budget=" + railed.budget),
       JSON.stringify({ railed, beforeRail, afterRail })
     );
     const stuckHeadings = await page.evaluate(() => {
@@ -395,7 +401,9 @@ async function driveTheFilters(world) {
     });
     check(
       "and the column headings sit below the rail rather than under it",
-      stuckHeadings.thTop >= stuckHeadings.railBottom,
+      railRows === 0
+        ? notExercised("this page prices no destination, so its table never scrolls past the rail")
+        : stuckHeadings.thTop >= stuckHeadings.railBottom,
       JSON.stringify(stuckHeadings)
     );
     await page.fill("#budgetNumber", String(budgetBeforeRail));
@@ -887,8 +895,11 @@ async function driveTheFilters(world) {
       check(
         "a refinement pressed inside the disclosure is applied and says so",
         // The chip took the press, and the summary now names that chip rather
-        // than the state it read before the tap.
-        !chipValue.noneLeft && chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== folded.state,
+        // than the state it read before the tap. A page that prices nothing
+        // offers no chip to press, and says so rather than failing.
+        chipValue.noneLeft
+          ? notExercised("this page offers no destination-type chip to press")
+          : chipValue.pressed && chipValue.label.includes(chipValue.name) && chipValue.label !== folded.state,
         JSON.stringify(chipValue)
       );
       await page.click("#moreFiltersToggle");
@@ -1150,6 +1161,11 @@ async function driveTheFilters(world) {
       // payload carries is no longer offered, which makes pressing it a 30 s
       // wait rather than a failure anybody can read (15 October 2026).
       await page.evaluate(() => { setBudget(budgetCeiling()); render(); });
+      // Offered is not on screen: a facet the page folds behind its disclosure
+      // has to be revealed before it can be pressed, or the press waits thirty
+      // seconds on a hidden chip and says nothing about the page. Every real
+      // station page with a folded facet stopped here on 21 October 2026.
+      await revealType(`input[name="destinationType"][value="${chip.value}"]`);
       await page.check(`input[name="destinationType"][value="${chip.value}"]`);
       await page.locator(`input[name="ticketMode"][value="${chip.away}"]`).check({ force: true });
       const notice = ((await page.textContent("#facetNotice").catch(() => "")) || "").trim();

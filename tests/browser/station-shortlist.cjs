@@ -849,7 +849,12 @@ async function compareTheDockWithTheTable(world) {
               ? true
               : dock.hasJourneys
                 ? there.labelled.Time === here.Time &&
-                  there.labelled.Changes.split(/\s+/)[0] === here.Changes
+                  // The results row names the interchange after the count ("1
+                  // change via HACKNEY DOWNS"); the dock has no room for the
+                  // station, so the count it shows has to be a prefix of the
+                  // row's. Reading the row's first word compared "1" with "1
+                  // change" and failed every changed row that had a via.
+                  there.labelled.Changes.startsWith(here.Changes)
                 : /no timetable|unknown/i.test(there.labelled.Time) ===
                   /no timetable/i.test(here.Time))
           );

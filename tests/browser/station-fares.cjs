@@ -16,7 +16,12 @@ async function checkTheFareDetails(world) {
     const mobile = await page.evaluate(() => {
       const html = document.documentElement;
       const overflow = Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth;
-      const cell = document.querySelector("#rows td:last-child").getBoundingClientRect();
+      // A page that prices nothing has no table cell to place, and reading
+      // through a null cell threw before any check ran: skelmersdale-bus, 21
+      // October 2026. The shape is supported -- the page says nothing is priced
+      // and points at the chooser -- so the cell is read as absent instead.
+      const last = document.querySelector("#rows td:last-child");
+      const cell = last ? last.getBoundingClientRect() : null;
       // What is sticking out, named: a bare pixel count sends whoever reads a
       // red run back to the stylesheet to guess which element it was.
       const edge = html.clientWidth;
@@ -31,14 +36,20 @@ async function checkTheFareDetails(world) {
           width: Math.round(entry.r.width),
         }))
         .slice(0, 5);
-      return { overflow, onScreen: cell.right <= window.innerWidth && cell.left >= 0, wide };
+      return { overflow, onScreen: cell ? cell.right <= window.innerWidth && cell.left >= 0 : null, wide };
     });
     check(
       "at 390px nothing overflows horizontally",
       mobile.overflow <= 0,
       `${mobile.overflow}px; ${JSON.stringify(mobile.wide)}`
     );
-    check("at 390px the ticket action is on-screen", mobile.onScreen, JSON.stringify(mobile));
+    check(
+      "at 390px the ticket action is on-screen",
+      mobile.onScreen === null
+        ? notExercised("this page prices no destination, so there is no ticket action to place")
+        : mobile.onScreen,
+      JSON.stringify(mobile)
+    );
     // 7b. One rule per row, and the row is what draws it. Every cell used to
     // keep the border the table gave it and draw a line at its own height, so a
     // stacked row showed up to six horizontal lines at six different heights,
