@@ -12,7 +12,7 @@ weighed 429 MB, a median page 746 KB. Two causes, measured on those pages:
 
 1. **Two-ticket railcard rules were never shared.** Each pair record named its
    row's tickets, routes and endpoints, so the Crewe page carried 7,306 rule
-   records, 7,290 of them pairs, 3.2 MB of 4.8 MB. Fixed in 5f3e3aa: the record
+   records, 7,290 of them pairs, 3.2 MB of 4.8 MB. Fixed in f07a750: the record
    now holds only what the page reads. That alone projects to about 1,060 MB.
 2. **The three fare lists repeat each other and pack nothing.** A page ships
    `destinations`, `singleDestinations` and `anytimeDestinations`, and 534 of
@@ -52,7 +52,7 @@ mirrors it for the Python suite.
 
 ## Evidence
 
-- Re-encoding shard 1's 458 real pages (with 5f3e3aa applied) and hydrating
+- Re-encoding shard 1's 458 real pages (with f07a750 applied) and hydrating
   them back gave byte-identical rows on every page, and 90.8 MB in place of
   429 MB: **about 536 MB** for 2,707 pages, against 800 MB.
 - Real-feed pages for Grantham, Crewe and Edinburgh built by the previous and

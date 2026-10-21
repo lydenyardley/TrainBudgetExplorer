@@ -130,7 +130,7 @@ prints the count beside the unsourced stations. Re-measured on 30 September
 fare-construction point with no train behind it. The CI gate's
 `--unsourced-ceiling` holds the classifiable half to its measured floor.
 (Raised 2026-10-14 from 1,533 to 1,544 with Lyden's approval: the station
-count went from 3,437 to 3,453 (5f5df69), adding 11 unsourced priced
+count went from 3,437 to 3,453 (3e441bb), adding 11 unsourced priced
 destinations (e.g. CPK, WFH, WFJ, BID, PMT). Lower it again as reviewed
 classes are added.)
 The unnameable half is a fact about the feed, not a defect in the

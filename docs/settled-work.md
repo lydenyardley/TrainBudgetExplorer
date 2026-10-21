@@ -162,7 +162,7 @@ The audit file was removed on 18 October 2026, when its last finding left the
 tree, and its fifty findings are settled here. Forty-four landed on 15 October
 2026 in one commit, because the payload keys and the page's reads had to move
 together and the templates and their tests carry items from more than one route;
-item 1 had already landed in `e20582d` with the rest of that day's critiques, and
+item 1 had already landed in `4234294` with the rest of that day's critiques, and
 `git log --grep="audit item"` reads any of them back. Item 8 read a sentence that
 was worth leaving as it was, and item 5 offered a warm and a blunt wording, so
 this pass chose one (warm) rather than splitting the difference. What was left
@@ -195,7 +195,7 @@ of rows inside £20.00 on a page carrying 331 of them (53).
 
 | Item | What it asked | What landed | Held by |
 |---|---|---|---|
-| 1 | the chooser printed the feed's download date twice | one date, composed once | `e20582d`; `tests/test_build_chooser.py` |
+| 1 | the chooser printed the feed's download date twice | one date, composed once | `4234294`; `tests/test_build_chooser.py` |
 | 2, 3, 4, 5, 6, 7 | the chooser's words: what the list is before how it is ordered, a count that names its scope, an intro that says what the site covers, an empty state that helps, "a page for", one "starting from" | all seven | `tests/test_build_chooser.py`; `tests/browser/chooser.cjs`, "the chooser says what its order is, and what it is not" |
 | 9, 10, 11, 13, 38, 39 | the station page's opening: the heading's own name, one promise, the first-use note, the no-timetable fact stated once | the heading's accessible name is the whole sentence, written from the tab title on every render; one promise with the timetable clause composed onto it; the note names the station; "no timetable was supplied" said once | `tests/browser/station-render.cjs`, "the heading's own name is the whole sentence, and the same one as the tab title" and "the times columns exist exactly when the sentence promises times"; `tests/test_build_demo_page.py` |
 | 12, 14, 15, 18, 19, 32 | the controls' own words: the budget hint, the unit, the mode's name, the chip rule, the clear control, the empty-state buttons | the hint names the mode it clamps in; "per adult"; "Cheapest available"; the chip rule says only what a count is; "Show all destination types"; "Show the 7 Anytime Day Returns" and "Raise the budget to £7.00" | `tests/test_build_fares.py`; `tests/browser/station-fares.cjs`, "the chips say what the count beside each one is"; `tests/browser/station-picker.cjs` |
@@ -215,8 +215,8 @@ of rows inside £20.00 on a page carrying 331 of them (53).
 
 `docs/audits/2026-10-14-impeccable-critique.md` was removed on 19 October 2026,
 when its last recommendation landed. Its eight recommendations are settled here,
-and the commits that carry them are `e20582d` (1, 2, 3's first half, 4 and 6, in
-one pass), `9a204b8` with `b16b95a` (7), `f79c07f` (8) and `dcd2271` (3's second
+and the commits that carry them are `4234294` (1, 2, 3's first half, 4 and 6, in
+one pass), `6e83318` with `ba9cd45` (7), `92ae476` (8) and `3b48bc5` (3's second
 half). Recommendation 5 was settled as a reading rather than a change, so it has
 its paper in `licences/release-clearance.md` instead of a commit. The pass was
 run degraded and said so: no sub-agent was exposed to that session, so the design
