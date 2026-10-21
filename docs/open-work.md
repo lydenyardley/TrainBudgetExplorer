@@ -6,7 +6,7 @@
 open only because it lives in a file nobody re-reads. Each item carries its own
 number, and the number is what a commit, an audit or a conversation can name.
 
-Two things were pruned out of this file on 21 October 2026. The closed entries --
+Three things were pruned out of this file on 21 October 2026. The closed entries --
 seven of them, some with a hundred lines of measurement narrative -- moved to
 `docs/settled-work.md`, which is where a closure and the check that holds it
 belong. The rejected designs moved there too, because a rejection is a decision
