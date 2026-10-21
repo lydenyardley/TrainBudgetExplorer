@@ -613,6 +613,12 @@
       #rows > tr[data-crs]::after { content: ""; order: 7.5; flex: 0 0 100%; height: 0; }
       #rows > tr[data-crs] > td[data-label="Time"] { flex: 1 1 auto; }
       #rows > tr[data-crs] > td[data-label="Tickets"] { order: 9; }
+      /* The ticket already takes its own line here, so the interchange under
+         the change count is a fourth line: at 375px in a dated page the row
+         measured 159px against the three-line budget (21 October 2026,
+         tests/browser/station-layout.cjs), and 113px without it. The row's own
+         details still names the station, and the dock never had room for it. */
+      #rows > tr[data-crs] > td[data-label="Changes"] .interchange { display: none; }
     }
     /* The two cells the desktop rules shrink to their own content -- the hold
        column, at "width: 1%", and the action column, at "width: 1px" -- carry
