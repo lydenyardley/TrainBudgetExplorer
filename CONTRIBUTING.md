@@ -64,8 +64,17 @@ pull request list show. The body is not.
 One footer per line at the end, after a blank line:
 
 - `Refs: adr/ADR-0006-timetable-layer.md` when a decision drives the change.
-- `Co-Authored-By: Name <email>` for pair and tool authorship.
+- `Co-Authored-By: Name <email>` for pair authorship.
 - `BREAKING CHANGE: <what breaks>` when consumers must act.
+
+A tool is not an author. `Generated with Codebuff`, `Co-Authored-By: Codebuff
+<noreply@codebuff.com>`, the Freebuff spellings of either, and the same credit
+written as the commit's author identity are all refused by the checker. The
+history was rewritten on 21 October 2026 to take 310 of them out of it, and that
+is the cost this rule exists to avoid: a credit left off costs an edit, and a
+credit found later costs every hash after the commit it is in. A message that
+merely mentions the client, as one commit's note about the ignored `.freebuff/`
+directory does, is not a credit and passes.
 
 ### One logical change per commit
 
@@ -81,9 +90,18 @@ python -m unittest discover -s tools -p "test_commit_message*.py"
 ```
 
 The checker accepts the Conventional Commits grammar plus `Merge `, `Revert `,
-`fixup! `, and `squash! ` prefixes, which Git generates. The deploy workflow
-runs it over every commit the push adds, so the convention is checked rather
-than described. The 41 commits that predate the grammar still fail it; they are
+`fixup! `, and `squash! ` prefixes, which Git generates. Give it the identity as
+well when you are checking a commit rather than a message you just wrote, because
+the author is held to the same rule as the trailers:
+
+```
+python -m tools.check_commit_message "$message" \
+  --author "$(git log -1 --format='%an <%ae>')" \
+  --author "$(git log -1 --format='%cn <%ce>')"
+```
+
+The deploy workflow runs it over every commit the push adds, with both
+identities, so the convention is checked rather than described. The 41 commits that predate the grammar still fail it; they are
 left as they are, because rewriting published history to satisfy a linter is a
 worse trade than a linter the older history is honestly outside of.
 

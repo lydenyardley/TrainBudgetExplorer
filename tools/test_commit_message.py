@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from tools.check_commit_message import MAX_SUBJECT, check
+from tools.check_commit_message import MAX_SUBJECT, check, main
 
 
 class CommitMessageTest(unittest.TestCase):
@@ -73,6 +75,103 @@ class CommitMessageTest(unittest.TestCase):
     def test_rejects_an_empty_message(self) -> None:
         self.assertEqual(check(""), ["the message is empty"])
         self.assertEqual(check("\n\n   \n"), ["the message is empty"])
+
+    def test_rejects_a_generated_with_trailer(self) -> None:
+        # The two spellings this repository's history carried, in the two places
+        # the emoji sat: a check that read only one of them would have passed the
+        # other, and the rewrite of 21 October 2026 had 273 of these to remove.
+        for credit in ("\U0001f916 Generated with Codebuff", "Generated with Codebuff \U0001f916"):
+            with self.subTest(credit=credit):
+                problems = check(f"docs: add the runbook\n\nThe gate now names the flag.\n\n{credit}")
+                self.assertTrue(
+                    any("credits Codebuff" in problem for problem in problems),
+                    f"{credit!r} was accepted: {problems}",
+                )
+
+    def test_rejects_a_tool_in_a_co_author_trailer(self) -> None:
+        problems = check(
+            "docs: add the runbook\n\nThe gate now names the flag.\n\n"
+            "Co-Authored-By: Codebuff <noreply@codebuff.com>"
+        )
+        self.assertTrue(any("credits Codebuff" in problem for problem in problems), problems)
+
+    def test_rejects_the_other_tool_and_a_line_that_opens_with_its_name(self) -> None:
+        problems = check(
+            "docs: add the runbook\n\nThe gate now names the flag.\n\n"
+            "Freebuff <noreply@freebuff.com>\n"
+        )
+        self.assertTrue(any("credits Freebuff" in problem for problem in problems), problems)
+
+    def test_a_credit_is_refused_on_a_merge_commit_too(self) -> None:
+        # The grammar has an exception for the subjects Git writes; the credit
+        # rule does not. A merge is where a pasted trailer is likeliest.
+        problems = check("Merge branch 'main' into work\n\nCo-Authored-By: Codebuff <noreply@codebuff.com>")
+        self.assertTrue(any("credits Codebuff" in problem for problem in problems), problems)
+
+    def test_a_body_line_that_opens_with_a_colon_is_not_a_trailer(self) -> None:
+        message = "docs: say where the client is discussed\n\nNote: Freebuff wrote the two trailers.\n"
+        self.assertEqual(check(message), [])
+
+    def test_accepts_a_person_as_co_author(self) -> None:
+        message = (
+            "docs: add the runbook\n\nThe gate now names the flag.\n\n"
+            "Co-Authored-By: A Person <person@example.net>"
+        )
+        self.assertEqual(check(message), [])
+
+    def test_a_message_that_merely_mentions_a_tool_is_not_a_credit(self) -> None:
+        # The history has a commit whose body names the client's own directory.
+        # Refusing it would make the rule say something it was never about, and
+        # the first thing an author does with a checker that refuses a true line
+        # is delete the line.
+        message = (
+            "chore: ignore the build output\n\n"
+            "_site/ is the --all-origins build output (ADR-0019); .freebuff/ and\n"
+            "_demo_site/ are ignored with it.\n"
+        )
+        self.assertEqual(check(message), [])
+
+    def test_rejects_an_author_identity_that_names_a_tool(self) -> None:
+        problems = check(
+            "docs: add the runbook",
+            ["Codebuff <noreply@codebuff.com>", "Lyden <lydenyardley+github@example.net>"],
+        )
+        self.assertTrue(any("credits Codebuff" in problem for problem in problems), problems)
+        self.assertEqual(problems[0].count("credits"), 1)
+
+    def test_the_command_line_checks_a_file_and_its_author(self) -> None:
+        # The deploy workflow calls the tool this way, so the two arguments it
+        # passes are held here rather than only in the workflow's own text.
+        with tempfile.TemporaryDirectory() as scratch:
+            message = Path(scratch, "message.txt")
+            message.write_text(
+                "docs: add the runbook\n\nCo-Authored-By: Codebuff <noreply@codebuff.com>\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(main([str(message)]), 1)
+            message.write_text("docs: add the runbook\n", encoding="utf-8")
+            self.assertEqual(main([str(message), "--author", "A Person <person@example.net>"]), 0)
+            self.assertEqual(main([str(message), "--author", "Freebuff <noreply@freebuff.com>"]), 1)
+
+    def test_credits_only_leaves_the_grammar_alone(self) -> None:
+        # The deploy workflow checks every commit a force-push carries with this
+        # flag: 41 commits here predate the grammar, so applying it backwards
+        # would fail the history the rule deliberately accepts.
+        self.assertEqual(check("Add the audit command", credits_only=True), [])
+        self.assertEqual(check("", credits_only=True), [])
+        problems = check(
+            "Add the audit command\n\nCo-Authored-By: Codebuff <noreply@codebuff.com>",
+            credits_only=True,
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("credits Codebuff", problems[0])
+        self.assertEqual(
+            check("docs: add the runbook", ["Codebuff <noreply@codebuff.com>"], credits_only=True),
+            [
+                "the author 'Codebuff <noreply@codebuff.com>' credits Codebuff, and a "
+                "commit's author is a person"
+            ],
+        )
 
     def test_reads_a_message_that_opens_with_a_blank_line(self) -> None:
         # Git strips the blank lines a message file may begin with, so the first

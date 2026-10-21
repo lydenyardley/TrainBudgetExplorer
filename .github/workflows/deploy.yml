@@ -89,22 +89,32 @@ jobs:
             echo "This run added no commits, so there is no message to check."
             exit 0
           fi
-          # A base commit that is not in this clone is the one case where the
-          # range cannot be walked. A force-push drops the old tip from the
-          # remote, so a full-history checkout does not have it -- and an
-          # unwalkable range iterates nothing, which would leave this step
-          # reporting success having checked no commit at all. That is the one
-          # outcome a gate must never produce, so it fails and says why.
+          # A base commit that is not in this clone means the push replaced the
+          # history it was based on, so every commit HEAD carries is new to the
+          # remote and the range cannot be walked. Failing here would leave a
+          # rewrite with no way through but a second push; walking the whole
+          # history under the grammar would fail on the 41 commits that predate
+          # it, which the convention deliberately does not apply backwards.
+          # The credit rule has no such history -- it was applied backwards on
+          # 21 October 2026 -- so that is the rule a rewritten history is held to.
+          CREDITS_ONLY=""
           if ! git rev-parse --verify --quiet "$BEFORE^{commit}" > /dev/null; then
-            echo "::error title=commit message::base commit $BEFORE is not in this clone, so the messages of this push could not be checked. Re-run the workflow, or push the missing base."
-            exit 1
+            echo "This push replaced its base, so every commit HEAD carries is new to the remote: checking all of them against the credit rule, and not against a grammar they predate."
+            CREDITS_ONLY="--credits-only"
+            RANGE="$(git rev-list HEAD)"
+          else
+            RANGE="$(git rev-list "$BEFORE"..HEAD)"
           fi
           FAILED=0
           CHECKED=0
-          for sha in $(git rev-list "$BEFORE"..HEAD); do
+          for sha in $RANGE; do
             git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
             CHECKED=$((CHECKED + 1))
-            if ! python -m tools.check_commit_message "$RUNNER_TEMP/commit-message.txt"; then
+            # The author and the committer are held to the same rule as the
+            # trailers: neither may name Codebuff or Freebuff.
+            if ! python -m tools.check_commit_message "$RUNNER_TEMP/commit-message.txt" $CREDITS_ONLY \
+              --author "$(git log -1 --format='%an <%ae>' "$sha")" \
+              --author "$(git log -1 --format='%cn <%ce>' "$sha")"; then
               echo "::error title=commit message::$(git log -1 --format=%s "$sha")"
               FAILED=1
             fi

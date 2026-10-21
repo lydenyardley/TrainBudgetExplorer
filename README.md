@@ -576,7 +576,8 @@ worth reading.
 ## Commit convention
 
 Commits follow Conventional Commits 1.0.0. `CONTRIBUTING.md` holds the rules,
-and `tools/check_commit_message.py` checks a message against them.
+and `tools/check_commit_message.py` checks a message against them, including the
+rule that neither the message nor the author credits Codebuff or Freebuff.
 
 ```
 git log -1 --format=%B | python -m tools.check_commit_message
