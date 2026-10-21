@@ -109,8 +109,28 @@ class CommitMessageTest(unittest.TestCase):
         self.assertTrue(any("credits Codebuff" in problem for problem in problems), problems)
 
     def test_a_body_line_that_opens_with_a_colon_is_not_a_trailer(self) -> None:
-        message = "docs: say where the client is discussed\n\nNote: Freebuff wrote the two trailers.\n"
+        # Prose in the body is not a footer. A colon in the *last* block is read
+        # as a trailer on purpose: `Tool:` and `Generated-by:` are credits, and
+        # the cost of that reading is one reworded sentence rather than a rule
+        # with a key list the next generator is missing from.
+        message = (
+            "docs: say where the client is discussed\n\n"
+            "Note: Freebuff wrote the two trailers.\n\n"
+            "The rule is in CONTRIBUTING.md.\n"
+        )
         self.assertEqual(check(message), [])
+
+    def test_a_trailer_under_any_key_is_refused(self) -> None:
+        # The shape is the rule, not a list of keys: `Tool:` and `Generated-by:`
+        # are the same credit as `Co-Authored-By:`, and the key a generator picks
+        # next is not one this file has seen.
+        for footer in ("Tool: Codebuff", "Generated-by: Freebuff <noreply@freebuff.com>"):
+            with self.subTest(footer=footer):
+                problems = check(f"docs: add the runbook\n\nThe gate names the flag.\n\n{footer}")
+                self.assertTrue(
+                    any("credits" in problem and "line 5" in problem for problem in problems),
+                    f"{footer!r} was accepted: {problems}",
+                )
 
     def test_accepts_a_person_as_co_author(self) -> None:
         message = (

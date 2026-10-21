@@ -60,15 +60,12 @@ SUBJECT = re.compile(
 #: one of them would pass the other.
 TOOLS = ("codebuff", "freebuff")
 
-#: The trailer keys that name people, which is the set a credit hides in. The
-#: list is closed rather than shaped like `Key: value`, because a body line that
-#: opens with a colon -- "Note: the client wrote the trailer" -- is prose and not
-#: a footer, and a check that refused it would be saying something it does not
-#: mean. A key Git or a generator adds later is one line here.
-TRAILER = re.compile(
-    r"(?i)^\s*(?P<key>co-authored-by|signed-off-by|authored-by|reviewed-by|"
-    r"generated-with|written-with|assisted-by)\s*:\s*(?P<value>.+)$"
-)
+#: A trailer is `Key: value` at the end of a message, and any key counts: the
+#: shape is the rule, because `Tool:`, `Assistant:` and `Generated-by:` are three
+#: spellings of the same credit and a list of keys is a list the next spelling is
+#: missing from. Only the last block counts -- a body paragraph that opens with a
+#: colon is prose, and the trailer test is what tells the two apart.
+TRAILER = re.compile(r"^\s*[A-Za-z][A-Za-z-]*\s*:\s*(?P<value>.+)$")
 
 #: The phrases a generator writes when it is not using a trailer at all.
 PHRASE = re.compile(r"(?i)\b(?:generated|written|made|produced|assisted)\s+(?:with|by)\b")
@@ -77,7 +74,7 @@ PHRASE = re.compile(r"(?i)\b(?:generated|written|made|produced|assisted)\s+(?:wi
 LEADING_NAME = re.compile(r"^\W*(?P<name>" + "|".join(TOOLS) + r")\b", re.IGNORECASE)
 
 
-def credited_tool(line: str) -> str:
+def credited_tool(line: str, in_footer: bool = False) -> str:
     """The tool a line credits, or an empty string when it credits none.
 
     Three shapes count, because they are the three a tool has actually written
@@ -91,7 +88,7 @@ def credited_tool(line: str) -> str:
     if not tool:
         return ""
     trailer = TRAILER.match(line)
-    if trailer and any(name in trailer.group("value").lower() for name in TOOLS):
+    if in_footer and trailer and any(name in trailer.group("value").lower() for name in TOOLS):
         return tool
     if PHRASE.search(line) or LEADING_NAME.match(line):
         return tool
@@ -144,11 +141,21 @@ def check(
         if len(lines) > 1 and lines[1].strip():
             problems.append("line 2 must be blank")
 
-    for number, line in enumerate(lines, 1):
-        tool = credited_tool(line)
+    # The footer is the last block of non-blank lines: the one place a trailer is
+    # a trailer rather than a sentence that happens to carry a colon.
+    footer_start = len(lines)
+    cursor = len(lines) - 1
+    while cursor >= 0 and not lines[cursor].strip():
+        cursor -= 1
+    while cursor >= 0 and lines[cursor].strip():
+        footer_start = cursor
+        cursor -= 1
+
+    for index, line in enumerate(lines):
+        tool = credited_tool(line, in_footer=index >= footer_start)
         if tool:
             problems.append(
-                f"line {number} credits {tool.title()}, and a commit's message names "
+                f"line {index + 1} credits {tool.title()}, and a commit's message names "
                 "neither the tool that typed it nor a reviewer: keep the why and drop the credit"
             )
     for author in authors:
