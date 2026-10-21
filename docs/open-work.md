@@ -38,66 +38,42 @@ sweep, no raw OSM tourism tags, no polygon-wide landscape tagging) still hold.
 
 ## The open findings
 
-### P1 — a whole-network release is over its byte budget, and the pair rules are why
+### P2 — the release's bytes are an extrapolation from one shard, and no run has printed the figure
 
-**Severity:** P1 for a published release, and now measured rather than
-projected. **Route:** `build_demo_page.py`'s payload encoding, the deploy
-workflow's release build, `tools/page_bytes.py`'s budget gate.
-**Raised:** 12 October 2026, from the build-cost audit's own projection.
+**Severity:** P2, lowered from P1 on 21 October 2026. **Route:** the release
+build's own output, `tools/page_bytes.py`'s gate, and this file. **Raised:** 12
+October 2026 as a P1 projection; superseded by ADR-0069 on 13 October 2026 and
+restated here (A2 of the 20 October 2026 poteto audit).
 
-**Evidence, measured 12 October 2026** (24 September 2026 DTD download,
-`--date`, `--notices nre,rdg,ogl,accuracy`, in `docs/build-performance-findings.md`).
-24 major stations average **2,734,828 bytes** a page, median 2,493,992, and a
-10-page alphabetical stride sample averages **806,367 bytes**, median 712,627,
-from 72,065 to 2,495,286. At 2,712 priced stations the with-week shape projects
-to roughly **2.2 GB** against the **800 MB** budget the gate holds the site to,
-with wide error bars at n=10 — so the direction is measured and the size is an
-estimate until the next real release runs the gate.
+**What the 2.2 GB was, and what replaced it.** The projection came from a
+24-station sample measured 12 October 2026, before ADR-0069 changed the payload's
+encoding: re-encoding shard 1's 458 real pages gave **90.8 MB in place of 429 MB**,
+which is **about 536 MB for 2,707 pages** against the **800 MB** budget. The
+2.2 GB figure is void and is no longer quoted here.
 
-**Where the bytes are.** Birmingham New Street's 1,626,528-byte payload breaks
-down as **1,050,373 railcardRules**, 220,029 destinations, 188,527 single
-destinations, 73,593 anytime destinations, 56,454 pool, 30,756 serviceWeek. The
-2,372 railcard rules are almost all two-ticket pair records (one per
-permitted ticket × route × location combination, ADR-0061), and all but 18 are
-referenced by a row, so the bulk is combinatorial rather than a leak: a hub that
-prices 288 destinations across three modes with many permitted pair splits
-produces thousands of distinct pairs. The audit asked the build to search the
-service week once for the network; what this shows is that the *payload* is now
-the expensive half, not the search.
+**What is still not measured.** 536 MB is an extrapolation from one shard, and it
+predates the 16 October 2026 switch to Network Rail's CIF (ADR-0073), which added
+schedules and therefore possible departures to every row. A whole-network build in
+the release's own shape has not run since either change, so the release is
+probably inside its budget and nobody has proved it. The gate runs in CI and
+refuses an over-budget site, so a release cannot publish over budget; what no run
+has printed is the number it would print.
 
-**What was tried, and did not help.** The service week is 30,756 bytes and the
-destinations 220 KB: neither is the problem. The 1 October T1/T10 work removed
-the route's script from every page exactly (148,477 bytes a page on the same
-station, same shape), which is about 385 MB across the network — and the release
-is still projected over budget, which is why this is a P1 rather than a footnote.
+**What closes it.** The next release run. The assemble job's
+`python -m tools.page_bytes --site _site` prints the assembled site's bytes
+whether it passes or refuses, and that figure replaces this entry. No code change
+is on this path.
 
-**Added 16 October 2026: the release's own shape is once again the with-timetable
-one.** The times came back from Network Rail's CIF under the Open Government
-Licence, so the next scheduled run builds every station page with a timetable and
-`tools/page_bytes.py` reads that number. Whether it refuses is the measurement
-this entry has been asking for since 12 October, and a refusal stops publication
-rather than publishing a site over budget.
-
-**What would close it.** One of three, in an order a reader of the numbers would
-take. First, measure first: run a whole-network build in the release's own shape
-and let `python -m tools.page_bytes --site _site --budget-mb 800` refuse it, so
-the projection is replaced by a figure. Second, the pair rules: they are a code
-plus a price, and the pair's own minimum-fare behaviour is derivable from the
-rule's components rather than carried as a record per pair — an encoding change
-behind the payload's shape, so the browser suite's fare-panel checks hold it
-honest. Third, shard the build so a release that does not fit in one runner's
-wall clock can still be published (T4 landed the shards and the merge; nothing
-yet shards the release build).
-
-### The pair-rule encoding is the release's own cost, and it is measurable
-
-Raised by the same measurement, as its own finding because it is separable from
-the budget question above. `railcardRules` is the largest block on a real page
-and it grows combinatorially with the permitted pair splits, so the release's
-byte cost is now a function of how many two-ticket combinations the feed allows
-rather than of how many destinations it prices. Until the encoding changes, the
-whole-network byte figure cannot be reasoned about, only measured — which is the
-state the audit's projection came from.
+**Where the bytes were, and why the figure could not be reasoned about.** On the
+pre-ADR-0069 sample, Birmingham New Street's 1,626,528-byte payload put 1,050,373
+of them in `railcardRules`: almost all two-ticket pair records (one per permitted
+ticket × route × location combination, ADR-0061), and all but 18 referenced by a
+row. So the block was combinatorial rather than a leak -- a hub that prices 288
+destinations across three modes with many permitted pair splits produces thousands
+of distinct pairs -- and the release's byte cost was a function of how many
+two-ticket combinations the feed allows rather than of how many destinations it
+prices. That is why ADR-0069's encoding change, and not a smaller sample, was the
+thing to measure.
 
 ### A station page is 354 KB, and nobody has decided whether that is the payload
 
@@ -534,7 +510,7 @@ joined the rebuild trigger, so a day the DTD feeds answered 304 and this one mov
 still rebuilds, and `check_fare_rate` prices against the timetable the pages are
 timed from rather than the DTD one beside it. What is left is measurement rather
 than code: the first real run is the whole-network build in the release's own
-shape that the P1 byte-budget finding above asks for.
+shape that the byte-budget finding above asks for.
 
 **The first real run of that wiring is still owed, and on 19 October 2026 the
 reason it had not happened was a repository setting.** A push run stopped at the
@@ -751,12 +727,11 @@ is blocked on a tool.
    rather than a data one, and S25 sits downstream of whatever this answer is.
    The release has published times again since 16 October 2026 (NWR Schedule, in
    the findings above), so this is waiting on the answer rather than on a source.
-3. **Which byte-budget path first?** The P1 finding above lists three ways the
-   release gets back inside its 800 MB budget: measure the real release first,
-   change the pair-rule encoding, or shard the build. The order is a judgement
-   about what to spend time on: the first replaces a projection with a figure,
-   the second is the one that actually removes the bytes, and the third only makes
-   an over-budget release affordable to publish.
+3. **Is the release's byte figure worth measuring before anything else?** Two of
+   the three ways the byte-budget finding above named are done: ADR-0069 changed
+   the pair-rule encoding, and the release build is sharded. What is left is the
+   measurement, which the next release run takes for free. The question is
+   whether anything should wait on that figure.
 4. **Does the site get a public name?** S40. A shortlist is in
    `docs/name-ideas.md`, and nothing in the code is named until one is chosen.
 5. **Are the traveller sessions run?** S43. Short, task-focused sessions with
@@ -774,6 +749,13 @@ the CIF subscription beside it and the fares pair as the fallback; all of it
 written out in `docs/github-pages-deployment.md`; or publishing prices alone, and the
 trade is in "The journey times are dropped from the release, and the source that
 brings them back" above. Nothing is left to build either way.
+8. **Is a release allowed to cost twelve runners times two hours?** The shard
+   step runs twelve shares of about 226 pages against a 150-minute bound, and the
+   20 October 2026 run spent the whole bound on every share before writing a page.
+   If that price is too high, the answer is less work per page rather than a
+   longer bound, and the per-share figure every run now prints is what would say
+   which part of a share is paying it (A1 of the 20 October 2026 poteto audit,
+   settled in `docs/settled-work.md`).
 Four questions this file used to carry are answered and their answers are in the
 settled table below: the release covers the whole network (ADR-0050), a railcard
 is one of a collection with none selected by default (ADR-0052), the runner

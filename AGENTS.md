@@ -8,19 +8,19 @@ suite is Node.
 ## Run this first
 
 ```
-python -m tools.verify --fast      # the unit suites minus the feed-scale tests, and the page's JavaScript parsed
+python -m tools.verify --fast      # the page, payload and chooser modules, under a five-minute ceiling
 python -m tools.verify --full      # every unit test, the type check, and the page's JavaScript parsed
 python -m tools.verify --browser   # the demo and shape builds, then tests/browser_test.cjs
 ```
 
-Measured 15 October 2026 on this machine, one suite at a time: `--fast` **21 min**
-(1,137 tests), `--full` **35 min**. Both are dated and reproducible in
-`docs/build-performance-findings.md`, which also carries the 14 October figures
-of 13 and 17 minutes from a faster machine; the old "three minutes" was wrong by
-four and nothing had re-measured it. A step that could not run (node missing,
-mypy missing, a build that wrote no page) reports `not run` and exits 2 rather
-than passing quietly -- which is why `--full` wants `mypy` installed and `--fast`
-does not. One module while you work on it:
+`--fast` is the page's own modules -- 228 tests, **about 50 s** measured 21
+October 2026 -- and it fails when its unit step passes the five-minute ceiling,
+so a module added to the list is a decision rather than a drift. `--full` is every
+module including the feed-scale ones, **35 min** measured 15 October 2026. Both
+figures are dated and reproducible in `docs/build-performance-findings.md`. A step
+that could not run (node missing, mypy missing, a build that wrote no page)
+reports `not run` and exits 2 rather than passing quietly -- which is why `--full`
+wants `mypy` installed and `--fast` does not. One module while you work on it:
 `python -m unittest tests.test_build_demo_page`.
 
 ## The map
@@ -35,7 +35,7 @@ does not. One module while you work on it:
 | Feeds | `dtd_download.py`, `schedule_download.py` (Network Rail's own CIF under the Open Government Licence: a URL, optionally with a credential, and a refusal when what arrives is not a schedule), `feeds_cli.py`, `make_synthetic_feed.py` (the fixture every test builds on), `feed_audit.py`, `dtd_audit.py`, `damage_feed.py`, `fuzz_feed.py` |
 | Measurements | `benchmark.py`, `grantham_sweep.py`, `sanity_report.py`, `measure_station_defer.cjs` (what `defer` on the shared station list buys a reader, in `docs/build-performance-findings.md`), `tools/measure_locations_load.py` (what the shard merge's locations-only load saves, and that it reads the same stations), `tools/measure_link_crawl.py` (what the release's link crawl costs and what a cheaper one would) |
 | Operator tools | `tools/verify.py`, `tools/check_types.py` (the type ratchet, item 4 of the 14 October 2026 audit), `tools/build_inputs.py`, `tools/build_timetable_index.py`, `tools/page_bytes.py`, `tools/check_slice_equivalence.py`, `tools/check_facet_reference.py`, `tools/check_commit_message.py`, `tools/check_fare_rate.py`, `tools/check_links.py`, `tools/check_release_clearance.py`, `tools/check_source_credit.py`, `tools/feed_change_report.py`, `tools/check_page_state.py`, `tools/measure_build_memory.py`, `tools/measure_worker_pages.py`, `tools/measure_origin_costs.py`, `tools/regenerate_destination_facets.py`, `tools/easy_fares_check.py`, `tools/inspect_knowledgebase.py`, `tools/propose_fare_construction_stations.py`, `tools/propose_nature_stations.py`, `tools/propose_reviewed_settlements.py` |
-| Tests | `tests/` (35 modules, one per area, including `tests/test_suppressions.py`: every suppression names its cause); `tests/test_workflows.py` holds a workflow's `run:` blocks to shell that says what it was written to say; what the page says is one module per subject -- `tests/test_build_demo_page.py`, `tests/test_build_fares.py`, `tests/test_build_provenance.py`, `tests/test_build_chooser.py`, `tests/test_build_links.py` -- over the fixture in `tests/page_harness.py`; the browser suite is `tests/browser_test.cjs` -- the entry point the tools and CI invoke -- over `tests/browser/`: `tests/browser/harness.cjs` (the page list, the server, the money and date helpers, and the report), `tests/browser/chooser.cjs`, `tests/browser/release-root.cjs`, `tests/browser/a11y-matrix.cjs`, `tests/browser/station.cjs` (the station page's driver and the state every section reads), and one module per section of checks: `tests/browser/station-render.cjs`, `tests/browser/station-filters.cjs`, `tests/browser/station-rows.cjs`, `tests/browser/station-fares.cjs`, `tests/browser/station-shortlist.cjs`, `tests/browser/station-layout.cjs`, `tests/browser/station-picker.cjs`, `tests/browser/station-assets.cjs` |
+| Tests | `tests/` (35 modules, one per area, including `tests/test_suppressions.py`: every suppression names its cause); `tests/test_workflows.py` holds a workflow's `run:` blocks to shell that says what it was written to say; what the page says is one module per subject -- `tests/test_build_demo_page.py`, `tests/test_build_fares.py`, `tests/test_build_provenance.py`, `tests/test_build_chooser.py`, `tests/test_build_links.py` -- over the fixture in `tests/page_harness.py`; the browser suite is `tests/browser_test.cjs` -- the entry point the tools and CI invoke -- over `tests/browser/`: `tests/browser/harness.cjs` (the page list, the server, the money and date helpers, and the report), `tests/browser/chooser.cjs`, `tests/browser/release-root.cjs`, `tests/browser/a11y-matrix.cjs`, `tests/browser/station.cjs` (the station page's driver and the state every section reads), and one module per section of checks: `tests/browser/station-render.cjs`, `tests/browser/station-filters.cjs`, `tests/browser/station-rows.cjs`, `tests/browser/station-fares.cjs`, `tests/browser/station-shortlist.cjs`, `tests/browser/station-layout.cjs`, `tests/browser/station-picker.cjs`, `tests/browser/station-assets.cjs`, and `tests/browser/playwright-version` (the one file that names the browser CI and a local run both launch) |
 | Decisions | `adr/` (73 ADRs, each with a Status line), `docs/audits/` (the reviews, each pruned to what it still asks for; a review with nothing open is deleted, its open asks moving into `docs/open-work.md` and its closed findings and measurements into `docs/settled-work.md`), `docs/open-work.md` (what is still open and why, including the questions waiting on a person), `docs/settled-work.md` (every closed item, with the check that holds it), `docs/build-performance-findings.md` (every measured figure) |
 | Data | `reference-data/destination-facets.json`, checked against the registry in CI |
 | Release | `.github/workflows/deploy.yml`, `.github/workflows/regenerate-facets.yml` (manual: the facet reference regenerated from CI's download, as an artifact), `licences/release-clearance.md` (a person's decision, and it gates publishing) |
@@ -55,11 +55,14 @@ October 2026 plan).
 | A page that shows a fare carries the National Rail credit | `tools/check_source_credit.py --site _site` in the assemble job | exits 1 naming the page that carries a fare and no credit; exits 2 when it could not read the page it was given |
 | The facet reference data matches the registry | `tools/check_facet_reference.py` in CI | exits 1 naming the facet and the two values that differ; exits 2 when either side could not be read |
 | Rebuild when any build input changed | `tools/build_inputs.py` in both workflow steps, held by `tools/test_build_inputs.py` | exits 1 in the step that would publish a stale site; `tools/test_build_inputs.py` fails naming the input the list forgot |
-| The page's JavaScript parses | `python -m tools.verify --fast` (`node --check` on `page/**/*.js`) | `node --check` exits 1 with the syntax error and the file; with no node on PATH the step reports `not run` and the run exits 2 |
+| The shard bound and share count are the ones the performance record states | `tests/test_workflows.py`, against the bound table in `docs/build-performance-findings.md` | fails naming the workflow's `timeout-minutes`, share count or nearing minute beside the document's, so a bound cannot drift from the figure that justifies it |
+| The page's JavaScript parses, as every file and as each route's concatenated script | `python -m tools.verify --fast` (`node --check` on every page script, then on each route's concatenated script as `page_templates` builds it) | exits 1 with the syntax error, and on a concatenation names the panel whose addition broke it; with no node on PATH the step reports `not run` and the run exits 2 |
+| The browser is one version everywhere | `tests/test_workflows.py` and `tools/test_verify.py` | fail naming the workflow or the command and the version each names, against `tests/browser/playwright-version` |
 | A render reads the state, not the controls | `tools/check_page_state.py`, run by `python -m tools.verify --full` | exits 1 naming the panel and its read count; `tools/test_check_page_state.py` holds the verdict, including that a panel the budget does not name fails |
 | Every module is on the map above | `tests/test_agents_map.py` | fails naming the module, page asset or operator tool that `AGENTS.md` does not name, and the map entry with no file behind it |
 | A module that is type-clean stays type-clean | `tools/check_types.py`, run by `python -m tools.verify --full` and in CI | exits 1 and prints every mypy error in a file on the clean list; exits 2 when mypy is missing or reported nothing at all |
 | Every suppression names its cause | `tests/test_suppressions.py` | fails naming the file and line whose `noqa` carries no reason |
+| A sentence is proved on the rendered page, not in the script that prints it | `tests/test_test_suite_shape.py`, `CopyPinRatchetTest` | fails naming the module, its count and the sentences when a module adds a copy pin against `page_script(...)`, or goes above the count in `COPY_PINS` |
 | A page's claims that only browser JS can prove | the Playwright suite, `tools/verify.py --browser` | prints `FAIL` with the check's own message and the run exits 1; a check the page could not exercise is reported `not exercised`, never passed |
 
 ## Habits this repository asked for

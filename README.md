@@ -792,8 +792,13 @@ The page is the whole product, and none of the Python tests opens a browser, so
 one test drives it in a real one:
 
 ```
-npx --yes --package playwright node tests/browser_test.cjs
+npx --yes --package "playwright@$(cat tests/browser/playwright-version)" \
+    node tests/browser_test.cjs
 ```
+
+`tests/browser/playwright-version` is the one file that names the browser; CI
+installs the version it names, and a run that floats is a different browser from
+the release's.
 
 It drags the budget slider to the floor, filters to a town, follows a ticket link
 (to a stub, so nothing depends on a seller being up), and reads back what the
@@ -839,7 +844,7 @@ into the ADRs came with their command and keep it:
 | the whole network, measured against that target: 2,712 pages and 498 MB of 800 MB, or 583 MB before the stylesheet became a shared document | `python build_demo_page.py --feed feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html` then `python -m tools.page_bytes --site _cache/site_measure` |
 | unclassified destinations, the worst origins by share, and the rows the feed cannot name at all | `python destination_coverage.py --feed feeds/fares` |
 | what a new feed download changed against the one the published pages were built from | `python -m tools.feed_change_report --previous-feed feeds/previous --feed feeds/fares` |
-| the browser suite over the published routes, with its not-exercised count | `npx --yes --package playwright node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
+| the browser suite over the published routes, with its not-exercised count | `npx --yes --package "playwright@$(cat tests/browser/playwright-version)" node tests/browser_test.cjs _site/index.html _site/from/grantham/index.html _site/privacy/index.html` |
 | which routes this release actually wrote | `_site/release-manifest.json` |
 | a station's own rows, its three lists and its prices | the payload in the built page, which the suite reads as `DATA` |
 

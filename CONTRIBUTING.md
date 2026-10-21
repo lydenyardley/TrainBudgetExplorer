@@ -90,7 +90,7 @@ worse trade than a linter the older history is honestly outside of.
 ## Run the tests
 
 ```
-python -m tools.verify --fast      # the unit suites minus the feed-scale tests, and the page's JavaScript parsed
+python -m tools.verify --fast      # the page, payload and chooser modules, under a five-minute ceiling
 python -m tools.verify --full      # every unit test, the type check, which is what the deploy workflow runs
 python -m tools.verify --browser   # the demo and shape builds, then the Playwright suite
 ```
