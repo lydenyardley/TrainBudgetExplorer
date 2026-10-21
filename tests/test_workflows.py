@@ -269,5 +269,66 @@ class WorkflowShellTest(unittest.TestCase):
         )
 
 
+class ServiceDayTest(unittest.TestCase):
+    """A share is built for the one day the build job named, never undated.
+
+    The release dropped its --date on 16 October 2026, in the commit that
+    published the times from the Open Government Licence timetable, so
+    every share's pages had no day to walk their week from: each page indexed
+    the feed's whole schedule window (7x the work) and shipped with no day
+    control at all. Share 3 of run 39618401726 wrote 78 pages in 139 minutes
+    that way, where six shares wrote 458 pages in 108 minutes on 13 October
+    with a day. These checks are the reason a flag nobody misses cannot go
+    missing again.
+    """
+
+    def deploy(self) -> str:
+        return (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+
+    def test_the_build_job_names_one_day_for_the_whole_run(self) -> None:
+        deploy = self.deploy()
+        self.assertIn(
+            "service_date: ${{ steps.service_day.outputs.value }}",
+            deploy,
+            "the build job publishes no service_date, so a share has no day to "
+            "read and would have to call date itself (and two shares either side "
+            "of midnight would claim two days, which the merge refuses)",
+        )
+        self.assertIn(
+            'echo "value=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"',
+            deploy,
+            "the build job's service day step does not write a YYYY-MM-DD value, "
+            "and a build given any other shape of date refuses to start",
+        )
+
+    def test_each_share_is_built_for_that_day(self) -> None:
+        job = shard_job()
+        self.assertIn(
+            "SERVICE_DATE: ${{ needs.build.outputs.service_date }}",
+            job,
+            "the shard job does not take the day from the build job's output",
+        )
+        self.assertIn(
+            '--date "$SERVICE_DATE"',
+            job,
+            "the share builds without --date, so every page indexes the feed's "
+            "whole schedule window and carries no day control "
+            "(docs/build-performance-findings.md, 21 October 2026)",
+        )
+
+    def test_a_share_with_no_day_stops_instead_of_indexing_the_feed(self) -> None:
+        job = shard_job()
+        guard = re.search(r'if \[ -z "\$SERVICE_DATE" \]; then(.*?)\bfi\b', job, re.S)
+        self.assertIsNotNone(
+            guard, "the share no longer checks that it has a day before building"
+        )
+        self.assertIn(
+            "exit 1",
+            guard.group(1),
+            "the guard names a missing day and then builds anyway, which is the "
+            "run that timed out on 21 October 2026",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

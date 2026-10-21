@@ -302,8 +302,10 @@ And the OGL line above is already on every page the release serves
 
 **What this clearance does and does not do.** It is what puts a time on a page. The
 release in `.github/workflows/deploy.yml` fetches the CIF with `schedule_download` into
-`feeds/nwr-schedule/`, builds the whole network with `--timetable` and no `--date`, and
-declares `--release fares,timetable` to the gate. What it does not do is make a time
+`feeds/nwr-schedule/`, builds the whole network with `--timetable` for the one service
+day the run names, and declares `--release fares,timetable` to the gate. Which day is
+built is not part of what this clearance decides: the product read, and the rights that
+cover publishing it, are the same on every day of its window. What it does not do is make a time
 correct, complete, or a booking; it makes it publishable, which is the only question a
 licence can answer. The delivery route was settled the same day as the clearance and
 the credential lives in the repository's secrets, never in this file.

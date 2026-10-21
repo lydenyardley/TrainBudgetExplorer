@@ -1424,6 +1424,68 @@ instead of one per input event -- is already shipped (`queueBudgetFrame`,
 owed on whether the 50 ms gate is a phone gate or a desktop one; O8 now holds
 that decision and this figure.
 
+## The release had lost its service day, 21 October 2026
+
+**Plan.** The twelve-share release run of 21 October timed out with none of its
+shares finished. Two candidate causes were in the log and neither had been timed:
+the OGL timetable's size, and the release building with no `--date`. This measures
+both, on the real feed, and the second one is the answer.
+
+**Method.** The run's own log, whose lines carry a timestamp per line: share 3 of
+run 39618401726 (`shard (3)`, 14:44:49 to 17:15:24 on 21 October 2026), against
+a share of the six on 13 October (run 38353105980, job 115152941550).
+The per-page figures come
+from `python build_demo_page.py`'s own `build_payload` on the real feeds at this
+checkout, once with `day=date(2026, 10, 21)` and once with `day=None`, on the same
+loaded databases and the same fare slices, so the only difference is the day.
+
+**Figure.** The two release shapes, page for page and share for share:
+
+| Shape | One Linlithgow page | One Nottingham page | A share's pages |
+| --- | --- | --- | --- |
+| Dated (`--date 2026-10-21`) | **2.4 s** | **49.1 s** | 458 pages in **108.3 min** (13 Oct, 6 shares, median gap 9.2 s) |
+| Undated (no `--date`) | **16.7 s** | **not finished in ten minutes** (stopped there) | 78 pages in **139 min** (21 Oct, 12 shares, median gap 58.4 s) |
+
+```python
+# the two shapes, on one loaded database and one fare slice
+from datetime import date
+
+import build_demo_page as b
+from atoc_timetable import TimetableDb
+fares = b.load_page_fares("feeds/fares", "LIN").fares
+timetable = TimetableDb().load_feed("feeds/timetable-nwr")
+for day in (date(2026, 10, 21), None):
+    b.build_payload(fares, timetable, "LIN", day=day)      # 2.4 s, then 16.7 s
+```
+
+The same page's timetable half, measured through a worker
+(`python -m tools.measure_worker_pages --timetable feeds/timetable-nwr --origins
+NOT,EDB --pages 2`), is **31.8 s** for Nottingham and **132.6 s** for Edinburgh
+against **2,204 MB** of private memory, so a page on this timetable costs what it
+cost on the DTD one (33.6 s and 119.6 s on the same probe): the CIF switch is not
+what happened.
+
+**What it means.** Without a date there is no day for the page to walk a week
+from, so `TimetableDb._ensure_indexes(None)` indexes every schedule in the feed's
+window instead of the one day's share of them, for every page: 7x the index work
+on the smallest page here, and on Nottingham a page that does not finish in the
+minutes one dated page takes seconds. `journeys_from` is then asked with no day
+as well. The page also carries no day control at all, which
+`tests/test_service_week.py` states as the intended shape of an undated build, so
+the workflow's comment about "aggregate schedules and the day control filters
+them" described a page that was never built. On 21 October 78 pages took 139
+minutes where 458 had taken 108 on 13 October. A share in the twelve-way split
+writes about 217 pages, so at that share's 58.4 s median gap it is **3 h 31 min**
+against the step's 150-minute bound, and at 13 October's 14.2 s a page it is
+**51 min**.
+
+**What was done.** The build job now names one day for the run and every share is
+built for it, with a guard that stops a share which has no day, and
+`tests/test_workflows.py` holds the flag to the build job's output. The release is
+therefore dated, as the 13 October one was: the page names its day and its day
+control moves the table across the service week. S24 in `docs/open-work.md` is
+still the decision that would make an aggregate, undated shape a mode of its own.
+
 ## What the real page did not settle, 21 October 2026
 
 O1's own closing figure is the assembled release's bytes, and no run has reached

@@ -462,9 +462,12 @@ out.
 The deploy workflow loads the DTD fares feed for the prices and Network Rail's own
 CIF for the times: the DTD timetable's Schedule 1 §5 permits internal business
 purposes only, so the same schedule is published from the Open Government Licence
-product instead (ADR-0073). It passes no `--date`, which is the product's choice
-rather than the licence's: a release covers the whole network on every day the feed
-carries, so the page reports aggregate schedules and the day control filters them.
+product instead (ADR-0073). It passes `--date`: the build job names one day once and
+every share is built for it, because an undated page has no day to walk a week from.
+It carries no day control at all, and every page indexes the feed's whole schedule
+window instead of one day's share of it -- 7x the work, measured on 21 October 2026
+(`docs/build-performance-findings.md`). The release is the whole network as prices,
+conditions and times for that one day, and every page names the day it is for.
 Three places state this shape and they have to agree -- the build's `--timetable`,
 the clearance job's `--release fares,timetable`, and the journey check that reads
 the built pages. A run whose station pages come out carrying no journeys fails

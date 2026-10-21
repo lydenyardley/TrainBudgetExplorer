@@ -64,6 +64,7 @@ jobs:
       changed: ${{ steps.feed_check.outputs.changed }}
       fingerprint: ${{ steps.feed_fingerprint.outputs.value }}
       audited: ${{ steps.audited_feed.outputs.value }}
+      service_date: ${{ steps.service_day.outputs.value }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -284,6 +285,18 @@ jobs:
         # two runs with the same fingerprint published the same prices.
         id: feed_fingerprint
         run: echo "value=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Name the day this release publishes times for
+        # One day for the whole run, and every share is built for it. A share
+        # built without a date indexes every schedule in the feed's window for
+        # every page instead of one day's share of them, which is 7x the work
+        # and a page with no day control: see the comment over the shard's build
+        # command for the measurement. Decided once here rather than by each job
+        # calling date itself, because two shares built either side of midnight
+        # would claim two days and the merge refuses shares that disagree
+        # (build_pool.py's shard_agreement compares the day).
+        id: service_day
+        run: echo "value=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Name the downloads the gates audit
         # The shard and assemble jobs download the feeds again and must hold
@@ -630,6 +643,9 @@ jobs:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
           PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
           SHARD: ${{ matrix.shard }}/12
+          # The one day this run publishes times for, read by every share.
+          # tests/test_workflows.py holds this to the build job's own output.
+          SERVICE_DATE: ${{ needs.build.outputs.service_date }}
           # The minute at which a share counts as nearing the bound. The comment
           # above says a share that nears it means splitting further, and this
           # is the number that turns the sentence into a report rather than a
@@ -644,13 +660,26 @@ jobs:
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
           fi
+          # Refuse rather than build undated: a share with no day is the shape
+          # that timed out on 21 October, and a missing output is a settings
+          # fault worth naming before 150 minutes of it.
+          if [ -z "$SERVICE_DATE" ]; then
+            echo "::error title=service day::the build job named no day for this run, and a share built without one indexes the whole feed for every page and has no day control; rerun the workflow."
+            exit 1
+          fi
           # The fares feed is the public price source and the OGL CIF the step
-          # above fetched is the timetable. There is still no --date, and its
-          # reason is now the product's rather than the licence's: a release
-          # covers the whole network on every day the feed carries, so the page
-          # reports aggregate schedules and the day control filters them. A
-          # build fixed to one day would be a claim about that day, and S24 in
-          # docs/open-work.md is the decision that would make it a mode.
+          # above fetched is the timetable. The day comes from the build job,
+          # because a share built with no --date has no day to walk its week
+          # from: its pages carry no day control at all (held by
+          # tests/test_service_week.py), and every page indexes the feed's whole
+          # schedule window instead of one day's share of it. Measured 21
+          # October 2026: share 3 of run 39618401726 wrote 78 pages in 139
+          # minutes with no date, where share 1 of the six on 13 October (run
+          # 38353105980) wrote 458 in 108 minutes with one, and a Linlithgow
+          # page costs 2.4s dated against 16.7s undated (the table is in
+          # docs/build-performance-findings.md). A day is a claim about that
+          # day, and the page names it; an aggregate shape is S24 in
+          # docs/open-work.md, which is a decision rather than a missing flag.
           # Every priced station, not one of them. The release answers the
           # product's premise -- where can we go from anywhere -- so a reader
           # who arrives from any station finds a page there. The root is the
@@ -670,6 +699,7 @@ jobs:
             --feed feeds/fares \
             --timetable feeds/nwr-schedule \
             --knowledgebase feeds/knowledgebase \
+            --date "$SERVICE_DATE" \
             --all-origins \
             --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
             --shard "$SHARD" \

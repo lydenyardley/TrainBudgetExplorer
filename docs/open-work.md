@@ -318,6 +318,22 @@ aggregate schedules the CIF carries. The day control is a filter over them, and 
 page already names the date each row's time is for. S25 sits downstream of whatever
 this answer is.
 
+**21 October 2026: the release is dated again, and this is why.** That day's run
+published nothing: its share 3 wrote **78 pages in 139 minutes** and timed out at the
+step's 150-minute bound, and the other eleven shares were cancelled with it. A share
+of the six on 13 October wrote **458 pages in 108 minutes**; the difference is
+that the release had no `--date`, and an undated page indexes the feed's whole
+schedule window rather than one day's share of it (**2.4 s against 16.7 s** for one
+Linlithgow page, and a Nottingham page still unfinished after ten minutes where the
+dated one takes 49 s; the table is in `docs/build-performance-findings.md`). So the
+release is dated again, and the page names its day.
+
+That leaves this decision with a shape and a price, not a flag. An aggregate page
+is not "the same build without `--date`": it would be one search that carries every
+service day as an answer of its own, which is the shape the day control is for. Until
+somebody builds that, this item is the design of it; the dated release is the
+fallback, and it costs the 7x above.
+
 ---
 
 ## O15 -- Bank holidays and service exceptions are not inputs (S25)

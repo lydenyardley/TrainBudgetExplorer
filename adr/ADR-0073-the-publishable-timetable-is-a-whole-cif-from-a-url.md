@@ -122,6 +122,14 @@ Four rules make it safe to run unattended.
 - `docs/open-work.md` question 11 keeps the delivery route open. The code no
   longer depends on which answer it gets.
 
+**Amended 21 October 2026.** The shard build passes `--date` again, one day named once
+by the build job and handed to every share. The 16 October wiring above dropped it with
+the CIF switch, and an undated page turned out to have no day control at all and to
+index the feed's whole schedule window for every page: share 3 of the 21 October run
+wrote 78 pages in 139 minutes and timed out, where a share on 13 October wrote 458 in
+108 minutes with a day (`docs/build-performance-findings.md`). Nothing about the licence
+changed, and `--release fares,timetable` is what the gate still clears.
+
 **Amended 16 October 2026.** The record and the gate caught up the same day. NWR
 Schedule's section in `licences/release-clearance.md` is `cleared` on the owner's
 approval, and `TIMETABLE_GLOB` in `tools/check_release_clearance.py` names that
