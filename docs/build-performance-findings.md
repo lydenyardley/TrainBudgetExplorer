@@ -831,6 +831,33 @@ for one machine and not a benchmark of the tests. What they are good for is the
 question a reader actually has: whether to run the whole thing or one module.
 Run one module.
 
+### The fast loop is the page's own modules, 21 October 2026
+
+**What changed.** `--fast` ran every test in the tree except two, so it cost 21
+minutes and nobody used it while writing a page change (A5 of the 20 October 2026
+poteto audit). It now runs `FAST_MODULES` in `tools/verify.py`: the page, the
+payload it is built from, the chooser, and the checks that hold the build's own
+documents and this suite's shape -- 228 tests. `--full` still runs every module,
+including the feed-scale ones that parse the licensed downloads.
+
+**Measured 21 October 2026**, `python -m tools.verify --fast` on this machine,
+twice: **42.3 s** and **53.2 s** for the 228 unit tests, plus 2 s for the
+JavaScript parse -- **about a minute** for the command, against the five-minute
+ceiling the command now holds itself to (`FAST_CEILING`). The spread is the
+machine, not the suite: the same 228 tests both times. The figure is the green
+tree's own, not a run with failures in it.
+
+**Where it is held.** The ceiling is a check rather than a sentence: a fast run
+whose unit step passes `FAST_CEILING` fails naming the seconds and the two ways
+out. `tools/test_verify.py` holds that every module the list names still holds
+tests and that the feed-scale modules are not in it, so a rename cannot turn the
+loop into one that passes by running less.
+
+**What it does not establish.** A module left out of the list can break without
+the fast loop noticing. That is the trade the audit asked for -- the release
+still runs `--full` before publishing -- and the ceiling is what makes the trade
+visible rather than silent.
+
 ## The type-check census, measured
 
 Measured 15 October 2026 with mypy 2.4.0, on this machine, `--no-incremental`, one
@@ -1168,6 +1195,18 @@ share: the pages, which scale, and the whole fares feed plus the whole national
 timetable every share loads for itself, which does not. Halving the pages
 therefore halves the larger part and leaves the fixed part paid twice over --
 minutes, against the hours the pages take.
+
+**The bound, as a table a check reads.** The workflow's three numbers are stated
+here, and `tests/test_workflows.py` fails naming the workflow's value and this
+table's when they disagree. The document stays the record; the check makes it a
+rule (A8 of the same audit), because a bound drifting away from its measurement
+is exactly what the 20 October failure cost.
+
+| What the workflow states | Value |
+|---|---|
+| the shard step's timeout-minutes | 150 |
+| the minute a share counts as nearing its bound | 100 |
+| the shard matrix's shares | 12 |
 
 **What is ruled out by measurement.** The release's timetable became Network
 Rail's whole CIF on 16 October 2026 (ADR-0073), so the obvious suspect was that

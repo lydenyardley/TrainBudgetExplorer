@@ -1,5 +1,12 @@
 """A workflow's run block is shell, and a backtick in it is not punctuation.
 
+It also holds the browser's version to the one file that names it. CI pinned
+1.63.0 while a local run took whatever `npx --package playwright` resolved to,
+so a green run on a developer's machine was a different browser from the
+release's (A7 of the 20 October 2026 poteto audit). The pin lives in
+`tests/browser/playwright-version`, both paths read it, and this fails when a
+workflow names a version that file does not.
+
 The SCHEDULE_URL gate failed on 19 October 2026 with `--release: command not
 found` and a message reading "declare  again". The gate was right to fire -- no
 repository variable of that name is set -- but the sentence meant to say so
@@ -95,6 +102,117 @@ def backticks_in(text: str) -> list[str]:
         if "`" in line:
             offenders.append(f"{number}: {line.strip()}")
     return offenders
+
+
+#: The one file that names the browser, read by CI and by `tools/verify.py`.
+PLAYWRIGHT_VERSION = ROOT / "tests" / "browser" / "playwright-version"
+PLAYWRIGHT_PIN = re.compile(r"playwright@([^\s\"']+)")
+
+#: The record of what a share costs and what it is allowed to cost. It states
+#: the three numbers the shard job runs on, and the checks below hold the
+#: workflow to them (A8 of the 20 October 2026 poteto audit).
+PERFORMANCE = ROOT / "docs" / "build-performance-findings.md"
+
+
+def stated(label: str) -> int:
+    """The value the performance record's bound table gives one of its rows."""
+    text = PERFORMANCE.read_text(encoding="utf-8")
+    match = re.search(rf"^\|\s*{re.escape(label)}\s*\|\s*\**\s*([\d,]+)", text, re.M)
+    if match is None:
+        raise AssertionError(
+            f"docs/build-performance-findings.md states no '{label}' row, so the "
+            "check below has nothing to hold the workflow to"
+        )
+    return int(match.group(1).replace(",", ""))
+
+
+def shard_job() -> str:
+    """The shard job's own text, so a number elsewhere in the file cannot answer."""
+    deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+    start = deploy.index("\n  shard:")
+    end = deploy.index("\n  assemble:")
+    return deploy[start:end]
+
+
+class BuildBoundTest(unittest.TestCase):
+    def test_the_timeout_is_the_one_the_record_states(self) -> None:
+        stated_minutes = stated("the shard step's timeout-minutes")
+        found = re.findall(r"^\s*timeout-minutes:\s*(\d+)", shard_job(), re.M)
+        self.assertEqual(
+            found,
+            [str(stated_minutes)],
+            f"the shard job sets timeout-minutes to {found}, and "
+            f"docs/build-performance-findings.md states {stated_minutes}: change "
+            "one of them together with the figure that justifies it",
+        )
+
+    def test_the_matrix_runs_the_number_of_shares_the_record_states(self) -> None:
+        stated_shares = stated("the shard matrix's shares")
+        matrix = re.search(r"shard:\s*\[([^\]]+)\]", shard_job())
+        self.assertIsNotNone(matrix, "the shard job has no matrix list to count")
+        shares = [part.strip() for part in matrix.group(1).split(",") if part.strip()]
+        self.assertEqual(
+            len(shares),
+            stated_shares,
+            f"the matrix runs {len(shares)} shares, and "
+            f"docs/build-performance-findings.md states {stated_shares}",
+        )
+        # The build is told the denominator separately, and a share of 1/11 in a
+        # twelve-share matrix silently overlaps or skips a slice.
+        denominator = re.search(r"SHARD:\s*\$\{\{\s*matrix\.shard\s*\}\}/(\d+)", shard_job())
+        self.assertIsNotNone(denominator, "the shard job does not tell the build its share count")
+        self.assertEqual(int(denominator.group(1)), stated_shares)
+
+    def test_the_nearing_minute_is_the_one_the_record_states(self) -> None:
+        stated_minutes = stated("the minute a share counts as nearing its bound")
+        found = re.search(r"NEARING_MINUTES:\s*(\d+)", shard_job())
+        self.assertIsNotNone(
+            found, "the shard job no longer reports the minute a share counts as nearing its bound"
+        )
+        self.assertEqual(
+            int(found.group(1)),
+            stated_minutes,
+            f"the workflow warns at {found.group(1)} minutes and "
+            f"docs/build-performance-findings.md states {stated_minutes}",
+        )
+
+
+class PlaywrightVersionTest(unittest.TestCase):
+    def test_the_file_names_a_version(self) -> None:
+        # A file of prose, or an empty one, would let every check below agree
+        # on nothing.
+        self.assertRegex(
+            PLAYWRIGHT_VERSION.read_text(encoding="utf-8").strip(),
+            r"^\d+\.\d+\.\d+$",
+        )
+
+    def test_the_workflow_reads_the_file(self) -> None:
+        # The pin is only one fact if CI reads it: a literal here and a literal
+        # in the file are two places, which is what this finding was about.
+        deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            'PLAYWRIGHT_VERSION="$(cat tests/browser/playwright-version)"',
+            deploy,
+            "the browser step does not read tests/browser/playwright-version, so "
+            "the version CI installs is a second copy of the pin",
+        )
+
+    def test_no_workflow_names_a_version_the_file_does_not(self) -> None:
+        version = PLAYWRIGHT_VERSION.read_text(encoding="utf-8").strip()
+        disagreeing = [
+            f"{path.name}:{number}: playwright@{token}"
+            for path in sorted(WORKFLOWS.glob("*.yml"))
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            for token in PLAYWRIGHT_PIN.findall(line)
+            if token not in (version, "$PLAYWRIGHT_VERSION")
+        ]
+        self.assertEqual(
+            disagreeing,
+            [],
+            f"tests/browser/playwright-version names {version}, and these name "
+            "another browser: "
+            + "; ".join(disagreeing),
+        )
 
 
 class WorkflowShellTest(unittest.TestCase):

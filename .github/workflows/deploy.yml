@@ -620,7 +620,16 @@ jobs:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
           PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
           SHARD: ${{ matrix.shard }}/12
+          # The minute at which a share counts as nearing the bound. The comment
+          # above says a share that nears it means splitting further, and this
+          # is the number that turns the sentence into a report rather than a
+          # wish: 100 of 150, two thirds. `tests/test_workflows.py` holds this,
+          # the bound and the share count to the table in
+          # docs/build-performance-findings.md, so a run cannot drift from the
+          # record it is justified by (A8 of the 20 October 2026 poteto audit).
+          NEARING_MINUTES: 100
         run: |
+          STARTED=$SECONDS
           BASE_ARGS=()
           if [ -n "$SITE_BASE_PATH" ]; then
             BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
@@ -658,6 +667,19 @@ jobs:
             --notices nre,rdg,ogl,accuracy \
             --require-live-reviewed-codes \
             "${BASE_ARGS[@]}"
+
+          # What the share cost. The 20 October failure named the bound and left
+          # this figure unknown, which is why nobody could say whether a share
+          # was 151 minutes or 300; a bound that drifts away from its own
+          # measurement is how the pipeline got there (A1 of the 20 October 2026
+          # poteto audit). Every run now states it, and the first twelve-share
+          # run's figure belongs in the day's entry of
+          # docs/build-performance-findings.md.
+          SPENT_MINUTES=$(( (SECONDS - STARTED) / 60 ))
+          echo "share $SHARD took $SPENT_MINUTES minutes (nearing at $NEARING_MINUTES)"
+          if [ "$SPENT_MINUTES" -ge "$NEARING_MINUTES" ]; then
+            echo "::warning title=The share is nearing its bound::share $SHARD took $SPENT_MINUTES minutes of the step's bound: split the shares rather than raise the bound."
+          fi
 
       - name: Hand the share to the assemble job
         # Pages only, never the feeds. A day is enough: the assemble job runs
@@ -907,10 +929,13 @@ jobs:
         # not there.
         env:
           SITE_BUILT: 'true'
-          # One version for the module and its browser: a browser downloaded by
-          # one release is not one another release will launch.
-          PLAYWRIGHT_VERSION: 1.63.0
         run: |
+          # One version for the module and its browser: a browser downloaded by
+          # one release is not one another release will launch. The version is
+          # read from the file a local run reads too, so a green run here and a
+          # green run on a developer's machine are the same command (A7 of the
+          # 20 October 2026 poteto audit).
+          PLAYWRIGHT_VERSION="$(cat tests/browser/playwright-version)"
           # npx only puts playwright's command on PATH; the suite require()s
           # the module, so it is installed where node resolves it.
           npm install --no-save "playwright@$PLAYWRIGHT_VERSION"
