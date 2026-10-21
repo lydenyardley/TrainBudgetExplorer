@@ -35,7 +35,8 @@ because a reader checking a closure wants the ADR and the test.
 
 The audit file was removed on 14 October 2026, when its last finding landed. Its
 eight findings are settled here with the artifact that holds each one, and its
-four rejected designs are under "Rejected designs, with the reason" above.
+four rejected designs are under "Rejected designs, with the reason" at the foot of
+this file.
 
 | Finding | Closed by | Held by |
 |---|---|---|
@@ -135,9 +136,10 @@ reason".
 The audit file was removed on 14 October 2026. Its twelve tasks landed, each held
 by an artifact and by a command a reviewer can re-run; its figures are in
 `docs/build-performance-findings.md`, its two rejected designs are under "Rejected
-designs, with the reason" above, and the decisions it amends are named in its own
-T12 row. What it left open is the three open findings above: the byte budget, the
-pair-rule encoding and the sharded release build.
+designs, with the reason" at the foot of this file, and the decisions it amends are
+named in its own T12 row. What it left open was three findings: the byte budget,
+which is open work O1 in `docs/open-work.md`, and the pair-rule encoding (ADR-0069)
+and the sharded release build (the twelve shares of 20 October 2026), which landed.
 
 | Task | What it asked | What landed | Command whose output a reviewer can reproduce |
 |---|---|---|---|
@@ -266,9 +268,9 @@ a 390px row is 111px over two lines rather than 275px over six.
 ### The 19 October 2026 impeccable distill and delight passes
 
 `docs/audits/2026-10-19-impeccable-distill.md` was removed on 19 October 2026,
-when all seven of its suggestions landed. The delight audit keeps DL3 and DL6
-and the overdrive audit keeps its two directions and the shared-element morph,
-so both are still in `docs/audits/` pruned to what they ask for.
+when all seven of its suggestions landed. The delight and overdrive audits went on
+21 October 2026, merged into `docs/audits/2026-10-21-audit-asks.md`: DL3 is open
+work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8.
 
 The passes were read on `_demo_site`, built 19 October 2026 for service date
 5 October 2026: 17 destinations, a 23-row page of two ticket types, both
@@ -297,11 +299,11 @@ ones a check now holds.
 **What the pass did not do.** OV1 (the canvas fare horizon) and DL6 (the tick at
 the cheapest fare) are one visual direction the owner has not chosen, and the
 mockups of 20 October 2026 are evidence against the first form of it: on a £126
-ceiling the ticks bunch into the left fifth of the track. OV4 (the sticky budget
-rail) landed on 20 October 2026, after the owner saw it mocked up, on the
-condition that it appears only while the page's own slider is out of view. OV5
-(the dock under that rail) is what is left of the pair. DL3 (the shortlist total)
-is a product decision about what the dock is for.
+ceiling the ticks bunch into the left fifth of the track. It is open work O5. OV4
+(the sticky budget rail) landed on 20 October 2026, after the owner saw it mocked
+up, on the condition that it appears only while the page's own slider is out of
+view. What is left of that pair is OV5, the dock under the rail, which is O4, and
+DL3, the shortlist total, which is O3.
 
 **What the numbers were.** On the demo, the next fare above £20 was £22.40 to
 PETERBOROUGH, which is the sentence the browser check reads; at £0 the door
@@ -314,13 +316,16 @@ runs it.
 
 ### The 19 October 2026 impeccable critique
 
-`docs/audits/2026-10-19-impeccable-critique.md` stays for one finding, S5, the
-phone's fold budget: it has to be given a stated budget in numbers before it can
-be implemented, and that is an owner's decision rather than an edit. Eleven of
-its twelve findings are settled here. S8 is C21 of the 17 October review above and
-S12 is that review's rejected C18, so both already have their rows. S6, S9 and S10
-landed on 19 October 2026 with DS1, DL4 and DS3 of the distill and delight passes
-and share their checks. S1, S2, S3, S4, S7 and S11 landed on 20 October 2026.
+`docs/audits/2026-10-19-impeccable-critique.md` was removed on 21 October 2026,
+merged into `docs/audits/2026-10-21-audit-asks.md`. It went on one finding, S5, the
+phone's fold budget, which has to be given a stated budget in numbers before it can
+be implemented, and that is an owner's decision rather than an edit; it is open
+work O7. Two more of its observations are O9 (the refinements panel's 160px void)
+and O10 (the heading's budget field against the 44px promise). Eleven of its twelve
+findings are settled here. S8 is C21 of the 17 October review above and S12 is that
+review's rejected C18, so both already have their rows. S6, S9 and S10 landed on
+19 October 2026 with DS1, DL4 and DS3 of the distill and delight passes and share
+their checks. S1, S2, S3, S4, S7 and S11 landed on 20 October 2026.
 
 The six that landed on 20 October changed one thing the pass could only see from
 the outside: a fact that belonged to the journey was being copied out of one fare
@@ -543,3 +548,131 @@ the heading and only Privacy in the footer. That is a coverage fact about the
 release command of the time rather than a defect in it, and the release has since
 become the whole network — the settled entry "Question 1, the release coverage"
 above (ADR-0050).
+### Closed out of `docs/open-work.md` on 21 October 2026
+
+Seven entries left that file that day, none of them open. Each is here with what
+closed it and what holds it. The measurements they carried are in
+`docs/build-performance-findings.md` or in the ADR named, because a figure belongs
+in the file that measured it and not in a second retelling.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| The day-out decisions: ADR-0062's reserve, National Trust and landscape backlog, ADR-0063's closest-station prune, ADR-0064's seaside proof, ADR-0065's three registry facets | ADR-0063, ADR-0064 and ADR-0065 | `reference-data/destination-facets.json` carries them (rspb 9, national_trust 9, national_park 19), and `tools/check_facet_reference.py` fails when the file and the registry disagree |
+| The slice equivalence sweep, P2 | ADR-0066 and the four-shard run of 9 October 2026: 26,369 of 26,369 origin-days compared, 3,767 of 3,767 origins complete, 0 differing | `python -m tools.check_slice_equivalence --merge 4` reproduces the verdict reading no feed |
+| The checked-in facet reference data lagging the registry, P3 | one `tools/regenerate_destination_facets.py` run, and the check that now runs it whenever the registry moves | `tools/check_facet_reference.py` in CI, and 16 tests in `tests/test_check_facet_reference.py` |
+| A whole-network build holding the national timetable for its whole life, P1, superseded 12 October 2026 | `TimetableDb.focused`, the on-disk `SliceIndex` and `--timetable-index`: 3 min 44 s for a two-station build, against the 24 minutes that wrote no page | the figures are in `docs/build-performance-findings.md`; `tools/build_timetable_index.py --all-origins` refuses without `--max-bytes` |
+| The fares declaration cycle forcing two late imports, P3 | ADR-0070: 103 declarations moved to `atoc_fare_declarations.py`, and both `# noqa: E402` deleted rather than moved | `python -c "import atoc_fares, atoc_fares_loader, atoc_fare_declarations"` and the three fares suites |
+| The comment audit's two findings and its suppression census | the checks that replaced the count: `tests/test_suppressions.py` and `tools/check_types.py` (ADR-0072) | six suppressions remain, each naming its cause on its own line or above it; 16 `# type: ignore` comments are held by the type ratchet |
+| The journey times dropped from the release, and the source that brings them back | ADR-0073 and the wiring of 16 October 2026: `schedule_download.py`, the clearance gate's `TIMETABLE_GLOB`, and a fetch in `build`, `shard` and `assemble` | the first real run is open work O1, and the two stale licence readings it left behind are O17 |
+
+## Rejected designs, with the reason
+
+Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
+decision already made and that file is what is *not* decided. Kept rather than
+deleted, because a rejected idea with its reason stops the next person from
+re-deriving it.
+
+### Suggestions the owner rejected
+
+| | Suggestion | Why it is not worth doing |
+|---|---|---|
+| **S09** | Region, town or rail-network grouping once a geography source is chosen | The chooser already ranks all 2,718 priced stations and filters by name or code across them. Grouping adds a second way to browse a list nobody needs a second way to browse, and it needs the same geography source as S08 and C27 for no extra reach. |
+| **S27** | Discovery entry points such as "cities under £20" or "seaside under £20" | It is a curated editorial list dressed as a derived one. The project's rule is that a page says what the feed says and nothing more, and a landing page that decides which towns are worth a click is that page making a claim it has no evidence for. |
+| **S46** | A "Was this shortlist useful?" prompt or an optional feedback route | It is a tracker with a small payload, and it collects exactly the thing the page is careful not to collect. The same question is answered better by the S43 sessions, which are observed rather than recorded. |
+
+### Structural ideas the reviews weighed and refused
+
+- **Renaming the destination-type chips, or naming the census bands under them**
+  (clarity audit item 17, 16 October 2026). "Cities" and "Villages" are Census
+  2021 built-up-area size bands, so a reader may bring the ordinary word's meaning
+  to a chip that means the band. Read and rejected by the owner: the words stay,
+  because the chip is the page's own grouping of a place rather than a claim about
+  it, the sourced facets worth naming already carry their named proof, and a
+  rename would trade a word every reader knows for a longer one meaning the same.
+- **Moving the root Python modules into a package** (8 October 2026). High import
+  and CI churn, and the `AGENTS.md` map gets most of the orientation benefit.
+- **Adding a Python type checker for page defects** (8 October 2026). The defects
+  live in JavaScript files, which Python types do not reach; `node --check`
+  catches the syntax half of it.
+- **Splitting `atoc_fares.py` for its length** (8 October 2026). Length alone was
+  not the cost F1 and F6 were about, and the file changed 19 times in 150 commits,
+  a third of the page's rate. **Superseded 14 October 2026** by ADR-0070, which
+  split it for a different reason: the declaration cycle it forced, not its size.
+- **Checking in real feed samples as fixtures** (8 October 2026). The data is
+  licensed (ADR-0005), so the synthetic fixture is the only regression test there
+  is.
+- **The national single-pass search, T2 as written** (12 October 2026). One
+  national day index per day of the week, held for the whole build, is the shape
+  the 8 October 2026 work removed. The per-origin facts layer delivers the same
+  payoff without holding the network, and sharding is what would make such a pass
+  affordable rather than a reason to build one.
+- **A database, or any store** (12 October 2026). A store removes the page write,
+  which measures 1.5 ms for a page as built and 10.9 ms for the largest page that
+  audit saw, and none of the work itself, because the facts still have to be
+  computed somewhere. ADR-0019's 14 October 2026 amendment holds the reasoning.
+- **Extracting the classification tables to data files with schema checks**
+  (14 October 2026). They are reviewed judgements with the reason written beside
+  each group, and they are checked harder than a schema already: a code the feed
+  does not carry and a code the workbook already classifies are both refused by
+  `--require-live-reviewed-codes`.
+- **`page_templates.py`'s templates rewritten as named template helpers**
+  (14 October 2026). The templates are literal HTML whose comments say why a
+  shape is what it is; a helper per fragment would separate the markup from its
+  reason, and those bytes are what the page tests, the byte budget and the browser
+  suite read.
+- **Turning the long test preambles into test names or parametrized ids**
+  (14 October 2026). Those comments are the "why" this repository asks for, and a
+  parametrized id cannot carry the paragraph that names the real-feed shape a
+  case came from.
+
+### What the delight and overdrive passes refused
+
+- **A celebration when a place is shortlisted.** It is a two-second decision, not a
+  milestone.
+- **A "best value" badge, or any ranking beyond cheapest-first.** The page refuses
+  to recommend, and the data cannot support a score.
+- **A weather, sunset, or "things to do" line for the destination.** Nothing in the
+  feed carries it, and inventing it is the failure `PRODUCT.md` forbids.
+- **A total that calls itself a day out or a plan.** The fares are a sum; the day is
+  the reader's.
+- **Particles, confetti, a mascot, or a WebGL map.** The fares feed carries no
+  coordinates, so a map would invent geography the page's data does not have.
+- **A loading skeleton.** The page is static and answers in milliseconds; a skeleton
+  would fake work.
+- **Sound or haptics on the drag.** The context is a train and a phone; silence is
+  the feature.
+- **A virtualised table before it is needed.** The station page's opening list is
+  101 rows; virtualisation would buy complexity the page cannot spend. Measure the
+  ceiling build first if that changes.
+
+### A false positive, kept so a later pass does not re-file it
+
+- **`cramped-padding` on `.origin-slot-wrap`, as `impeccable detect` reads it**
+  (9 October 2026, and again on 19 October 2026). The border it flags is the dashed
+  underline that is the station slot's whole affordance, chosen in `page/shared.css`
+  because a text field's underline is the shape a reader already reads as "this part
+  of the sentence is yours". The detector reported it on the station route only; the
+  chooser and the privacy page scanned clean.
+
+### Comments an audit saw and deliberately kept
+
+Each for the same reason: two places, two facts.
+
+- The two `_add_station` helpers in `tests/test_atoc_timetable.py` carry the same
+  comment about appending a station record rather than rewriting the file. They
+  are two fixtures with two signatures, and the comment sits on the byte handling
+  each one does.
+- `atoc_fares.py`'s `location_type_sources` field and the property below it open
+  with the same sentence. One is the docstring a caller reads, the other carries
+  the incident that shaped the field.
+- "One manifest of the routes a release actually serves" in `build_demo_page.py`
+  and the class docstring in `tests/test_page_output.py`. One is the build's
+  contract, the other says which contract the class tests.
+- The tram-stop note in `atoc_fare_declarations.py` appears in the reviewed
+  settlement fallback table and in `TRANSPORT_STATION_CRS`. Two tables, two facts:
+  one is a settlement class, the other a facet tag.
+- The duplicated `try: ... except OSError: continue` in the two prunes in
+  `build_demo_page.py`. The five lines of loop are two different rankings (one
+  keys by path, one takes the newest stamp per digest, and only the first honours
+  `protected` per file), so a shared helper would carry a flag rather than remove
+  a branch.
