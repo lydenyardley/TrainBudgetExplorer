@@ -9,8 +9,8 @@ checkout cannot run at all (F5 of the 8 October 2026 agent-efficiency audit).
 This is that entry point, written in Python so the same command covers a
 developer's machine and the release.
 
-    python -m tools.verify --fast      both unit suites minus the feed-scale tests, and the page's JavaScript parsed
-    python -m tools.verify --full      every unit test, the type check, and the page's JavaScript parsed
+    python -m tools.verify --fast      the page, payload and chooser modules, and the page's JavaScript parsed as files and as each route's script
+    python -m tools.verify --full      every unit test, the type check, and the page's JavaScript parsed the same way
     python -m tools.verify --browser   a synthetic feed, the demo and shape builds, then the browser suite
     python -m tools.verify --all       --full, then --browser
 
@@ -29,25 +29,58 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
+from collections.abc import Callable, Sequence
 from pathlib import Path
+
+import page_templates
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The tests that read the licensed national feed. Two of them are 58 s and 49 s
-#: of the fares module's 200 s, measured on 8 October 2026 with `python -m
-#: unittest --durations 15 tests.test_atoc_fares`, and they are the same file
-#: read twice. `--fast` leaves them to `--full` rather than to every edit.
-FEED_SCALE = (
-    "test_atoc_fares.FaresParserTest.test_the_real_feed_marks_its_advance_tickets_train_restricted",
-    "test_atoc_fares.FaresParserTest.test_real_gra_to_not_keeps_two_together_r9_price",
+#: What `--fast` runs: the modules that hold the page, the payload it is built
+#: from, the chooser, and the checks that speak for the build. `--full` runs
+#: every module, including the feed-scale ones that read the licensed national
+#: download. Until this list existed, `--fast` was every test minus two, which is
+#: 1,137 tests in 21 minutes -- not a loop a change can be checked with while it
+#: is being written (A5 of the 20 October 2026 poteto audit).
+FAST_MODULES = (
+    "tests.test_build_demo_page",
+    "tests.test_build_fares",
+    "tests.test_build_chooser",
+    "tests.test_build_provenance",
+    "tests.test_build_links",
+    "tests.test_page_assets",
+    "tests.test_workflows",
+    "tests.test_test_suite_shape",
+    "tools.test_verify",
 )
+
+#: The wall clock `--fast`'s unit step may take before the command fails naming
+#: it. Measured at 53 s on 21 October 2026, so this is headroom for a slower
+#: machine rather than a target: a module added to the list is what breaks it,
+#: and the message says which way to go.
+FAST_CEILING = 300.0
 
 #: The page's own JavaScript, which no Python check can parse (audit C2). The
 #: station route is one file per panel under a subdirectory, so the pattern has
 #: to reach below the first level or the panels stop being checked.
 JAVASCRIPT = "page/**/*.js"
+
+#: The one file that names the browser the suite launches. CI installs that
+#: version, this command asks npx for it, and `tests/test_workflows.py` fails
+#: when either path names another. Before this, CI pinned 1.63.0 while a local
+#: run took whatever `npx --package playwright` resolved to that day, so a green
+#: run here was not the same command as a green run there (A7 of the 20 October
+#: 2026 poteto audit).
+PLAYWRIGHT_VERSION = Path("tests/browser/playwright-version")
+
+
+def playwright_package() -> str:
+    """`playwright@<the pinned version>`, as npx and the workflow both ask for it."""
+    version = (ROOT / PLAYWRIGHT_VERSION).read_text(encoding="utf-8").strip()
+    return f"playwright@{version}"
 
 #: The service date the demo and shape pages are built for. A build with no date
 #: carries no week of days, so ten checks about the day the table reports -- the
@@ -102,29 +135,51 @@ def _discover(directory: str) -> unittest.TestSuite:
     return unittest.TestLoader().discover(directory, pattern="test_*.py")
 
 
-def without(suite: unittest.TestSuite, excluded: frozenset[str]) -> unittest.TestSuite:
-    """The same suite minus the named test ids, which is how --fast is defined."""
-    kept = unittest.TestSuite()
-    for item in suite:
-        if isinstance(item, unittest.TestSuite):
-            kept.addTest(without(item, excluded))
-        elif item.id() not in excluded:
-            kept.addTest(item)
-    return kept
-
-
 def unit(fast: bool) -> Step:
     step = Step("unit tests" + (" (fast)" if fast else ""))
-    excluded = frozenset(FEED_SCALE) if fast else frozenset()
-    suite = without(_discover("tests"), excluded)
-    suite.addTest(without(_discover("tools"), excluded))
+    if fast:
+        suite = unittest.TestLoader().loadTestsFromNames(FAST_MODULES)
+    else:
+        suite = _discover("tests")
+        suite.addTest(_discover("tools"))
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     ran = result.testsRun
     detail = f"{ran:,} tests"
     if not result.wasSuccessful():
         failed = len(result.failures) + len(result.errors)
         detail = f"{ran:,} tests, {failed} failing"
+    if fast and step.seconds > FAST_CEILING:
+        return step.done(
+            False,
+            f"{detail} in {step.seconds:.0f}s, over the {FAST_CEILING:.0f}s ceiling for "
+            "--fast: move a module to --full, or fix what got slower",
+        )
     return step.done(result.wasSuccessful(), detail)
+
+
+def _parse(node: str, source: str, scratch: Path) -> subprocess.CompletedProcess[str]:
+    """`node --check` over a string, through a file, because that is what it reads."""
+    path = scratch / "route.js"
+    path.write_text(source, encoding="utf-8")
+    return subprocess.run([node, "--check", str(path)], capture_output=True, text=True, cwd=ROOT)
+
+
+def first_unparsed(
+    parts: Sequence[str], build: Callable[[tuple[str, ...]], str], parses: Callable[[str], bool]
+) -> str:
+    """The first part whose addition stops a route's concatenated script parsing.
+
+    A panel is parsed on its own and the artifact is not: two panels may each
+    declare `const total`, and that is a SyntaxError where neither file is one.
+    Parsing the prefixes names the panel that broke the artifact instead of
+    reporting that "the script" does not parse (A4 of the 20 October 2026
+    poteto audit). An empty answer means every prefix parses, which is the
+    caller's cue that nothing shorter than the whole artifact is at fault.
+    """
+    for index, part in enumerate(parts, 1):
+        if not parses(build(tuple(parts[:index]))):
+            return part
+    return ""
 
 
 def javascript() -> Step:
@@ -142,7 +197,32 @@ def javascript() -> Step:
         if checked.returncode:
             print(checked.stderr.strip(), file=sys.stderr)
             return step.done(False, f"{path.name} does not parse")
-    return step.done(True, f"{len(files)} file(s)")
+
+    # The station route ships one script built from STATION_SCRIPT_PARTS, so the
+    # concatenation is what a reader's browser parses and no per-file check can
+    # see a name two panels both declare. The artifact is checked as one string
+    # here, and a failure names the panel whose addition broke it.
+    with tempfile.TemporaryDirectory() as scratch:
+        route = Path(scratch)
+
+        def parses(source: str) -> bool:
+            return _parse(node, source, route).returncode == 0
+
+        artifact = page_templates.STATION_SCRIPT
+        if not parses(artifact):
+            print(_parse(node, artifact, route).stderr.strip(), file=sys.stderr)
+            offender = first_unparsed(
+                page_templates.STATION_SCRIPT_PARTS, page_templates.station_script, parses
+            )
+            return step.done(
+                False,
+                f"the station route's script does not parse: "
+                + (f"{offender} is the panel that breaks it" if offender else "the whole artifact is at fault"),
+            )
+        if not parses(page_templates.CHOOSER_SCRIPT):
+            print(_parse(node, page_templates.CHOOSER_SCRIPT, route).stderr.strip(), file=sys.stderr)
+            return step.done(False, "the chooser route's script does not parse")
+    return step.done(True, f"{len(files)} file(s) and 2 route artifacts")
 
 
 def types() -> Step:
@@ -192,6 +272,8 @@ def browser() -> Step:
     step = Step("browser suite")
     if shutil.which("node") is None:
         return step.done(None, "node is not on PATH")
+    if not (ROOT / PLAYWRIGHT_VERSION).is_file():
+        return step.done(None, f"{PLAYWRIGHT_VERSION} names no browser version")
     steps = [
         # --long-list is what gives the driven station page a second page: the
         # table shows twenty rows before it offers a pager, so a fixture whose
@@ -246,7 +328,7 @@ def browser() -> Step:
         shutil.which("npx") or "npx",
         "--yes",
         "--package",
-        "playwright",
+        playwright_package(),
         "node",
         "tests/browser_test.cjs",
     ]
@@ -259,7 +341,7 @@ def browser() -> Step:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--fast", action="store_true", help="the unit suites minus the feed-scale tests")
+    parser.add_argument("--fast", action="store_true", help="the page, payload and chooser modules, under a five-minute ceiling")
     parser.add_argument("--full", action="store_true", help="every unit test, and the type check")
     parser.add_argument("--browser", action="store_true", help="the demo and shape builds, then the browser suite")
     parser.add_argument("--all", action="store_true", help="--full, then --browser")

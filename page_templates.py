@@ -836,12 +836,22 @@ CHEVRON = (
 )
 
 
-# The station route's script as the asset ships it: the panels concatenated in
-# STATION_SCRIPT_PARTS order, with the shared blocks filled in.
-STATION_SCRIPT = _shared_script(
-    "".join(_page_file(part) for part in STATION_SCRIPT_PARTS),
-    "the station route's script",
-)
+def station_script(parts: tuple[str, ...] = STATION_SCRIPT_PARTS) -> str:
+    """The station route's script: the named panels concatenated, shared blocks filled.
+
+    The default is the whole artifact. A prefix is what the artifact check in
+    `tools/verify.py` builds when the whole one does not parse, so the failure
+    names the panel whose addition broke it rather than the route.
+    """
+    return _shared_script(
+        "".join(_page_file(part) for part in parts),
+        "the station route's script",
+    )
+
+
+# The station route's script as the asset ships it, in STATION_SCRIPT_PARTS
+# order, with the shared blocks filled in.
+STATION_SCRIPT = station_script()
 
 # The chooser route's own script. It is one file rather than several because the
 # route is one field over one list, and it moves out of the page for the same

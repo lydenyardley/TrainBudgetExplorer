@@ -9,36 +9,61 @@ import unittest
 from tools import verify
 
 
-class SlowListTest(unittest.TestCase):
-    def test_every_excluded_test_is_one_that_exists(self) -> None:
-        # An exclusion that names a test nobody has holds the fast path to a
-        # test that was renamed, so the list has to keep pointing at real tests.
-        discovered = {test.id() for test in _flatten(verify._discover("tests"))}
-        for test_id in verify.FEED_SCALE:
-            with self.subTest(test_id=test_id):
-                self.assertIn(test_id, discovered)
+class FastListTest(unittest.TestCase):
+    def test_every_fast_module_holds_tests(self) -> None:
+        # A module name that loads nothing is a fast loop that passes by
+        # running less: a package move or a rename would leave the line here
+        # and the tests behind.
+        for name in verify.FAST_MODULES:
+            with self.subTest(module=name):
+                loaded = unittest.TestLoader().loadTestsFromNames([name])
+                self.assertGreater(len(_flatten(loaded)), 0, f"{name} holds no tests")
 
-    def test_the_fast_suite_leaves_the_feed_scale_tests_out(self) -> None:
-        suite = verify.without(verify._discover("tools"), frozenset(verify.FEED_SCALE))
-        ids = {test.id() for test in _flatten(suite)}
-        self.assertNotIn(verify.FEED_SCALE[0], ids)
-        self.assertGreater(len(ids), 100, "the tools suite discovered almost nothing")
+    def test_the_list_leaves_the_feed_scale_modules_out(self) -> None:
+        # The whole point of the list: a module that parses the licensed
+        # national download is --full's work, not every edit's.
+        self.assertNotIn("tests.test_atoc_fares", verify.FAST_MODULES)
+        self.assertNotIn("tests.test_atoc_timetable", verify.FAST_MODULES)
+
+    def test_the_ceiling_is_the_five_minutes_the_audit_asked_for(self) -> None:
+        self.assertLessEqual(verify.FAST_CEILING, 300.0)
 
 
-class WithoutTest(unittest.TestCase):
-    def test_it_drops_only_the_named_tests(self) -> None:
-        class Named(unittest.TestCase):
-            def test_one(self) -> None:
-                """A name to drop, not a behaviour."""
+class ArtifactCheckTest(unittest.TestCase):
+    def test_it_names_the_part_whose_addition_breaks_the_concatenation(self) -> None:
+        # Two panels may each declare `const total`: legal per file, a
+        # SyntaxError in the one script the route ships. The check has to say
+        # which panel, because "the script does not parse" is a search of
+        # seventeen files rather than a fix.
+        texts = {
+            "a.js": "const total = 1;\n",
+            "b.js": "const total = 2;\n",
+            "c.js": "const other = 3;\n",
+        }
 
-            def test_two(self) -> None:
-                """A name to keep, and the one the suite should hold."""
+        def build(parts: tuple[str, ...]) -> str:
+            return "".join(texts[part] for part in parts)
 
-        one, two = Named("test_one"), Named("test_two")
-        suite = unittest.TestSuite([unittest.TestSuite([one]), two])
-        kept = [test.id() for test in _flatten(verify.without(suite, frozenset({one.id()})))]
-        self.assertEqual(len(kept), 1)
-        self.assertTrue(kept[0].endswith("test_two"))
+        def parses(source: str) -> bool:
+            return source.count("const total") < 2
+
+        self.assertEqual(verify.first_unparsed(tuple(texts), build, parses), "b.js")
+
+    def test_it_says_nothing_when_every_prefix_parses(self) -> None:
+        def build(parts: tuple[str, ...]) -> str:
+            return "".join(f"const {part.replace('.', '_')} = 1;\n" for part in parts)
+
+        self.assertEqual(verify.first_unparsed(("a.js", "b.js"), build, lambda _text: True), "")
+
+
+class PlaywrightPinTest(unittest.TestCase):
+    def test_the_browser_it_asks_npx_for_is_the_one_file_that_names_it(self) -> None:
+        # The audit that found CI pinned 1.63.0 while a local run floated also
+        # found this command asking for an unpinned playwright. It reads the
+        # same file the workflow reads, so the two commands launch one browser.
+        version = (verify.ROOT / verify.PLAYWRIGHT_VERSION).read_text(encoding="utf-8").strip()
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(verify.playwright_package(), f"playwright@{version}")
 
 
 class StepReportTest(unittest.TestCase):

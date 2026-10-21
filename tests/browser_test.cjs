@@ -8,11 +8,17 @@
  *
  * Run it with playwright on one or more page paths:
  *
- *     npx --yes --package playwright node browser_test.cjs
+ *     npx --yes --package "playwright@$(cat tests/browser/playwright-version)" \
+ *         node tests/browser_test.cjs
  *     node browser_test.cjs            # when playwright is installed locally
+ *
  *     node browser_test.cjs demo.html _site/index.html
  *     node browser_test.cjs _site/from          # sweep a published site
  *     node browser_test.cjs _site/from --max 20 # and drive twenty of its pages
+ *
+ * The version is the one file `tests/browser/playwright-version` names, which
+ * is also what CI installs: a run with a floating version is a different
+ * browser from the release's and proves something else.
  *
  * Every expectation is read out of the page under test, so the suite is a
  * test of the template rather than of a station, and one run can sweep the

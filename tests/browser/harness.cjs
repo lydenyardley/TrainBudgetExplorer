@@ -184,8 +184,8 @@ function requirePlaywright() {
     console.error("SKIPPED: playwright is not available to node, so nothing was tested.");
     console.error("");
     console.error("Borrow it, then run again:");
-    console.error("  npx --yes --package playwright node browser_test.cjs");
-    console.error("  npm install --no-save playwright && node browser_test.cjs");
+    console.error("  npx --yes --package playwright@$(cat tests/browser/playwright-version) node tests/browser_test.cjs");
+    console.error("  python -m tools.verify --browser   # the same version, and the pages built for it");
     console.error("");
     console.error("reason: " + String(error.message).split("\n")[0]);
     return null;
