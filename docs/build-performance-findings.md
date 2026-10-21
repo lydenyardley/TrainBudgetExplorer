@@ -1486,6 +1486,13 @@ therefore dated, as the 13 October one was: the page names its day and its day
 control moves the table across the service week. S24 in `docs/open-work.md` is
 still the decision that would make an aggregate, undated shape a mode of its own.
 
+The first dated twelve-share run then measured it, 21 October 2026 (run
+39667902022): share 6 wrote **221 pages in 20 min 49 s** (20:14:55 to 20:35:44
+UTC, 287 origins), and its `shard.json` carries `2026-10-21` in the inputs the
+merge compares, against the 139 minutes 78 pages took undated that morning. The
+51-minute projection above was conservative; a dated share costs about four and
+a half seconds a page on a hosted runner.
+
 ## What the real page did not settle, 21 October 2026
 
 O1's own closing figure is the assembled release's bytes, and no run has reached
