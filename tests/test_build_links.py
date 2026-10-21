@@ -86,25 +86,11 @@ class TicketHandoffTest(PageTestCase):
         self.assertIn(DISCLOSURE, html)
         self.assertLess(html.index('id="disclosure"'), html.index("<table>"))
 
-    def test_every_row_offers_to_copy_its_journey_details(self) -> None:
-        # The visible word carries what the control does now, so the test names
-        # it the way the reader sees it and the accessible name adds only the row
-        # it belongs to (audit item 28, 14 October 2026).
-        self.assertIn('"Copy journey"', page_script(self.html))
-        self.assertIn("Copy journey for ", page_script(self.html))
-        # Which row's control copies which row's journey is the browser suite's
-        # to answer: it presses the control on a row and reads the clipboard.
-
-    def test_the_copied_text_names_the_things_a_seller_asks_for(self) -> None:
-        for label in ('"From: "', '"To: "', '"Date: "', '"Passengers: "'):
-            self.assertIn(label, page_script(self.html))
-
     def test_the_copied_text_names_the_railcard_only_for_the_party_price(self) -> None:
         # The card is never sent anywhere; it is named as something to tick, and
         # only when the price on screen is the one that needs it. Which card is
         # named is the browser suite's to answer: it copies a row as one adult
         # and as two and reads the clipboard both times.
-        self.assertIn('" discount is not sent to the seller', page_script(self.html))
         self.assertNotIn('"Two Together discount is not sent to the seller', page_script(self.html))
 
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:

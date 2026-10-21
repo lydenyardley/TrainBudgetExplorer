@@ -335,14 +335,19 @@ async function measureTheLayout(world) {
     } else {
       check("a results row is tinted under the pointer", notExercised("this page lists fewer than three rows"));
     }
-    // The stacked table, measured where the reader meets it: at 390px, on the
-    // rows the page actually paints. A phone row was a label track and a value
-    // track per cell -- six lines, 275px, a page of twenty destinations in
-    // 5,500px (C13/D8 of the 17 October 2026 critique). It is two lines now,
-    // and these are the claims that make it one: the row's height, the line
-    // each fact lands on, and the fact that no value paints outside the cell
-    // that holds it.
-    await page.setViewportSize({ width: 390, height: 720 });
+    // The stacked table, measured where the reader meets it, on the rows the
+    // page actually paints. A phone row was a label track and a value track per
+    // cell -- six lines, 275px, a page of twenty destinations in 5,500px (C13/D8
+    // of the 17 October 2026 critique). It is two lines at a 390px phone's
+    // content width, and three where the scrollbar takes 15 of those pixels.
+    //
+    // A3 of the 20 October 2026 poteto audit: Playwright's viewport has no
+    // scrollbar, so a 390px viewport measured 366px of row -- a width no real
+    // 390px browser offers, because a desktop window at that width gives its
+    // scrollbar 15 of the 390 and leaves 375. The viewport here is therefore
+    // 375 and the content width is read back, so the page is measured at the
+    // width a reader has rather than the width Playwright hands out.
+    await page.setViewportSize({ width: 375, height: 720 });
     await open(facts.affordable);
     const stacked = await page.evaluate(() => {
       const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
@@ -385,10 +390,6 @@ async function measureTheLayout(world) {
           // critique). Read off the cell the reader sees rather than off the
           // payload, so a cell that lost its noun is what fails.
           fareWord: ((cellOf(tr, "Fare type") || {}).textContent || "").trim(),
-          // A row that names the station it changes at carries two lines in
-          // that cell by design (`.changes`, row-cells.js). Its second line is
-          // the tightest one on the page, and the line check below says so.
-          via: Boolean(tr.querySelector("td.changes")),
         };
       });
       const heads = Array.from(document.querySelectorAll("thead th"));
@@ -403,6 +404,7 @@ async function measureTheLayout(world) {
           label: th.textContent.trim(),
           display: getComputedStyle(th).display,
         })),
+        contentWidth: document.documentElement.clientWidth,
         head: headBox
           ? {
               width: Math.round(headBox.width * 10) / 10,
@@ -417,44 +419,45 @@ async function measureTheLayout(world) {
       ? stacked.heights[Math.floor(stacked.heights.length / 2)]
       : 0;
     check(
-      "at 390px the typical row is two lines rather than six",
-      // 120 rather than the audit's 90: the shortlist checkbox and the ticket
-      // action are both 44px targets, and each one sets the height of a line.
-      // Measured on this page, a row is 111px -- twenty of them in 2,220px,
-      // against the 5,500px the six-line row cost.
+      "at the phone's content width the typical row is three lines or fewer",
+      // 150 is three lines: the shortlist checkbox and the ticket action are
+      // both 44px targets, and each sets the height of a line. Measured on
+      // this page, the median row is 138px at 375 and 112px at 390 -- three
+      // lines where the scrollbar takes its 15 pixels, against the 5,500px the
+      // six-line row cost.
       stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
-        : median <= 120,
-      `${stacked.rows.length} rows, median ${median}px, tallest ${stacked.heights[stacked.heights.length - 1] || 0}px`
+        : median <= 150,
+      `${stacked.rows.length} rows at ${stacked.contentWidth}px of content, median ${median}px, tallest ${stacked.heights[stacked.heights.length - 1] || 0}px`
     );
-    // A row that carries a via note is the one row the second line cannot hold
-    // in four facts: measured at 390px on the demo page, such a row needs 397px
-    // of content in 366 -- the ticket takes a third line and no shorter
-    // spelling of the facts buys it back. The promise it keeps instead is the
-    // one a reader needs: the time on the second line, and the ticket with the
-    // facts it buys. Every other row is held to the full claim, and a page whose
-    // rows all carry a via note reports not exercised rather than passing on
-    // rows that were never measured.
+    // The width the row was measured at, read back rather than assumed: a
+    // browser that drew its own scrollbar would take 15px off the content and
+    // this module would be measuring a narrower page than a reader's.
+    check(
+      "the phone row is measured at the content width a 390px browser gives it",
+      stacked.contentWidth === 375,
+      `${stacked.contentWidth}px of content in a 375px viewport`
+    );
+    // Four facts, three lines: the place and its price lead, the time follows
+    // them, and the ticket comes last -- on the time's line where it fits and on
+    // a line of its own at 24rem and below, which is the rule station.css states
+    // for a phone or a zoomed reader. The height check above holds the
+    // three-line promise; this holds the order a reader takes the facts in.
     const offLine = stacked.rows
       .filter(
         (row) =>
           row.stationTop === 0 ||
           Math.abs(row.priceTop - row.stationTop) > 2 ||
           (row.timeTop !== null && row.timeTop <= row.stationTop) ||
-          (row.timeTop !== null && !row.via && Math.abs(row.ticketTop - row.timeTop) > 4)
+          (row.timeTop !== null && row.ticketTop < row.timeTop - 4)
       )
       .slice(0, 4);
-    const plain = stacked.rows.filter((row) => !row.via).length;
     check(
-      "at 390px the place and its price share the first line, the time and the ticket the second",
+      "at the phone's content width the place and its price lead, then the time, then the ticket",
       stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
-        : plain === 0
-        ? notExercised(`every row names a change station (${stacked.rows.length})`)
         : offLine.length === 0,
-      offLine.length
-        ? JSON.stringify(offLine)
-        : `${stacked.rows.length} rows measured, ${stacked.rows.length - plain} with a via note`
+      offLine.length ? JSON.stringify(offLine) : `${stacked.rows.length} rows measured`
     );
     // S4 of the 19 October 2026 critique: the stacked layout clips the `<thead>`
     // for assistive technology, so nothing on the screen says that
@@ -464,7 +467,7 @@ async function measureTheLayout(world) {
       .filter((row) => row.fareWord && !/^(Advance|Restricted|Regular) fare$|^Two tickets$/.test(row.fareWord))
       .slice(0, 4);
     check(
-      "at 390px the fare cell says what kind of thing it names",
+      "at the phone's content width the fare cell says what kind of thing it names",
       stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
         // Every row has to carry one of the four phrases. A page that painted
@@ -476,7 +479,7 @@ async function measureTheLayout(world) {
     );
     const spilled = stacked.rows.filter((row) => row.outside > 0).slice(0, 4);
     check(
-      "at 390px no value paints outside the cell that holds it",
+      "at the phone's content width no value paints outside the cell that holds it",
       stacked.rows.length === 0
         ? notExercised("this page shows no rows at a phone width")
         : spilled.length === 0,
@@ -489,7 +492,7 @@ async function measureTheLayout(world) {
     // column names are written.
     const head = stacked.head;
     check(
-      "at 390px the column headings are hidden from sight and not from a screen reader",
+      "at the phone's content width the column headings are hidden from sight and not from a screen reader",
       !head || stacked.headers.length === 0
         ? notExercised("this page shows no column headings")
         : head.width <= 1 && head.height <= 1 && head.position === "absolute" &&

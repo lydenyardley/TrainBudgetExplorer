@@ -70,7 +70,6 @@ class FaresPayloadTest(PageTestCase):
                 "url": "https://whc.unesco.org/en/list/488/",
             }],
         )
-        self.assertIn("World heritage: ", page_script(self.html))
         self.assertIn("destination.heritageSites", page_script(self.html))
 
     def test_a_nature_destination_carries_its_named_reserve(self) -> None:
@@ -422,7 +421,6 @@ class FaresPayloadTest(PageTestCase):
         # reader presses, are the browser suite's.
         self.assertIn('"Show the "', page_script(self.html))
         self.assertIn('"Anytime Day Returns"', page_script(self.html))
-        self.assertIn("Raise the budget to ", page_script(self.html))
         self.assertIn("Show all destination types", page_script(self.html))
         self.assertIn("toggle", self.html)
 

@@ -49,7 +49,6 @@ class DemoPageTest(PageTestCase):
         # either half. The browser suite drives the live row.
         # The station itself is named in the Changes column now, so the
         # panel says only what is still worth saying and is nowhere else.
-        self.assertIn("one ticket to the station above", page_script(self.html))
         self.assertIn("can sometimes cost less than this through fare", page_script(self.html))
         self.assertIn("This page prices the through fare only.", page_script(self.html))
 
@@ -188,7 +187,6 @@ class DemoPageTest(PageTestCase):
         # comparison is of the price on screen: the browser suite drives the
         # dock, the copied text, the shared link and the refresh that brings
         # the list back.
-        self.assertIn("A shortlist of destinations, not a booking", page_script(self.html))
         # The limit is said, not silently applied.
         # Said on the page as well as to the status region: a control that
         # stops responding with no explanation is the one thing a reader
@@ -598,8 +596,10 @@ class DemoPageTest(PageTestCase):
             # light pass wearing another name.
             'for (const scheme of ["light", "dark"])',
             "page.emulateMedia({ colorScheme: scheme })",
-            # A 320px viewport is what 200% zoom leaves of a 640px screen.
-            "width: 320",
+            # A 304px viewport is what 200% zoom leaves of a 640px screen once
+            # a desktop scrollbar has its 15 pixels (A3 of the 20 October 2026
+            # poteto audit: 320 was a width no zoomed reader has).
+            "width: 304",
             # Computed names, contrast off the rendered pixels, measured targets
             # and a focus indicator: the four things a claim of AA rests on.
             ".ariaSnapshot()",
@@ -608,7 +608,8 @@ class DemoPageTest(PageTestCase):
             "the controls promised at 44px are at least 44px",
             "the focused control shows where it is",
             "nothing scrolls sideways",
-            "at 320px the text is still the base size",
+            "at 304px the text is still the base size",
+            "zoomed.content === 304",
         ):
             self.assertIn(wanted, suite, f"the matrix lost: {wanted}")
         # The privacy page is a route, not a path this suite cannot read.
@@ -724,8 +725,6 @@ class DemoPageTest(PageTestCase):
         # reads out. The word itself is written by the page and driven by
         # the browser suite.
         self.assertIn("Advance", self.html)
-        self.assertIn("Restricted", page_script(self.html))
-        self.assertIn("Regular", page_script(self.html))
         # And the panel those cells open carries the token the warn colour
         # hangs off, which is what the phone reflow and C14 both read. The
         # browser suite drives the panel, its class and its wording; what is
@@ -1598,9 +1597,6 @@ class TwoPartRowTest(unittest.TestCase):
         import subprocess
 
         payload = build_demo_page.build_payload(self.fares, self.timetable, "GRN", day=self.MONDAY)
-        html = render_page(payload, budget_pounds=40)
-        self.assertIn("priced via ", page_script(html))
-        self.assertIn("stay on the train", page_script(html))
         # Whether the through-train wording or the change wording is chosen is
         # settled below by running the page's own helpers over a journey with
         # no change and one with, and comparing what each prints.

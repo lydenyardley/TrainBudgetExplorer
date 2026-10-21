@@ -187,6 +187,102 @@ class NoShadowedTestNameTest(unittest.TestCase):
         self.assertGreater(len(test_files()), 5)
 
 
+#: The reader-facing copy still asserted against the page's script, per module,
+#: measured 21 October 2026 (A6 of the 20 October 2026 poteto audit). A ratchet:
+#: a count may fall and may not rise. A sentence belongs to the browser suite,
+#: which reads it off the rendered page; where no browser check holds one yet,
+#: the pin here is the only thing that keeps it, so it stays until that check
+#: exists. Delete the pin and lower the number in the same commit.
+COPY_PINS = {
+    "tests/test_build_demo_page.py": 13,
+    "tests/test_build_fares.py": 36,
+    "tests/test_build_links.py": 8,
+    "tests/test_build_provenance.py": 1,
+}
+
+
+def copy_pins() -> dict[str, list[str]]:
+    """Every sentence a test asserts against the page's script's source.
+
+    A needle with no space is an identifier or a class name rather than copy,
+    and a needle that quotes a statement is the rule above's business. What is
+    left is a sentence: a thing a reader reads, which the browser suite can
+    read off the page instead of out of the file that prints it.
+    """
+    script = page_script_text()
+    found: dict[str, list[str]] = {}
+    for path in test_files():
+        source = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in ("assertIn", "assertNotIn", "assertEqual", "assertGreaterEqual"):
+                continue
+            if "page_script(" not in (ast.get_source_segment(source, node) or ""):
+                continue
+            needles = [
+                argument.value
+                for argument in node.args
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+            ]
+            for needle in needles[:1]:
+                if " " not in needle or BARE_NAME.match(needle):
+                    continue
+                if quotes_a_page_statement(needle, script):
+                    continue
+                found.setdefault(path.relative_to(REPO).as_posix(), []).append(needle)
+    return found
+
+
+class CopyPinRatchetTest(unittest.TestCase):
+    """No test may add a reader-facing sentence pinned to the script's source.
+
+    A pin on the source passes when the sentence sits in a function that never
+    runs, and fails when the sentence moves without changing -- both measured in
+    the audit that filed this. The browser suite reads the rendered page, so
+    that is where a sentence should be proved; until it is, the count above is a
+    ceiling that can only come down.
+    """
+
+    def test_no_module_asserts_more_copy_than_the_ratchet_allows(self) -> None:
+        found = copy_pins()
+        self.assertGreater(sum(len(v) for v in found.values()), 0, "the scan found no copy at all")
+        over = [
+            f"{name}: {len(pins)} copy pin(s) against the script, and the ratchet "
+            f"allows {COPY_PINS[name]}: {pins[:3]!r}"
+            for name, pins in sorted(found.items())
+            if name in COPY_PINS and len(pins) > COPY_PINS[name]
+        ]
+        self.assertEqual(
+            over,
+            [],
+            "a sentence belongs to the browser suite, which reads it off the page; "
+            "pin it there rather than in the script's source.\n  " + "\n  ".join(over),
+        )
+
+    def test_no_module_outside_the_ratchet_asserts_copy_off_the_script(self) -> None:
+        found = copy_pins()
+        added = [
+            f"{name}: {pins[:3]!r}"
+            for name, pins in sorted(found.items())
+            if name not in COPY_PINS
+        ]
+        self.assertEqual(
+            added,
+            [],
+            "these modules assert copy against the page's script and are not in "
+            "COPY_PINS: prove the sentence in the browser suite, or add the module "
+            "to the ratchet with its measured count.\n  " + "\n  ".join(added),
+        )
+
+    def test_every_module_the_ratchet_names_is_there(self) -> None:
+        # A count against a file that has been renamed or split holds nothing:
+        # the rule would pass while the module it named no longer exists.
+        missing = [name for name in COPY_PINS if not (REPO / name).is_file()]
+        self.assertEqual(missing, [], "COPY_PINS names files that are not there: " + ", ".join(missing))
+
+
 class NoPageStatementNeedleTest(unittest.TestCase):
     """No test proves the page's JavaScript by quoting a statement of it.
 

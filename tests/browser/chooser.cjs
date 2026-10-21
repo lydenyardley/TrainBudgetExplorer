@@ -396,7 +396,12 @@ async function checkChooser(page, url, check) {
   await page.fill("#originSearch", "zzzz");
   const noMatch = await page.locator("#nomatch").isVisible();
   check("a query with no answer says so", noMatch && (await page.locator("#picks a").count()) === 0, await page.textContent("#nomatch"));
-  check("and it names the code route", /three-letter code/.test(await page.textContent("#nomatch")));
+  check(
+    "and it says what was tried and names the code route",
+    /We don’t have a page for ‘zzzz’\. Try the station’s name or its three-letter code\./.test(
+      await page.textContent("#nomatch")
+    )
+  );
   await page.fill("#originSearch", "");
   // The budget is the reader's, and it is the one thing the root page can carry
   // into the station page it opens (S05).

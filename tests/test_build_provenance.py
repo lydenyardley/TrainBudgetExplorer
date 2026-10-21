@@ -91,7 +91,11 @@ class ProvenanceTest(PageTestCase):
         # feed that has gone stale.
         prices_only = build_payload(self.fares, None, "GRN")
         self.assertIsNone(prices_only["timetableFrom"])
-        self.assertIn("This build prices fares only", page_script(self.html))
+        # The prices-only sentence is read off the prices-only page in the
+        # browser suite, which drives one of each shape; pinning its words here
+        # passed while the page printed none of them (A6 of the 20 October 2026
+        # poteto audit). The stale-window sentence stays here because no fixture
+        # in this tree has a window that has ended, so this is its only holder.
         self.assertIn("which has ended, so these times describe services that no longer run", page_script(self.html))
 
     def test_the_freshness_claim_is_judged_against_the_builds_own_date(self) -> None:

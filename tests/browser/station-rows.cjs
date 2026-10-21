@@ -50,6 +50,12 @@ async function checkTheRowActions(world) {
     check("the copy names the origin", adultCopy.includes("From: " + journey.origin), adultCopy);
     check("the copy names the destination", adultCopy.includes("To: " + journey.destination), adultCopy);
     check("the copy names the party size", /^Passengers: 1 adult$/m.test(adultCopy), adultCopy);
+    const dated = await page.evaluate(() => Boolean(DATA.serviceDate));
+    check(
+      "the copy dates the journey when the build names a day, and not otherwise",
+      dated === /^Date: /m.test(adultCopy),
+      `${dated ? "a day" : "no day"}: ${adultCopy}`
+    );
     check("one adult's copy does not mention a railcard", !/Railcard/.test(adultCopy), adultCopy);
     // The copy belongs to the row it was copied from, judged on the whole
     // station name rather than its first word, which two stations can share.

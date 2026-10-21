@@ -17,9 +17,10 @@
  *     3:1 for large text, which is the AA rule rather than a number chosen here.
  *   - targets: the rendered box, plus a positioned ::after's slop, which is
  *     how the row actions reach 44px while staying small on screen.
- *   - zoom: a 320px viewport, which is what 200% zoom leaves of a 640px screen,
- *     with the two things zoom breaks checked directly -- sideways scrolling and
- *     text that shrinks below the base size.
+ *   - zoom: a 304px viewport, which is what 200% zoom leaves of a 640px screen
+ *     once a desktop scrollbar has its 15 pixels, with the two things zoom
+ *     breaks checked directly -- sideways scrolling and text that shrinks below
+ *     the base size.
  *   - keyboard: the focus ring, read off the focused element, and the fact that
  *     Tab reaches a control without a mouse.
  */
@@ -605,25 +606,35 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         : "this route offers no facet disclosure"
     );
     // ------------------------------------------------------------------ zoom
-    // 320px is what 200% zoom leaves of a 640px screen: the width at which a
-    // layout that only works at desktop stops working.
-    await page.setViewportSize({ width: 320, height: 720 });
+    // 304px is what 200% zoom leaves of a 640px screen: 320px of window less
+    // the 15px a desktop scrollbar takes and the pixel it rounds. Playwright's
+    // viewport draws no scrollbar, so 320 measured a page 16px wider than any
+    // zoomed reader has (A3 of the 20 October 2026 poteto audit). The content
+    // width is read back, so a browser that starts drawing its own scrollbar
+    // fails here rather than quietly measuring a narrower page.
+    await page.setViewportSize({ width: 304, height: 720 });
     const zoomed = await page.evaluate(() => {
       const html = document.documentElement;
       return {
         overflow: Math.max(html.scrollWidth, document.body.scrollWidth) - window.innerWidth,
         body: parseFloat(getComputedStyle(document.body).fontSize),
+        content: html.clientWidth,
       };
     });
     check(
-      `at 320px -- a 200% zoom -- nothing scrolls sideways in ${scheme}`,
+      `at 304px -- a 200% zoom -- nothing scrolls sideways in ${scheme}`,
       zoomed.overflow <= 0,
       `${zoomed.overflow}px`
     );
     check(
-      `at 320px the text is still the base size in ${scheme}`,
+      `at 304px the text is still the base size in ${scheme}`,
       zoomed.body >= 16,
       `${zoomed.body}px`
+    );
+    check(
+      `the zoom case is measured at the content width a zoomed 640px screen gives it in ${scheme}`,
+      zoomed.content === 304,
+      `${zoomed.content}px of content in a 304px viewport`
     );
     // The width check above can only judge the text a fixture happens to
     // contain, and that is how a 36px sideways scroll shipped: the demo
@@ -678,7 +689,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       return { skipped: false, scroll, clipped, tagged: targets.length };
     });
     check(
-      `at 320px an unbreakable run does not widen the page in ${scheme}`,
+      `at 304px an unbreakable run does not widen the page in ${scheme}`,
       injected.skipped || (injected.scroll <= 0 && injected.clipped <= 1),
       injected.skipped
         ? "the page has no prose container to measure, so this proves nothing"

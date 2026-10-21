@@ -88,9 +88,10 @@ class ChooserTest(PageTestCase):
 
     # -- the layout: budget leads, the rest refines ------------------------
 
-    def test_the_no_match_wording_names_what_was_tried(self) -> None:
-        self.assertIn("We don’t have a page for", page_script(self.html))
-        self.assertIn("three-letter code", page_script(self.html))
+    # The no-match wording is not pinned here: the browser suite types a query
+    # nothing matches and reads the sentence off the panel, which is the only
+    # place it exists -- a pin on the script's source passed while the panel
+    # said something else (A6 of the 20 October 2026 poteto audit).
 
     def test_the_chooser_budget_is_carried_into_station_links(self) -> None:
         # Two stations, because a root that offers a choice is the chooser. A
