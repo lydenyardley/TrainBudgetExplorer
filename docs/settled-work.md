@@ -271,8 +271,8 @@ a 390px row is 111px over two lines rather than 275px over six.
 `docs/audits/2026-10-19-impeccable-distill.md` was removed on 19 October 2026,
 when all seven of its suggestions landed. The delight and overdrive audits went on
 21 October 2026, merged into `docs/audits/2026-10-21-audit-asks.md`: DL3 is open
-work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8 (measured on
-21 October 2026, with the gate decision still open).
+work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8 (OV5 and OV3
+were both measured on 21 October 2026; their decisions are still open).
 
 The passes were read on `_demo_site`, built 19 October 2026 for service date
 5 October 2026: 17 destinations, a 23-row page of two ticket types, both

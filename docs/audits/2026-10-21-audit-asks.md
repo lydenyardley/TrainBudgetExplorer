@@ -15,9 +15,10 @@ what is left.
 
 Every other finding in those four files is closed, and is a row in
 `docs/settled-work.md`. The coverage table below is the proof that nothing fell
-between the two files. Two of the ten asks moved on 21 October 2026: **ask 1**
-was measured and its split refused, and **ask 8** was measured with its gate
-decision left to O8. Their sections keep the measurements and say so.
+between the two files. Three of the ten asks moved on 21 October 2026: **ask 1**
+was measured and its split refused, **ask 8** was measured with its gate decision
+left to O8, and **ask 9** was measured with its decision left to O4. Their
+sections keep the measurements and say so.
 
 ## Coverage
 
@@ -46,7 +47,7 @@ decision left to O8. Their sections keep the measurements and say so.
 | 19 October overdrive, OV4 | the budget rail | settled, 20 October 2026 |
 | 19 October overdrive, OV1 | draw the fare horizon on the track | **ask 7**, O5 |
 | 19 October overdrive, OV3 | keep the drag at 60fps on a mid-range phone | measured 21 October 2026; **ask 8**, O8 holds the gate decision |
-| 19 October overdrive, OV5 | the dock under the rail | **ask 9**, O4 |
+| 19 October overdrive, OV5 | the dock under the rail | measured 21 October 2026; **ask 9**, O4 holds the decision |
 | 19 October overdrive, OV7 | morph the chosen station | **ask 10**, O6 |
 
 ## The ten asks
@@ -217,6 +218,15 @@ is deep in the list, which is exactly when the shortlist matters.
 **What would prove it.** At 390 with two places shortlisted and the page scrolled to
 the last row, the number of rows visible between the rail and the dock, and whether
 the dock's own Copy is reachable without covering the row above it.
+
+**Measured 21 October 2026**, on the real Grantham page at 390x844, with two and
+then four places held: the rail takes 56px, the dock 141px or 217px, and the
+space between them holds **four fully visible rows** in both states. No row and no
+control is covered -- the last row ends exactly at the dock's top, and the dock's
+Copy is 44px tall, inside the viewport and topmost at its centre. So the question
+left is not whether they can coexist, but whether four rows of comparison is what
+the dock is for; O4 now holds it. `node tools/measure_station_phone.cjs
+_real_site` prints it, and the table is in `docs/build-performance-findings.md`.
 
 ### Ask 10 -- [P3] Morph the chosen station (OV7, tracks O6)
 
