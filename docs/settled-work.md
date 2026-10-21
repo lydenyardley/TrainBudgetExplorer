@@ -42,7 +42,7 @@ this file.
 |---|---|---|
 | F1, the station page was one 2,938-line string, so no linter or `rg --type js` could see it and half of all fixes landed in it | the page's CSS and JavaScript are real files now, inlined by `page_templates.py` at import time | `page/*.js` and `page/*.css`, `tests/test_page_assets.py` for the seam, and `node --check page/*.js` in `tools/verify.py --fast` |
 | F2, there was no agent entry point and the README's file table had drifted to omit 26 tracked files | `AGENTS.md` is the entry point: the map, both verify commands, and a rule table naming each rule's enforcer | `tests/test_agents_map.py` checks the map in both directions, so a module, page asset or operator tool that is not on it fails the suite |
-| F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in this pass. Its last commit was `5b50a33` (2 October 2026) | `git checkout 5b50a33 -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
+| F3, `tools/replay/` was 7,492 lines of stale page copies that supplied 40% of the hits for `priceOf` and `shortlist` | deleted in `ffad8b3` (8 October 2026) | `git checkout ffad8b3^ -- tools/replay` reads it back. Nothing in the build, the tests or the release referenced it, and `tools/test_replay_driver.py` went with it |
 | F4, the CI rebuild fingerprint was a hand-kept three-file list, written twice, and eight of the last 150 commits had changed only unlisted inputs | one script hashes every build input and both workflow steps call it | `tools/build_inputs.py`, held by `tools/test_build_inputs.py`, which fails on a transitively imported module that is not covered |
 | F5, there was no single verify command, and the browser suite existed only as 115 lines of bash inside the workflow | `tools/verify.py` with `--fast`, `--full`, `--browser` and `--all`, written in Python so a Windows checkout runs it, called from CI before the feeds are downloaded | `tools/verify.py` itself; `--full` adds the two feed-scale tests its docstring names (and, since 15 October 2026, the type check), and `tests/test_atoc_fares.py` shares its fixture through `setUpClass` |
 | F6, the two hot test files were the biggest in the repository | the Python half moved out by feature seam over the fixture in `tests/page_harness.py`, and the JavaScript half was split on 11 October 2026 | `tests/test_page_runner.py`, `tests/test_page_caches.py`, `tests/test_page_output.py` and `tests/test_page_gates.py`; and the browser suite is one module per route and section under `tests/browser/`, with `tests/browser_test.cjs` as the entry point. **Landed 14 October 2026:** those 163 methods are one class per subject over `PageTestCase` in `tests/page_harness.py` -- `DemoPageTest` keeps 52, and `tests/test_build_fares.py` (43), `tests/test_build_provenance.py` (33), `tests/test_build_chooser.py` (19) and `tests/test_build_links.py` (16) took the rest -- the same 180 tests with 179 of their 180 names unchanged (the contact test is rewritten, because route audit item [15] landed in the same pass), and `python -m unittest tests.test_build_demo_page tests.test_build_fares tests.test_build_provenance tests.test_build_chooser tests.test_build_links` green on the 180 in 28 s (14 October 2026) |
@@ -125,9 +125,10 @@ The audit file was removed on 16 October 2026, when its last two items were
 settled: [20] and [21], the notices on the routes that show no fare and the build
 check for them, are the settled-table entry above. Twenty of its twenty-two items
 are implemented, each held by the commit that carries it
-(`git log --grep="audit item"`); the group-to-commit mapping for the first twelve
-is in `1ecd719`, and its items [3], [4], [6], [10], [16], [18] and [22] are also
-closed by the 10 October 2026 work above. Its detector's one finding,
+(`git log --grep="audit item"`); the group-to-commit mapping is in `ff84c8b`
+(10 October 2026, `docs/audits/2026-10-09-impeccable-route-audit.md`), which
+names a commit beside twelve of its items, and its items [3], [4], [6], [10],
+[16], [18] and [22] are also closed by the 10 October 2026 work above. Its detector's one finding,
 `cramped-padding` on the station slot, is under "Rejected designs, with the
 reason".
 
@@ -270,7 +271,8 @@ a 390px row is 111px over two lines rather than 275px over six.
 `docs/audits/2026-10-19-impeccable-distill.md` was removed on 19 October 2026,
 when all seven of its suggestions landed. The delight and overdrive audits went on
 21 October 2026, merged into `docs/audits/2026-10-21-audit-asks.md`: DL3 is open
-work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8.
+work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8 (measured on
+21 October 2026, with the gate decision still open).
 
 The passes were read on `_demo_site`, built 19 October 2026 for service date
 5 October 2026: 17 destinations, a 23-row page of two ticket types, both
@@ -563,7 +565,15 @@ in the file that measured it and not in a second retelling.
 | A whole-network build holding the national timetable for its whole life, P1, superseded 12 October 2026 | `TimetableDb.focused`, the on-disk `SliceIndex` and `--timetable-index`: 3 min 44 s for a two-station build, against the 24 minutes that wrote no page | the figures are in `docs/build-performance-findings.md`; `tools/build_timetable_index.py --all-origins` refuses without `--max-bytes` |
 | The fares declaration cycle forcing two late imports, P3 | ADR-0070: 103 declarations moved to `atoc_fare_declarations.py`, and both `# noqa: E402` deleted rather than moved | `python -c "import atoc_fares, atoc_fares_loader, atoc_fare_declarations"` and the three fares suites |
 | The comment audit's two findings and its suppression census | the checks that replaced the count: `tests/test_suppressions.py` and `tools/check_types.py` (ADR-0072) | six suppressions remain, each naming its cause on its own line or above it; 16 `# type: ignore` comments are held by the type ratchet |
-| The journey times dropped from the release, and the source that brings them back | ADR-0073 and the wiring of 16 October 2026: `schedule_download.py`, the clearance gate's `TIMETABLE_GLOB`, and a fetch in `build`, `shard` and `assemble` | the first real run is open work O1, and the two stale licence readings it left behind are O17 |
+| The journey times dropped from the release, and the source that brings them back | ADR-0073 and the wiring of 16 October 2026: `schedule_download.py`, the clearance gate's `TIMETABLE_GLOB`, and a fetch in `build`, `shard` and `assemble` | the first real run is open work O1; the stale licence reading it left behind was O17, corrected on 21 October 2026 against the clearance the owner gave on 16 October 2026 |
+
+### What the 21 October 2026 pass closed
+
+| Item | Closed by | Held by |
+|---|---|---|
+| **O2**, a station page's 354 KB had never been re-measured, and nobody had decided whether the payload was the thing to split | a real Grantham page built from the local feeds: **397 KB of HTML, 56 KB of it gzip**, 800 fare rows; the ticket-mode split costed at **10 KB gzip saved** against a **150 ms** round trip, with the default view still needing all three lists | `node tools/measure_station_paint.cjs _real_site` and "A real-feed station page's bytes" in `docs/build-performance-findings.md`; the default view's dependence on the three lists is `page/station/ticket-modes.js` |
+| **O17**, six licence sentences still described a prices-only release | the owner's cleared reading of 16 October 2026 (`licences/release-clearance.md`, NWR Schedule), which the six sentences were corrected against in `docs/publish-checklist.md` and `docs/dtd-licensing-and-data-access.md` | `tools/check_release_clearance.py` for the clearance; the prose is held by `grep prices-only docs`, whose two remaining hits describe a capability (the builder's prices-only page) and a hypothetical (reverting the release) |
+| **O18**, `docs/build-performance-findings.md` was a rule with no enforcer | read, prototyped and refused, with the census and the prototype's failure under "Structural ideas the reviews weighed and refused" | nothing shipped, deliberately |
 
 ## Rejected designs, with the reason
 
@@ -624,6 +634,19 @@ re-deriving it.
   (14 October 2026). Those comments are the "why" this repository asks for, and a
   parametrized id cannot carry the paragraph that names the real-feed shape a
   case came from.
+- **A check that holds every documented figure to the one place it was measured**
+  (O18, 21 October 2026). The cheapest enforceable rule was prototyped, and it
+  is the one an ADR would have to state: a paragraph in a living document under
+  `docs/` that carries a number with a unit must also carry a date or a citation
+  of `docs/build-performance-findings.md`. Run over those documents it failed
+  **21 of the 44 paragraphs** that carry a figure, and the failures are not
+  mistakes: the **800 MB** budget is a setting, a withdrawn **2.2 GB**
+  projection is a record, and a settled finding's **205px** gap is a measurement
+  whose date sits in the section around it. Making those pass needs a list of exceptions on the day it lands, which is the
+  gate this item was filed to avoid. It would be worth building once the figures
+  are structured, meaning a registry the prose cites by name and a marker on each
+  quote, and even then it sees only the quotes somebody marked. Re-open it if a
+  figure drifts a third time, or if the prose is ever generated from a source.
 
 ### What the delight and overdrive passes refused
 

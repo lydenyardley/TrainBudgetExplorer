@@ -15,7 +15,9 @@ what is left.
 
 Every other finding in those four files is closed, and is a row in
 `docs/settled-work.md`. The coverage table below is the proof that nothing fell
-between the two files.
+between the two files. Two of the ten asks moved on 21 October 2026: **ask 1**
+was measured and its split refused, and **ask 8** was measured with its gate
+decision left to O8. Their sections keep the measurements and say so.
 
 ## Coverage
 
@@ -26,7 +28,7 @@ between the two files.
 | 14 October 2026 engineering, 3 | de-flake the cache-tidying test | settled, `tests/test_page_caches.FaresCacheTest` |
 | 14 October 2026 engineering, 4 | a type checker in CI | settled, ADR-0072 and `tools/check_types.py` |
 | 14 October 2026 engineering, 5 | declare the Python the app runs on | settled, `.python-version` and `README.md` |
-| 14 October 2026 engineering, 6 | decide whether a 354 KB page is the intended payload | **ask 1**, O2 |
+| 14 October 2026 engineering, 6 | decide whether a 354 KB page is the intended payload | settled 21 October 2026: the real page was measured at 397 KB and the split costed, in `docs/build-performance-findings.md` |
 | 14 October 2026 engineering, 7 | kill the tools' path dance | settled, `python -m tools.<name>` everywhere |
 | 14 October 2026 engineering, 8 | make the suppression census a check | settled, `tests/test_suppressions.py` |
 | 14 October 2026 engineering, 9 | correct the documented runtimes | settled, `AGENTS.md` and the findings file |
@@ -43,13 +45,13 @@ between the two files.
 | 19 October overdrive, OV2, OV6, OV8, OV9 | the next-place line, one document, the interaction budget, the fallbacks | settled, 19 October 2026 |
 | 19 October overdrive, OV4 | the budget rail | settled, 20 October 2026 |
 | 19 October overdrive, OV1 | draw the fare horizon on the track | **ask 7**, O5 |
-| 19 October overdrive, OV3 | keep the drag at 60fps on a mid-range phone | **ask 8**, O8 |
+| 19 October overdrive, OV3 | keep the drag at 60fps on a mid-range phone | measured 21 October 2026; **ask 8**, O8 holds the gate decision |
 | 19 October overdrive, OV5 | the dock under the rail | **ask 9**, O4 |
 | 19 October overdrive, OV7 | morph the chosen station | **ask 10**, O6 |
 
 ## The ten asks
 
-### Ask 1 -- [P2] Decide whether a 354 KB page is the intended payload (14 October 2026, item 6, tracks O2)
+### Ask 1 -- [P2] Decide whether a 354 KB page is the intended payload (14 October 2026, item 6, settled)
 
 Measured on a fresh real-feed build served from `127.0.0.1:8899`: a station page is
 **354 KB raw, 53 KB gzip**, of which the route's CSS is 54 KB (17 KB gzip) and its
@@ -57,9 +59,12 @@ script 149 KB (45 KB gzip); the chooser and privacy pages are 28 KB and 26 KB. T
 800 MB site budget is not the constraint -- 2,712 such pages are -- so this is
 per-page parse and paint on a phone.
 
-Before changing anything, measure: split the payload per ticket mode and time first
-paint on a 4x-throttled connection, then decide whether the split earns its
-complexity (ADR-0032 wants the plan written first).
+**Settled 21 October 2026.** The page was measured again on a real build (397 KB
+of HTML, 56 KB gzip, plus 21 KB gzip of stylesheet and 60 KB gzip of script), the
+first paint was timed on a throttled connection (720 to 865 ms, a fare on screen
+at 1.25 to 1.37 s), and the ticket-mode split was costed at 10 KB gzip saved
+against a round trip of 150 ms. The split was refused, and the figures are in
+`docs/build-performance-findings.md` under "A real-feed station page's bytes".
 
 ### Ask 2 -- [P2] The phone has no fold budget, and at 320x640 it has no answer above it (S5, tracks O7)
 
@@ -181,17 +186,20 @@ with reduced motion the ticks still appear; without the ticks the drag is blind
 again. And the ticks must read as a shape at the ceiling the page actually opens on,
 which the left-fifth smear above says they do not yet.
 
-### Ask 8 -- [P3] Keep the drag at 60fps on a mid-range phone (OV3, tracks O8)
+### Ask 8 -- [P3] Keep the drag at 60fps on a mid-range phone (OV3, measured 21 October 2026)
 
-**Decision needed:** whether to profile on a real device, which the repository has
-not done. The desktop figure is 7.4ms against a 50ms budget; a phone is a different
-machine, and ADR-0032 wants the machine named.
+**Measured.** The drag's re-render costs **46, 57 and 79 ms** across three runs at
+a 4x CPU slowdown, and **84, 94 and 142 ms** at 6x, against the 50 ms gate, on the
+real Grantham page at 390x844. The desktop figure the gate was written against is
+7.4 ms, and this page's own list renders in 8.3 to 9.6 ms unthrottled. No handset
+was used; the machine is a slowed CPU and the findings file says so.
 
-**The shape.** One `requestAnimationFrame` per burst of input events, so the count
-line and the next-place line update once per frame; no layout reads inside the
-handler beyond the one the count line already does; measure the long tasks on the
-interaction. If the phone figure is under the budget, record it and close this; if
-not, coalesce.
+**The coalescing this ask named is already shipped** (`queueBudgetFrame`, 19
+October 2026), so what is left is the cost of the single render it schedules.
+
+**Decision still needed:** whether the 50 ms gate is a desktop budget or a phone
+one. If it is a phone budget, the render has to get cheaper; if it is a desktop
+budget, the figure is recorded and O8 closes.
 
 ### Ask 9 -- [P2] The dock under the rail (OV5, tracks O4)
 

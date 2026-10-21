@@ -19,18 +19,25 @@ An item leaves this file when it is done, and it leaves by naming the commit and
 the test that hold it, or by naming the ADR where it was a decision rather than a
 fix. Nothing leaves on the strength of having been discussed.
 
-## The twenty items
+Three items left on 21 October 2026, with the measurement and the reading that
+closed them recorded in `docs/settled-work.md`: **O2** (a real page was measured
+and the ticket-mode split was costed against it), **O17** (the six licence
+sentences were corrected against the clearance the owner gave on 16 October 2026)
+and **O18** (the enforcer was designed, prototyped and refused). Their numbers are
+retired rather than reused, because a number is what a commit or a comment cites
+and renumbering would make every one of those citations point at a different item.
+
+## The seventeen items
 
 | # | Item | Kind | Severity |
 |---|---|---|---|
-| O1 | The release's bytes are an extrapolation, and the run that would print them stopped before building | measurement, then a settings decision | P2 |
-| O2 | A station page is 354 KB, and nobody has decided whether that is the payload | measurement, then a decision | P2 |
+| O1 | The release's bytes may be over the budget, and the run that would print them stopped before building | measurement, then a settings decision | P1 for the release |
 | O3 | The shortlist dock has no total (DL3) | decision | P2 |
-| O4 | The dock and the budget rail are pinned at once (OV5) | measurement, then a decision | P2 |
+| O4 | The dock and the budget rail are pinned at once (OV5) | decision, measured | P2 |
 | O5 | The fare horizon on the budget track (OV1, DL6) | decision | P2 for OV1, P3 for DL6 |
 | O6 | The chosen station does not morph into the heading (OV7) | decision | P3 |
 | O7 | The phone has no fold budget (S5) | decision | P2 |
-| O8 | The drag has not been profiled on a phone (OV3) | measurement | P3 |
+| O8 | The phone's drag straddles the 50 ms gate (OV3) | decision, measured | P3 |
 | O9 | The opened refinements panel leaves a 160px void | code | P3 |
 | O10 | The heading's budget field is 37x36px against a 44px promise | decision | P3 |
 | O11 | Provenance and approximation are one generic disclaimer (S35) | code, decided | P3 |
@@ -39,23 +46,24 @@ fix. Nothing leaves on the strength of having been discussed.
 | O14 | Date-specific schedules are not a product mode (S24) | decision | P2 |
 | O15 | Bank holidays and service exceptions are not inputs (S25) | decision, downstream of O14 | P3 |
 | O16 | The site has no public name (S40) | decision | P3 |
-| O17 | Six licence sentences still describe a prices-only release | reading | P2 |
-| O18 | `docs/build-performance-findings.md` is a rule with no enforcer | design | P3 |
 | O19 | A release costs twelve runners times a 150-minute bound | decision | P2 |
 | O20 | The stop rule's own review was due on 21 October 2026 (S43, S44) | person | P1 for the project |
 
-Six want a measurement or a reading before they are a change (O1, O2, O4, O8,
-O17, O18). Three are code whose decision is already taken (O9, O11, O12). Eleven
-wait on the owner's answer (O3, O5, O6, O7, O10, O13, O14, O15, O16, O19, O20).
+One wants a run this machine cannot give it (O1). Three are code whose decision
+is already taken, and each changes what a reader sees (O9, O11, O12). Thirteen
+wait on the owner's answer (O3, O4, O5, O6, O7, O8, O10, O13, O14, O15, O16,
+O19, O20), and two of those now wait with their measurement in hand (O4 and O8).
 None of them is blocked on a tool.
 
 ---
 
-## O1 -- The release's bytes are an extrapolation, and the run that would print them stopped before building
+## O1 -- The release's bytes may be over the budget, and the run that would print them stopped before building
 
 **Kind:** measurement, then a settings decision. **Raised:** 12 October 2026 as a
-P1 projection; lowered to P2 on 21 October 2026. **Route:** the release build's
-own output, `tools/page_bytes.py`'s gate, and this file.
+P1 projection and lowered to P2 once ADR-0069's re-encoding made 536 MB look
+comfortable; raised back to **P1 for the release on 21 October 2026**, because the
+four pages measured that day suggest the budget may now be breached. **Route:**
+the release build's own output, `tools/page_bytes.py`'s gate, and this file.
 
 **What the 2.2 GB was, and what replaced it.** The projection came from a
 24-station sample measured 12 October 2026, before ADR-0069 changed the payload's
@@ -71,6 +79,26 @@ refuses an over-budget site, so a release cannot publish over budget; what no ru
 has printed is the number it would print, because the two runs since 19 October
 stopped earlier than that.
 
+**21 October 2026: four real pages, measured, and the bracket they leave.** Four
+station pages were built from the local feeds and measured the same afternoon:
+**Grantham 397 KB, Nottingham 449 KB, Linlithgow 283 KB, Ashwell & Morden
+345 KB** of HTML, each with 41 to 63 KB gzip (the table and the command are in
+`docs/build-performance-findings.md`). They were built from the DTD timetable,
+because the build that reads the release's NWR CIF was killed while loading on
+this machine, so the bracket is close rather than exact. They average **369 KB**, and at that average
+2,707 pages are **975 MB against the 800 MB budget**. The 536 MB projection in the
+paragraph above rests on a **198 KB** average measured on 12 October, before times
+returned to the page on 16 October, and none of these four pages is near it,
+including one from a small station. The budget holds only if the network's
+average page is under **302 KB**, and nothing measured here shows that it is.
+
+A whole-network spread build that would replace the extrapolation was attempted
+the same day and was killed while building its pages, on a machine with **5.8 GB
+free against the 6.4 GB the two feeds want**; it wrote its shared assets and no
+station page. So this is not a curiosity about a number any more: if the average
+is where these four pages are, **the release's own byte gate will refuse it**,
+and the only way to know is the run.
+
 **The earlier stop.** The push run of 19 October 2026 halted on a missing
 `SCHEDULE_URL` repository variable, and the 20 October run's two-byte probe
 answered that the fares feed's credential pair is refused by the CIF endpoint with
@@ -82,37 +110,6 @@ endpoint accepts.
 `python -m tools.page_bytes --site _site` prints the assembled site's bytes whether
 it passes or refuses, and that figure replaces the extrapolation. No code change
 is on this path.
-
----
-
-## O2 -- A station page is 354 KB, and nobody has decided whether that is the payload
-
-**Kind:** measurement, then a decision. **Raised:** item 6 of the 14 October 2026
-engineering audit, merged into `docs/audits/2026-10-21-audit-asks.md` as ask 1.
-**Route:** the station page's payload and its shared script.
-
-**Evidence, measured 14 October 2026** on a fresh real-feed build served from
-`127.0.0.1:8899`: a station page is **354 KB raw, 53 KB gzip**, of which the
-route's own CSS is 54 KB (17 KB gzip) and its script 149 KB (45 KB gzip); the
-chooser is 28 KB and the privacy page 26 KB. The 800 MB site budget is not the
-constraint here -- 2,712 such pages are -- so this is per-page parse and paint on a
-phone.
-
-**18 October 2026: the instrument was repaired, the figure was not taken.** The
-audit's own measurement stood, but `tools/page_bytes` had been reporting 0 KB of
-payload on every page, because it searched for a marker the renderer had stopped
-writing. Both that and the empty-site case are failures now, and the split it
-reports for the demo page is in `docs/build-performance-findings.md`. The
-real-feed figure is still a real-feed build away.
-
-**What would close it: a measurement, then a decision, in that order.** Split the
-payload by ticket mode, time first paint on a 4x-throttled connection, and compare
-that against the cost of the split -- a page whose payload becomes three fetches
-learns a waterfall and can paint its list no sooner (ADR-0032 wants the plan
-written before the figure is quoted). If the script or the CSS is the half that
-matters, the cheaper change is a smaller shared asset rather than a split payload,
-and `page/station/*` is already one file per panel, so the split is a build
-decision and not a rewrite.
 
 ---
 
@@ -132,21 +129,31 @@ say "from" or omit it rather than guess.
 
 ## O4 -- The dock and the budget rail are pinned at once (OV5)
 
-**Kind:** measurement, then a decision. **Raised:** OV5 of the 19 October 2026
-overdrive pass, ask 9 of the merged list. **Route:** the station page's two sticky
-surfaces.
+**Kind:** decision, measured. **Raised:** OV5 of the 19 October 2026 overdrive pass,
+ask 9 of the merged list. **Route:** the station page's two sticky surfaces.
 
 The rail shipped on 20 October 2026 and took the table header's sticky offset with
 it; the shortlist dock's own offset was not part of that. A page with a shortlist,
-scrolled far enough, therefore shows the rail at the top and the dock at the foot
-with about 700px between them at 390, and the rail is up exactly when the reader is
-deep in the list and the shortlist matters.
+scrolled far enough, shows the rail at the top and the dock at the foot, and the
+rail is up exactly when the reader is deep in the list and the shortlist matters.
 
-**What proves it.** At 390 with two places shortlisted and the page scrolled to the
-last row: how many rows are visible between the rail and the dock, and whether the
-dock's own Copy is reachable without covering the row above it. The dock's height
-depends on how many places are in it, which is why this is a measurement before it
-is a change.
+**Measured 21 October 2026** on the real Grantham page at 390x844, with the page
+scrolled until the last row sits just clear of the dock (`node
+tools/measure_station_phone.cjs _real_site`, figures in
+`docs/build-performance-findings.md`):
+
+| Places held | Between the rail and the dock | Rows fully visible there | Last row | The dock's Copy |
+|---|---|---|---|---|
+| 2 | **647 px** | **4** | ends exactly at the dock's top | 44 px tall, inside the viewport, topmost at its centre |
+| 4 | **571 px** | **4** | ends exactly at the dock's top | 44 px tall, inside the viewport, topmost at its centre |
+
+So neither strip covers a row or a control: the page's body padding buys the last
+row its clear space, and the dock's Copy is reachable with the rail up. What the
+reader loses is four rows of comparison in the middle of the screen, at both
+dock heights, because the rail takes 56 px and the dock 141 or 217. The decision
+this still holds is whether four rows, with both strips up, is enough for the
+comparison the dock exists for -- or whether the rail should stand down while a
+shortlist is held, or the dock collapse to its head until it is wanted.
 
 ---
 
@@ -199,16 +206,27 @@ banner to be one line there. The check goes beside the 1366 measurement in
 
 ---
 
-## O8 -- The drag has not been profiled on a phone (OV3)
+## O8 -- The phone's drag straddles the 50 ms gate (OV3)
 
-**Kind:** measurement. **Raised:** OV3 of the overdrive pass. **Route:** the
-station page's budget drag.
+**Kind:** decision, measured. **Raised:** OV3 of the overdrive pass. **Route:**
+the station page's budget drag, and the gate in
+`tests/browser/station-layout.cjs`.
 
-The desktop figure is **7.4ms** against a 50ms gate, measured 19 October 2026 and
-recorded in `docs/build-performance-findings.md`. A mid-range phone is a different
-machine, and ADR-0032 wants the machine named beside the figure. If the phone is
-inside the budget, the figure is recorded and this closes; if not, the fix is one
-`requestAnimationFrame` per burst of input events.
+The measurement this item was waiting for was taken on 21 October 2026, on the
+real Grantham page at 390x844, over three runs (`node
+tools/measure_station_phone.cjs _real_site`; figures in
+`docs/build-performance-findings.md`). At a 4x CPU slowdown the budget re-render
+medians **46, 57 and 79 ms** on the page's own list, against the **50 ms** gate;
+at 6x it is **84, 94 and 142 ms**. The desktop figure the gate was written
+against is **7.4 ms**, and this page's own list renders in **8.3 to 9.6 ms**
+unthrottled.
+
+The fix the item named -- one render per frame instead of one per input event --
+is already shipped (`queueBudgetFrame`, 19 October 2026), so the cost left is
+the single render. The decision this now holds is whether the 50 ms gate is a
+desktop budget or a phone one: if it is a phone budget, the page is over it on a
+slowed CPU and the render has to get cheaper; if it is a desktop budget, the
+figure is recorded and the gate says what it always said.
 
 ---
 
@@ -324,44 +342,6 @@ presented as a settled brand. Nothing is named in the code until one is chosen.
 
 ---
 
-## O17 -- Six licence sentences still describe a prices-only release
-
-**Kind:** reading, and the owner's. **Raised:** the NWR Schedule work of 16 October
-2026. **Route:** two documents' licence prose.
-
-`docs/publish-checklist.md`'s licence section carries the stale shape in three
-places: the DTD terms paragraph's "how a prices-only page meets them" and "that is
-why the release is prices-only", the Darwin bullet's "the published pages carry
-prices only", and the Darwin-consistency bullet's "on a prices-only page".
-`docs/dtd-licensing-and-data-access.md` carries it in three more: "which is why the
-release is prices-only", "the release this project ships is prices-only", and "what
-the prices-only release does today". Each is an assertion about this release rather
-than about a hypothetical page, and each is a licence reading the owner holds. What
-is owed is a re-reading, not a rewrite by whoever notices.
-
----
-
-## O18 -- `docs/build-performance-findings.md` is a rule with no enforcer
-
-**Kind:** design. **Raised:** 18 October 2026, when `AGENTS.md`'s rule table gained
-a column for what fails and this rule could not fill it. **Route:** the rule table,
-and every Markdown file that quotes a figure.
-
-A document that quotes a figure in its own words, or a comment that dates a
-measurement it took from elsewhere, is caught by a person or not at all. What would
-close it is a check that reads every figure this repository states about itself and
-holds it to the one place it was measured -- which needs the figures to be findable
-in the prose, and nothing marks them today.
-
-**The first version, and its cost.** Fail on a documented number that appears in
-two files with different values, spelled as a plain integer or one of the money and
-duration shapes the findings file uses. The false positives are dates, prices in
-worked examples and counts of tests, so the allowlist is the work rather than the
-reading. That is why this is a design item: a check whose allowlist is a list of
-exceptions on the day it lands is the rule-with-no-enforcer again, wearing a gate.
-
----
-
 ## O19 -- A release costs twelve runners times a 150-minute bound
 
 **Kind:** decision. **Raised:** A1 of the 20 October 2026 poteto audit, whose
@@ -415,8 +395,8 @@ The four reviews that were still open on 19 October 2026 were merged into
 `docs/audits/2026-10-21-audit-asks.md` on 21 October 2026: the engineering audit of
 14 October, the critique, delight and overdrive passes of 19 October. The merged
 file keeps their measurements and the coverage table that says, for every finding,
-whether it is settled in `docs/settled-work.md` or open as one of the twenty items
-above. Removing the four files is the rule this directory keeps -- a review with
+whether it is settled in `docs/settled-work.md` or open as one of the seventeen
+items above. Removing the four files is the rule this directory keeps -- a review with
 nothing open does not keep a file -- applied one level up: four files had ten open
 asks between them, and the asks now live in one place.
 
@@ -429,10 +409,10 @@ asks between them, and the asks now live in one place.
 - `docs/audits/2026-10-14-impeccable-critique.md` — removed on 19 October 2026; its
   eight recommendations are settled in `docs/settled-work.md`.
 - `docs/audits/2026-09-27-impeccable-critique.md`, `docs/audits/2026-09-27-reenvision.md`,
-  `docs/audits/2026-09-29-real-grantham-page.md` — removed in `826dfeb`, the commit
-  that created this file.
-- `docs/audits/2026-09-29-promise-gap-audit.md` — filed away in `d33b762`.
-- `docs/audits/2026-09-23-poteto-mode-audit.md` — retired in `1ce8741`.
+  `docs/audits/2026-09-29-real-grantham-page.md` — removed on 1 October 2026, in the
+  commit that created this file.
+- `docs/audits/2026-09-29-promise-gap-audit.md` — filed away on 30 September 2026.
+- `docs/audits/2026-09-23-poteto-mode-audit.md` — retired on 23 September 2026.
 - `docs/audits/2026-10-10-test-suite-audit.md`, `docs/audits/2026-10-08-agent-efficiency-architecture.md`,
   `docs/audits/2026-10-10-four-dimension-app-audit.md`,
   `docs/audits/2026-10-12-build-cost-and-data-architecture.md`,

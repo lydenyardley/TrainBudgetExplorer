@@ -905,8 +905,8 @@ folder>` also exited 0, printing `over 0 page(s)`, and that is the invocation
 
 These are the first figures this tool has produced that describe a page, and they
 describe a demo page. The Grantham page here holds 16 destinations where the
-real-feed page holds 334, so this is not the 354 KB figure in
-`docs/open-work.md`, which still needs a real-feed build.
+real-feed page holds 335, so this is not that page's figure; the real-feed page
+was measured on 21 October 2026, further down this file, at 397 KB.
 
 ## The shared station list, deferred: the plan
 
@@ -1254,3 +1254,180 @@ with gzip.open("feeds/timetable-nwr/nwr-schedule.CIF.gz", "rt", encoding="latin-
             calls += 1
 print(kept, calls)
 ```
+
+## A real-feed station page's bytes, 21 October 2026
+
+**Why this was taken.** O2, closed the same day, held a **354 KB** figure from
+14 October 2026, and no page had been re-measured since the route's CSS and
+script became hashed shared assets, while the release itself moved to Network
+Rail's CIF (ADR-0073). O1 needs the same page to reason about the site's bytes.
+This is one page's full split, with three more origins measured beside it below.
+
+**Command.** Built on this machine on 21 October 2026 from the feeds downloaded
+on 24 September 2026, service date 2026-10-05.
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+    --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
+    --out _real_site/index.html --workers 1
+python -m tools.page_bytes _real_site/from/grantham/index.html
+```
+
+**Figure.** `tools/page_bytes` reports **397 KB total, 0 KB CSS, 3 KB script,
+362 KB payload, 800 rows**. The CSS reads 0 KB because the station route's
+stylesheet is a separate hashed file, which that tool measures only where a page
+inlines one. Measured again with gzip at level 9, which is what GitHub Pages
+sends:
+
+| Part | Raw | Gzip |
+| --- | --- | --- |
+| the page's HTML, payload included | **406,943 B (397 KB)** | **57,637 B (56 KB)** |
+| the route's stylesheet, one copy for every station page | 68,383 B (67 KB) | 21,251 B (21 KB) |
+| the route's script, one copy for every station page | 200,934 B (196 KB) | 61,226 B (60 KB) |
+| the payload inside the HTML | 371,643 B (363 KB) | 45,524 B (44 KB) |
+| the payload's `places` list, shared by every ticket mode | 146,401 B (143 KB) | 14,566 B (14 KB) |
+
+The payload holds **800 fare rows**: 328 returns, 335 singles and 137 anytime
+returns, plus one `places` row for each of 335 destinations. A reader's cold
+visit to this page therefore transfers **about 660 KB raw, 137 KB gzip**, and a
+visit to any second station page re-uses the two hashed assets and transfers the
+HTML alone.
+
+**Which timetable these pages carry.** They were built from the DTD timetable on
+this machine (`feeds/timetable`, downloaded 24 September 2026), not from the NWR
+CIF the release reads. An attempt to build one from
+`feeds/timetable-nwr/nwr-schedule.CIF.gz` was killed while loading on this
+machine, before it wrote a page. The two feeds are close but not the same: the
+CIF carries **488,796 passenger schedules** against the DTD feed's **419,589**,
+17% more, and 4% fewer calling points (the counts are in "The shard build
+against its 150-minute bound" above). So this is the best local bracket, not the
+release's own feed, and the figure O1 waits for is still the assembled site's.
+
+**Three more origins, same command, same day.** The same build was run for
+Nottingham, Linlithgow and Ashwell & Morden (the command above with `--origin
+NOT`, `LIN` and `AWM`, each `--out` naming its own folder), and all four pages
+measured with the same tool and the same gzip:
+
+| Origin | HTML raw | HTML gzip | Payload | Fare rows |
+| --- | --- | --- | --- | --- |
+| Grantham | 397 KB | 56 KB | 362 KB | 800 |
+| Nottingham | 449 KB | 63 KB | 414 KB | 949 |
+| Linlithgow | 283 KB | 41 KB | 249 KB | 942 |
+| Ashwell & Morden | 345 KB | 51 KB | 311 KB | 790 |
+
+**What it does not settle, and what it now suggests.** The site's total, which O1
+is about. Four pages are not the network, but they are a worse bracket than the
+one O1 was written on. The shard-1 average of **198 KB a page** behind the 536 MB
+projection was measured on 12 October 2026, before times returned to the page on
+16 October 2026; these four pages carry times, and they average **369 KB**, from
+283 to 449. At that average 2,707 pages are **975 MB against the 800 MB budget**,
+and the budget would hold only if the network's average page is under **302 KB**.
+Ashwell & Morden is a small station and is still 345 KB, so the small end of the
+network is not small enough for the average to be waved away. A 4-origin spread build
+(`build_stations.py GRA NOT LIN EDB`) was also attempted on this machine and was
+killed while building its pages, after the log had warned that **5.8 GB was free
+against the 6.4 GB the two feeds want**; it wrote its shared assets and no page.
+The figure that settles this is the assemble job's own `python -m
+tools.page_bytes --site _site`, and it may refuse the release rather than
+describe it.
+
+## A station page's first paint on a slow phone, 21 October 2026
+
+**Why this was taken.** The same O2 asked for a first paint on a throttled
+connection before anyone decided whether the payload is the thing to split.
+
+**Method.** `node tools/measure_station_paint.cjs _real_site`, which serves the
+built page gzipped the way GitHub Pages does, in a 390x844 mobile context, and
+loads it five times with Lighthouse's mobile profile: **1.6 Mbps down, 750 kbps
+up, 150 ms RTT and a 4x CPU slowdown**. The unthrottled control is three runs of
+the same page. The first row is recorded by polling for a row with a height, not
+by a load event.
+
+**Figure.** Three runs of the same command on the same afternoon, each the median
+of five loads: **FCP 864, 748 and 724 ms**, first row **1,374, 1,253 and
+1,249 ms**. The honest shape of the figure is therefore **720 to 865 ms to first
+paint and 1.25 to 1.37 s to a fare on screen**, and the spread is the machine's
+own load rather than a property of the page. The unthrottled control is 88 to
+116 ms and a first row at 123 to 161 ms, which is how much of the figure is the
+connection rather than the page.
+
+**The split, costed with measured bytes.** The payload's three fare lists are
+62,631 B (7,506 B gzip) of returns, 64,444 B (7,916 B) of singles and 22,826 B
+(3,209 B) of anytime returns; the 146,401 B of places is shared by all three and
+cannot move with a mode. Dropping the single and anytime lists from the first
+response saves **10,415 B gzip, 52 ms at 1.6 Mbps**. Fetching either list needs
+**at least one round trip, 150 ms**, and the page's default view -- the cheapest
+fare of any ticket type -- is composed from all three lists, so the first paint
+would need all three either way. The split is therefore **about 100 ms slower to
+the first fare than the page it replaces**, before counting a fourth
+precomputed list if the default view is to avoid the waterfall. That is what
+decided O2: the payload is the page's own data, and the ticket-mode split is not
+worth building.
+
+## The two pinned surfaces at the last row, 21 October 2026
+
+**Plan.** O4 asked how much of the screen the budget rail and the shortlist dock
+take when both are pinned, and whether the dock's own Copy can be reached
+without covering the row above it. Measured rather than reasoned, because the
+dock's height is whatever its rows need and the rail's offset moved on
+20 October 2026.
+
+**Method.** `node tools/measure_station_phone.cjs _real_site`, at 390x844 on the
+real page, two and then four places held, with the page scrolled until the last
+row sits just clear of the dock -- the state in which both strips matter. The
+rail is shown by an IntersectionObserver, so the run waits for it rather than
+reading `hidden` on the next statement; the first version of this tool did the
+latter and reported a rail that was already up as hidden.
+
+**Figure.**
+
+| Places held | Rail bottom | Dock top, height | Between them | Rows fully visible | Last row | Copy |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2 | 56 px | 703 px, 141 px tall | **647 px** | **4** | 592-703 px, clears the dock | 712 px, 44 px tall, topmost at its centre |
+| 4 | 56 px | 627 px, 217 px tall | **571 px** | **4** | 516-627 px, clears the dock | 636 px, 44 px tall, topmost at its centre |
+
+**What it means.** Both strips can be pinned at once without hiding a row or a
+control: the last row ends exactly where the dock begins, the page's own body
+padding is what buys that, and the dock's Copy sits inside the 844 px viewport
+with 44 px of target. The cost is the middle of the screen -- 647 px, four rows
+-- and it is a cost a reader pays only while they have places held and are deep
+in the list. Whether four rows is enough to compare against is the product
+decision O4 still holds.
+
+## The budget re-render on a phone's CPU, 21 October 2026
+
+**Plan.** O8 asked for the drag's cost with the CPU a phone's, against the 7.4 ms
+desktop figure and the 50 ms gate `tests/browser/station-layout.cjs` holds.
+
+**Method.** `node tools/measure_station_phone.cjs _real_site`, at 390x844, the
+same probe the gate uses: `render()` followed by a forced layout read, seven
+times per run, on the page's own list and on the audit's 101-destination probe.
+The CPU is slowed through CDP at 4x and 6x; **neither is a handset**, and ADR-0032
+wants that said beside the figure.
+
+**Figure.** Three full runs of the tool on the same afternoon, each the median of
+seven:
+
+| CPU | The page's own 328 destinations | The 101-destination probe |
+| --- | --- | --- |
+| no throttle | 8.3 to 9.6 ms | 6.6 to 9.6 ms |
+| 4x slowdown | **46.4, 79.0, 56.6 ms** | 44.0, 85.9, 52.1 ms |
+| 6x slowdown | **84.3, 142.0, 93.9 ms** | 96.9, 128.7, 85.0 ms |
+
+**What it means.** The phone figure straddles the gate rather than sitting on
+one side of it: at 4x the same probe is sometimes inside 50 ms and usually over,
+and at 6x it is over by a wide margin. The run-to-run spread is the machine's own
+load, not a property of the page, which is why the three figures are all here
+rather than the middle one. The first fix O8 named -- one render per frame
+instead of one per input event -- is already shipped (`queueBudgetFrame`,
+19 October 2026), so what is left is the cost of that one render. A decision is
+owed on whether the 50 ms gate is a phone gate or a desktop one; O8 now holds
+that decision and this figure.
+
+## What the real page did not settle, 21 October 2026
+
+O1's own closing figure is the assembled release's bytes, and no run has reached
+the assemble job since 19 October 2026: one push stopped on a missing
+`SCHEDULE_URL` and the next answered HTTP 401 from the CIF endpoint. Nothing in
+this section changes that. What it adds is the page the budget is per, measured
+rather than extrapolated, and the bracket the open item now states.
