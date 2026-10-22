@@ -273,6 +273,11 @@ jobs:
         # one (tools/check_source_credit.py, licences/release-clearance.md).
         run: python -m tools.check_source_credit --site _site
 
+      - name: Check the fares a person checked by hand
+        # tests/known_fares.toml: each fare reported against National Rail is a
+        # permanent check on the page that ships, and a row past 90 days warns.
+        run: python -m tools.check_known_fares --site _site
+
       - name: Test the build
         # The whole suite in the command a developer runs (F5). Coverage has a
         # floor, not a target (audit C5): 79%, a point and a half under the

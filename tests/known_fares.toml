@@ -1,0 +1,65 @@
+# Fares a person checked by hand against the National Rail journey planner.
+#
+# Expected prices only, never feed data, so this file stays inside ADR-0005.
+# tools/check_known_fares.py reads the built page for each row in the release's
+# assemble job and fails when the page shows another price. A row more than 90
+# days old warns: check it again and update seen_on, or delete it if the fare
+# is gone.
+#
+# One row per price the page should show:
+#   origin, destination  CRS codes, as the page's own station index names them
+#   mode                 the page's ticket mode: cheapest, single, return or anytime
+#   adults               1, or 2 for the page's party of two
+#   railcard             the page's card key (2TR, YNG, SRN, ...), or "" for none
+#   pence                the cheapest fare National Rail sold, for everyone travelling
+#   seen_on              the date it was checked
+#   link                 the journey planner search that showed it
+#   report               where the mismatch was reported
+#
+# A new mismatch goes in here and gets the smallest synthetic record that
+# reproduces it in make_synthetic_feed.py (F7). The routine that finds them is
+# .agents/skills/fare-verification/SKILL.md.
+
+[[fare]]
+origin = "GRA"
+destination = "NOT"
+mode = "return"
+adults = 2
+railcard = "2TR"
+pence = 1610  # Off-Peak Day Return, £12.10 each before the card, £8.05 each with it
+seen_on = 2026-09-24
+link = "https://www.nationalrail.co.uk/journey-planner/?type=return&origin=GRA&destination=NOT&adults=2&railcards=2TR%7C1"
+report = "Freebuff #149"
+
+[[fare]]
+origin = "GRA"
+destination = "NOT"
+mode = "anytime"
+adults = 2
+railcard = "2TR"
+pence = 1770  # Anytime Day Return, £13.30 each before the card, £8.85 each with it
+seen_on = 2026-09-24
+link = "https://www.nationalrail.co.uk/journey-planner/?type=return&origin=GRA&destination=NOT&adults=2&railcards=2TR%7C1"
+report = "Freebuff #149"
+
+[[fare]]
+origin = "GRA"
+destination = "SKG"
+mode = "single"
+adults = 1
+railcard = ""
+pence = 870
+seen_on = 2026-09-25
+link = "https://www.nationalrail.co.uk/journey-planner/?type=single&origin=GRA&destination=SKG&adults=1"
+report = "Freebuff #179"
+
+[[fare]]
+origin = "GRA"
+destination = "SKG"
+mode = "single"
+adults = 2
+railcard = "2TR"
+pence = 1270
+seen_on = 2026-10-05
+link = "https://www.nationalrail.co.uk/journey-planner/?type=single&origin=GRA&destination=SKG&leavingType=departing&leavingDate=061026&leavingHour=09&leavingMin=15&adults=2&railcards=2TR%7C1&extraTime=0#O"
+report = "Freebuff #421"
