@@ -610,8 +610,18 @@
        without the time becoming a column of single words, so the ticket takes
        a line of its own, right-aligned where the thumb is. */
     @media (max-width: 24rem) {
-      #rows > tr[data-crs]::after { content: ""; order: 7.5; flex: 0 0 100%; height: 0; }
+      /* The break falls after the change count rather than after the fare, so
+         the third line is the fare kind beside its ticket and the time keeps
+         the second line to itself apart from one short word. It used to break
+         after the fare, and the three facts were then a hair wider than the
+         content: "No service that day", "Unknown" and "Restricted fare"
+         measured 351px of 351 at 375, so the time wrapped to four lines under
+         a font a pixel wider -- Linux's -- and the row measured 158px against
+         the three-line budget (abbey-wood, run 39684806567). A row is not
+         allowed to depend on which glyphs the reader's machine drew. */
+      #rows > tr[data-crs]::after { content: ""; order: 7; flex: 0 0 100%; height: 0; }
       #rows > tr[data-crs] > td[data-label="Time"] { flex: 1 1 auto; }
+      #rows > tr[data-crs] > td[data-label="Fare type"] { order: 8; }
       #rows > tr[data-crs] > td[data-label="Tickets"] { order: 9; }
       /* The ticket already takes its own line here, so the interchange under
          the change count is a fourth line: at 375px in a dated page the row
