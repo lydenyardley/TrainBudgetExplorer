@@ -132,18 +132,19 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
     coverage = report["fare_coverage"]
     print("Fare location coverage")
     print(
-        f"  shared group codes {coverage['groupCodes']}, "
-        f"group-origin flows {coverage['groupOriginFlows']}, "
-        f"stations potentially hidden by groups {coverage['stationsPotentiallyHiddenByGroup']}"
+        f"  fare groups read {coverage['groupCodes']}, "
+        f"group fare flows {coverage['groupFareFlows']}, "
+        f"stations priced only through a group {coverage['stationsPricedOnlyThroughGroup']}, "
+        f"London Terminals flows left unpriced {coverage['unexpandedGroupFareFlows']}"
     )
     print(
         f"  stations with multiple location codes {coverage['stationsWithMultipleLocationCodes']}, "
         f"fare flows with missing locations {coverage['fareFlowsWithMissingLocation']}, "
         f"with no station code {coverage['fareFlowsWithNoStationCode']}"
     )
-    for sample in coverage["sampleStationsPotentiallyHiddenByGroup"][:limit]:
+    for sample in coverage["sampleStationsPricedOnlyThroughGroup"][:limit]:
         print(
-            f"  group {sample['groupNlc']} may cover {sample['crs']} "
+            f"  group {sample['groupNlc']} prices {sample['crs']} "
             f"{sample['name']} ({sample['flowCount']} flows)"
         )
     for sample in coverage["sampleStationsWithMultipleLocationCodes"][:limit]:

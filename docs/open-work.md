@@ -27,7 +27,7 @@ and **O18** (the enforcer was designed, prototyped and refused). Their numbers a
 retired rather than reused, because a number is what a commit or a comment cites
 and renumbering would make every one of those citations point at a different item.
 
-## The seventeen items
+## The nineteen items
 
 | # | Item | Kind | Severity |
 |---|---|---|---|
@@ -48,12 +48,15 @@ and renumbering would make every one of those citations point at a different ite
 | O16 | The site has no public name (S40) | decision | P3 |
 | O19 | A release costs twelve runners times a 150-minute bound | decision | P2 |
 | O20 | The stop rule's own review was due on 21 October 2026 (S43, S44) | person | P1 for the project |
+| O21 | Fares filed under a station cluster are not read | code, with a decision | P2 |
+| O22 | Group fares price seven unsourced stations against a ceiling with two to spare | decision | P1 for the release |
 
 One wants a run this machine cannot give it (O1). Three are code whose decision
 is already taken, and each changes what a reader sees (O9, O11, O12). Thirteen
 wait on the owner's answer (O3, O4, O5, O6, O7, O8, O10, O13, O14, O15, O16,
 O19, O20), and two of those now wait with their measurement in hand (O4 and O8).
-None of them is blocked on a tool.
+None of them is blocked on a tool. O21 and O22 were opened by ADR-0074 on 22
+October 2026, and both wait on the owner.
 
 ---
 
@@ -391,6 +394,37 @@ data with a different approval question attached and a separate licence gate.
 
 The advice in one line is **do not spend the next week on polish before knowing
 whether anyone is using the thing**. It is not a request to build anything.
+
+---
+
+## O21 -- Fares filed under a station cluster are not read
+
+**Kind:** code, with a decision. **Raised:** ADR-0074, 22 October 2026.
+**Route:** `FaresDb.fare_nlcs` and `FaresDb.stations_for_fare_nlc`.
+
+ADR-0074 reads a flow filed under a station's fare group. The `.FSC` file is the
+second way a flow names many stations: on the 24 September 2026 download it holds
+2,472 cluster codes with 43,714 memberships, and a flow from or to a cluster code
+still prices nothing. Each membership carries its own validity dates, and which
+clusters a page can quote honestly is a question to answer before the code. The
+two methods ADR-0074 added are where the answer would go.
+
+---
+
+## O22 -- Group fares price seven unsourced stations against a ceiling with two to spare
+
+**Kind:** decision. **Raised:** ADR-0074, 22 October 2026. **Route:** the
+unsourced-destination gate in `.github/workflows/deploy.yml`.
+
+The release run of 22 October 2026 measured 1,542 unsourced priced destinations
+against a ceiling of 1,544. ADR-0074 newly prices seven stations that have no
+settlement class (Glasgow Queen Street, Glasgow Central low level, Helensburgh
+Central and Upper, Catford Bridge, Dorchester West, Upper Tyndrum), and other
+newly priced destinations may add more, so the first release with it is expected
+to stop at that gate. The choices are to class the stations (Glasgow is a city,
+so two of the seven are a sourcing gap), or to raise the ceiling to the measured
+figure with that reason in the commit. Nothing here loosens the gate; the release
+run is what measures it.
 
 ---
 

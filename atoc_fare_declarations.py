@@ -2518,6 +2518,17 @@ def dtd_flag(value: object) -> bool:
     return str(value or "").strip().upper() in DTD_TRUE_FLAGS
 
 
+# Fare groups a station's fares are not read through (ADR-0074). A location's
+# FARE_GROUP (RSPS5045 4.19.2, field 14) names the group code its group fares
+# are filed under, and a fare to or from the group is valid at every member
+# station. London Terminals (1072) is the one group IDMS 8.2.4 singles out: which
+# of its eighteen terminals a 1072 fare is good for depends on the route, and the
+# feed does not say. A page that priced every terminal at the 1072 fare would
+# claim what the feed does not, so its fares stay where they were before groups
+# were read -- unpriced -- until that question has its own answer.
+UNEXPANDED_FARE_GROUPS = frozenset({"1072"})
+
+
 @dataclass(frozen=True)
 class Location:
     nlc: str

@@ -66,7 +66,9 @@ class FeedAuditTest(unittest.TestCase):
         self.assertEqual(self.report["schedule_dates_from"], "260921")
         self.assertEqual(self.report["schedule_dates_to"], "261211")
 
-    def test_reports_fares_hidden_by_a_shared_group_location(self) -> None:
+    def test_reports_the_stations_a_group_fare_prices(self) -> None:
+        # ADR-0074: a fare filed under a fare group prices every member, and
+        # the audit names the stations that only such a fare reaches.
         with tempfile.TemporaryDirectory() as tmp:
             fares = FaresDb().load_feed(build_synthetic_feed(Path(tmp) / "fares"))
             for nlc, crs, name in (
@@ -90,7 +92,7 @@ class FeedAuditTest(unittest.TestCase):
                 _line(
                     {
                         "record_type": "F",
-                        "origin_nlc": "3000",
+                        "origin_nlc": "GRP1",
                         "destination_nlc": "2000",
                         "route_code": "00000",
                         "flow_id": "0000091",
@@ -116,10 +118,15 @@ class FeedAuditTest(unittest.TestCase):
 
         coverage = report["fare_coverage"]
         self.assertEqual(coverage["groupCodes"], 1)
-        self.assertEqual(coverage["groupOriginFlows"], 1)
+        self.assertEqual(coverage["groupFareFlows"], 1)
+        self.assertEqual(coverage["unexpandedGroupFareFlows"], 0)
         self.assertEqual(
-            {row["crs"] for row in coverage["sampleStationsPotentiallyHiddenByGroup"]},
-            {"KGX"},
+            {row["crs"] for row in coverage["sampleStationsPricedOnlyThroughGroup"]},
+            {"KGX", "LCN"},
+        )
+        self.assertEqual(
+            {row.crs: row.best_pence for row in fares.destinations_within("KGX", 1_000)}.get("NOT"),
+            500,
         )
 
 

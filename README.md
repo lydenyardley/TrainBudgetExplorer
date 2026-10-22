@@ -387,6 +387,7 @@ checked:
 | `feeds_cli.py` | Shared feed-argument parsing and loading for the CLI tools |
 | `tests/browser_test.cjs` | Playwright test entry point: drives the generated page in a real browser, over the modules in `tests/browser/` |
 | `tests/test_fare_shapes.py` | Route codes, shared station codes, and the skip tally |
+| `tests/test_fare_groups.py` | Fares filed under a station group: both members priced, own fares first, the exclusions and London Terminals (ADR-0074) |
 | `tests/test_damaged_feed.py` | Damaged-input tests |
 | `tests/test_sanity_report.py` | Count-report tests |
 | `tests/test_retailer.py` | Ticket-link tests |

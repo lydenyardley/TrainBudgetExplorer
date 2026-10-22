@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from atoc_fare_declarations import (
+    UNEXPANDED_FARE_GROUPS,
     DESTINATION_FACET_READERS,
     DESTINATION_FACET_SOURCES,
     FLOW_F_SLICES,
@@ -179,7 +180,9 @@ class FaresLoader:
             location = self.locations_by_crs.get(origin)
             if location is None:
                 continue
-            origin_nlcs = self.nlcs_by_crs.get(origin, {location.nlc})
+            # Its group's code too, or a group fare (ADR-0074) would be priced
+            # by a full load and missing from the page built through the index.
+            origin_nlcs = self.fare_nlcs(origin)
             flow_ids: set[str] = set()
             flows_touching_nlc: dict[str, list[Flow]] = {}
             for nlc in origin_nlcs:
@@ -288,7 +291,14 @@ class FaresLoader:
         if _text(line, LOCATION_OFFSETS, "crs").upper() != origin_crs:
             return
         if self._focus_origin_nlcs is not None:
-            self._focus_origin_nlcs.add(_text(line, LOCATION_OFFSETS, "nlc"))
+            nlc = _text(line, LOCATION_OFFSETS, "nlc")
+            self._focus_origin_nlcs.add(nlc)
+            # The station's fare group (ADR-0074): its fares are the station's
+            # fares, so they have to survive the stream too. A group the query
+            # will not read through only keeps a few records it never asks for.
+            group = _text(line, LOCATION_OFFSETS, "group_nlc")
+            if group and group != nlc and group not in UNEXPANDED_FARE_GROUPS:
+                self._focus_origin_nlcs.add(group)
 
     def _load_interchange_fares(self, path: str | Path, origin_crs: str) -> None:
         """Read the fares out of the origin's change stations, after the fact.
@@ -304,7 +314,7 @@ class FaresLoader:
         origin_nlcs = set(self._focus_origin_nlcs or ())
         wanted: set[str] = set()
         for crs in self.interchange_crs(origin_crs):
-            wanted |= self.nlcs_by_crs.get(crs, set())
+            wanted |= self.fare_nlcs(crs)
         wanted -= origin_nlcs
         if not wanted:
             return
