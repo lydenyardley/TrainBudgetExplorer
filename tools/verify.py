@@ -9,8 +9,8 @@ checkout cannot run at all (F5 of the 8 October 2026 agent-efficiency audit).
 This is that entry point, written in Python so the same command covers a
 developer's machine and the release.
 
-    python -m tools.verify --fast      the page, payload and chooser modules, and the page's JavaScript parsed as files and as each route's script
-    python -m tools.verify --full      every unit test, the type check, and the page's JavaScript parsed the same way
+    python -m tools.verify --fast      the page, payload and chooser modules, the page's JavaScript parsed as files and as each route's script, and actionlint over the workflows
+    python -m tools.verify --full      every unit test, the type check, and the same two parses
     python -m tools.verify --browser   a synthetic feed, the demo and shape builds, then the browser suite
     python -m tools.verify --all       --full, then --browser
 
@@ -19,7 +19,7 @@ same commands, and adds the pages a built site already has at `_site` when they
 are there. It needs Playwright's chromium and downloads nothing itself.
 
 Exit codes: 0 every step ran and passed, 1 a step ran and failed, 2 a step could
-not run (node or Playwright missing, a build that wrote no page).
+not run (node, Playwright or actionlint missing, a build that wrote no page).
 """
 
 from __future__ import annotations
@@ -225,6 +225,24 @@ def javascript() -> Step:
     return step.done(True, f"{len(files)} file(s) and 2 route artifacts")
 
 
+def workflows() -> Step:
+    """actionlint over `.github/`, so a YAML or expression error fails on the desk.
+
+    A workflow mistake used to cost a push and a run to find (task 1 of the 21
+    October 2026 re-architecture audit). It is a binary rather than a Python
+    module, so a machine without it reports `not run` and the run exits 2.
+    """
+    step = Step("workflows lint")
+    actionlint = shutil.which("actionlint")
+    if actionlint is None:
+        return step.done(None, "actionlint is not on PATH: python -m pip install actionlint-py")
+    result = subprocess.run([actionlint], cwd=ROOT, capture_output=True, text=True)
+    if result.returncode:
+        print((result.stdout + result.stderr).strip(), file=sys.stderr)
+        return step.done(False, "actionlint found a workflow error")
+    return step.done(True, f"{len(list((ROOT / '.github' / 'workflows').glob('*.yml')))} workflow(s)")
+
+
 def types() -> Step:
     """The type-check ratchet (item 4 of the 14 October 2026 engineering audit).
 
@@ -355,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.fast or args.full or args.all:
         steps.append(unit(fast=args.fast and not (args.full or args.all)))
         steps.append(javascript())
+        steps.append(workflows())
         if not (args.fast and not (args.full or args.all)):
             steps.append(types())
             steps.append(page_state())

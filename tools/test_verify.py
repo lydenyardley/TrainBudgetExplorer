@@ -4,7 +4,11 @@ report that does not let a step which could not run read as one that passed.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from tools import verify
 
@@ -84,6 +88,34 @@ class StepReportTest(unittest.TestCase):
         # subdirectory and a pattern that stopped there would check none of
         # them.
         self.assertEqual(verify.JAVASCRIPT, "page/**/*.js")
+
+
+class WorkflowLintTest(unittest.TestCase):
+    def test_no_actionlint_is_not_run_rather_than_a_pass(self) -> None:
+        with mock.patch.object(verify.shutil, "which", return_value=None):
+            step = verify.workflows()
+        self.assertIsNone(step.ok)
+        self.assertIn("actionlint-py", step.detail)
+
+    @unittest.skipUnless(shutil.which("actionlint"), "actionlint is not on PATH")
+    def test_a_broken_workflow_fails_the_step(self) -> None:
+        # The lint has to read the files it is pointed at, or a clean report
+        # means nothing: a job that needs a job nobody defined is an error.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "broken.yml").write_text(
+                "on: push\njobs:\n  a:\n    needs: nowhere\n    runs-on: ubuntu-latest\n"
+                "    steps:\n      - run: echo hi\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(verify, "ROOT", root):
+                step = verify.workflows()
+        self.assertIs(step.ok, False)
+
+    @unittest.skipUnless(shutil.which("actionlint"), "actionlint is not on PATH")
+    def test_this_repository_s_workflows_pass(self) -> None:
+        self.assertIs(verify.workflows().ok, True)
 
 
 def _flatten(suite: unittest.TestSuite) -> list[unittest.TestCase]:

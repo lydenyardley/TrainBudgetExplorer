@@ -130,9 +130,11 @@ python -m unittest discover -s tests -p "test_*.py"
 python -m unittest discover -s tools -p "test_*.py"
 ```
 
-`--full` also runs the type check, so it wants `mypy`
-(`python -m pip install mypy`); `--fast` does not, and reports the step as
-`not run` rather than failing when it is missing.
+Both lint the workflows with actionlint (`python -m pip install actionlint-py`),
+so a YAML or expression error fails on the desk rather than on a run. `--full`
+also runs the type check, so it wants `mypy` (`python -m pip install mypy`);
+`--fast` does not. A tool that is missing is reported as `not run`, and the run
+exits 2 rather than passing.
 
 ## The annotations and the suppressions are checked
 
