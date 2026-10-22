@@ -11,7 +11,8 @@
 #   mode                 the page's ticket mode: cheapest, single, return or anytime
 #   adults               1, or 2 for the page's party of two
 #   railcard             the page's card key (2TR, YNG, SRN, ...), or "" for none
-#   pence                the cheapest fare National Rail sold, for everyone travelling
+#   pence                the cheapest fare of the kind the page shows (no Advance)
+#                        that National Rail sells, for everyone travelling
 #   seen_on              the date it was checked
 #   link                 the journey planner search that showed it
 #   report               where the mismatch was reported
@@ -48,10 +49,13 @@ destination = "SKG"
 mode = "single"
 adults = 1
 railcard = ""
-pence = 870
-seen_on = 2026-09-25
+pence = 2650  # Anytime Single; no Off-Peak single is offered. Cheapest Advance £8.70
+seen_on = 2026-10-22
 link = "https://www.nationalrail.co.uk/journey-planner/?type=single&origin=GRA&destination=SKG&adults=1"
 report = "Freebuff #179"
+# Seeded in 767a5e8 at 870, the Advance fare #179 found, which the page does not
+# publish. Re-checked like for like on the National Rail journey planner on
+# 2026-10-22, for the 11:29 direct on Tue 27 Oct 2026.
 
 [[fare]]
 origin = "GRA"
@@ -59,7 +63,12 @@ destination = "SKG"
 mode = "single"
 adults = 2
 railcard = "2TR"
-pence = 1270
-seen_on = 2026-10-05
-link = "https://www.nationalrail.co.uk/journey-planner/?type=single&origin=GRA&destination=SKG&leavingType=departing&leavingDate=061026&leavingHour=09&leavingMin=15&adults=2&railcards=2TR%7C1&extraTime=0#O"
+pence = 3520  # Anytime Single for both, £53.00 without the card. Cheapest Advance £11.50
+seen_on = 2026-10-22
+link = "https://www.nationalrail.co.uk/journey-planner/?type=single&origin=GRA&destination=SKG&leavingType=departing&leavingDate=271026&leavingHour=11&leavingMin=29&adults=2&railcards=2TR%7C1&extraTime=0#O"
 report = "Freebuff #421"
+# Seeded in 767a5e8 at 1270, the Advance price #421 found on 2026-10-05, which
+# the page does not publish. Re-checked like for like on the National Rail
+# journey planner on 2026-10-22, for the 11:29 direct on Tue 27 Oct 2026. The
+# page said 3530 until the railcard discount was read from the feed (33.4%,
+# not a third).
