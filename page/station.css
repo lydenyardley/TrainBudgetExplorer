@@ -621,6 +621,16 @@
          allowed to depend on which glyphs the reader's machine drew. */
       #rows > tr[data-crs]::after { content: ""; order: 7; flex: 0 0 100%; height: 0; }
       #rows > tr[data-crs] > td[data-label="Time"] { flex: 1 1 auto; }
+      /* The shortlist box joins the ticket on the third line, the line of
+         things a reader presses, so the place has the first line to itself
+         beside its price. Beside the place it took 51px of the 351 and its
+         44px set the first line's height, so a station whose proof ran to two
+         lines -- "Coastal & seaside: Swanscombe Thames marshes" at 247px --
+         made a fourth line of text and a 158px row against the three-line
+         budget (abbey-wood, run 39772120392, where Linux's wider glyphs
+         wrapped all three of its proofs). With the first line its own, a
+         proof wraps at 298px, and a row without one is 115px rather than 138. */
+      #rows > tr[data-crs] > td.hold { order: 8; }
       #rows > tr[data-crs] > td[data-label="Fare type"] { order: 8; }
       #rows > tr[data-crs] > td[data-label="Tickets"] { order: 9; }
       /* The ticket already takes its own line here, so the interchange under

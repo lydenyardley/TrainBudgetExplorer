@@ -430,6 +430,38 @@ async function measureTheLayout(world) {
         : median <= 150,
       `${stacked.rows.length} rows at ${stacked.contentWidth}px of content, median ${median}px, tallest ${stacked.heights[stacked.heights.length - 1] || 0}px`
     );
+    // The row shape abbey-wood failed on in run 39772120392: a place whose
+    // proof runs to a second line of its own. A page whose rows carry no
+    // proof, or only a short one, passes the median above whatever the
+    // layout does with a long one, so the shape is staged here on a copy of
+    // a real row: the proof is the one Gravesend carried, which wrapped
+    // beside the shortlist box and made a 157px row on Linux's glyphs.
+    const proofRow = stacked.rows.length
+      ? await page.evaluate(() => {
+          const source = document.querySelector("#rows tr[data-crs]");
+          const row = source.cloneNode(true);
+          row.dataset.crs = "ZZP";
+          const station = row.querySelector('td[data-label="Station"]');
+          station.querySelectorAll(".site-proof").forEach((node) => node.remove());
+          const proof = document.createElement("span");
+          proof.className = "site-proof";
+          proof.append("Coastal & seaside: ");
+          const link = document.createElement("a");
+          link.href = "#";
+          link.textContent = "Gravesend Thames riverside";
+          proof.append(link);
+          station.append(proof);
+          source.after(row);
+          const height = Math.round(row.getBoundingClientRect().height);
+          row.remove();
+          return { height };
+        })
+      : null;
+    check(
+      "at the phone's content width a place with a two-line proof is still three lines",
+      proofRow ? proofRow.height <= 150 : notExercised("this page shows no rows at a phone width"),
+      proofRow ? `${proofRow.height}px` : "no row to copy"
+    );
     // The width the row was measured at, read back rather than assumed: a
     // browser that drew its own scrollbar would take 15px off the content and
     // this module would be measuring a narrower page than a reader's.
