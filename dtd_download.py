@@ -34,6 +34,7 @@ import hashlib
 import http.client
 import json
 import os
+import random
 import sys
 import tempfile
 import time
@@ -46,8 +47,9 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator, TypeVar
 
+T = TypeVar("T")
 
 AUTH_URL = "https://opendata.nationalrail.co.uk/authenticate"
 NRDP_HOST = "opendata.nationalrail.co.uk"
@@ -55,12 +57,16 @@ DTD_FARES_URL = "https://opendata.nationalrail.co.uk/api/staticfeeds/2.0/fares"
 DTD_TIMETABLE_URL = "https://opendata.nationalrail.co.uk/api/staticfeeds/3.0/timetable"
 
 DEFAULT_TIMEOUT = 60.0
-# How many extra attempts a transient failure gets. Three retries means at most
-# four requests and about 30 seconds of waiting, which is a long time for a
-# daily job to lose and short enough not to look like a hang.
-DEFAULT_RETRIES = 3
-RETRY_BASE_SECONDS = 2.0
-RETRY_MAX_SECONDS = 20.0
+# How many extra attempts a transient failure gets. Four retries means at most
+# five requests and 75 to 112 seconds of waiting: long enough for a burst of
+# twelve shards asking at once to have passed, short enough not to look like a
+# hang. The ceiling is RETRY_WAIT_CEILING_SECONDS, and a test holds it.
+DEFAULT_RETRIES = 4
+RETRY_BASE_SECONDS = 5.0
+RETRY_MAX_SECONDS = 40.0
+# The most a delay is stretched by, as a fraction of itself. See _backoff_seconds.
+RETRY_SPREAD = 0.5
+RETRY_WAIT_CEILING_SECONDS = 120.0
 CHUNK_SIZE = 1024 * 1024
 MAX_AUTH_BYTES = 1024 * 1024
 # A national feed can be large, but a response larger than this is much more
@@ -683,6 +689,7 @@ def download_one(
     previous: dict[str, object] | None = None,
     retries: int = DEFAULT_RETRIES,
     sleep: Callable[[float], None] | None = None,
+    spread: Callable[[], float] | None = None,
 ) -> DownloadResult:
     """Download one feed, validating it before an atomic replacement.
 
@@ -705,16 +712,12 @@ def download_one(
 
     **Retrying.** A timeout or a 502 on an unattended daily job used to fail the
     whole run for a reason that would be gone in a minute. Transient failures
-    are retried with a growing pause; a 4xx is not, because a portal that has
-    refused the subscription or the credentials will refuse them again.
+    are retried with a growing pause; a refusal is not, because a portal that has
+    refused the subscription or the credentials will refuse them again. See
+    ``retrying`` and ``TRANSIENT_STATUS``.
     """
 
-    attempt_errors: list[DownloadError] = []
-    # Resolved here rather than as a default argument, so that `time.sleep` is
-    # still the module's at the moment of the call and not the one captured
-    # when this line was first imported.
-    wait = time.sleep if sleep is None else sleep
-    for attempt in range(max(0, retries) + 1):
+    def attempt() -> DownloadResult:
         try:
             return _download_once(
                 spec,
@@ -729,9 +732,9 @@ def download_one(
         except _NotModified:
             # A 304 is a claim about a file. Believe it only if the file is
             # still the one that claim was made about.
-            problem = _disagrees_with_record(destination, previous)
+            problem = _disagrees_with_record(Path(destination), previous)
             if problem is None:
-                return _unchanged_result(spec, destination, previous)
+                return _unchanged_result(spec, Path(destination), previous)
             # The portal says the feed is unchanged and the disk says otherwise.
             # The disk is the evidence we build from, so it wins: fetch it again
             # and ask no question.
@@ -760,15 +763,57 @@ def download_one(
                 # traceback instead of naming the feed that could not be had.
                 raise DownloadError(
                     f"{spec.name}: the portal answered 304 to a request that asked "
-                    "no question, so the feed could not be downloaded"
+                    "no question, so the feed could not be downloaded",
+                    # Carried so the retry treats it as the answer it is: a
+                    # portal that sends 304 unasked will send it again.
+                    status=304,
                 ) from None
+
+    return retrying(spec.name, attempt, retries=retries, sleep=sleep, spread=spread)
+
+
+def retrying(
+    label: str,
+    attempt: Callable[[], T],
+    *,
+    retries: int = DEFAULT_RETRIES,
+    sleep: Callable[[float], None] | None = None,
+    spread: Callable[[], float] | None = None,
+) -> T:
+    """Call *attempt* until it succeeds, a failure is not transient, or the retries run out.
+
+    Every failed attempt is one line on stderr naming the attempt, the error and
+    what happens next, so a run that needed three tries says so rather than
+    looking like one that needed one. The last failure is raised unchanged, and
+    the caller reports it: a feed that never came is still a failed command.
+    """
+
+    # Resolved here rather than as default arguments, so that `time.sleep` and
+    # `random.random` are still the module's at the moment of the call and not
+    # the ones captured when this line was first imported.
+    wait = time.sleep if sleep is None else sleep
+    draw = random.random if spread is None else spread
+    total = max(0, retries) + 1
+    for number in range(1, total + 1):
+        try:
+            return attempt()
         except DownloadError as error:
-            attempt_errors.append(error)
-            if attempt >= retries or not _is_transient(error):
+            if number >= total or not _is_transient(error):
+                if number > 1:
+                    print(
+                        f"{label}: attempt {number} of {total} failed: {error}; giving up",
+                        file=sys.stderr,
+                    )
                 raise
-            wait(_backoff_seconds(attempt))
+            delay = _backoff_seconds(number - 1, draw())
+            print(
+                f"{label}: attempt {number} of {total} failed: {error}; "
+                f"retrying in {delay:.1f}s",
+                file=sys.stderr,
+            )
+            wait(delay)
     # Unreachable: the loop either returns or raises on its last attempt.
-    raise attempt_errors[-1]  # pragma: no cover
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _download_once(
@@ -920,7 +965,18 @@ def _as_int(value: object) -> int:
 # Statuses worth asking again about. Everything else -- 401, 403, 404, 400 --
 # is the portal answering a question, not failing to answer it, and asking the
 # same question again only spends the run's time.
-TRANSIENT_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+#
+# 406 is here on evidence, not on its RFC meaning. The request's Accept header
+# has not changed since 24 September and the portal accepts it on almost every
+# request, yet it answered 406 to two of twelve shards at the same millisecond
+# three times: stations and service-indicators on 16 October (run 38872134875),
+# tocs and incidents on 21 October (39631648840), and fares on 22 October
+# (39792072664). Each time the other shards' identical requests in the same
+# second succeeded, and the same runner's timetable request seconds later
+# did too. So on this portal a 406 is how a burst of concurrent requests is
+# refused, and a later attempt is the remedy. A real Accept mismatch would fail
+# every attempt and still end the command loudly.
+TRANSIENT_STATUS = frozenset({406, 408, 425, 429, 500, 502, 503, 504})
 
 
 def _is_transient(error: DownloadError) -> bool:
@@ -933,14 +989,18 @@ def _is_transient(error: DownloadError) -> bool:
     return error.status in TRANSIENT_STATUS
 
 
-def _backoff_seconds(attempt: int) -> float:
-    """A pause that grows and then stops growing.
+def _backoff_seconds(attempt: int, spread: float = 0.0) -> float:
+    """A pause that grows, stops growing, and is stretched by up to half again.
 
     Capped, because a run that waits five minutes for the same 503 is no longer
-    a retry. The jitter is a fixed fraction of the delay rather than random, so
-    the wait is reproducible in a test and in a log.
+    a retry. *spread* is a number in [0, 1) that stretches the delay by up to
+    ``RETRY_SPREAD`` of itself. In a run it is random, because the failure it
+    answers is twelve shards asking at the same instant, and twelve shards that
+    wait the same fixed time ask at the same instant again. A test passes it in,
+    so the wait is still reproducible there; the log prints every wait.
     """
-    return min(RETRY_BASE_SECONDS * (2**attempt), RETRY_MAX_SECONDS)
+    base = min(RETRY_BASE_SECONDS * (2**attempt), RETRY_MAX_SECONDS)
+    return base * (1.0 + RETRY_SPREAD * min(max(spread, 0.0), 1.0))
 
 
 _MANIFEST_FIELDS = (
@@ -1121,7 +1181,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=DEFAULT_RETRIES,
         help=(
             "extra attempts for a transient failure (timeout, connection reset, "
-            f"5xx, 429); default {DEFAULT_RETRIES}. A 4xx is never retried"
+            f"5xx, 429, and the portal's 406); default {DEFAULT_RETRIES}. "
+            "Another 4xx is never retried"
         ),
     )
     parser.add_argument(
@@ -1174,7 +1235,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        token = authenticate(timeout=arguments.timeout)
+        # The same burst that refuses a feed can refuse the login, so it gets
+        # the same retries. A rejected credential is not transient and fails
+        # at once.
+        token = retrying(
+            "authentication",
+            lambda: authenticate(timeout=arguments.timeout),
+            retries=arguments.retries,
+        )
     except DownloadError as error:
         print(f"authentication failed: {error}", file=sys.stderr)
         return 2

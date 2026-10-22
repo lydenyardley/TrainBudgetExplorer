@@ -24,7 +24,9 @@ runs:
   steps:
     # With a restored manifest the download sends If-None-Match and
     # If-Modified-Since, so a day the portal republished nothing costs one cheap
-    # request; it retries a timeout or a 5xx and never a 4xx. "unchanged" never
+    # request; it retries a timeout, a 5xx, a 429 and the portal's 406 (which
+    # is how it refuses a burst of shards asking at once), up to five attempts
+    # over at most two minutes, and no other 4xx. "unchanged" never
     # advances downloaded_at, so a page's age of the prices stays the data's.
     - name: Download the licensed DTD feeds
       shell: bash

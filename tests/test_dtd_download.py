@@ -23,6 +23,7 @@ from dtd_download import (
     DTD_FEEDS,
     KB_FEEDS,
     RETRY_MAX_SECONDS,
+    RETRY_WAIT_CEILING_SECONDS,
     AuthenticationError,
     DownloadError,
     EntitlementError,
@@ -402,14 +403,20 @@ class RetryTest(unittest.TestCase):
                 FakeResponse(body),
             )
             waits: list[float] = []
-            result = download_one(
-                DTD_FEEDS[0], destination, "token", opener=fake, sleep=waits.append
-            )
+            with contextlib.redirect_stderr(io.StringIO()):
+                result = download_one(
+                    DTD_FEEDS[0],
+                    destination,
+                    "token",
+                    opener=fake,
+                    sleep=waits.append,
+                    spread=lambda: 0.0,
+                )
             self.assertEqual(destination.read_bytes(), body)
             self.assertEqual(result.bytes, len(body))
             self.assertEqual(len(fake.requests), 3)
             # Grows, and never exceeds the cap.
-            self.assertEqual(waits, [2.0, 4.0])
+            self.assertEqual(waits, [5.0, 10.0])
 
     def test_a_refusal_is_not_retried(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -439,14 +446,14 @@ class RetryTest(unittest.TestCase):
                     self.assertEqual(destination.read_bytes(), b"known-good")
 
     def test_retries_are_bounded_and_the_wait_is_capped(self) -> None:
-        self.assertEqual(_backoff_seconds(0), 2.0)
-        self.assertEqual(_backoff_seconds(1), 4.0)
-        self.assertEqual(_backoff_seconds(2), 8.0)
+        self.assertEqual(_backoff_seconds(0), 5.0)
+        self.assertEqual(_backoff_seconds(1), 10.0)
+        self.assertEqual(_backoff_seconds(2), 20.0)
         self.assertEqual(_backoff_seconds(10), RETRY_MAX_SECONDS)
         with tempfile.TemporaryDirectory() as tmp:
             fake = FakeOpener(*[TimeoutError("t")] * 6)
             waits: list[float] = []
-            with self.assertRaises(DownloadError):
+            with self.assertRaises(DownloadError), contextlib.redirect_stderr(io.StringIO()):
                 download_one(
                     DTD_FEEDS[0],
                     Path(tmp) / "dtd-fares.zip",
@@ -471,6 +478,147 @@ class RetryTest(unittest.TestCase):
                     sleep=lambda _s: None,
                 )
             self.assertEqual(len(fake.requests), 1)
+
+
+class PortalBurstTest(unittest.TestCase):
+    """The portal's 406 to a burst of shards, as on 16, 21 and 22 October.
+
+    Twelve shards authenticate and ask for the fares in the same second. Two of
+    them were answered 406 and the run failed, though the request was the one
+    the other ten were served. The opener here raises the HTTPError urllib
+    raises for that answer, so no portal is called.
+    """
+
+    @staticmethod
+    def _refused(status: int) -> urllib.error.HTTPError:
+        return urllib.error.HTTPError(DTD_FEEDS[0].url, status, "refused", {}, None)
+
+    def test_the_portals_406_is_asked_again_and_each_attempt_is_logged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "fares" / "dtd-fares.zip"
+            destination.parent.mkdir(parents=True)
+            body = zip_bytes("RJFAF.FFL")
+            fake = FakeOpener(
+                self._refused(406),
+                self._refused(429),
+                urllib.error.URLError("connection reset"),
+                FakeResponse(body),
+            )
+            waits: list[float] = []
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                result = download_one(
+                    DTD_FEEDS[0],
+                    destination,
+                    "token",
+                    opener=fake,
+                    sleep=waits.append,
+                    spread=lambda: 0.0,
+                )
+            self.assertEqual(destination.read_bytes(), body)
+            self.assertEqual(result.bytes, len(body))
+            self.assertEqual(waits, [5.0, 10.0, 20.0])
+            log = stderr.getvalue().splitlines()
+            self.assertEqual(len(log), 3)
+            self.assertIn("fares: attempt 1 of 5 failed:", log[0])
+            self.assertIn("HTTP 406; retrying in 5.0s", log[0])
+            self.assertIn("HTTP 429; retrying in 10.0s", log[1])
+            self.assertIn("(URLError); retrying in 20.0s", log[2])
+
+    def test_a_406_that_never_clears_fails_loudly_within_two_minutes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "fares" / "dtd-fares.zip"
+            destination.parent.mkdir(parents=True)
+            destination.write_bytes(b"known-good")
+            fake = FakeOpener(*[self._refused(406)] * 10)
+            waits: list[float] = []
+            stderr = io.StringIO()
+            with self.assertRaises(DownloadError) as caught, contextlib.redirect_stderr(stderr):
+                download_one(
+                    DTD_FEEDS[0],
+                    destination,
+                    "token",
+                    opener=fake,
+                    sleep=waits.append,
+                    # The longest the spread can stretch every wait.
+                    spread=lambda: 0.999999,
+                )
+            self.assertEqual(caught.exception.status, 406)
+            self.assertEqual(len(fake.requests), DEFAULT_RETRIES + 1)
+            self.assertEqual(len(waits), DEFAULT_RETRIES)
+            self.assertLessEqual(sum(waits), RETRY_WAIT_CEILING_SECONDS)
+            # A burst lasts seconds; the retries span more than a minute.
+            self.assertGreater(sum(_backoff_seconds(n) for n in range(DEFAULT_RETRIES)), 60.0)
+            self.assertIn(
+                f"attempt {DEFAULT_RETRIES + 1} of {DEFAULT_RETRIES + 1} failed",
+                stderr.getvalue(),
+            )
+            self.assertIn("giving up", stderr.getvalue())
+            self.assertEqual(destination.read_bytes(), b"known-good")
+
+    def test_shards_that_failed_together_do_not_retry_together(self) -> None:
+        # Twelve runners waiting a fixed time would ask at the same instant
+        # again. The spread is what parts them.
+        self.assertEqual(_backoff_seconds(0, 0.0), 5.0)
+        self.assertEqual(_backoff_seconds(0, 1.0), 7.5)
+        self.assertEqual(_backoff_seconds(3, 0.5), 50.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "fares" / "dtd-fares.zip"
+            destination.parent.mkdir(parents=True)
+            waits: list[float] = []
+            for draw in (0.1, 0.9):
+                fake = FakeOpener(self._refused(406), FakeResponse(zip_bytes("RJFAF.FFL")))
+                with contextlib.redirect_stderr(io.StringIO()):
+                    download_one(
+                        DTD_FEEDS[0],
+                        destination,
+                        "token",
+                        opener=fake,
+                        sleep=waits.append,
+                        spread=lambda: draw,
+                    )
+            self.assertEqual(waits, [5.25, 7.25])
+
+    def test_a_406_on_the_login_is_asked_again_by_the_command(self) -> None:
+        tokens = json.dumps({"token": "short-lived"}).encode()
+        seen: list[str] = []
+
+        def portal(request, timeout):
+            seen.append(request.full_url)
+            if request.full_url == AUTH_URL:
+                if seen.count(AUTH_URL) == 1:
+                    raise urllib.error.HTTPError(AUTH_URL, 406, "refused", {}, None)
+                return FakeResponse(tokens, content_type="application/json", url=AUTH_URL)
+            return _response(request, {})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            stderr = io.StringIO()
+            with mock.patch.dict(
+                os.environ, {"NRDP_USERNAME": "user", "NRDP_PASSWORD": "secret"}
+            ), mock.patch("dtd_download.urlopen", side_effect=portal), mock.patch(
+                "dtd_download.time.sleep", return_value=None
+            ), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+                status = dtd_download_main(["--output-root", tmp, "--dtd", "fares"])
+            self.assertEqual(status, 0, stderr.getvalue())
+            self.assertEqual(seen, [AUTH_URL, AUTH_URL, DTD_FEEDS[0].url])
+            self.assertIn("authentication: attempt 1 of 5 failed", stderr.getvalue())
+
+    def test_a_rejected_login_is_not_asked_again(self) -> None:
+        seen: list[str] = []
+
+        def portal(request, timeout):
+            seen.append(request.full_url)
+            raise urllib.error.HTTPError(AUTH_URL, 401, "no", {}, None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(
+                os.environ, {"NRDP_USERNAME": "user", "NRDP_PASSWORD": "wrong"}
+            ), mock.patch("dtd_download.urlopen", side_effect=portal), mock.patch(
+                "dtd_download.time.sleep", return_value=None
+            ), contextlib.redirect_stderr(io.StringIO()):
+                status = dtd_download_main(["--output-root", tmp, "--dtd", "fares"])
+            self.assertEqual(status, 2)
+            self.assertEqual(seen, [AUTH_URL])
 
 
 class UnbelievableAnswerTest(unittest.TestCase):
