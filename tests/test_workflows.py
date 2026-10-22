@@ -348,5 +348,34 @@ class ServiceDayTest(unittest.TestCase):
         self.assertEqual(code, 1)
         build.assert_not_called()
 
+class KnowledgebaseFeedTest(unittest.TestCase):
+    """The shards that build pages from the Knowledgebase feeds cannot lack them.
+
+    Run 39798397862 (22 October 2026): two shards were refused the feeds,
+    warned and built anyway, and the merge refused their pages an hour later.
+    """
+
+    def action(self) -> str:
+        return (ACTIONS / "licensed-feeds" / "action.yml").read_text(encoding="utf-8")
+
+    def test_every_shard_requires_the_feeds_and_staggers_by_its_number(self) -> None:
+        job = shard_job()
+        self.assertIn("knowledgebase: required", job)
+        self.assertIn("shard: ${{ matrix.shard }}", job)
+        self.assertIn("fail-fast: true", job)
+
+    def test_the_required_download_has_no_fallback(self) -> None:
+        action = self.action()
+        required = action[action.index("required)"):action.index(";;", action.index("required)"))]
+        self.assertIn("--kb-only --required", required)
+        self.assertNotIn("||", required)
+
+    def test_every_portal_download_is_staggered(self) -> None:
+        downloads = [line for line in self.action().splitlines() if "python dtd_download.py" in line]
+        self.assertEqual(len(downloads), 3)
+        for line in downloads:
+            self.assertIn('--stagger "$SHARD"', line)
+
+
 if __name__ == "__main__":
     unittest.main()

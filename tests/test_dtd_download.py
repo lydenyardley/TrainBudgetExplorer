@@ -23,7 +23,9 @@ from dtd_download import (
     DTD_FEEDS,
     KB_FEEDS,
     RETRY_MAX_SECONDS,
+    KB_FEEDS,
     RETRY_WAIT_CEILING_SECONDS,
+    STAGGER_CEILING_SECONDS,
     AuthenticationError,
     DownloadError,
     EntitlementError,
@@ -31,6 +33,7 @@ from dtd_download import (
     DownloadResult,
     _backoff_seconds,
     authenticate,
+    stagger_seconds,
     download_one,
     feed_fingerprint,
     previous_records,
@@ -619,6 +622,113 @@ class PortalBurstTest(unittest.TestCase):
                 status = dtd_download_main(["--output-root", tmp, "--dtd", "fares"])
             self.assertEqual(status, 2)
             self.assertEqual(seen, [AUTH_URL])
+
+
+class RequiredKnowledgebaseTest(unittest.TestCase):
+    """A shard that cannot have a Knowledgebase feed stops, and says which.
+
+    On 22 October (run 39798397862) shards 1 and 8 were refused every
+    Knowledgebase request, warned, and built anyway. Their pages carried no
+    reference feed, so their fingerprint differed from the other ten shards'
+    and the merge refused shard-10 an hour later with no word about why.
+    """
+
+    def _refusing_portal(self, seen: list[str]):
+        def portal(request, timeout):
+            seen.append(request.full_url)
+            raise urllib.error.HTTPError(request.full_url, 406, "refused", {}, None)
+
+        return portal
+
+    def test_a_required_feed_that_never_arrives_fails_and_names_the_feed(self) -> None:
+        seen: list[str] = []
+        waits: list[float] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
+                "dtd_download.urlopen", side_effect=self._refusing_portal(seen)
+            ), mock.patch("dtd_download.time.sleep", side_effect=waits.append), contextlib.redirect_stdout(
+                stdout
+            ), contextlib.redirect_stderr(stderr):
+                status = dtd_download_main(["--output-root", tmp, "--kb-only", "--required"])
+        first = KB_FEEDS[0]
+        self.assertNotEqual(status, 0)
+        self.assertIn(
+            f"::error title=missing feed::{first.name} could not be downloaded",
+            stdout.getvalue(),
+        )
+        self.assertIn("HTTP 406", stdout.getvalue())
+        self.assertIn(f"{first.name}: attempt {DEFAULT_RETRIES + 1} of {DEFAULT_RETRIES + 1} failed", stderr.getvalue())
+        # Every retry, and then nothing more: the other feeds would only spend
+        # minutes of a job that has already failed.
+        self.assertEqual(seen, [first.url] * (DEFAULT_RETRIES + 1))
+        self.assertEqual(len(waits), DEFAULT_RETRIES)
+
+    def test_without_required_the_rest_are_still_tried_and_the_command_still_fails(self) -> None:
+        seen: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            stdout = io.StringIO()
+            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
+                "dtd_download.urlopen", side_effect=self._refusing_portal(seen)
+            ), mock.patch("dtd_download.time.sleep", return_value=None), contextlib.redirect_stdout(
+                stdout
+            ), contextlib.redirect_stderr(io.StringIO()):
+                status = dtd_download_main(["--output-root", tmp, "--kb-only", "--retries", "0"])
+        self.assertEqual(status, 1)
+        self.assertEqual(seen, [feed.url for feed in KB_FEEDS])
+        self.assertNotIn("::error", stdout.getvalue())
+
+
+class StaggerTest(unittest.TestCase):
+    """Shards part their first requests by a fixed offset of their number."""
+
+    def test_the_offset_is_fixed_by_the_shard_number_and_bounded(self) -> None:
+        self.assertEqual(stagger_seconds(0), 0.0)
+        self.assertEqual(stagger_seconds(1), 0.0)
+        self.assertEqual(stagger_seconds(2), 2.5)
+        self.assertEqual(stagger_seconds(12), 27.5)
+        offsets = [stagger_seconds(shard) for shard in range(1, 13)]
+        self.assertEqual(offsets, [stagger_seconds(shard) for shard in range(1, 13)])
+        self.assertEqual(len(set(offsets)), 12, "two shards would ask at the same moment")
+        self.assertTrue(all(offset <= STAGGER_CEILING_SECONDS for offset in offsets))
+        self.assertEqual(stagger_seconds(1000), STAGGER_CEILING_SECONDS)
+        # A shard runs the command twice (the DTD feeds, then the Knowledgebase
+        # feeds), and the wait is runner time: under a minute in all.
+        self.assertLess(2 * STAGGER_CEILING_SECONDS, 61.0)
+
+    def test_the_command_waits_its_offset_before_it_logs_in(self) -> None:
+        events: list[object] = []
+
+        def login(*args, **kwargs):
+            events.append("login")
+            return "token"
+
+        def portal(request, timeout):
+            events.append("request")
+            return _response(request, {})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch("dtd_download.authenticate", side_effect=login), mock.patch(
+                "dtd_download.urlopen", side_effect=portal
+            ), mock.patch(
+                "dtd_download.time.sleep", side_effect=lambda seconds: events.append(("wait", seconds))
+            ), contextlib.redirect_stdout(io.StringIO()):
+                status = dtd_download_main(["--output-root", tmp, "--dtd", "fares", "--stagger", "5"])
+        self.assertEqual(status, 0)
+        self.assertEqual(events, [("wait", 10.0), "login", "request"])
+
+    def test_a_job_that_is_not_a_shard_does_not_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
+                "dtd_download.urlopen", side_effect=lambda request, timeout: _response(request, {})
+            ), mock.patch("dtd_download.time.sleep") as sleep, contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(dtd_download_main(["--output-root", tmp, "--dtd", "fares"]), 0)
+        sleep.assert_not_called()
+
+    def test_a_negative_shard_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(dtd_download_main(["--output-root", tmp, "--stagger", "-1"]), 2)
+        self.assertIn("--stagger cannot be negative", stderr.getvalue())
 
 
 class UnbelievableAnswerTest(unittest.TestCase):

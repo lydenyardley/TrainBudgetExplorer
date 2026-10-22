@@ -5,7 +5,7 @@
 # signed in to GitHub, and the feeds are licensed. This was three copies of the
 # same three steps in deploy.yml.
 name: licensed feeds
-description: The DTD fares and timetable, the OGL CIF, and the tolerant Knowledgebase feeds.
+description: The DTD fares and timetable, the OGL CIF, and the Knowledgebase feeds.
 
 inputs:
   nrdp-username:
@@ -18,6 +18,18 @@ inputs:
     required: true
   schedule-password:
     required: true
+  # "required" in a shard: the pages are built from the Knowledgebase feeds and
+  # the merge compares what each shard built from, so a shard without them
+  # cannot merge (run 39798397862, 22 October 2026). "tolerant" in a job that
+  # builds no page from them, where a refusal is a warning.
+  knowledgebase:
+    required: false
+    default: required
+  # The shard's number, to space its first portal request from the other
+  # shards' (dtd_download.py's stagger_seconds). 0 is a job that is not a shard.
+  shard:
+    required: false
+    default: "0"
 
 runs:
   using: composite
@@ -33,7 +45,8 @@ runs:
       env:
         NRDP_USERNAME: ${{ inputs.nrdp-username }}
         NRDP_PASSWORD: ${{ inputs.nrdp-password }}
-      run: python dtd_download.py --output-root feeds
+        SHARD: ${{ inputs.shard }}
+      run: python dtd_download.py --output-root feeds --stagger "$SHARD"
 
     - name: Download the timetable the release publishes from
       shell: bash
@@ -44,11 +57,28 @@ runs:
       run: python -m tools.release.schedule
 
     # A different subscription from the DTD feeds, and a second opinion on
-    # restriction wording the page says it lacks when it is missing. So a
-    # refusal is a visible warning rather than a failed release.
+    # restriction wording the page says it lacks when it is missing. Where the
+    # job builds pages, a refusal fails the step and names the feed: a shard
+    # that built without them carries another reference fingerprint and the
+    # merge refuses it, an hour later and without saying why. Elsewhere it is
+    # a visible warning. The feeds are fetched one after another, never at once.
     - name: Download the Knowledgebase reference feeds
       shell: bash
       env:
         NRDP_USERNAME: ${{ inputs.nrdp-username }}
         NRDP_PASSWORD: ${{ inputs.nrdp-password }}
-      run: python dtd_download.py --output-root feeds --kb-only || echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. They are a different subscription from the DTD fares and timetable, so this is usually an entitlement question; the pages will say no independent reference feed was checked."
+        KNOWLEDGEBASE: ${{ inputs.knowledgebase }}
+        SHARD: ${{ inputs.shard }}
+      run: |
+        case "$KNOWLEDGEBASE" in
+          required)
+            python dtd_download.py --output-root feeds --kb-only --required --stagger "$SHARD"
+            ;;
+          tolerant)
+            python dtd_download.py --output-root feeds --kb-only --stagger "$SHARD" || echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. They are a different subscription from the DTD fares and timetable, so this is usually an entitlement question; the pages will say no independent reference feed was checked."
+            ;;
+          *)
+            echo "::error title=licensed feeds::knowledgebase must be required or tolerant, not $KNOWLEDGEBASE"
+            exit 1
+            ;;
+        esac

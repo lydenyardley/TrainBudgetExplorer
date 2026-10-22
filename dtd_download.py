@@ -67,6 +67,15 @@ RETRY_MAX_SECONDS = 40.0
 # The most a delay is stretched by, as a fraction of itself. See _backoff_seconds.
 RETRY_SPREAD = 0.5
 RETRY_WAIT_CEILING_SECONDS = 120.0
+# How far apart the shards make their first request: shard N waits
+# (N - 1) x STAGGER_STEP_SECONDS before it logs in. Twelve shards started in
+# the same second and asked in the same second, and on 22 October two of them
+# (run 39798397862, shards 1 and 8) were refused every Knowledgebase request
+# for ten minutes while the other ten were served. Each command a shard runs
+# waits once, and a shard runs two, so the ceiling keeps the last shard's
+# extra wait under a minute of runner time; a test holds it.
+STAGGER_STEP_SECONDS = 2.5
+STAGGER_CEILING_SECONDS = 30.0
 CHUNK_SIZE = 1024 * 1024
 MAX_AUTH_BYTES = 1024 * 1024
 # A national feed can be large, but a response larger than this is much more
@@ -989,6 +998,17 @@ def _is_transient(error: DownloadError) -> bool:
     return error.status in TRANSIENT_STATUS
 
 
+def stagger_seconds(shard: int) -> float:
+    """How long shard *shard* waits before its first request to the portal.
+
+    Deterministic, unlike the retry spread: the shards start together, so a
+    fixed offset by index is what parts their first requests, and a log that
+    prints it can be read against another shard's. Shard 0 (a job that is not
+    a shard) and shard 1 do not wait.
+    """
+    return min(max(shard - 1, 0) * STAGGER_STEP_SECONDS, STAGGER_CEILING_SECONDS)
+
+
 def _backoff_seconds(attempt: int, spread: float = 0.0) -> float:
     """A pause that grows, stops growing, and is stretched by up to half again.
 
@@ -1174,6 +1194,26 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="download only Knowledgebase feeds; implies --kb and skips DTD",
     )
     parser.add_argument("--output-root", type=Path, default=Path("feeds"))
+    parser.add_argument(
+        "--required",
+        action="store_true",
+        help=(
+            "every feed asked for must arrive: stop at the first that cannot be "
+            "downloaded and name it in an Actions error, rather than go on to "
+            "the rest and build without it"
+        ),
+    )
+    parser.add_argument(
+        "--stagger",
+        type=int,
+        default=0,
+        metavar="SHARD",
+        help=(
+            "this job's shard number; wait (SHARD - 1) x "
+            f"{STAGGER_STEP_SECONDS:g}s, at most {STAGGER_CEILING_SECONDS:g}s, "
+            "before the first request so shards do not all ask at once (default 0: no wait)"
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument(
         "--retries",
@@ -1233,6 +1273,14 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.retries < 0:
         print("--retries cannot be negative", file=sys.stderr)
         return 2
+    if arguments.stagger < 0:
+        print("--stagger cannot be negative", file=sys.stderr)
+        return 2
+
+    delay = stagger_seconds(arguments.stagger)
+    if delay:
+        print(f"shard {arguments.stagger}: waiting {delay:g}s before the first request", flush=True)
+        time.sleep(delay)
 
     try:
         # The same burst that refuses a feed can refuse the login, so it gets
@@ -1266,6 +1314,18 @@ def main(argv: list[str] | None = None) -> int:
         except DownloadError as error:
             failed = True
             print(f"{spec.name}: failed: {error}", file=sys.stderr)
+            if arguments.required:
+                # The rest would cost minutes of retries for a job that has
+                # already failed, so it stops here. On stdout, where Actions
+                # reads its workflow commands, and naming the feed.
+                print(
+                    f"::error title=missing feed::{spec.name} could not be downloaded "
+                    f"({error}). This job needs "
+                    "every feed it asked for, because a shard built without one "
+                    "cannot merge with the shards that had it, so it stops here.",
+                    flush=True,
+                )
+                break
             continue
         results.append(result)
         if result.unchanged:

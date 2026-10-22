@@ -113,6 +113,8 @@ jobs:
           schedule-url: ${{ vars.SCHEDULE_URL }}
           schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
           schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
+          # The gates read no Knowledgebase feed, so a refusal is a warning.
+          knowledgebase: tolerant
 
       - name: Detect whether the feed changed
         id: feed_check
@@ -194,6 +196,9 @@ jobs:
           schedule-url: ${{ vars.SCHEDULE_URL }}
           schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
           schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
+          # The pages are built from them, so a shard without them stops.
+          knowledgebase: required
+          shard: ${{ matrix.shard }}
 
       - name: Refuse a download the gates did not audit
         run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
@@ -242,6 +247,8 @@ jobs:
           schedule-url: ${{ vars.SCHEDULE_URL }}
           schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
           schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
+          # The merge reads the shards' pages, not the Knowledgebase feeds.
+          knowledgebase: tolerant
 
       - name: Refuse a download the gates did not audit
         run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
