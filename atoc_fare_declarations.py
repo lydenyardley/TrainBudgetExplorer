@@ -2123,6 +2123,14 @@ CONDITIONAL_TICKET_CODES = frozenset({
     "VCK",  # AWC 2 GROUP K
     "VCL",  # AWC 2 GROUP L
     "VSI",  # AWC SCHOOLGRP S
+    # STDPREM ONBOARD: an onboard upgrade to Standard Premium, not a journey
+    # fare. The feed gives it an ordinary one-adult block and no restriction,
+    # but it is priced below the standard single it upgrades (BHM to BHI
+    # GBP 2.10 against GBP 4.70 on the 24 September 2026 feed), and the reader
+    # needs a separate ticket for the journey. Decided by Lyden on 2026-10-22.
+    # Other Standard Premium codes (APU Avanti Prem U, UAQ, the ADVANCE
+    # STDPREM range) are sold as their own products and stay to their rules.
+    "25Q",
     "TKT",  # CHILD FLAT TRAV
     "TKR",  # CHILD FLTFARE R
     "TKS",  # CHILD FLTFARE S

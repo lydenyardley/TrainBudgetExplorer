@@ -2414,6 +2414,17 @@ class ConditionalFareTest(unittest.TestCase):
         self.assertFalse(ticket(min_passengers=2, min_adults=2, max_adults=2).sold_to_one_adult)
         self.assertFalse(ticket(min_children=1).sold_to_one_adult)
 
+    def test_a_standard_premium_onboard_upgrade_cannot_win_the_single_slot(self) -> None:
+        # 25Q STDPREM ONBOARD upgrades a ticket the reader already holds, so
+        # its price is below the standard single it needs: GBP 2.10 against
+        # GBP 4.70 from Birmingham New Street to Birmingham International.
+        # Priced under the fixture's SDS so it would take the slot outright.
+        # Excluded by Lyden's decision of 2026-10-22.
+        db = self._with(self._db(), "25Q", "STDPREM ONBOARD", 50)
+        rows = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        self.assertEqual(rows["NOT"].ticket_code, "SDS")
+        self.assertGreater(rows["NOT"].standard_pence, 50)
+
     def test_a_groups_single_cannot_win_the_slot_either(self) -> None:
         # The 999p sentinel was the one code that cost the most destinations.
         db = self._with(self._db(), "SPN", "LNER GRP SGL", 99_900)
@@ -2460,8 +2471,8 @@ class ConditionalFareTest(unittest.TestCase):
     def test_the_table_holds_the_codes_the_feed_actually_used(self) -> None:
         # Guard against a future edit that empties the table, which would
         # silently put every child's fare back on the page.
-        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 107)
-        for code in ("CTS", "CTR", "TKS", "TKR", "SPN", "S05", "ENT"):
+        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 108)
+        for code in ("CTS", "CTR", "TKS", "TKR", "SPN", "S05", "ENT", "25Q"):
             self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
 
     def test_the_sale_advance_family_is_closed_not_just_the_code_named(self) -> None:
