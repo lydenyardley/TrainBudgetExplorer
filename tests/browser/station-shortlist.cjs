@@ -662,8 +662,17 @@ async function compareTheDockWithTheTable(world) {
       // render and this setup would have measured the mode it came in with.
       applyState({ mode: "return" });
       DATA.destinations = [row];
-      setBudget(budgetCeiling());
+      // The control's stop is written by a render, and setBudget() clamps to
+      // it, so the row is drawn once before the budget is set: setting the
+      // most this list can reach while the field still carries the stop of the
+      // list that was on screen a moment ago clamped it to that -- £36 for a
+      // £205 row -- and the staged row was never in the table. Every day read
+      // an empty cell, so the only day that carries a split note (day zero)
+      // reported a clash that was the staging, not the page (Farnborough
+      // North, 22 October 2026).
       STATE.page = 1;
+      render();
+      setBudget(budgetCeiling());
       render();
       const clashes = [];
       for (let i = 0; i < days.length; i += 1) {
