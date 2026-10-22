@@ -575,6 +575,21 @@ in the file that measured it and not in a second retelling.
 | **O17**, six licence sentences still described a prices-only release | the owner's cleared reading of 16 October 2026 (`licences/release-clearance.md`, NWR Schedule), which the six sentences were corrected against in `docs/publish-checklist.md` and `docs/dtd-licensing-and-data-access.md` | `tools/check_release_clearance.py` for the clearance; the prose is held by `grep prices-only docs`, whose two remaining hits describe a capability (the builder's prices-only page) and a hypothetical (reverting the release) |
 | **O18**, `docs/build-performance-findings.md` was a rule with no enforcer | read, prototyped and refused, with the census and the prototype's failure under "Structural ideas the reviews weighed and refused" | nothing shipped, deliberately |
 
+### The 21 October 2026 agent-friendly re-architecture audit
+
+Closed on 22 October 2026 with all four tasks done, so the audit file was not
+kept (the rule in `AGENTS.md`). Its one question for the owner, whether to keep
+a hand-checked fare table, took the default of yes: a row past 90 days warns
+rather than fails, and deleting `tests/known_fares.toml` with its assemble step
+undoes it.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| Task 1, the release logic lived in 1,179 lines of YAML that only a run could test | `tools/release/` (commits, schedule, feed_state, feed_identity, facets, share, manifest), `.github/actions/licensed-feeds` for the three download copies, and `python -m tools.verify --browser --require-site` for the browser step; `deploy.yml` is 384 lines. `build-origins.yml` keeps its own downloads, because it builds from the DTD timetable and the action fetches the CIF | `tools/test_release.py`, actionlint in `python -m tools.verify --fast` and `--full`, and `tests/test_workflows.py`, which also fails on a local action git does not track |
+| Task 2, a plausible wrong fare passed every gate | `tests/known_fares.toml`, seeded from #149, #179 and #421, and `tools/check_known_fares.py` in the assemble job, over pages decoded by `build_payload.decode_payload` | `tools/test_check_known_fares.py`; the gate's arithmetic matched the page in Chromium on 321 of 321 cells of the synthetic Grantham page |
+| Task 3, a credited commit was refused only at push | `.githooks/commit-msg`, enabled per clone with `git config core.hooksPath .githooks`; the CI step stays as the backstop | `tools/test_commit_hook.py`, four tests, three of which fail with the hook moved aside |
+| Task 4, checking a fare against National Rail was a judgement only the owner made | `.agents/skills/fare-verification/SKILL.md` | each run leaves a `tests/known_fares.toml` row and an F7 synthetic record |
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
