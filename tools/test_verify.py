@@ -130,3 +130,32 @@ def _flatten(suite: unittest.TestSuite) -> list[unittest.TestCase]:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrowserVerdictTest(unittest.TestCase):
+    """The step reports the suite's own page counts, not its argument count."""
+
+    RUN_39772120392 = [
+        "  swept _site/from/abbey-wood/index.html\n",
+        "321/322 browser checks passed against _site/from/abbey-wood/index.html\n",
+        "\n",
+        "1 of 31 page(s) failed: 8841/8842 checks passed (_site/from/abbey-wood/index.html), "
+        "147 check(s) not exercised by the pages swept\n",
+    ]
+
+    def test_a_failed_run_names_the_pages_that_failed_of_the_pages_driven(self) -> None:
+        # Eight targets (five built pages, the site's two and its from/
+        # directory), 31 pages driven, one failed. The step said 8.
+        verdict = verify.suite_verdict(False, self.RUN_39772120392, targets=8)
+        self.assertEqual(verdict, "the browser suite failed on 1 of 31 page(s)")
+
+    def test_a_passing_run_counts_the_pages_the_suite_drove(self) -> None:
+        lines = ["5 of 5 page(s) checked, 1030/1030 browser checks passed\n"]
+        self.assertEqual(verify.suite_verdict(True, lines, targets=5), "5 page(s)")
+        swept = ["31 of 31 page(s) checked, 8842/8842 browser checks passed\n"]
+        self.assertEqual(verify.suite_verdict(True, swept, targets=8), "31 page(s)")
+
+    def test_a_suite_that_died_before_its_summary_does_not_claim_a_count(self) -> None:
+        verdict = verify.suite_verdict(False, ["TypeError: x is undefined\n"], targets=8)
+        self.assertNotIn("failed on", verdict)
+        self.assertIn("before it summarised", verdict)

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -291,6 +292,55 @@ def _run(command: list[str], what: str) -> bool:
     return result.returncode == 0
 
 
+# The browser suite's own last word on a run, which harness.cjs prints once:
+# "1 of 31 page(s) failed: ..." or "5 of 5 page(s) checked, ...".
+SUITE_SUMMARY = re.compile(r"^(\d+) of (\d+) page\(s\) (failed|checked)\b")
+
+
+def suite_verdict(ok: bool, lines: Sequence[str], targets: int) -> str:
+    """What the browser step reports, in the suite's own page counts.
+
+    The suite is handed page files and directories it sweeps, so the number of
+    arguments is not the number of pages: run 39772120392 gave it 8 targets,
+    the suite drove 31 pages and one failed, and the step said it "failed on 8
+    page(s)". The suite counts its pages and says which failed, so the step
+    repeats that rather than counting something else.
+    """
+    found = None
+    for line in lines:
+        match = SUITE_SUMMARY.match(line.strip())
+        if match:
+            found = match
+    if found is None:
+        if ok:
+            return f"{targets} page target(s), and the suite printed no summary"
+        return f"the browser suite failed before it summarised its pages ({targets} page target(s))"
+    count, total, verb = int(found.group(1)), int(found.group(2)), found.group(3)
+    if ok:
+        return f"{total} page(s)"
+    if verb == "failed":
+        return f"the browser suite failed on {count} of {total} page(s)"
+    return f"the browser suite failed after checking {count} of {total} page(s)"
+
+
+def _run_suite(command: list[str]) -> tuple[bool, list[str]]:
+    """Run the suite with its output shown as it runs and kept for the verdict."""
+    print(f"  $ {' '.join(command)}", flush=True)
+    process = subprocess.Popen(
+        command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    lines: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        sys.stdout.write(line)
+        lines.append(line)
+    code = process.wait()
+    if code:
+        print(f"  the browser suite exited {code}", file=sys.stderr)
+    return code == 0, lines
+
+
 def browser(require_site: bool = False) -> Step:
     """The pages the browser suite drives, built here, then the suite itself."""
     step = Step("browser suite")
@@ -362,9 +412,8 @@ def browser(require_site: bool = False) -> Step:
     ]
     command += [str(page.relative_to(ROOT)).replace("\\", "/") for page in pages]
     command += sweep
-    if not _run(command, "the browser suite"):
-        return step.done(False, f"the browser suite failed on {len(pages)} page(s)")
-    return step.done(True, f"{len(pages)} page(s)")
+    ok, lines = _run_suite(command)
+    return step.done(ok, suite_verdict(ok, lines, len(pages)))
 
 
 def main(argv: list[str] | None = None) -> int:
