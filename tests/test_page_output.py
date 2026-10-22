@@ -22,10 +22,11 @@ from build_assets import page_path_for_route
 from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
 from atoc_timetable import TimetableDb
 from build_demo_page import build_payload, build_station_index, encode_payload, render_page
+from build_payload import decode_payload
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
 
-from tests.page_harness import embedded_payload, embedded_text, hydrate_rows, page_script, setUpModule, station_page, tearDownModule
+from tests.page_harness import embedded_payload, embedded_text, page_script, setUpModule, station_page, tearDownModule
 
 
 class SharedStationAssetTest(unittest.TestCase):
@@ -838,7 +839,7 @@ class EncodedPayloadTest(unittest.TestCase):
     }
 
     def test_every_row_reads_back_as_it_was_written(self) -> None:
-        decoded = hydrate_rows(encode_payload(self.payload))
+        decoded = decode_payload(encode_payload(self.payload))
         for key in ("destinations", "singleDestinations", "stations"):
             self.assertEqual(decoded[key], self.payload[key])
 
@@ -891,7 +892,7 @@ class EncodedPayloadTest(unittest.TestCase):
 
     def test_the_pool_reads_back_by_hand_as_well_as_through_the_page(self) -> None:
         encoded = encode_payload(self.payload)
-        self.assertEqual(hydrate_rows(encoded)["destinations"], self.payload["destinations"])
+        self.assertEqual(decode_payload(encoded)["destinations"], self.payload["destinations"])
 
     # ADR-0069: what the fare lists share, and what a row packs.
     fares_payload = {
@@ -917,7 +918,7 @@ class EncodedPayloadTest(unittest.TestCase):
 
     def test_the_packed_lists_read_back_field_for_field_and_in_order(self) -> None:
         encoded = json.loads(json.dumps(encode_payload(self.fares_payload)))
-        decoded = hydrate_rows(encoded)
+        decoded = decode_payload(encoded)
         for key in ("destinations", "singleDestinations"):
             self.assertEqual(
                 json.dumps(decoded[key]), json.dumps(self.fares_payload[key]),

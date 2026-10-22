@@ -26,85 +26,8 @@ import build_state
 from atoc_fares import FaresDb
 from atoc_timetable import TimetableDb
 from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from build_payload import decode_payload
 from page_templates import PAYLOAD_MARKER
-
-
-def _unpack_railcards(value, codec):
-    if not codec or not isinstance(value, list):
-        return value
-    out = {}
-    for card, packed in zip(codec["cards"], value):
-        if isinstance(packed, list):
-            out[card] = {
-                "state": codec["states"][packed[0]],
-                "pricePence": packed[1],
-                "minimumFarePence": packed[2],
-                "rule": None if packed[3] is None else str(packed[3]),
-            }
-    return out
-
-
-def _unpack_tickets(value, codec):
-    if not codec or not isinstance(value, list):
-        return value
-    named = {"fromName": "fromCrs", "toName": "toCrs"}
-    out = []
-    for packed in value:
-        if not isinstance(packed, list):
-            out.append(packed)
-            continue
-        ticket, cells = {}, iter(packed)
-        for field in codec["columns"]:
-            if codec.get("names") and field in named:
-                ticket[field] = codec["names"][ticket[named[field]]]
-            else:
-                ticket[field] = next(cells)
-        out.append(ticket)
-    return out
-
-
-def hydrate_rows(payload: dict) -> dict:
-    """The payload as the page reads it: each row table turned back into objects.
-
-    The build ships a row list as a column list and a table of cells, with the
-    station's own columns placed once per station and railcards and tickets
-    packed (ADR-0069); the page hydrates them as it loads, so a test that read
-    the wire text directly would be asserting a shape no reader of the page
-    ever sees. This mirrors ``hydrate`` in page/station/payload.js.
-    """
-    pool = payload.get("pool") or []
-    codec = payload.get("rowCodec") or {}
-    places = payload.get("places") or {"columns": [], "rows": {}}
-
-    def value(cell):
-        return pool[-cell - 1] if isinstance(cell, int) and not isinstance(cell, bool) and cell < 0 else cell
-
-    for key in ("destinations", "singleDestinations", "anytimeDestinations", "stations"):
-        table = payload.get(key)
-        if not (isinstance(table, dict) and isinstance(table.get("rows"), list)):
-            continue
-        placed = set(table.get("placed") or [])
-        own = [column for column in table["columns"] if column not in placed]
-        rows = []
-        for cells in table["rows"]:
-            station = places["rows"].get(value(cells[own.index("crs")])) if placed else None
-            row, at = {}, 0
-            for column in table["columns"]:
-                if column in placed:
-                    row[column] = station[places["columns"].index(column)] if station else None
-                    continue
-                cell = value(cells[at])
-                at += 1
-                if column == "railcards":
-                    cell = _unpack_railcards(cell, codec.get("railcards"))
-                elif column == "tickets":
-                    cell = _unpack_tickets(cell, codec.get("tickets"))
-                row[column] = cell
-            rows.append(row)
-        payload[key] = rows
-    for key in ("pool", "places", "rowCodec"):
-        payload.pop(key, None)
-    return payload
 
 
 class PageTestCase(unittest.TestCase):
@@ -162,7 +85,7 @@ def embedded_payload(html: str) -> dict:
     match = re.search(re.escape(PAYLOAD_MARKER) + r"(\{.*?\});\n", html, re.DOTALL)
     if match is None:
         raise AssertionError("the page carries no embedded payload")
-    return hydrate_rows(json.loads(match.group(1)))
+    return decode_payload(json.loads(match.group(1)))
 
 
 def serialised_callback_lines(source: str) -> list[str]:
