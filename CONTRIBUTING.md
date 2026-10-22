@@ -84,6 +84,16 @@ command whose output a reviewer can reproduce.
 
 ## Check a message
 
+Enable the hook once per clone, and every commit is checked before it exists:
+
+```
+git config core.hooksPath .githooks
+```
+
+`.githooks/commit-msg` runs the checker below on the message and on both
+identities, and a refused message leaves no commit behind, so the fix is an
+edit rather than a rewrite. To check a message by hand:
+
 ```
 git log -1 --format=%B | python -m tools.check_commit_message
 python -m unittest discover -s tools -p "test_commit_message*.py"
@@ -100,8 +110,8 @@ python -m tools.check_commit_message "$message" \
   --author "$(git log -1 --format='%cn <%ce>')"
 ```
 
-The deploy workflow runs it over every commit the push adds, with both
-identities, so the convention is checked rather than described. The 41 commits that predate the grammar still fail it; they are
+The deploy workflow runs it again over every commit the push adds, with both
+identities, as the backstop for a clone without the hook. The 41 commits that predate the grammar still fail it; they are
 left as they are, because rewriting published history to satisfy a linter is a
 worse trade than a linter the older history is honestly outside of.
 

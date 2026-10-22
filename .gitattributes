@@ -9,3 +9,5 @@
 # anchored and `*` stops at a directory separator, so the flat patterns never
 # reached page/station/*.js (verified with `git check-attr eol`).
 page/** text eol=lf
+# A hook is run by sh, which reads a carriage return as part of the command.
+.githooks/* text eol=lf

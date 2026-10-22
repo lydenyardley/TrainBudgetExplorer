@@ -23,6 +23,9 @@ reports `not run` and exits 2 rather than passing quietly -- which is why `--ful
 wants `mypy` installed and `--fast` does not. One module while you work on it:
 `python -m unittest tests.test_build_demo_page`.
 
+Once per clone, `git config core.hooksPath .githooks`, so a message the
+commit checker refuses never becomes a commit.
+
 ## The map
 
 | Area | Files |
@@ -49,8 +52,8 @@ October 2026 plan).
 
 | Rule | Enforcer | What fails, and what it says |
 |---|---|---|
-| Conventional Commits, subject under 80 characters | `tools/check_commit_message.py`, in CI over the commits a push adds | exits 1 and prints one line per offending commit, naming the subject and the character count |
-| No commit credits Codebuff or Freebuff, in the author or in a trailer | `tools/check_commit_message.py`, in CI over the commits a push adds | exits 1 naming the tool the message credits and the line it sits on, or the author identity that credits it, and says to keep the why and drop the credit |
+| Conventional Commits, subject under 80 characters | `tools/check_commit_message.py`, run by `.githooks/commit-msg` before the commit exists, and in CI over the commits a push adds | exits 1 and prints one line per offending commit, naming the subject and the character count |
+| No commit credits Codebuff or Freebuff, in the author or in a trailer | `tools/check_commit_message.py`, run by `.githooks/commit-msg` before the commit exists, and in CI over the commits a push adds | exits 1 naming the tool the message credits and the line it sits on, or the author identity that credits it, and says to keep the why and drop the credit |
 | A line of shell in a workflow's `run:` block carries no backtick, so the shell cannot run a message instead of printing it | `tests/test_workflows.py`, in both unit runs | fails naming the workflow, the line and the shell line it read; a scan that did not reach the SCHEDULE_URL gate's own message fails too |
 | A built page stays inside its byte budget | `tools/page_bytes.py --site _site` in CI | exits 1 naming the route and its overage; exits 2 rather than passing on a page whose payload it did not parse, or on a site with no page |
 | A page that shows a fare carries the National Rail credit | `tools/check_source_credit.py --site _site` in the assemble job | exits 1 naming the page that carries a fare and no credit; exits 2 when it could not read the page it was given |

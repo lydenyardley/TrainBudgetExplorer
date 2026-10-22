@@ -1,0 +1,15 @@
+#!/bin/sh
+# Refuse a message or an identity the convention refuses, before the commit
+# exists: taken out afterwards, a credit costs every hash after it. CI runs the
+# same check over each push as the backstop. Enable once per clone with
+#   git config core.hooksPath .githooks
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+PY=$(command -v python || command -v python3)
+MESSAGE="$1.checked"
+git stripspace --strip-comments < "$1" > "$MESSAGE"
+ident() { git var "$1" | sed 's/ [0-9]* [-+][0-9]*$//'; }
+PYTHONPATH="$ROOT" "$PY" -m tools.check_commit_message "$MESSAGE" \
+  --author "$(ident GIT_AUTHOR_IDENT)" --author "$(ident GIT_COMMITTER_IDENT)"
+STATUS=$?
+rm -f "$MESSAGE"
+exit $STATUS
