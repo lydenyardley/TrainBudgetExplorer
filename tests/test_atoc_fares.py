@@ -1180,6 +1180,40 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.railcard_price("2TR", "CCS", 2650, day=day), 2650)
         self.assertEqual(db.railcard_price("2TR", "DDS", 2650, day=day), 1760)
 
+    def test_the_ticket_types_passenger_block_is_read(self) -> None:
+        # RSPS5045 P-02-04 section 4.6.2 fields 11 to 16, with the values the
+        # 24 September 2026 feed writes for FAMILY SGL 1+1, UNDER 11 SINGLE
+        # and ANYTIME DAY S. A blank block, as the synthetic fixture writes,
+        # sets no limit.
+        from atoc_fare_declarations import TICKET_TYPE
+        from make_synthetic_feed import _line
+
+        blocks = {
+            "FYA": ("002", "002", "001", "001", "001", "001"),
+            "CTS": ("001", "001", "000", "000", "001", "000"),
+            "SDS": ("001", "001", "001", "000", "001", "000"),
+            "QQS": ("", "", "", "", "", ""),
+        }
+        names = ("max_passengers", "min_passengers", "max_adults", "min_adults",
+                 "max_children", "min_children")
+        db = FaresDb()
+        db._load_lines("t.tty", [
+            _line({"update_marker": "R", "ticket_code": code, "description": code,
+                   "tkt_class": "2", "tkt_type": "S", **dict(zip(names, block))}, TICKET_TYPE)
+            for code, block in blocks.items()
+        ])
+        family = db.ticket_types["FYA"]
+        self.assertEqual(
+            (family.min_passengers, family.min_adults, family.max_adults, family.min_children),
+            (2, 1, 1, 1),
+        )
+        self.assertFalse(family.sold_to_one_adult)
+        self.assertEqual(db.ticket_types["CTS"].max_adults, 0)
+        self.assertFalse(db.ticket_types["CTS"].sold_to_one_adult)
+        self.assertTrue(db.ticket_types["SDS"].sold_to_one_adult)
+        self.assertIsNone(db.ticket_types["QQS"].max_adults)
+        self.assertTrue(db.ticket_types["QQS"].sold_to_one_adult)
+
     @unittest.skipUnless(
         Path("feeds/fares/dtd-fares.zip").is_file(),
         "licensed DTD feed is not available",
@@ -2339,6 +2373,46 @@ class ConditionalFareTest(unittest.TestCase):
         tally: dict[str, int] = {}
         db.page_single_destinations_within("GRN", 1_000_000, tally=tally)
         self.assertEqual(tally[atoc_fares.CONDITIONAL_REASON], 1)
+
+    def test_a_family_ticket_cannot_win_a_lone_adults_slot(self) -> None:
+        # FAMILY SGL 1+1 as the real feed writes it: two passengers, one adult
+        # and at least one child. Its code is on no list, so only the passenger
+        # block can keep it off. Priced under the fixture's SDS so it would
+        # take the slot outright if the block were not read.
+        db = self._db()
+        flow_id = next(iter(db.fares_by_flow))
+        db.fares_by_flow[flow_id]["FYA"] = Fare("FYA", 50, "")
+        db.ticket_types["FYA"] = TicketType(
+            "FYA", "FAMILY SGL 1+1", "2", "S", False,
+            min_passengers=2, min_adults=1, max_adults=1, min_children=1,
+        )
+        db.fares_by_flow[flow_id]["FAG"] = Fare("FAG", 50, "")
+        db.ticket_types["FAG"] = TicketType(
+            "FAG", "FAMILY RTN 1+1", "2", "R", False,
+            min_passengers=2, min_adults=1, max_adults=1, min_children=1,
+        )
+        singles = {row.crs: row for row in db.page_single_destinations_within("GRN", 1_000_000)}
+        returns = {row.crs: row for row in db.page_destinations_within("GRN", 1_000_000)}
+        self.assertEqual(singles["NOT"].ticket_code, "SDS")
+        self.assertNotIn("FAG", {row.ticket_code for row in returns.values()})
+        tally: dict[str, int] = {}
+        db.page_single_destinations_within("GRN", 1_000_000, tally=tally)
+        # Both family fares, under the reason the coverage report counts: the
+        # reader test runs before the single test, as it does for a child's.
+        self.assertEqual(tally[atoc_fares.CONDITIONAL_REASON], 2)
+        # The coverage report's measurement of the rule puts it back.
+        loose = db.page_single_destinations_within("GRN", 1_000_000, include_conditional=True)
+        self.assertIn("FYA", {row.ticket_code for row in loose})
+
+    def test_a_ticket_for_no_adult_or_a_party_of_two_adults_is_not_a_lone_adults(self) -> None:
+        def ticket(**block):
+            return TicketType("QQS", "ANY", "2", "S", False, **block)
+
+        self.assertTrue(ticket().sold_to_one_adult)
+        self.assertTrue(ticket(min_passengers=1, max_adults=1).sold_to_one_adult)
+        self.assertFalse(ticket(max_adults=0).sold_to_one_adult)
+        self.assertFalse(ticket(min_passengers=2, min_adults=2, max_adults=2).sold_to_one_adult)
+        self.assertFalse(ticket(min_children=1).sold_to_one_adult)
 
     def test_a_groups_single_cannot_win_the_slot_either(self) -> None:
         # The 999p sentinel was the one code that cost the most destinations.

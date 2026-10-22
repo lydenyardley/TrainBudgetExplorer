@@ -957,7 +957,10 @@ class FaresDb(FaresLoader):
         advance_codes = ADVANCE_RESTRICTION_CODES
 
         def reject(fare: Fare, ticket: TicketType) -> str | None:
-            if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+            if not include_conditional and (
+                fare.ticket_code in CONDITIONAL_TICKET_CODES
+                or not ticket.sold_to_one_adult
+            ):
                 return CONDITIONAL_REASON
             if restrictions.requires_another_ticket(fare.restriction_code):
                 return CONDITIONAL_REASON
@@ -996,7 +999,10 @@ class FaresDb(FaresLoader):
         """
 
         def reject(fare: Fare, ticket: TicketType) -> str | None:
-            if fare.ticket_code in CONDITIONAL_TICKET_CODES and not include_conditional:
+            if not include_conditional and (
+                fare.ticket_code in CONDITIONAL_TICKET_CODES
+                or not ticket.sold_to_one_adult
+            ):
                 return CONDITIONAL_REASON
             if restrictions.requires_another_ticket(fare.restriction_code):
                 return CONDITIONAL_REASON
@@ -1031,7 +1037,7 @@ class FaresDb(FaresLoader):
         restricted standard returns remain visible and carry their restriction
         code to the page.
 
-        ``include_conditional`` puts the child, group and event fares back.
+        ``include_conditional`` puts the child, family, group and event fares back.
         Nothing on a page sets it. It exists so the coverage report can ask
         what the rule costs, by asking this selector the same question both
         ways and counting the destinations that differ.
@@ -1080,7 +1086,7 @@ class FaresDb(FaresLoader):
         ``include_advance`` puts them back, for the coverage report's
         measurement of what the rule costs and nothing else.
 
-        ``include_conditional`` puts the child, group and event fares back, for
+        ``include_conditional`` puts the child, family, group and event fares back, for
         the coverage report's measurement and nothing else.
         """
         rows = self._destinations_within(

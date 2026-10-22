@@ -81,7 +81,7 @@ UNPRICED_REASONS = {
     "ticket_is_not_a_standard_return": "fares that are not standard returns",
     "ticket_is_not_one_a_reader_can_buy": (
         "fares a reader cannot buy at the price they are quoted at, "
-        "such as a child, a group, a staff or a concession fare"
+        "such as a child, a family, a group, a staff or a concession fare"
     ),
     "ticket_is_not_for_public_sale": (
         "fares the catalogue marks as not for public sale"

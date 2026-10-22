@@ -2091,12 +2091,13 @@ PLACEHOLDER_TICKET_CODES = frozenset({
 # of each family is recorded beside its block so a person can check a code
 # against what it prices without opening the feed.
 #
-# The feed cannot be asked instead. The ticket type record carries a
-# passenger block, and SCR GROUP 05, which won 1,486 of the single slots in
-# a 60-origin sample, reads one passenger and one adult there, so the block
-# does not mark a group. The restriction those fares carry is blank, so
-# there is no text on the fare to read either. What the page can say about
-# a conditional fare is its price, and its price is the thing in question.
+# The feed answers only part of this. The ticket type record carries a
+# passenger block, and ``TicketType.sold_to_one_adult`` reads it, which is
+# what keeps every FAMILY 1+1 and 1A2C ticket off a page. But SCR GROUP 05,
+# which won 1,486 of the single slots in a 60-origin sample, reads one
+# passenger and one adult there, so the block does not mark every group.
+# The restriction those fares carry is blank, so there is no text on the
+# fare to read either. This list is for the fares the block does not mark.
 CONDITIONAL_TICKET_CODES = frozenset({
     "GF3",  # ADVANCE GROUP 3
     "GF4",  # ADVANCE GROUP 4
@@ -2492,6 +2493,33 @@ class TicketType:
     tkt_type: str
     restricted_by_train: bool
     discount_category: str = ""
+    # The passenger block, RSPS5045 section 4.6.2 fields 12 to 16: how many
+    # people, adults and children one ticket must or may carry. Blank in a
+    # record reads as no limit, which is what a fixture that never wrote the
+    # block means.
+    min_passengers: int = 0
+    min_adults: int = 0
+    max_adults: int | None = None
+    min_children: int = 0
+
+    @property
+    def sold_to_one_adult(self) -> bool:
+        """Whether one adult travelling alone may hold this ticket.
+
+        The page prices a party as one ticket per adult, so every fare it
+        quotes has to be one an adult can buy for themself. A FAMILY SGL 1+1
+        reads two passengers and one child at minimum: it is priced for an
+        adult with a child, and an adult on their own cannot use it, however
+        well its price matches the adult fare. A child's ticket reads no
+        adults at most. Both are the feed's own statement, so the next family
+        or child product is caught without anyone typing its code.
+        """
+        return (
+            self.min_passengers <= 1
+            and self.min_adults <= 1
+            and self.min_children == 0
+            and (self.max_adults is None or self.max_adults >= 1)
+        )
 
     @property
     def is_standard_return(self) -> bool:

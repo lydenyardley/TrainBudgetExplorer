@@ -67,6 +67,12 @@ from atoc_fare_declarations import (
 )
 from parse_report import ParseReport, count, decode_lines, read_feed_files
 
+
+def _count_or_none(value: str) -> int | None:
+    """A passenger count, or None for a blank field, which sets no limit."""
+    return int(value) if value.isdigit() else None
+
+
 if TYPE_CHECKING:
     from atoc_fares import FaresDb
 
@@ -1261,6 +1267,10 @@ class FaresLoader:
                 _text(line, TICKET_TYPE_OFFSETS, "restricted_by_train")
             ),
             discount_category=_text(line, TICKET_TYPE_OFFSETS, "discount_category"),
+            min_passengers=_as_int(_text(line, TICKET_TYPE_OFFSETS, "min_passengers")),
+            min_adults=_as_int(_text(line, TICKET_TYPE_OFFSETS, "min_adults")),
+            max_adults=_count_or_none(_text(line, TICKET_TYPE_OFFSETS, "max_adults")),
+            min_children=_as_int(_text(line, TICKET_TYPE_OFFSETS, "min_children")),
         )
 
     def _load_railcards(self, line: str) -> None:
