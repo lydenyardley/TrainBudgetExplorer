@@ -2518,6 +2518,53 @@ class ConditionalFareTest(unittest.TestCase):
         self.assertEqual({row.crs for row in rows}, without)
         self.assertIn("T2D", atoc_fares.PLACEHOLDER_TICKET_CODES)
 
+    def test_corporate_staff_and_penalty_fares_are_not_on_public_sale(self) -> None:
+        # Names as the 24 September 2026 feed writes them. WC8 was the return
+        # from Birmingham New Street to London Euston at GBP 180.00. Each is
+        # priced at 50p so it would take the slot outright if it passed.
+        cases = (
+            ("WC8", "AWC CORP Y", "R"),
+            ("XS3", "LNER CORP STD S", "S"),
+            ("SUS", "RAIL STAFF TRVL", "S"),
+            ("SWZ", "SWR StaffRanger", "S"),
+            ("1ZD", "CS DUTY TVL CC", "S"),
+            ("PFW", "PENALTY WARNING", "S"),
+        )
+        for code, name, kind in cases:
+            with self.subTest(code=code):
+                db = self._with(self._db(), code, name, 50, ticket_type=kind)
+                query = db.page_destinations_within if kind == "R" else db.page_single_destinations_within
+                tally: dict[str, int] = {}
+                rows = query("GRN", 1_000_000, tally=tally)
+                self.assertNotIn(code, {row.ticket_code for row in rows})
+                self.assertGreaterEqual(tally.get("ticket_is_not_for_public_sale", 0), 1)
+
+    def test_a_sentinel_price_is_a_placeholder_whichever_ticket_carries_it(self) -> None:
+        # 22A AVANTI B STD holds GBP 9,998.00 on 63 of its 65 fares and a real
+        # price on the other two, so the price is what is wrong, not the code.
+        for pence in (99_900, 99_999, 999_800, 999_999):
+            with self.subTest(pence=pence):
+                plain = {row.crs for row in self._db().page_single_destinations_within("GRN", 100_000_000)}
+                db = self._db()
+                lonely = next(
+                    flow_id for flow_id, bucket in db.fares_by_flow.items()
+                    if not any(db.ticket_types[code].tkt_type == "S" for code in bucket)
+                )
+                db.fares_by_flow[lonely]["22A"] = Fare("22A", pence, "")
+                db.ticket_types["22A"] = TicketType("22A", "AVANTI B STD", "2", "S", False)
+                rows = db.page_single_destinations_within("GRN", 100_000_000)
+                self.assertEqual({row.crs for row in rows}, plain)
+        # The same ticket at its real price is still a fare.
+        db = self._db()
+        lonely = next(
+            flow_id for flow_id, bucket in db.fares_by_flow.items()
+            if not any(db.ticket_types[code].tkt_type == "S" for code in bucket)
+        )
+        db.fares_by_flow[lonely]["22A"] = Fare("22A", 3_400, "")
+        db.ticket_types["22A"] = TicketType("22A", "AVANTI B STD", "2", "S", False)
+        rows = db.page_single_destinations_within("GRN", 100_000_000)
+        self.assertIn("22A", {row.ticket_code for row in rows})
+
     def test_a_fare_the_feed_says_needs_another_ticket_cannot_win(self) -> None:
         # BCF FRIENDS&FAMILY is priced at GBP 1.00 and won 678 slots before
         # this rule. Its restriction says ONLY VALID WITH TfWM SEASON TKT

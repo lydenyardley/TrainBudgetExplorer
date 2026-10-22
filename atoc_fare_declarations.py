@@ -2067,7 +2067,32 @@ NOT_FOR_PUBLIC_SALE_MARKERS = (
     "DUMMY",
     "FOR TEST",
     "COMP",
+    # A corporate fare is sold under a company's agreement with the operator,
+    # a staff or duty ticket to railway staff, and a penalty warning is not a
+    # ticket at all. RSPS5045 P-02-04 has no field that marks any of them: the
+    # ticket type record carries no sale channel and the flow's
+    # PUBLICATION_IND is obsolete. Their names are the feed's only statement,
+    # and on the 24 September 2026 download every name holding one of these
+    # words is such a fare (CORP: WC8 AWC CORP Y, XS3 LNER CORP STD S and 12
+    # more; STAFF: SUS RAIL STAFF TRVL, SWZ, TSD, YEC and 11 more; DUTY: the
+    # CS and TfW duty passes; PENALTY: PFW and the PENALTYFARE codes). WC8 was
+    # BHM to London Euston's return at GBP 180.00 and XS3 four of King's
+    # Cross's singles. Reviewed with Lyden on 2026-10-22.
+    "CORP",
+    "STAFF",
+    "DUTY",
+    "PENALTY",
 )
+
+# Prices the feed uses as a sentinel rather than a fare: GBP 9,998.00 on the
+# Avanti 22, 23, 52 and 53 ranges, A53, A54 and XD3, GBP 999.99 and 9,999.99 on
+# group, event and pass codes, and GBP 999.00 on the tour operator, LNER group
+# and AWC group codes (24 September 2026 download). A fare at one of them is
+# not a price anyone pays, whichever ticket carries it, so the test is the
+# price: the Avanti codes carry a real price on two flows and the sentinel on
+# the other 63, and only the sentinel is wrong. Reviewed with Lyden on
+# 2026-10-22.
+SENTINEL_FARE_PENCE = frozenset({99_900, 99_999, 999_800, 999_999})
 
 PLACEHOLDER_TICKET_CODES = frozenset({
     "EIS", "EIF", "IF1", "IF3", "IS0", "IS1", "IS3", "LIS", "LIF",

@@ -71,6 +71,7 @@ from atoc_fare_declarations import (
     ONS_BUILT_UP_AREAS_FILE_URL,
     ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
     PLACEHOLDER_TICKET_CODES,
+    SENTINEL_FARE_PENCE,
     RAILCARD,
     RAILCARD_DISCOUNT,
     RAILCARD_OFFSETS,
@@ -973,7 +974,11 @@ class FaresDb(FaresLoader):
             if not ticket.is_standard_single:
                 return "ticket_is_not_a_standard_single"
             name = ticket.name.upper()
-            if fare.ticket_code in PLACEHOLDER_TICKET_CODES or "ITX" in name:
+            if (
+                fare.ticket_code in PLACEHOLDER_TICKET_CODES
+                or "ITX" in name
+                or fare.pence in SENTINEL_FARE_PENCE
+            ):
                 return "ticket_is_a_catalogue_placeholder"
             if is_not_for_public_sale(name):
                 return "ticket_is_not_for_public_sale"
@@ -1009,7 +1014,11 @@ class FaresDb(FaresLoader):
             if not ticket.is_standard_return:
                 return "ticket_is_not_a_standard_return"
             name = ticket.name.upper()
-            if fare.ticket_code in PLACEHOLDER_TICKET_CODES or "ITX" in name:
+            if (
+                fare.ticket_code in PLACEHOLDER_TICKET_CODES
+                or "ITX" in name
+                or fare.pence in SENTINEL_FARE_PENCE
+            ):
                 return "ticket_is_a_catalogue_placeholder"
             if is_not_for_public_sale(name):
                 return "ticket_is_not_for_public_sale"
