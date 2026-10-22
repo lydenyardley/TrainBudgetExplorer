@@ -2499,6 +2499,25 @@ class ConditionalFareTest(unittest.TestCase):
         self.assertIn("XD3", atoc_fares.PLACEHOLDER_TICKET_CODES)
         self.assertNotIn("XD3", atoc_fares.CONDITIONAL_TICKET_CODES)
 
+    def test_a_tour_operators_sentinel_is_not_a_destinations_single(self) -> None:
+        # T2D TOUR OP STD D at GBP 999.00 was the only single from Birmingham
+        # New Street to London Euston once 25Q left, and the page quoted it.
+        # It never wins on price, so the fixture gives it a destination with
+        # no other single, which is the shape that published it.
+        plain = self._db()
+        without = {row.crs for row in plain.page_single_destinations_within("GRN", 10_000_000)}
+        db = self._db()
+        lonely = next(
+            flow_id for flow_id, bucket in db.fares_by_flow.items()
+            if not any(db.ticket_types[code].tkt_type == "S" for code in bucket)
+        )
+        db.fares_by_flow[lonely]["T2D"] = Fare("T2D", 99_900, "")
+        db.ticket_types["T2D"] = TicketType("T2D", "TOUR OP STD D", "2", "S", False)
+        rows = db.page_single_destinations_within("GRN", 10_000_000)
+        self.assertNotIn("T2D", {row.ticket_code for row in rows})
+        self.assertEqual({row.crs for row in rows}, without)
+        self.assertIn("T2D", atoc_fares.PLACEHOLDER_TICKET_CODES)
+
     def test_a_fare_the_feed_says_needs_another_ticket_cannot_win(self) -> None:
         # BCF FRIENDS&FAMILY is priced at GBP 1.00 and won 678 slots before
         # this rule. Its restriction says ONLY VALID WITH TfWM SEASON TKT

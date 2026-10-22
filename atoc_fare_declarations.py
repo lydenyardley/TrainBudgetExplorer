@@ -2075,6 +2075,14 @@ PLACEHOLDER_TICKET_CODES = frozenset({
     # not caught by the check below. It is not a fare, so it belongs here
     # rather than among the conditional tickets, which are real.
     "XD3",
+    # TOUR OP STD A to H: every fare the 24 September 2026 feed holds for
+    # them is GBP 999.00, a sentinel a tour operator's ticket carries rather
+    # than a price anyone pays. T2D was the only single BHM to London Euston
+    # once 25Q left, and the page quoted it. Decided by Lyden on 2026-10-22
+    # for T2D; A to C and E to H are the same product at the same sentinel
+    # and nothing else. The first-class T1A to T1H are first class, so the
+    # standard selectors never reach them.
+    "T2A", "T2B", "T2C", "T2D", "T2E", "T2F", "T2G", "T2H",
 })
 
 
