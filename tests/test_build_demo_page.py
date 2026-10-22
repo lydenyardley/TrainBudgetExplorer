@@ -1765,3 +1765,55 @@ class BuildContextReleaseTest(unittest.TestCase):
 
         for name, ref in zip(("fares", "timetable"), watched):
             self.assertIsNone(ref(), f"the {name} database outlived the release")
+
+
+class ReviewedOriginFixtureTest(unittest.TestCase):
+    """The reviewed-name shape page holds the two things run 39818671598 found.
+
+    tools/verify.py drives this page in the browser suite so the heading check
+    meets an origin whose page name is not the feed's upper-case CIF name, and
+    the railcard-note check meets a card-priced row that costs more for two
+    than the one-adult ceiling the page opens on. Both checks passed every
+    fixture page while being wrong, so this pins the shape that makes them
+    meet the case: a fixture that drifted back to an upper-case name or a
+    cheap enough party price would let both regressions back in unseen.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _page(self, **flags: bool) -> Path:
+        feed = self.tmp / "feed"
+        build_synthetic_feed(feed, include_restrictions=True, **flags)
+        out = self.tmp / "site" / "index.html"
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = build_demo_page.main(["--feed", str(feed), "--origin", "KGX", "--out", str(out)])
+        self.assertEqual(code, 0)
+        return self.tmp / "site" / "from" / "london-kings-x" / "index.html"
+
+    def test_the_origin_is_named_by_the_reviewed_list_not_the_feed(self) -> None:
+        payload = embedded_payload(self._page(include_return_network=True, include_reviewed_origin=True).read_text(encoding="utf-8"))
+        self.assertEqual(payload["origin"]["name"], "London Kings Cross")
+        self.assertNotEqual(payload["origin"]["name"], payload["origin"]["name"].upper())
+
+    def test_every_card_priced_row_costs_more_for_two_than_the_opening_ceiling(self) -> None:
+        payload = embedded_payload(self._page(include_return_network=True, include_reviewed_origin=True).read_text(encoding="utf-8"))
+        rows = payload["destinations"]
+        self.assertGreater(len(rows), 1)
+        # The first card the railcard-note check tries is the first the page
+        # lists, with two adults; it has to price these rows for the check to
+        # read them.
+        first = payload["railcards"][0]["key"]
+        priced = [row for row in rows if (row.get("railcards") or {}).get(first, {}).get("pricePence") is not None]
+        self.assertEqual(len(priced), len(rows))
+        opening_ceiling = max(row["adultPence"] for row in rows)
+        self.assertGreater(min(row["partyPence"] for row in priced), opening_ceiling)
+
+    def test_the_flag_is_what_prices_kings_cross(self) -> None:
+        # Off by default, so every other fixture keeps the feed it counts.
+        self.assertFalse(self._page(include_return_network=True).exists())
+
+    def test_the_flag_says_what_else_it_needs(self) -> None:
+        with self.assertRaises(ValueError):
+            build_synthetic_feed(self.tmp / "feed", include_reviewed_origin=True)

@@ -31,7 +31,7 @@ async function renderThePage(world) {
       // C21: the filter includes a fare exactly at the budget (price <= cap),
       // so the sentence says "up to". "Under" would describe a page that
       // excludes a row it actually shows.
-      /Train fares/.test(heading) && /up to/.test(heading) && heading.includes(facts.origin.toUpperCase()),
+      /Train fares/.test(heading) && /up to/.test(heading) && heading.includes(facts.origin),
       heading.trim()
     );
     check("the heading budget is the editable source of truth", await page.locator("#budgetNumber").count() === 1, await page.locator("#budgetNumber").count() + " fields");

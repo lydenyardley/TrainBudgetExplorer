@@ -362,12 +362,23 @@ def browser(require_site: bool = False) -> Step:
         # for is the list that fits on one page (ADR-0058); the number of rows
         # was never the point, and the six to eight the feed now prices against
         # each origin still fit.
-        (["python", "make_synthetic_feed.py", SHAPE_FEED, "--unserved-station", "--third-origin", "--return-network"], "the shape feed"),
+        # --reviewed-origin adds fares from London Kings Cross for the
+        # reviewed-name page below, and nothing to the pages built before it.
+        (["python", "make_synthetic_feed.py", SHAPE_FEED, "--unserved-station", "--third-origin", "--return-network", "--reviewed-origin"], "the shape feed"),
         # No --timetable, so the page prices fares only, and no --date for the
         # same reason: a build with no times has no day to report, and a page
         # carrying a date it cannot report times for would be claiming one.
         (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--origin", "GRN", "--out", f"{SHAPE_SITE}/prices-only/index.html"], "the prices-only page"),
         (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--all-origins", "--date", SERVICE_DATE, "--out", f"{SHAPE_SITE}/one-page/index.html"], "the one-page shape"),
+        # Two shapes no other fixture page has, both found by the deploy sweep
+        # of run 39818671598 rather than by this suite: an origin whose name
+        # is the reviewed "London Kings Cross" rather than the feed's
+        # upper-case CIF name (Harwich International's heading), and a page
+        # whose card-priced rows all cost more for two than the one-adult
+        # ceiling the page opens on (Farnborough (Main)'s railcard note). With
+        # the timetable, because a prices-only page skips the times half of
+        # the suite and its skips count against the budget for pages like it.
+        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--date", SERVICE_DATE, "--origin", "KGX", "--out", f"{SHAPE_SITE}/reviewed-name/index.html"], "the reviewed-name page"),
     ]
     for command, what in steps:
         if not _run(command, what):
@@ -381,6 +392,7 @@ def browser(require_site: bool = False) -> Step:
         Path(ROOT, DEMO_SITE, "privacy/index.html"),
         *one_page[-1:],
         Path(ROOT, SHAPE_SITE, "prices-only/from/grantham/index.html"),
+        Path(ROOT, SHAPE_SITE, "reviewed-name/from/london-kings-x/index.html"),
     ]
     missing = [page for page in pages if not page.is_file() or not page.stat().st_size]
     if missing:

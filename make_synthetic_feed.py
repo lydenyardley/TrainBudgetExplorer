@@ -89,6 +89,31 @@ FARES = (
 THIRD_ORIGIN_FLOWS = (("0000020", "3000", "2000", "00000"),)
 THIRD_ORIGIN_FARES = (("0000020", "SDR", 950, ""),)
 
+# Off by default too. Fares from London Kings Cross, the fixture station the
+# reviewed list renames ("LONDON KINGS X" is shown as "London Kings Cross"), so
+# a page has an origin whose name is not the feed's upper-case CIF name. Every
+# other origin the fixtures price keeps its CIF name, and the browser suite's
+# heading check compared against an upper-cased name without a page that could
+# tell it was wrong; Harwich International's page was the first (run
+# 39818671598).
+#
+# The fares sit between £9 and £17, so the cheapest costs more for two than
+# the dearest does for one: every row the first card prices is above the
+# one-adult ceiling the page opens on once the party is two. That is the page
+# on which the railcard-note check set its budget from a ceiling the party
+# change had not yet redrawn and read no rows (Farnborough (Main), same run).
+# The destinations are the return network's, so the page has the types, a
+# heritage row and enough rows for the suite's other checks to read; it needs
+# --return-network for its stations.
+REVIEWED_ORIGIN_FARES = (
+    ("5000", "1000", 900),   # London Kings Cross -> Grantham
+    ("5000", "8000", 1000),  # London Kings Cross -> Matlock
+    ("5000", "8100", 1100),  # London Kings Cross -> Retford
+    ("5000", "8200", 1300),  # London Kings Cross -> Skegness
+    ("5000", "8300", 1500),  # London Kings Cross -> Leicester
+    ("5000", "8400", 1700),  # London Kings Cross -> Bulwell
+)
+
 # A real network for the two secondary origins, off by default with the rest of
 # the optional blocks.
 #
@@ -438,6 +463,7 @@ def build_synthetic_feed(
     include_real_shapes: bool = False,
     include_restrictions: bool = False,
     include_third_origin: bool = False,
+    include_reviewed_origin: bool = False,
     include_return_network: bool = False,
     include_long_list: bool = False,
     minimum_fares: tuple[tuple[str, ...], ...] | None = None,
@@ -480,6 +506,13 @@ def build_synthetic_feed(
             restriction = "1A" if (origin, destination) in RETURN_NETWORK_RESTRICTED else ""
             flows += ((flow_id, origin, destination, "00000"),)
             fares += ((flow_id, "SDR", pence, restriction),)
+    if include_reviewed_origin:
+        if not include_return_network:
+            raise ValueError("the reviewed origin prices the return network's stations; pass include_return_network too")
+        for number, (origin, destination, pence) in enumerate(REVIEWED_ORIGIN_FARES, start=90):
+            flow_id = f"{number:07d}"
+            flows += ((flow_id, origin, destination, "00000"),)
+            fares += ((flow_id, "SDR", pence, ""),)
     if include_long_list:
         stations += LONG_LIST_STATIONS
         types.update(LONG_LIST_TYPES)
@@ -1363,6 +1396,15 @@ if __name__ == "__main__":
         help="price a third station's departures, so a built site's station picker has options",
     )
     parser.add_argument(
+        "--reviewed-origin",
+        action="store_true",
+        help=(
+            "price London Kings Cross to the return network (pass that too), an "
+            "origin whose page name is the reviewed 'London Kings Cross' rather "
+            "than the feed's CIF name"
+        ),
+    )
+    parser.add_argument(
         "--return-network",
         action="store_true",
         help=(
@@ -1401,6 +1443,7 @@ if __name__ == "__main__":
                 # depends on a clean .RST file, so the demo feed carries one.
                 include_restrictions=True,
                 include_third_origin=arguments.third_origin,
+                include_reviewed_origin=arguments.reviewed_origin,
                 include_return_network=arguments.return_network,
                 include_long_list=arguments.long_list,
             )

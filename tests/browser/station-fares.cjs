@@ -886,7 +886,22 @@ async function checkTheFareDetails(world) {
           if (document.getElementById("railcardDrawer")) {
             return { error: "the railcard drawer is still on the page" };
           }
+          // From the page as a reader opens it, one adult and no card, rather
+          // than whatever party and budget the check before this one left: a
+          // check that passes only after another has run is reading that
+          // check's state, and Farnborough (Main) was the page where the
+          // earlier check had priced nothing and left the opening state alone.
+          applyState({ unit: "adult", railcard: "" });
+          render();
           applyState({ unit: choice.adults === 2 ? "party" : "adult", railcard: choice.key });
+          // The budget's ceiling is redrawn by render, not by applyState, so it
+          // is drawn for the party before it is read. Read straight after
+          // applyState it is still the one-adult ceiling, and a party row
+          // dearer than that was clamped off the table: Farnborough's one row,
+          // £35.70 for one and £71.40 for two, set a £36 budget and left no
+          // note to read (run 39818671598). A reader's own change of party
+          // renders (chooseUnit), so this is the state a reader reaches.
+          render();
           // Only the list the page is showing: a row in another ticket mode is
           // not on screen, so it is not a note a reader could read.
           const priced = activeDestinations().filter((d) => (d.railcards || {})[choice.key]);
