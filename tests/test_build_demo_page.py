@@ -1290,6 +1290,37 @@ class DemoPageTest(PageTestCase):
     def test_the_page_titles_itself_with_the_budget(self) -> None:
         self.assertIn("&pound;20", self.html)
 
+    def test_a_page_opens_on_a_fare_rather_than_on_an_empty_budget(self) -> None:
+        # 9 of the 2,706 pages the 21 October 2026 release wrote priced nothing
+        # inside the £20 the build opens at -- Farnborough North's cheapest fare
+        # is £29.70, Thorne South's £58.10 -- so each opened on "No destinations
+        # for up to £20.00" with the fares it does have one press away. A page
+        # opens at the cheapest fare's pound instead: the reader's first screen
+        # is the one fare this station sells, which is the question the page
+        # answers.
+        def opening(html: str) -> int:
+            return int(re.search(r'id="budgetNumber"[^>]*value="(\d+)"', html).group(1))
+
+        # The fixture's own fares are inside £20, so its page opens at the
+        # build's figure or at its own (lower) ceiling rather than at a fare.
+        self.assertGreaterEqual(opening(self.html), 1)
+        self.assertLessEqual(opening(self.html), 20)
+        dearer = [
+            {
+                **row,
+                "adultPence": row["adultPence"] + 5000,
+                "partyPence": row.get("partyPence", 0) + 5000,
+            }
+            for row in self.payload["destinations"]
+        ]
+        cheapest = min(row["adultPence"] for row in dearer)
+        html = render_page(
+            dict(self.payload, destinations=dearer, singleDestinations=[], anytimeDestinations=[]),
+            budget_pounds=20,
+        )
+        self.assertEqual(opening(html), -(-cheapest // 100))
+        self.assertGreater(opening(html), 20)
+
     def test_without_a_timetable_the_page_says_so(self) -> None:
         payload = build_payload(self.fares, None, "GRN")
         self.assertFalse(payload["hasJourneys"])

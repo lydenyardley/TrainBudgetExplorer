@@ -287,6 +287,20 @@ def render_page(
     prices += [row["adultPence"] for row in payload.get("singleDestinations", [])]
     prices += [row["adultPence"] for row in payload.get("anytimeDestinations", [])]
     ceiling = max(1, -(-max(prices or [100]) // 100)) if prices else 100
+    # A page opens on a fare, not on an empty table. The opening budget is the
+    # build's own figure unless this station prices nothing that cheaply, in
+    # which case it opens at the cheapest fare's pound -- the amount the reader
+    # would have to spend here to get anywhere, which is the one number the page
+    # exists to answer. Nine of the 2,706 station pages the 21 October 2026
+    # release wrote were in that position -- Farnborough North's cheapest fare
+    # is £29.70, Thorne South's £58.10 -- and each opened saying "No destinations
+    # for up to £20.00", with the fares it does have one press away. Opening
+    # there rather than on the build's figure is what "open on the mode that has
+    # fares" means for a page whose fares are not all inside the opening budget:
+    # the list the reader arrives on is the one fare this station sells, and no
+    # check about a page's own rows has to be written around an empty first
+    # screen.
+    opening = max(int(budget_pounds), -(-min(prices or [100]) // 100))
     # The picker's list is the one thing a page no longer carries once the
     # build serves it as the shared asset: sending both would be the hundreds
     # of MB across the network the asset exists to remove.
@@ -296,7 +310,7 @@ def render_page(
         else payload
     )
     embedded = json.dumps(encode_payload(embedded_payload), ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    initial_budget = max(1, min(int(budget_pounds), ceiling))
+    initial_budget = max(1, min(opening, ceiling))
     # A facet chip is only offered when this page has a destination carrying
     # it. The taxonomy is shared, so a facet with no matches here is a filter
     # that can only ever return nothing, which reads as a broken control rather
