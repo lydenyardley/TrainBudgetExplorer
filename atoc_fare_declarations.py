@@ -28,9 +28,14 @@ import xml.etree.ElementTree as ET
 
 ROUNDING_STEP_PENCE = 5
 
-# "1/3 off" is the published discount for the mainstream UK railcards, Two
-# Together included. The feed carries the authoritative rules in its dis and frr
-# files; see adr/ADR-0002-budget-semantics-and-railcards.md for the upgrade path.
+# What a card takes off is the feed's own figure: the railcard's adult status
+# (RLC) and the ticket's discount category (TTY) name a status-discount record
+# (DIS) in tenths of a percent. The mainstream cards read 334 there, 33.4% off,
+# and the difference from a third is a real 5p: £26.50 is £17.65 at a third and
+# £17.60 at 33.4%, and National Rail sold two Two Together Anytime Singles from
+# Grantham to Skegness at £35.20 on 22 October 2026. A third is the reading
+# only where the feed states no percentage (the synthetic fixture writes no DIS
+# file) or marks the category X.
 RAILCARD_DISCOUNT = Fraction(2, 3)
 
 # The station KB FareLocations feed describes fare locations; it does not carry
@@ -2271,6 +2276,20 @@ TICKET_TYPE = (
     ("min_children", 3),
     ("restricted_by_date", 1),
     ("restricted_by_train", 1),
+    ("restricted_by_area", 1),
+    ("validity_code", 2),
+    ("atb_description", 20),
+    ("lul_xlondon_issue", 1),
+    ("reservation_required", 1),
+    ("capri_code", 3),
+    ("lul_93", 1),
+    ("uts_code", 2),
+    ("time_restriction", 1),
+    ("free_pass_lul", 1),
+    ("package_mkr", 1),
+    ("fare_multiplier", 3),
+    # The key into the status-discount table, with the railcard's status.
+    ("discount_category", 2),
 )
 
 RAILCARD = (
@@ -2294,6 +2313,31 @@ RAILCARD = (
     ("min_accompanying_adults", 3),
     ("max_adults", 3),
     ("min_adults", 3),
+    ("max_children", 3),
+    ("min_children", 3),
+    ("price_pence", 8),
+    ("discount_category", 2),
+    # Validity fields this reader does not interpret, kept so the offsets
+    # after them stay the published ones.
+    ("validity_fields", 18),
+    ("physical_card", 1),
+    ("capri_ticket_type", 3),
+    # The status whose discount an adult holder gets, keyed in the DIS file.
+    ("adult_status", 3),
+    ("child_status", 3),
+    ("aaa_status", 3),
+)
+
+# A DIS discount record: what one status takes off one discount category.
+# ``X`` in the indicator means the status gives no discount on that category;
+# the percentage is in tenths, so 334 is 33.4%.
+STATUS_DISCOUNT = (
+    ("record_type", 1),
+    ("status_code", 3),
+    ("end_date", 8),
+    ("discount_category", 2),
+    ("discount_indicator", 1),
+    ("discount_tenths", 3),
 )
 
 MINIMUM_FARE = (
@@ -2328,6 +2372,7 @@ LOCATION_OFFSETS = _offsets(LOCATION)
 TICKET_TYPE_OFFSETS = _offsets(TICKET_TYPE)
 RAILCARD_OFFSETS = _offsets(RAILCARD)
 MINIMUM_FARE_OFFSETS = _offsets(MINIMUM_FARE)
+STATUS_DISCOUNT_OFFSETS = _offsets(STATUS_DISCOUNT)
 
 STANDARD_CLASS = "2"
 RETURN_TYPE = "R"
@@ -2441,6 +2486,7 @@ class TicketType:
     tkt_class: str
     tkt_type: str
     restricted_by_train: bool
+    discount_category: str = ""
 
     @property
     def is_standard_return(self) -> bool:
@@ -2541,6 +2587,19 @@ class Railcard:
     name: str
     min_adults: int
     max_adults: int
+    adult_status: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class StatusDiscount:
+    """One DIS record: a status's discount on one category, until ``end_date``."""
+
+    end_date: date | None
+    #: None when the record says the status gives no discount (``X``).
+    discount: Fraction | None
+
+    def covers(self, day: date) -> bool:
+        return self.end_date is None or day <= self.end_date
 
 
 @dataclass(frozen=True)

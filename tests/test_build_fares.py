@@ -502,7 +502,7 @@ class FaresPayloadTest(PageTestCase):
         self.assertEqual(rows["NOT"]["railcards"]["YNG"]["pricePence"], 770)
         cards = {card["key"]: card for card in payload["railcards"]}
         self.assertEqual(cards["YNG"]["eligibleCount"], 4)
-        self.assertIn("discounted by a third", payload["railcardNote"])
+        self.assertIn("discounted by the percentage the feed gives", payload["railcardNote"])
 
     def test_each_destination_exposes_its_exact_railcard_decision(self) -> None:
         row = next(row for row in self.payload["destinations"] if row["crs"] == "PBO")

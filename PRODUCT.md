@@ -164,8 +164,9 @@ list (ADR-0026, ADR-0064, ADR-0065).
   the decision: the headline is a one-way price list, and the party figure is
   two of the fare the row names.
 - **The railcard is one card chosen from a collection.** The page offers every
-  card this feed prices and prices the reader's choice on the page: the one-third
-  discount rounded down to 5p, held up by the `.RCM` minimum fare in force on the
+  card this feed prices and prices the reader's choice on the page: the discount the
+  feed's `.DIS` table gives that card on that ticket (33.4% for the mainstream
+  cards) rounded down to 5p per ticket, held up by the `.RCM` minimum fare in force on the
   day -- each record's own `start_date` and `end_date` are honoured -- and gated by
   the current `.RST` `RR` ticket, route, location and total-ban rules. A card that
   does not cover the party is marked and cannot be chosen, the choice is remembered

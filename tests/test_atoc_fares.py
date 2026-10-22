@@ -1089,6 +1089,64 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(self.db.railcard_price(railcard, "CDS", 1210), 805)
         self.assertEqual(self.db.railcard_price(railcard, "CDS", 1330), 885)
 
+    def test_the_discount_is_the_feeds_own_percentage_not_a_third(self) -> None:
+        # The DIS table gives the mainstream cards 33.4% (334 tenths), not a
+        # third, and the difference is a whole 5p step: National Rail sold two
+        # Two Together Anytime Singles from Grantham to Skegness at £35.20 on
+        # 22 October 2026, £17.60 each, where a third off £26.50 is £17.65 and
+        # the page said £35.30. The card's adult status and the ticket's
+        # discount category are the key, as the feed writes them.
+        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from make_synthetic_feed import _line
+
+        def ticket(code: str, category: str) -> str:
+            return _line(
+                {"update_marker": "R", "ticket_code": code, "description": code,
+                 "tkt_class": "2", "tkt_type": "S", "discount_category": category},
+                TICKET_TYPE,
+            )
+
+        db = FaresDb()
+        db._load_lines("t.tty", [ticket("SOS", "01"), ticket("SXS", "05"), ticket("SNS", "09")])
+        db._load_lines("t.rlc", [_line(
+            {"railcard_code": "2TR", "description": "TWO TOGETHER", "min_adults": "002",
+             "max_adults": "002", "adult_status": "042"},
+            RAILCARD,
+        )])
+        db._load_lines("t.dis", [
+            "S04231122999150920242GETH2GETH2",
+            "D04231122999010334",
+            "D0423112299905X000",
+        ])
+        day = date(2026, 10, 27)
+        self.assertEqual(db.railcard_price("2TR", "SOS", 2650, day=day), 1760)
+        # #149's two Nottingham prices hold under the feed's figure too.
+        self.assertEqual(db.railcard_price("2TR", "SOS", 1210, day=day), 805)
+        self.assertEqual(db.railcard_price("2TR", "SOS", 1330, day=day), 885)
+        # Where the feed states no percentage -- an X record, or no record for
+        # the category -- the reading stays the third it was.
+        self.assertEqual(db.railcard_price("2TR", "SXS", 2650, day=day), 1765)
+        self.assertEqual(db.railcard_price("2TR", "SNS", 2650, day=day), 1765)
+
+    def test_a_lapsed_status_discount_is_not_applied(self) -> None:
+        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from make_synthetic_feed import _line
+
+        db = FaresDb()
+        db._load_lines("t.tty", [_line(
+            {"update_marker": "R", "ticket_code": "SOS", "description": "SOS",
+             "tkt_class": "2", "tkt_type": "S", "discount_category": "01"},
+            TICKET_TYPE,
+        )])
+        db._load_lines("t.rlc", [_line(
+            {"railcard_code": "2TR", "description": "TWO TOGETHER", "adult_status": "042"},
+            RAILCARD,
+        )])
+        # A window that ended before the query day, and the open one after it.
+        db._load_lines("t.dis", ["D04201012020010500", "D04231122999010334"])
+        self.assertEqual(db.railcard_price("2TR", "SOS", 2650, day=date(2026, 10, 27)), 1760)
+        self.assertEqual(db.railcard_price("2TR", "SOS", 2650, day=date(2019, 6, 1)), 1325)
+
     @unittest.skipUnless(
         Path("feeds/fares/dtd-fares.zip").is_file(),
         "licensed DTD feed is not available",

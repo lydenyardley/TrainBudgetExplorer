@@ -1272,7 +1272,7 @@ def build_payload(
             (
                 "No railcard is selected, so the prices shown are standard fares. Choose the "
                 "card you hold and the fares it lowers are repriced from that card's own "
-                "minimum-fare table, discounted by a third and rounded down to the nearest 5p. "
+                "minimum-fare table, discounted by the percentage the feed gives that card on that ticket (33.4% for the mainstream cards) and rounded down to the nearest 5p. "
                 "Current DTD RR route, ticket, location and total-ban rules are checked for "
                 "every destination and every card; matching restriction codes are retained as "
                 "travel conditions rather than treated as bans."
@@ -1288,7 +1288,7 @@ def build_payload(
         # 24).
         "railcardMethod": (
             "The card's own fare is repriced from its minimum-fare table, "
-            "discounted by a third and rounded down to the nearest 5p. Current DTD RR route, "
+            "discounted by the percentage the feed gives that card on that ticket (33.4% for the mainstream cards) and rounded down to the nearest 5p. Current DTD RR route, "
             "ticket, location and total-ban rules are checked for every destination and every "
             "card; matching restriction codes are retained as travel conditions rather than "
             "treated as bans."

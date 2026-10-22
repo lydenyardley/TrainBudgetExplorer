@@ -14,6 +14,7 @@ import io
 import json
 import os
 import pickle
+from fractions import Fraction
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -44,6 +45,7 @@ from atoc_fare_declarations import (
     ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
     RAILCARD_OFFSETS,
     REVIEWED_SETTLEMENT_FALLBACKS,
+    STATUS_DISCOUNT_OFFSETS,
     SUPPORTED_DESTINATION_FACETS,
     TICKET_TYPE_OFFSETS,
     UNESCO_WORLD_HERITAGE_FILE_URL,
@@ -53,6 +55,7 @@ from atoc_fare_declarations import (
     Location,
     MinimumFare,
     Railcard,
+    StatusDiscount,
     TicketType,
     _as_int,
     _parse_dtd_date,
@@ -146,6 +149,7 @@ class FaresLoader:
         common.ticket_types = self.ticket_types
         common.railcards = self.railcards
         common.minimum_fares = self.minimum_fares
+        common.status_discounts = self.status_discounts
         common.restrictions = self.restrictions
         common.report = self.report
         common.files_read = common.report.files_read
@@ -1116,6 +1120,7 @@ class FaresLoader:
             "tty": self._load_ticket_types,
             "rlc": self._load_railcards,
             "rcm": self._load_minimum_fares,
+            "dis": self._load_status_discounts,
             "rst": self._load_restrictions,
         }.get(extension)
         if loader is None:
@@ -1255,6 +1260,7 @@ class FaresLoader:
             restricted_by_train=dtd_flag(
                 _text(line, TICKET_TYPE_OFFSETS, "restricted_by_train")
             ),
+            discount_category=_text(line, TICKET_TYPE_OFFSETS, "discount_category"),
         )
 
     def _load_railcards(self, line: str) -> None:
@@ -1266,6 +1272,25 @@ class FaresLoader:
             name=_text(line, RAILCARD_OFFSETS, "description"),
             min_adults=_as_int(_text(line, RAILCARD_OFFSETS, "min_adults")),
             max_adults=_as_int(_text(line, RAILCARD_OFFSETS, "max_adults")),
+            adult_status=_text(line, RAILCARD_OFFSETS, "adult_status"),
+        )
+
+    def _load_status_discounts(self, line: str) -> None:
+        # The file's S records describe a status; only D records carry a
+        # discount, and only those are read.
+        if _text(line, STATUS_DISCOUNT_OFFSETS, "record_type").upper() != "D":
+            return
+        status = _text(line, STATUS_DISCOUNT_OFFSETS, "status_code")
+        category = _text(line, STATUS_DISCOUNT_OFFSETS, "discount_category")
+        if not status or not category:
+            return
+        indicator = _text(line, STATUS_DISCOUNT_OFFSETS, "discount_indicator").upper()
+        tenths = _as_int(_text(line, STATUS_DISCOUNT_OFFSETS, "discount_tenths"))
+        self.status_discounts.setdefault((status, category), []).append(
+            StatusDiscount(
+                end_date=_parse_dtd_date(_text(line, STATUS_DISCOUNT_OFFSETS, "end_date")),
+                discount=None if indicator == "X" else Fraction(tenths, 1000),
+            )
         )
 
     def _load_minimum_fares(self, line: str) -> None:

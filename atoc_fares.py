@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
+from fractions import Fraction
 from functools import partial
 import os
 from pathlib import Path
@@ -82,6 +83,7 @@ from atoc_fare_declarations import (
     Railcard,
     RailcardFamily,
     Reachable,
+    StatusDiscount,
     ReviewedAttraction,
     SEASIDE_SUPPLEMENT_CRS,
     SUPPORTED_DESTINATION_FACETS,
@@ -165,6 +167,9 @@ class FaresDb(FaresLoader):
         # per key: in the 24 September 2026 download 613 of 639 keys carried
         # more than one window, 3,355 records in all.
         self.minimum_fares: dict[tuple[str, str], list[MinimumFare]] = {}
+        # Keyed by (status code, discount category), the DIS file's own key. A
+        # key can hold several windows, so the record covering the day is read.
+        self.status_discounts: dict[tuple[str, str], list[StatusDiscount]] = {}
         self.restrictions = RestrictionIndex()
         self.report = ParseReport()
         self.files_read = self.report.files_read
@@ -750,6 +755,36 @@ class FaresDb(FaresLoader):
             return None
         return max(active, key=lambda record: record.start_date or date.min).pence
 
+    def railcard_discount(
+        self, railcard_code: str, ticket_code: str, day: date | None = None
+    ) -> Fraction:
+        """What the card takes off this ticket, from the feed's DIS table.
+
+        The card's adult status and the ticket's discount category name the
+        record. Where the feed states no percentage for the pair -- no DIS file,
+        as in the synthetic fixture, a key it does not carry, or an ``X`` record
+        -- the reading is a third, the published figure this page used before
+        it read the table, so no fare moves on a feed that does not say.
+        """
+        railcard = self.railcards.get(railcard_code)
+        ticket = self.ticket_types.get(ticket_code)
+        key = (
+            getattr(railcard, "adult_status", "") if railcard else "",
+            getattr(ticket, "discount_category", "") if ticket else "",
+        )
+        query_day = day or date.today()
+        current = [
+            record
+            for record in getattr(self, "status_discounts", {}).get(key, ())
+            if record.covers(query_day)
+        ]
+        if current:
+            # The window that ends first is the one in force today.
+            record = min(current, key=lambda record: record.end_date or date.max)
+            if record.discount is not None:
+                return record.discount
+        return 1 - RAILCARD_DISCOUNT
+
     def railcard_price(
         self,
         railcard_code: str,
@@ -758,10 +793,12 @@ class FaresDb(FaresLoader):
         *,
         day: date | None = None,
     ) -> int:
-        # National Rail's published third-off result is rounded down to the
-        # nearest 5p for each ticket, not up. Rounding up costs 5p per traveller
-        # whenever the exact discount falls between two 5p amounts.
-        discounted = _round_down_to(standard_pence * RAILCARD_DISCOUNT, ROUNDING_STEP_PENCE)
+        # The discounted fare is rounded down to the nearest 5p for each
+        # ticket, not up, and not on the party's total: £12.10 is £8.05 and
+        # £13.30 is £8.85 with Two Together (#149), so the step is 5p, and two
+        # people pay twice the one ticket.
+        factor = 1 - self.railcard_discount(railcard_code, ticket_code, day)
+        discounted = _round_down_to(standard_pence * factor, ROUNDING_STEP_PENCE)
         minimum = self.minimum_fare(railcard_code, ticket_code, day)
         if minimum is not None:
             discounted = max(discounted, minimum)

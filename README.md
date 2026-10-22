@@ -163,7 +163,7 @@ chip that can only ever return nothing reads as a broken control.
 - **Discovery:** communities first (r/uktrains, local FB groups, HN); SEO only
   after a community signal.
 - **Scope:** six reviewed railcards, offered as one control with none selected by
-  default (ADR-0052). A card's one-third discount and feed minimum fare are shown
+  default (ADR-0052). A card's discount from the feed's `.DIS` table and feed minimum fare are shown
   only when the current DTD RR rules permit the fare's ticket, route, and endpoint
   locations, and a card whose own feed record does not cover the party on screen
   is not offered for it.

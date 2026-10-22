@@ -183,12 +183,12 @@ function cardNote(destination) {
     // The reader's own price first, one qualifier, then the rule (audit item
     // 29): the discount figure used to be the third sentence.
     note.textContent =
-      "The feed’s one-third discount gives " + money(details.pricePence) +
+      "The card’s discount in the feed gives " + money(details.pricePence) +
       " per adult for this fare, subject to condition " + condition +
       ", a travel condition rather than a card ban" + minimumClause;
   } else {
     note.textContent =
-      "The feed’s one-third discount gives " + money(details.pricePence) +
+      "The card’s discount in the feed gives " + money(details.pricePence) +
       " per adult for this fare" + minimumClause;
   }
   return note;
