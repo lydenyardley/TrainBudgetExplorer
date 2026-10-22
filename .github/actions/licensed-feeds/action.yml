@@ -1,0 +1,52 @@
+# The licensed feeds, downloaded the same way in every job that holds them.
+#
+# Each job starts on a clean runner and downloads the feeds itself rather than
+# receiving them: an artifact of a public repository is downloadable by anyone
+# signed in to GitHub, and the feeds are licensed. This was three copies of the
+# same three steps in deploy.yml.
+name: licensed feeds
+description: The DTD fares and timetable, the OGL CIF, and the tolerant Knowledgebase feeds.
+
+inputs:
+  nrdp-username:
+    required: true
+  nrdp-password:
+    required: true
+  schedule-url:
+    required: true
+  schedule-username:
+    required: true
+  schedule-password:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # With a restored manifest the download sends If-None-Match and
+    # If-Modified-Since, so a day the portal republished nothing costs one cheap
+    # request; it retries a timeout or a 5xx and never a 4xx. "unchanged" never
+    # advances downloaded_at, so a page's age of the prices stays the data's.
+    - name: Download the licensed DTD feeds
+      shell: bash
+      env:
+        NRDP_USERNAME: ${{ inputs.nrdp-username }}
+        NRDP_PASSWORD: ${{ inputs.nrdp-password }}
+      run: python dtd_download.py --output-root feeds
+
+    - name: Download the timetable the release publishes from
+      shell: bash
+      env:
+        SCHEDULE_URL: ${{ inputs.schedule-url }}
+        SCHEDULE_USERNAME: ${{ inputs.schedule-username }}
+        SCHEDULE_PASSWORD: ${{ inputs.schedule-password }}
+      run: python -m tools.release.schedule
+
+    # A different subscription from the DTD feeds, and a second opinion on
+    # restriction wording the page says it lacks when it is missing. So a
+    # refusal is a visible warning rather than a failed release.
+    - name: Download the Knowledgebase reference feeds
+      shell: bash
+      env:
+        NRDP_USERNAME: ${{ inputs.nrdp-username }}
+        NRDP_PASSWORD: ${{ inputs.nrdp-password }}
+      run: python dtd_download.py --output-root feeds --kb-only || echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. They are a different subscription from the DTD fares and timetable, so this is usually an entitlement question; the pages will say no independent reference feed was checked."

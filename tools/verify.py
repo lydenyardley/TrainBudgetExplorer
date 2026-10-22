@@ -14,6 +14,10 @@ developer's machine and the release.
     python -m tools.verify --browser   a synthetic feed, the demo and shape builds, then the browser suite
     python -m tools.verify --all       --full, then --browser
 
+`--browser --require-site` is the release's own browser step: the site at
+`_site` must be there, with its privacy page, or the run fails rather than
+driving the demo pages alone.
+
 `--browser` drives the pages CI drives, built from the synthetic feed with the
 same commands, and adds the pages a built site already has at `_site` when they
 are there. It needs Playwright's chromium and downloads nothing itself.
@@ -55,6 +59,8 @@ FAST_MODULES = (
     "tests.test_workflows",
     "tests.test_test_suite_shape",
     "tools.test_verify",
+    "tools.test_release",
+    "tools.test_commit_hook",
 )
 
 #: The wall clock `--fast`'s unit step may take before the command fails naming
@@ -285,7 +291,7 @@ def _run(command: list[str], what: str) -> bool:
     return result.returncode == 0
 
 
-def browser() -> Step:
+def browser(require_site: bool = False) -> Step:
     """The pages the browser suite drives, built here, then the suite itself."""
     step = Step("browser suite")
     if shutil.which("node") is None:
@@ -333,8 +339,12 @@ def browser() -> Step:
     # The site the release would publish, when it is on disk: CI drives it, and a
     # local run that has just built one should drive it too.
     sweep: list[str] = []
-    if Path(ROOT, SITE, "index.html").is_file():
-        pages += [Path(ROOT, SITE, "index.html"), Path(ROOT, SITE, "privacy/index.html")]
+    site_pages = [Path(ROOT, SITE, "index.html"), Path(ROOT, SITE, "privacy/index.html")]
+    if require_site or site_pages[0].is_file():
+        missing = [page for page in site_pages if not page.is_file() or not page.stat().st_size]
+        if missing:
+            return step.done(False, "the site that ships has no page at " + ", ".join(str(page) for page in missing))
+        pages += site_pages
         if Path(ROOT, SITE, "from").is_dir():
             pages.append(Path(ROOT, SITE, "from"))
             sweep = ["--sweep", "--max", "24"]
@@ -363,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--full", action="store_true", help="every unit test, and the type check")
     parser.add_argument("--browser", action="store_true", help="the demo and shape builds, then the browser suite")
     parser.add_argument("--all", action="store_true", help="--full, then --browser")
+    parser.add_argument("--require-site", action="store_true", help="with --browser: fail when _site holds no page to drive")
     args = parser.parse_args(argv)
     if not (args.fast or args.full or args.browser or args.all):
         parser.print_help()
@@ -378,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
             steps.append(types())
             steps.append(page_state())
     if args.browser or args.all:
-        steps.append(browser())
+        steps.append(browser(require_site=args.require_site))
     for step in steps:
         print(step.line(), flush=True)
     if any(step.ok is None for step in steps):

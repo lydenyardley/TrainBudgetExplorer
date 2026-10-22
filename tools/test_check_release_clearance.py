@@ -486,14 +486,13 @@ class RecordShapeTest(unittest.TestCase):
 
 
 class WorkflowTest(unittest.TestCase):
-    """The workflow's declared shape and the shape it actually builds must agree.
+    """The release the clearance clears is the release the workflow builds.
 
-    The clearance is a statement about what a build publishes, and the workflow
-    states it in two places: the build step's own flags, and the `--release` the
-    clearance job passes. Nothing makes those two agree at run time, so if
-    somebody adds the national timetable to the build and forgets the
-    declaration, the gate would clear a fares-only decision over a release that
-    publishes a licence this project has not cleared.
+    The shape is stated once, as `tools.release.RELEASE`: the share build loads
+    the timetable because of it and the manifest check expects journey times
+    because of it. The clearance job's `--release` is the one literal left in
+    the workflow, so it is held to that constant here. A gate declaring a
+    narrower release than the one published is the failure it exists to stop.
 
     Parsed as text rather than YAML: the project declares no dependencies, and a
     gate that only runs where PyYAML happens to be installed is not a gate.
@@ -509,37 +508,24 @@ class WorkflowTest(unittest.TestCase):
         deploy = self.workflow.split("\n  deploy:\n", 1)[1]
         self.assertRegex(deploy.split("\n", 1)[0], r"^    needs: \[[^\]]*\bclearance\]")
 
-    def test_the_declared_shape_matches_the_flags_the_build_passes(self) -> None:
-        build = self.workflow.split("Build the site from audited fares", 1)[1]
-        run = build.split("\n      - name:", 1)[0]
-        # The national timetable is the only flag that widens what is
-        # published, and it is the one this project's licence reading refuses.
-        with_timetable = "--timetable" in run
-        # `python -m tools.check_release_clearance`, the form the workflow runs
-        # (item 7 of the 14 October 2026 engineering audit).
-        declared = re.search(r"tools\.check_release_clearance --release ([\w,]+)", self.workflow)
-        self.assertIsNotNone(declared, "the clearance step passes no --release")
+    def test_the_clearance_declares_the_release_the_build_publishes(self) -> None:
+        from tools.release import RELEASE
+
+        declared = re.findall(r"tools\.check_release_clearance --release ([\w,]+)", self.workflow)
         self.assertEqual(
-            "timetable" in declared.group(1),
-            with_timetable,
-            "the build step and the --release the gate is given disagree about the "
-            "national timetable; the clearance would clear a release it does not describe",
+            declared,
+            [",".join(RELEASE)],
+            "the clearance job's --release and tools.release.RELEASE disagree; the clearance "
+            "would clear a release it does not describe",
         )
 
-    def test_the_journey_check_reads_the_pages_the_way_the_shape_declares(self) -> None:
-        # The workflow states its shape three times, and the third is the only one
-        # that reads the artefact: the assemble job's journey check. Its sense has
-        # to be the declared one, because a page that lost its timetable looks
-        # exactly like a page whose release never had one -- so a release that
-        # declares times and ships none is caught here or nowhere.
-        declared = re.search(r"tools\.check_release_clearance --release ([\w,]+)", self.workflow)
-        self.assertIsNotNone(declared, "the clearance step passes no --release")
-        if "timetable" in declared.group(1):
-            self.assertIn('elif found.group(1) != "true":', self.workflow)
-            self.assertIn("these station pages carry no journey times", self.workflow)
-        else:
-            self.assertIn('elif found.group(1) != "false":', self.workflow)
-            self.assertIn("these station pages carry journey times", self.workflow)
+    def test_the_share_build_loads_the_timetable_exactly_when_the_release_declares_it(self) -> None:
+        from tools.release import RELEASE, share
+
+        self.assertEqual(
+            "--timetable" in share.command("1/12", "2026-10-22", 4),
+            "timetable" in RELEASE,
+        )
 
 
 def _write_manifest(folder: Path) -> None:

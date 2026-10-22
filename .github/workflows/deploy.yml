@@ -58,6 +58,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every step that does more than call one command is a module under
+  # tools/release/ with a test in tools/test_release.py, so a release fix is
+  # tested on a desk before it costs a run. This file keeps the jobs, the
+  # matrices, the secrets and the calls.
   build:
     runs-on: ubuntu-latest
     outputs:
@@ -68,100 +72,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: the message check below walks the commits this push
-          # added, which needs the base commit to be in the clone. The
-          # repository is small enough that fetching it whole is cheaper than
-          # the extra step of fetching a base that may not be there.
+          # Full history: the message check walks the commits this push added,
+          # which needs the base commit in the clone.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # The commit convention was documented and checked by a tool that
-      # rejected all 87 commits in the repository, so it was enforced by
-      # nobody. The tool now agrees with the history, and this step is what
-      # keeps them agreeing. A scheduled or manual run adds no commits, so it
-      # checks nothing and says so rather than passing silently.
       - name: Check the commit messages this push added
-        run: |
-          BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            echo "This run added no commits, so there is no message to check."
-            exit 0
-          fi
-          # A base commit that is not in this clone means the push replaced the
-          # history it was based on, so every commit HEAD carries is new to the
-          # remote and the range cannot be walked. Failing here would leave a
-          # rewrite with no way through but a second push; walking the whole
-          # history under the grammar would fail on the 41 commits that predate
-          # it, which the convention deliberately does not apply backwards.
-          # The credit rule has no such history -- it was applied backwards on
-          # 21 October 2026 -- so that is the rule a rewritten history is held to.
-          CREDITS_ONLY=""
-          if ! git rev-parse --verify --quiet "$BEFORE^{commit}" > /dev/null; then
-            echo "This push replaced its base, so every commit HEAD carries is new to the remote: checking all of them against the credit rule, and not against a grammar they predate."
-            CREDITS_ONLY="--credits-only"
-            RANGE="$(git rev-list HEAD)"
-          else
-            RANGE="$(git rev-list "$BEFORE"..HEAD)"
-          fi
-          FAILED=0
-          CHECKED=0
-          for sha in $RANGE; do
-            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
-            CHECKED=$((CHECKED + 1))
-            # The author and the committer are held to the same rule as the
-            # trailers: neither may name Codebuff or Freebuff.
-            if ! python -m tools.check_commit_message "$RUNNER_TEMP/commit-message.txt" $CREDITS_ONLY \
-              --author "$(git log -1 --format='%an <%ae>' "$sha")" \
-              --author "$(git log -1 --format='%cn <%ce>' "$sha")"; then
-              echo "::error title=commit message::$(git log -1 --format=%s "$sha")"
-              FAILED=1
-            fi
-          done
-          if [ "$CHECKED" -eq 0 ]; then
-            echo "::error title=commit message::$BEFORE..HEAD contains no commit, so no message was checked."
-            exit 1
-          fi
-          if [ "$FAILED" -ne 0 ]; then
-            echo "At least one of the $CHECKED commit messages this push added does not follow CONTRIBUTING.md."
-          else
-            echo "All $CHECKED commit messages this push added follow CONTRIBUTING.md."
-          fi
-          exit "$FAILED"
+        run: python -m tools.release.commits --before "${{ github.event.before }}"
 
       - name: Verify the sources
-        # The cheap gate, before the feeds rather than after the build: the two
-        # unit suites minus the two tests that read the licensed national
-        # download, and the page's JavaScript parsed. A push that cannot pass
-        # this should not spend five minutes downloading feeds to find out, and
-        # the same command runs on a developer's machine (F5).
+        # The cheap gate, before the feeds rather than after the build, and the
+        # same command a developer runs (F5). actionlint is what lets it read
+        # this file.
         run: |
           python -m pip install actionlint-py==1.7.12.25
           python -m tools.verify --fast
 
       - name: Check the timetable address and its credential answer
-        # Two bytes, one request, before the feeds' minutes are spent. A wrong
-        # URL or an account the feed refuses is a settings question, and the
-        # download step that answers it sits after the DTD download, so without
-        # this a mistake there costs the run its wait before it is named. The
-        # probe reads the gzip magic as well as the status, because an error
-        # page served with a 200 looks like the feed from the outside.
-        #
-        # The empty-URL gate lives here rather than in the download below for
-        # the same reason: it is the earliest place the release's shape can be
-        # told the timetable is missing.
+        # Two bytes, before the feeds' minutes are spent.
         env:
           SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
           SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
           SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
-        run: |
-          if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, and this release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073). Set SCHEDULE_URL in the repository settings; the credential it needs is the SCHEDULE_USERNAME and SCHEDULE_PASSWORD secrets from the account that holds the CIF subscription, which is not the fares feed's NRDP pair. Or point the build at no timetable and declare --release fares instead. The route for both is docs/github-pages-deployment.md."
-            exit 1
-          fi
-          python -m schedule_download --probe
+        run: python -m tools.release.schedule --probe
 
       - name: Restore the last successful feed manifest
         uses: actions/cache/restore@v4
@@ -169,218 +105,40 @@ jobs:
           path: .feed-state
           key: feed-manifest-v3-
 
-      - name: Download the licensed DTD feeds
-        # Sends If-None-Match/If-Modified-Since when the restored manifest has a
-        # validator, so a day the portal has republished nothing costs one cheap
-        # request instead of two large archives, and retries a timeout or 5xx
-        # rather than failing the day. A 4xx is never retried: the portal has
-        # answered, and asking again will not change its mind. "unchanged" here
-        # never advances downloaded_at, so the page's age of the prices stays
-        # the age of the data.
-        env:
-          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds
-
-      - name: Download the timetable the release publishes from
-        # A second product, a second licence and a second host: Network Rail's
-        # own CIF under the Open Government Licence, whose §5 permits
-        # distribution where the DTD timetable's forbids it (ADR-0073). The
-        # pages carry times from this file and no longer from the DTD timetable,
-        # which stays only because the audits below read the download the portal
-        # actually served.
-        #
-        # It is fetched in every job that holds the feeds, for the reason the DTD
-        # step is: an artifact of a public repository is downloadable by anyone
-        # signed in, and this is licensed material.
-        #
-        # `schedule_download` refuses anything that arrives and is not a
-        # schedule, rather than letting a web page become a timetable with no
-        # journeys in it. Its address and credential were proved by the probe
-        # above; this step pays for the file itself. The credential comes from
-        # the environment and never from this file.
-        env:
-          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
-        run: |
-          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
-          # The file's own identity, in a form another job can compare. The
-          # path is the same in every job, so these lines are too.
-          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
-
-      - name: Download the Knowledgebase reference feeds
-        # A separate step, and a tolerant one, on purpose. These are a
-        # different subscription from the DTD fares and timetable, so the same
-        # credentials do not prove entitlement to them, and a 403 here is a
-        # subscription question rather than a fault in this project. The
-        # reference feed is a *second opinion* on restriction wording: the page
-        # states prices and conditions correctly without it and says plainly
-        # that nothing was checked. So a missing subscription must not take the
-        # daily build down with it -- but it must be visible, which is what the
-        # warning and the continued-on-error are for. Folding this into the DTD
-        # step would have made an unanswered subscription question look like a
-        # broken downloader.
-        continue-on-error: true
-        env:
-          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: |
-          if python dtd_download.py --output-root feeds --kb-only; then
-            echo "reference feeds downloaded"
-          else
-            echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. This is usually an entitlement question, not a fault: they are a different subscription from the DTD fares and timetable. The build will publish prices and conditions, and will say on each page that no independent reference feed was checked."
-          fi
+      - name: Download the feeds
+        uses: ./.github/actions/licensed-feeds
+        with:
+          nrdp-username: ${{ secrets.NRDP_USERNAME }}
+          nrdp-password: ${{ secrets.NRDP_PASSWORD }}
+          schedule-url: ${{ vars.SCHEDULE_URL }}
+          schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
 
       - name: Detect whether the feed changed
         id: feed_check
-        shell: bash
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          mkdir -p .feed-state
-          # Every source a build is made of, from one rule rather than a
-          # hand-kept list. The three-file list this replaced missed the only
-          # changed input of eight of the last 150 commits, so a fix could wait
-          # for something else to trigger a rebuild (F4 of the 8 October 2026
-          # agent-efficiency audit).
-          INPUTS=$(python -m tools.build_inputs --fingerprint)
-          # Compare what the feeds ARE, not the bytes of the manifest file. The
-          # manifest also records when a download was last *checked*, and that
-          # moves on every run -- including a run where the portal answered 304
-          # and published nothing. A byte comparison would read that as a new
-          # feed every single day, and rebuild, retest and republish the
-          # identical site every single day.
-          CURRENT=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)
-          SCHEDULE=$(cat feeds/nwr-schedule.sha256)
-          PREVIOUS=""
-          PREVIOUS_SCHEDULE=""
-          if [ -f .feed-state/download-manifest.json ]; then
-            PREVIOUS=$(python dtd_download.py --print-fingerprint .feed-state/download-manifest.json)
-          fi
-          # The OGL timetable has a second publisher and a second update clock, so
-          # a day the portal answered 304 for the DTD feeds is not evidence that
-          # this one stood still. Without this, a CIF that moved would keep
-          # publishing yesterday's times until something else triggered a build.
-          if [ -f .feed-state/nwr-schedule.sha256 ]; then
-            PREVIOUS_SCHEDULE=$(cat .feed-state/nwr-schedule.sha256)
-          fi
-          # Only the daily schedule may skip. A push or a manual run always
-          # builds: a push is a change someone made, and a manual run is someone
-          # asking for a build, so neither is second-guessed by the marker.
-          # The marker is .feed-state, saved by assemble only after a build
-          # passed every gate, so "unchanged" means the same feed fingerprint and
-          # the same build-inputs digest as the last successful build.
-          if [ "$EVENT" != "schedule" ]; then
-            echo "A $EVENT run always builds."
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$PREVIOUS" ] && [ "$CURRENT" = "$PREVIOUS" ] && [ -n "$PREVIOUS_SCHEDULE" ] && [ "$SCHEDULE" = "$PREVIOUS_SCHEDULE" ] && [ -f .feed-state/build-inputs.sha256 ] && [ "$(cat .feed-state/build-inputs.sha256)" = "$INPUTS" ]; then
-            echo "Feeds and build inputs are unchanged; keeping the existing site."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Feeds or build inputs changed; a full audited build is required."
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: python -m tools.release.feed_state changed --event "${{ github.event_name }}"
 
       - name: Fingerprint the feeds
-        # The cache key for the next run, and a number worth having in the log:
-        # two runs with the same fingerprint published the same prices.
+        # The cache key for the next run: two runs with the same fingerprint
+        # published the same prices.
         id: feed_fingerprint
         run: echo "value=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
 
       - name: Name the day this release publishes times for
-        # One day for the whole run, and every share is built for it. A share
-        # built without a date indexes every schedule in the feed's window for
-        # every page instead of one day's share of them, which is 7x the work
-        # and a page with no day control: see the comment over the shard's build
-        # command for the measurement. Decided once here rather than by each job
-        # calling date itself, because two shares built either side of midnight
-        # would claim two days and the merge refuses shares that disagree
-        # (build_pool.py's shard_agreement compares the day).
+        # One day for the whole run, decided once: two shares built either side
+        # of midnight would claim two days, and the merge refuses shares that
+        # disagree (build_pool.py's shard_agreement).
         id: service_day
         run: echo "value=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Name the downloads the gates audit
-        # The shard and assemble jobs download the feeds again and must hold
-        # this same fares, DTD timetable and OGL timetable, or stop.
         id: audited_feed
-        shell: bash
-        run: |
-          VALUE=$(python - <<'PY'
-          # The DTD fares and timetable, plus the OGL timetable the release
-          # publishes its times from. The tolerant Knowledgebase download shares
-          # the manifest and may differ between jobs without changing a fare, so
-          # it stays out. The bytes, not the download time: each job downloads at
-          # its own minute. A missing timetable identity prints nothing, which
-          # the caller refuses rather than reading as agreement.
-          import hashlib, json
-          from pathlib import Path
-          import dtd_download as d
-          rows = [
-              {f: e.get(f) for f in ("name", "sha256", "bytes")}
-              for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
-              if e.get("name") in ("fares", "timetable")
-          ]
-          schedule_path = Path("feeds/nwr-schedule.sha256")
-          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
-          PY
-          )
-          if [ -z "$VALUE" ]; then
-            echo "::error title=feed identity::the download manifest names no fares or timetable download"
-            exit 1
-          fi
-          echo "value=$VALUE" >> "$GITHUB_OUTPUT"
+        run: python -m tools.release.feed_identity
 
       - name: Check the facet reference data matches the registry
-        # `reference-data/destination-facets.json` is a generated artefact -- a
-        # build reads it as one more facet source -- and nothing tied it to the
-        # registry that writes it. ADR-0062 and ADR-0064 each shipped a facet
-        # source without regenerating the file, and the checked-in copy went
-        # stale in silence: 7 facets and 294 station records against the
-        # registry's 10 and 463, with every gate in this workflow green. This
-        # step is that missing tie. It regenerates the file from its sources into
-        # a temporary directory and refuses when the result differs, so the drift
-        # lands in a pull request rather than in a release that classifies
-        # stations from last month's registry.
-        #
-        # No `changed` guard, unlike the audit below it, and that is the point of
-        # the step: a gate that skips when the feed is unchanged cannot catch a
-        # file that is *already* stale, which is the only case there is. It reads
-        # the LOC records out of the fares archive and stops, so it costs seconds
-        # rather than the feeds' minutes.
-        #
-        # A feed revision that adds or removes stations moves the recorded
-        # station count and fails here. That is the intended reading and not a
-        # false alarm: the file describes the feed it was generated from, and a
-        # station the file has never seen is a station the release tags from an
-        # older list. The fix is `python -m tools.regenerate_destination_facets`
-        # and a commit, in a pull request, with the per-facet counts in front of
-        # a person.
-        #
-        # Exit 2 is not drift. It is a dataset that did not answer, which the tool
-        # cannot tell from a source that came back empty. That is an
-        # infrastructure condition rather than a change to the registry, and the
-        # build itself treats it the way it treats an unreachable reference feed:
-        # it says so and carries on. It is a warning here for the same reason, so
-        # a dataset outage does not hold back a release that is otherwise green.
-        # A missing checked-in file is a fault in this repository, so that still
-        # fails, and drift (exit 1) still fails whatever the network did.
-        shell: bash
-        run: |
-          set +e
-          if [ ! -f reference-data/destination-facets.json ]; then
-            echo "::error title=facet reference::reference-data/destination-facets.json is not in this checkout"
-            exit 1
-          fi
-          python -m tools.check_facet_reference --feed feeds/fares/dtd-fares.zip
-          code=$?
-          set -e
-          if [ "$code" -eq 2 ]; then
-            echo "::warning title=facet reference::the facet reference data could not be verified this run (exit 2, a source did not answer), so the checked-in copy was not compared against the registry"
-            exit 0
-          fi
-          exit "$code"
+        # No changed guard: a gate that skips on an unchanged feed cannot catch
+        # a file that is already stale.
+        run: python -m tools.release.facets --feed feeds/fares/dtd-fares.zip
 
       - name: Audit downloaded feeds
         if: steps.feed_check.outputs.changed == 'true'
@@ -400,71 +158,19 @@ jobs:
         run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1544
 
       - name: Gate the published price per minute
-        # A price on its own is not a fact a reader can act on. Divided by the
-        # fastest journey the timetable offers for that pair it either is one or
-        # it is not, and the second case is the kind of defect nobody sees while
-        # 2,500 pages go by: the reader is quoted half a penny a minute for a
-        # two-hour trip, or nine thousand for a single fare. The gate prices
-        # what the page's own three selectors publish, so a fare it calls
-        # publishable is a fare a page would show.
-        #
-        # The band is measured, not chosen. On the 24 September 2026 feed, 99.4%
-        # of the 136,704 rows on a journey of five minutes or more fall between
-        # 1 and 100 pence a minute, the median is 29, and the bounds sit outside
-        # the 1st and 99th percentiles. Journeys under five minutes are held to
-        # a minimum rather than a rate, so they are counted and excluded rather
-        # than measured as 1,400 pence a minute.
-        #
-        # The band has no exception list behind it, and that is the design
-        # rather than an omission. An earlier version excused five codes by
-        # review, which meant a family reaching a page for an implausible rate
-        # was recorded instead of removed, and the next family could hide
-        # behind it. Removing that list is what made this step find DGB SALE
-        # ADVANCE at GBP 1.00 over 213 minutes, which the five would have
-        # excused. Fares a reader cannot buy are excluded by the selectors in
-        # atoc_fares instead, so none of them is published and none reaches
-        # here. Anything else outside the band fails this step and names
-        # itself.
-        #
-        # The timetable it reads is the OGL CIF the pages are timed from, not the
-        # DTD timetable beside it in feeds/: a rate divided by a journey the page
-        # does not show is the same defect one step further from the reader.
-        #
-        # Cost is two feeds and one timetable parse, measured at 112s on the
-        # real feed at this checkout, which is why it runs before the build
-        # rather than after it -- a refusal here costs a parse and a refusal
-        # after the build costs both.
+        # The band, its measurement and why it has no exception list are in
+        # tools/check_fare_rate.py. It reads the OGL CIF the pages are timed
+        # from, and runs before the build because a refusal here costs one
+        # parse (112 s) rather than the build as well.
         run: python -m tools.check_fare_rate --feed feeds/fares/dtd-fares.zip --timetable feeds/nwr-schedule
 
-
-  # The whole-network build, split across runners. One runner wrote 1,821 of
-  # 2,705 pages in the 300 minutes the build step was allowed (run
-  # 38312084609, 12-13 October 2026): about 6.2 pages a minute on four
-  # workers, so the whole network needs some 440 minutes on one runner -- past
-  # the step bound and close to GitHub's 360-minute job limit. The split takes
-  # every Mth origin (it interleaves, so cheap and dear stations spread
-  # evenly), and the twelve shares below are about 226 pages each, run side by
-  # side. The six it replaced were about 450 each. Measured in run
-  # 38353105980 (13 October 2026): shares 1 to 6 took 114, 111, 106, 87, 95
-  # and 103 minutes -- slower than the 75 the single-runner rate predicted,
-  # because each share loads the whole feed and timetable itself. The assemble job merges them through --merge, which
-  # proves they partition the feed's origins and were built from the same
-  # inputs and code before it writes a page.
-  #
-  # Twelve shares since 20 October 2026. That day every share of the six ran
-  # into the step's 150-minute bound having published no page, which is the
-  # signal that bound's own comment names: split further rather than raise it.
-  # What a share costs is not only its pages -- each one loads the whole fares
-  # feed and the whole national timetable itself, and that floor does not
-  # shrink when the share does -- so twelve shares of about 226 pages halve the
-  # part that scales, and the fixed part they pay twice over is minutes.
-  #
-  # That is arithmetic rather than a measurement: the failed run says each
-  # share passed 150 minutes and not by how much, so the claim here is only
-  # that the page work halves against an unchanged bound. A share that still
-  # nears the bound means 24 shares, not a longer timeout, and it is
-  # `docs/build-performance-findings.md` that records the figure when one is
-  # taken.
+  # The whole-network build, split across runners: twelve shares of about 226
+  # pages, interleaved so cheap and dear stations spread evenly. The measured
+  # costs, and why a share that nears the bound means more shares rather than a
+  # longer bound, are in docs/build-performance-findings.md; tests/test_workflows.py
+  # holds the bound and the share count to it. The assemble job merges them
+  # through --merge, which proves they partition the feed's origins and were
+  # built from the same inputs and code before it writes a page.
   shard:
     needs: build
     if: needs.build.outputs.changed == 'true'
@@ -480,248 +186,31 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download the licensed DTD feeds
-        # A job starts on a clean runner, so it downloads the feeds itself
-        # rather than receiving them: an artifact of a public repository can
-        # be downloaded by anyone signed in to GitHub, and the feeds are
-        # licensed. No manifest is restored, so this is always a full download.
-        env:
-          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds
-
-      - name: Download the timetable the release publishes from
-        # The same licensed file the build job fetched, for the same reason: it
-        # is published material and does not travel as an artifact. The step
-        # below refuses a download the gates did not audit, and the timetable's
-        # own identity is part of what it compares, so this has to run before it.
-        env:
-          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
-        run: |
-          if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
-            exit 1
-          fi
-          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
-          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
+      - name: Download the feeds
+        uses: ./.github/actions/licensed-feeds
+        with:
+          nrdp-username: ${{ secrets.NRDP_USERNAME }}
+          nrdp-password: ${{ secrets.NRDP_PASSWORD }}
+          schedule-url: ${{ vars.SCHEDULE_URL }}
+          schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
 
       - name: Refuse a download the gates did not audit
-        # The portal can republish between jobs. Every gate above ran on the
-        # build job's download, so a job holding a different one stops here
-        # rather than publishing fares nobody audited. (The merge would refuse
-        # mismatched shards too; this names the reason first.)
-        env:
-          AUDITED: ${{ needs.build.outputs.audited }}
-        shell: bash
-        run: |
-          HERE=$(python - <<'PY'
-          # The DTD fares and timetable, plus the OGL timetable the release
-          # publishes its times from. The tolerant Knowledgebase download shares
-          # the manifest and may differ between jobs without changing a fare, so
-          # it stays out. The bytes, not the download time: each job downloads at
-          # its own minute. A missing timetable identity prints nothing, which
-          # the caller refuses rather than reading as agreement.
-          import hashlib, json
-          from pathlib import Path
-          import dtd_download as d
-          rows = [
-              {f: e.get(f) for f in ("name", "sha256", "bytes")}
-              for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
-              if e.get("name") in ("fares", "timetable")
-          ]
-          schedule_path = Path("feeds/nwr-schedule.sha256")
-          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
-          PY
-          )
-          if [ -z "$AUDITED" ]; then
-            echo "::error title=feed moved::the build job named no audited download to compare against"
-            exit 1
-          fi
-          if [ "$HERE" != "$AUDITED" ]; then
-            echo "::error title=feed moved::this job downloaded feed $HERE, but the gates audited $AUDITED; the portal republished mid-run, so rerun the workflow"
-            exit 1
-          fi
-
-      - name: Download the Knowledgebase reference feeds
-        # Tolerant, exactly as in the build job: a second opinion the page
-        # says it lacks when the subscription is missing.
-        continue-on-error: true
-        env:
-          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: |
-          if python dtd_download.py --output-root feeds --kb-only; then
-            echo "reference feeds downloaded"
-          else
-            echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded; the pages will say no independent reference feed was checked."
-          fi
+        run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
 
       - name: Pin the feed files' times
-        # The merge refuses shares built from different inputs, and a build
-        # names its feed by file names, sizes and modification times. Each
-        # share downloaded at its own moment, so the times differ although
-        # the bytes do not -- the step above proved the fares and timetable
-        # are the audited download. One fixed time on every share makes equal
-        # bytes read as the same feed, and nothing else.
+        # A build names its feed by file names, sizes and modification times,
+        # and each share downloaded at its own moment. The step above proved
+        # the bytes are the audited ones, so one fixed time makes equal bytes
+        # read as the same feed to the merge, and nothing else.
         run: find feeds -type f -exec touch -d '2000-01-01T00:00:00Z' {} +
 
       - name: Build the site from audited fares and the publishable timetable
-        # Prices, conditions and journey times. The times come from Network
-        # Rail's own CIF under the Open Government Licence, not from the DTD
-        # timetable: the DTD terms' "forecasted arrival and departure times"
-        # condition is a condition on a page built from that product, and this
-        # one is built from another, whose §5 permits distribution (ADR-0073,
-        # licences/release-clearance.md).
-        #
-        # A real-feed build is refused unless it carries a licence notice and a
-        # privacy contact (ADR-0032, gates S36-S38 in the re-envision audit).
-        # The notices below satisfy the licence condition. The contact comes
-        # from the project itself -- PROJECT_PRIVACY_CONTACT in
-        # build_demo_page.py -- so this build cannot fail for want of one, and
-        # vars.PRIVACY_CONTACT overrides it where an operator would rather
-        # publish a different route. Set that variable to the address the
-        # publish checklist §1 has confirmed, not to the project's default,
-        # which has not been confirmed as monitored.
-        #
-        # The bound is measured on the whole network, not on one origin. One
-        # origin is 1m36s cold and 11s warm, which is what this bound used to
-        # be set from; the release is now every priced station, and that is a
-        # different shape of work.
-        #
-        # Measured against the real feed with the national timetable, 2 October
-        # 2026, on a 15.8 GB 12-CPU machine: a whole-network build wrote 2,712
-        # pages between 10:29:52 and 12:30:57. That is 121 minutes at 0.093
-        # pages/s per worker on four workers, after a 145s feed load and an 83s
-        # pool start -- about 130 minutes from a cold start. The real feed's
-        # origins are small -- 2,712 of them, a median of 91 priced
-        # destinations and a mean of 116, against the roughly 2,500 each the
-        # invented uniform feed behind ADR-0024 was shaped like -- so per-origin
-        # cost does not grow with the destination count the way that ADR
-        # projected.
-        #
-        # The 0.84 pages/s and 54 minutes this replaces were taken from "the
-        # first twenty pages", which are the cheapest stations in the set: the
-        # same first-tenth-of-the-work mistake ADR-0057 withdrew from this
-        # project's own 63-minute figure, out by a factor of two both times.
-        # Withdrawn here for the same reason, by the same run.
-        #
-        # The bound has to fit the slowest runner this workflow can land on, not
-        # the fastest, because the worker count is read from the runner's free
-        # memory -- and GitHub's standard Linux runners are not one machine.
-        # `ubuntu-latest` is 4 vCPU / 16 GB for a public repository and 2 vCPU /
-        # 8 GB for a private one (docs.github.com, "GitHub-hosted runners
-        # reference"), so the same workflow is a four-worker build in one case
-        # and a two-worker build in the other. At the measured 0.093 pages/s per
-        # worker, with the load and pool start added:
-        #
-        #     workers   page building   from a cold start
-        #     4 (16GB)  121 min         ~130 min
-        #     3         162 min         ~170 min
-        #     2 (8GB)   243 min         ~255 min
-        #     1         8 h 06 m        longer than any bound GitHub sets
-        #
-        # 300 minutes is the slowest runner that can still finish, plus the
-        # load. It costs nothing when the build is fast, because a hosted job is
-        # billed for the minutes it actually runs; the old 150 was not a cheaper
-        # build, it was a build that failed at 150 on a private repository and
-        # published nothing. Raising it again needs the measurement redone, not a
-        # hunch, and the measurement is the table above.
-        #
-        # That table was measured on a 12-CPU desktop. The hosted runner is
-        # slower: run 38312084609 wrote 1,821 pages in 300 minutes on four
-        # workers, so the whole network was about 440 minutes on one runner.
-        # Hence the shards above. Six shares of about 450 pages measured 87 to
-        # 114 minutes each in run 38353105980, and on 20 October 2026 all six
-        # passed this bound without writing a page -- so the 36 minutes of
-        # headroom it was set with are gone, and the shards are twelve of about
-        # 226 pages rather than the bound being raised. It still stops a hung
-        # share well inside the job limit; a share that nears it is the signal
-        # to split further rather than to raise it.
         timeout-minutes: 150
         env:
           SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH }}
           PRIVACY_CONTACT: ${{ vars.PRIVACY_CONTACT }}
-          SHARD: ${{ matrix.shard }}/12
-          # The one day this run publishes times for, read by every share.
-          # tests/test_workflows.py holds this to the build job's own output.
-          SERVICE_DATE: ${{ needs.build.outputs.service_date }}
-          # The minute at which a share counts as nearing the bound. The comment
-          # above says a share that nears it means splitting further, and this
-          # is the number that turns the sentence into a report rather than a
-          # wish: 100 of 150, two thirds. `tests/test_workflows.py` holds this,
-          # the bound and the share count to the table in
-          # docs/build-performance-findings.md, so a run cannot drift from the
-          # record it is justified by (A8 of the 20 October 2026 poteto audit).
-          NEARING_MINUTES: 100
-        run: |
-          STARTED=$SECONDS
-          BASE_ARGS=()
-          if [ -n "$SITE_BASE_PATH" ]; then
-            BASE_ARGS+=(--base-path "$SITE_BASE_PATH")
-          fi
-          # Refuse rather than build undated: a share with no day is the shape
-          # that timed out on 21 October, and a missing output is a settings
-          # fault worth naming before 150 minutes of it.
-          if [ -z "$SERVICE_DATE" ]; then
-            echo "::error title=service day::the build job named no day for this run, and a share built without one indexes the whole feed for every page and has no day control; rerun the workflow."
-            exit 1
-          fi
-          # The fares feed is the public price source and the OGL CIF the step
-          # above fetched is the timetable. The day comes from the build job,
-          # because a share built with no --date has no day to walk its week
-          # from: its pages carry no day control at all (held by
-          # tests/test_service_week.py), and every page indexes the feed's whole
-          # schedule window instead of one day's share of it. Measured 21
-          # October 2026: share 3 of run 39618401726 wrote 78 pages in 139
-          # minutes with no date, where share 1 of the six on 13 October (run
-          # 38353105980) wrote 458 in 108 minutes with one, and a Linlithgow
-          # page costs 2.4s dated against 16.7s undated (the table is in
-          # docs/build-performance-findings.md). A day is a claim about that
-          # day, and the page names it; an aggregate shape is S24 in
-          # docs/open-work.md, which is a decision rather than a missing flag.
-          # Every priced station, not one of them. The release answers the
-          # product's premise -- where can we go from anywhere -- so a reader
-          # who arrives from any station finds a page there. The root is the
-          # chooser and a station lives at /from/<slug>/, which is the same
-          # contract the single-origin build already published, so this widens
-          # the coverage rather than changing the route model.
-          #
-          # The worker count is read from the runner rather than written down,
-          # because a runner with more memory than this repository's machine
-          # should get more workers for free. It was os.cpu_count() alone,
-          # which is a core count wearing a memory claim: every worker is
-          # handed the whole national timetable, and eight of them die with a
-          # MemoryError in the pool initialiser having written no pages. The
-          # budget measures what a worker costs, asks the runner what it has,
-          # and caps the answer at the largest count measured to finish.
-          python build_demo_page.py \
-            --feed feeds/fares \
-            --timetable feeds/nwr-schedule \
-            --knowledgebase feeds/knowledgebase \
-            --date "$SERVICE_DATE" \
-            --all-origins \
-            --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
-            --shard "$SHARD" \
-            --out "_shard/index.html" \
-            --notices nre,rdg,ogl,accuracy \
-            --require-live-reviewed-codes \
-            "${BASE_ARGS[@]}"
-
-          # What the share cost. The 20 October failure named the bound and left
-          # this figure unknown, which is why nobody could say whether a share
-          # was 151 minutes or 300; a bound that drifts away from its own
-          # measurement is how the pipeline got there (A1 of the 20 October 2026
-          # poteto audit). Every run now states it, and the first twelve-share
-          # run's figure belongs in the day's entry of
-          # docs/build-performance-findings.md.
-          SPENT_MINUTES=$(( (SECONDS - STARTED) / 60 ))
-          echo "share $SHARD took $SPENT_MINUTES minutes (nearing at $NEARING_MINUTES)"
-          if [ "$SPENT_MINUTES" -ge "$NEARING_MINUTES" ]; then
-            echo "::warning title=The share is nearing its bound::share $SHARD took $SPENT_MINUTES minutes of the step's bound: split the shares rather than raise the bound."
-          fi
+        run: python -m tools.release.share --shard "${{ matrix.shard }}/12" --date "${{ needs.build.outputs.service_date }}"
 
       - name: Hand the share to the assemble job
         # Pages only, never the feeds. A day is enough: the assemble job runs
@@ -745,70 +234,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download the licensed DTD feeds
-        # A job starts on a clean runner, so it downloads the feeds itself
-        # rather than receiving them: an artifact of a public repository can
-        # be downloaded by anyone signed in to GitHub, and the feeds are
-        # licensed. No manifest is restored, so this is always a full download.
-        env:
-          NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
-          NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds
-
-      - name: Download the timetable the release publishes from
-        # The same licensed file the build job fetched, for the same reason: it
-        # is published material and does not travel as an artifact. The step
-        # below refuses a download the gates did not audit, and the timetable's
-        # own identity is part of what it compares, so this has to run before it.
-        env:
-          SCHEDULE_URL: ${{ vars.SCHEDULE_URL }}
-          SCHEDULE_USERNAME: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
-          SCHEDULE_PASSWORD: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
-        run: |
-          if [ -z "$SCHEDULE_URL" ]; then
-            echo "::error title=timetable source::no SCHEDULE_URL repository variable is set, so this release cannot fetch the timetable it publishes times from (ADR-0073)."
-            exit 1
-          fi
-          python -m schedule_download --out feeds/nwr-schedule/nwr-schedule.CIF.gz
-          sha256sum feeds/nwr-schedule/* > feeds/nwr-schedule.sha256
+      - name: Download the feeds
+        uses: ./.github/actions/licensed-feeds
+        with:
+          nrdp-username: ${{ secrets.NRDP_USERNAME }}
+          nrdp-password: ${{ secrets.NRDP_PASSWORD }}
+          schedule-url: ${{ vars.SCHEDULE_URL }}
+          schedule-username: ${{ secrets.SCHEDULE_USERNAME || secrets.NRDP_USERNAME }}
+          schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
 
       - name: Refuse a download the gates did not audit
-        # The portal can republish between jobs. Every gate above ran on the
-        # build job's download, so a job holding a different one stops here
-        # rather than publishing fares nobody audited. (The merge would refuse
-        # mismatched shards too; this names the reason first.)
-        env:
-          AUDITED: ${{ needs.build.outputs.audited }}
-        shell: bash
-        run: |
-          HERE=$(python - <<'PY'
-          # The DTD fares and timetable, plus the OGL timetable the release
-          # publishes its times from. The tolerant Knowledgebase download shares
-          # the manifest and may differ between jobs without changing a fare, so
-          # it stays out. The bytes, not the download time: each job downloads at
-          # its own minute. A missing timetable identity prints nothing, which
-          # the caller refuses rather than reading as agreement.
-          import hashlib, json
-          from pathlib import Path
-          import dtd_download as d
-          rows = [
-              {f: e.get(f) for f in ("name", "sha256", "bytes")}
-              for e in sorted(d._existing_manifest_entries(Path("feeds/download-manifest.json")), key=lambda e: str(e.get("name")))
-              if e.get("name") in ("fares", "timetable")
-          ]
-          schedule_path = Path("feeds/nwr-schedule.sha256")
-          schedule = hashlib.sha256(schedule_path.read_bytes()) if schedule_path.is_file() else None
-          print(hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode() + schedule.digest()).hexdigest() if schedule and rows and all(r["sha256"] for r in rows) else "")
-          PY
-          )
-          if [ -z "$AUDITED" ]; then
-            echo "::error title=feed moved::the build job named no audited download to compare against"
-            exit 1
-          fi
-          if [ "$HERE" != "$AUDITED" ]; then
-            echo "::error title=feed moved::this job downloaded feed $HERE, but the gates audited $AUDITED; the portal republished mid-run, so rerun the workflow"
-            exit 1
-          fi
+        run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
 
       - name: Collect the shares
         uses: actions/download-artifact@v4
@@ -822,274 +258,44 @@ jobs:
         run: python build_demo_page.py --feed feeds/fares --merge _shards/shard-* --out _site/index.html
 
       - name: Hold the site inside the byte budget
-        # The 498 MB a whole-network release measured on 1 October grew to
-        # 2,444 MB with two-ticket rows (run 38353105980), and this step is what
-        # caught it. ADR-0069 shares a station's facts across the fare lists
-        # and packs railcards and tickets; re-encoding shard 1's real pages
-        # measured 90.8 MB for 458 pages, about 536 MB for the network, against
-        # the 800 MB target (tools/page_bytes.py). Nothing
-        # else in this workflow can see that number grow: the manifest check
-        # counts routes, the journey check counts fields, and every one of
-        # them is still satisfied by a release twice the size. This is the one
-        # step that reads the bytes, and it refuses on its own.
+        # The one step that reads the bytes: every other check here is still
+        # satisfied by a release twice the size (tools/page_bytes.py, ADR-0069).
         run: python -m tools.page_bytes --site _site
 
       - name: Check the release manifest
-        # S07: the release is a set of routes, written beside the pages and
-        # proved against them by the build. This step checks the set an operator
-        # or a host would read, so a manifest that went missing between the
-        # build and the publish cannot pass unnoticed.
-        #
-        # And it checks the page is the shape this workflow declares. The
-        # release publishes times, so every station page must carry them: a
-        # build that lost its `--timetable`, or a page that silently answered
-        # nowhere for every station, would ship a release whose opening sentence
-        # promises times it does not show. This is the third place the shape is
-        # stated -- the build's flags, the clearance job's `--release`, and here
-        # -- and the only one that reads the artefact. The test in
-        # tools/test_check_release_clearance.py holds the first two together;
-        # this holds the pages to them, which is the half no test can see.
-        run: |
-          if [ ! -s _site/release-manifest.json ]; then
-            echo "::error title=release manifest::the build wrote no _site/release-manifest.json, so the routes this release serves are not stated anywhere"
-            exit 1
-          fi
-          ROUTES=$(python -c "import json;print(len(json.load(open('_site/release-manifest.json'))['routes']))")
-          PAGES=$(find _site -name index.html | wc -l)
-          echo "the manifest names $ROUTES route(s) and the folder holds $PAGES page(s)"
-          if [ "$ROUTES" -ne "$PAGES" ]; then
-            echo "::error title=release manifest::the manifest names $ROUTES route(s) but the folder holds $PAGES page(s), so the release and the artifact disagree"
-            exit 1
-          fi
-          # The workflow publishes times, so every station page must carry them.
-          # Read as JSON rather than grepped, because the payload is minified and
-          # a pattern written with a space after the colon would match nothing at
-          # all. And the empty case fails: a glob that matches no page would
-          # otherwise report nothing wrong and pass, which is the one outcome a
-          # gate must never produce.
-          JOURNEYS=$(python - <<'PY'
-          import glob, re, sys
-
-          pages = sorted(glob.glob("_site/from/*/index.html"))
-          if not pages:
-              print("no station pages were written, so there is nothing to check")
-              sys.exit(2)
-          missing = []
-          for path in pages:
-              text = open(path, encoding="utf-8").read()
-              found = re.search(r'"hasJourneys":\s*(true|false)', text)
-              if not found:
-                  missing.append(path + " (no hasJourneys field at all)")
-              elif found.group(1) != "true":
-                  missing.append(path + " (hasJourneys is false)")
-          print(" ".join(missing))
-          PY
-          ) || { echo "::error title=journeys::the journey check could not run, so this build's shape is unverified"; exit 1; }
-          if [ -n "$JOURNEYS" ]; then
-            echo "::error title=journeys::these station pages carry no journey times, so this build published prices under a workflow that declares the timetable: $JOURNEYS. The release publishes times from Network Rail's CIF under the Open Government Licence (ADR-0073); load the timetable in the build above, or declare --release fares again and build without it."
-            exit 1
-          fi
-          echo "every station page carries journey times, as the fares-and-timetable release declares"
+        # S07, and the pages' shape against tools.release.RELEASE: the only
+        # statement of the shape that reads the artefact.
+        run: python -m tools.release.manifest --site _site
 
       - name: Check the fare pages carry the source credit
-        # The terms require the publisher to acknowledge NRE as the source, and
-        # the build's own gate would not catch a notice set that dropped `nre`:
-        # `release_gate_problems` refuses a public build with *no* notice, not
-        # one missing this one. So this reads the built site rather than the
-        # flags, and asks only the pages that carry the feed's answer -- the
-        # chooser's station index and the privacy notice carry no fare, and the
-        # reading that they need no credit is recorded in
-        # licences/release-clearance.md (tools/check_source_credit.py).
+        # The terms require NRE to be credited as the source, and the build's
+        # own gate refuses a public build with no notice, not one missing this
+        # one (tools/check_source_credit.py, licences/release-clearance.md).
         run: python -m tools.check_source_credit --site _site
 
       - name: Test the build
-        # `python -m tools.verify --full` is the whole suite in the same command a
-        # developer runs, so a green run here and a green run there mean the
-        # same thing (F5 of the 8 October 2026 agent-efficiency audit).
-        # Coverage runs with a floor, not a target (audit C5): unreachable
-        # code and untested branches show up in the printed report, and a
-        # drop below 79% of the product fails the step. A point and a half
-        # of slack over today's 81.2% covers platform variance; the floor
-        # lives here next to the number it holds, and lowering it needs a
-        # reason.
+        # The whole suite in the command a developer runs (F5). Coverage has a
+        # floor, not a target (audit C5): 79%, a point and a half under the
+        # measured 81.2% for platform variance. Lowering it needs a reason.
         run: |
           python -m pip install coverage mypy actionlint-py==1.7.12.25
           python -m coverage run -m tools.verify --full
           python -m coverage report --fail-under=79 --precision=1
 
       - name: Test the page in a real browser
-        # The page's claims -- notices, provenance, the picker -- execute in
-        # browser JS that the Python suite cannot see (audit C2). Playwright
-        # needs a browser; chromium is the lightest.
-        #
-        # Two pages go through the suite. The synthetic demo feed's is built
-        # here, because the suite tests the template rather than a station: it
-        # is written against the payload the page carries, so it holds for any
-        # origin, and a day's fares cannot fail it. It also means the step has
-        # a page on every run, and it is a build with a timetable, so the
-        # times and changes columns are driven by something.
-        #
-        # The other is whatever the site build wrote: _site/index.html today,
-        # driven in the same run, so the page that ships is one somebody
-        # opened. It is built from the real DTD feeds with the timetable
-        # loaded, which the synthetic demo page is not, so the two cover
-        # different ground. A full-network build writes a station set
-        # under _site/from instead, and the whole set is swept -- the suite
-        # reads its expectations out of each page, so a sweep of it is a search
-        # for origin-specific template bugs rather than a second copy of the
-        # same assertions. Which page sits at the site root is the build's
-        # choice -- a station page for one origin, a chooser for the whole
-        # network -- so a page that is not a station page is reported and
-        # skipped, and a run in which no page was one fails rather than
-        # passing having checked nothing.
-        #
-        # --sweep marks a station set, and no longer changes the standard: a
-        # check a page has nothing to exercise (no UNESCO destination, one
-        # option in the picker, no second station) is a skip in every mode, and
-        # the skip budget is what stops a page that has nothing to exercise
-        # from reading as a pass. The run reports how many checks it skipped, and
-        # fails when that count is more than a stated fraction of the checks
-        # the pages could have run -- so a sweep whose pages have stopped
-        # exercising the suite cannot read as a pass, which is what reporting
-        # the number alone allowed.
-        #
-        # There are two fractions, one per page shape, since 16 October 2026.
-        # A page with no timetable cannot run the checks about times, days,
-        # journeys and splits: held to the timetable's 5% together, 467 of 6401
-        # checks (7.3%) had no subject on pages that were otherwise full, which
-        # is a gate no licence decision could keep green. The release publishes
-        # times again, so the prices-only shape is built below rather than
-        # published, and the second fraction is measured over those pages. Each
-        # shape is measured against the pages of its own shape, so neither can
-        # excuse the other, and a run with no timetable page in it fails
-        # outright -- the demo and one-page builds below are what stop the times
-        # half of the suite going untested.
-        #
-        # The site build above only runs when the feed changed, so on an
-        # unchanged run there is no published page to drive and the suite runs
-        # against the demo page alone -- rather than against a file that is
-        # not there.
-        env:
-          SITE_BUILT: 'true'
+        # tools/verify.py builds the demo and shape pages, then drives them and
+        # a sweep of the site that ships; --require-site fails the step when
+        # that site is not there. The skip budgets per page shape are in
+        # tests/browser/harness.cjs. One version for the module and its browser,
+        # read from the file a local run reads too (A7).
         run: |
-          # One version for the module and its browser: a browser downloaded by
-          # one release is not one another release will launch. The version is
-          # read from the file a local run reads too, so a green run here and a
-          # green run on a developer's machine are the same command (A7 of the
-          # 20 October 2026 poteto audit).
           PLAYWRIGHT_VERSION="$(cat tests/browser/playwright-version)"
-          # npx only puts playwright's command on PATH; the suite require()s
-          # the module, so it is installed where node resolves it.
           npm install --no-save "playwright@$PLAYWRIGHT_VERSION"
           npx playwright install --with-deps chromium
-          # --third-origin makes the picker have options; --return-network
-          # gives the two secondary origins a set of destinations each, so
-          # every station page the suite drives has more than one row. With a
-          # single destination a page cannot exercise the shortlist, the party
-          # switch, the railcard or a type chip, and those checks became
-          # silent skips on two pages out of three. --long-list prices the
-          # driven Grantham page above twenty rows, which is the one thing that
-          # gives the pager a second page for the n/p keys to reach.
-          python make_synthetic_feed.py _demo_feed --unserved-station --third-origin --return-network --long-list --knowledgebase _demo_kb
-          # A single-origin build is a site (S01, S04): the chooser is the root
-          # index.html and each station sits at its canonical /from/<slug>/
-          # route. The demo site is built --all-origins so the synthetic feed's
-          # priced stations give the picker real sibling options to exercise, the
-          # way a published site does; the suite drives one station page from it.
-          # --third-origin is what makes that true: without it only two stations
-          # are priced and the picker has a single option and nothing to narrow.
-          #
-          # --date is the day the fixture pages report; the reason it is fixed
-          # rather than today's is written on SERVICE_DATE in tools/verify.py,
-          # which is where the local `--browser` run reads it from too, so these
-          # pages and that run cannot come to name different days.
-          SERVICE_DATE=$(python -c "import sys; sys.path.insert(0, 'tools'); import verify; print(verify.SERVICE_DATE)")
-          if [ -z "$SERVICE_DATE" ]; then
-            echo "::error title=browser test::tools/verify.py named no SERVICE_DATE, so these pages would be built for no day and every check about the day would be skipped"
-            exit 1
-          fi
-          python build_demo_page.py --feed _demo_feed --timetable _demo_feed --knowledgebase _demo_kb --all-origins --date "$SERVICE_DATE" --out _demo_site/index.html
-          if [ ! -s _demo_site/privacy/index.html ]; then
-            echo "::error title=browser test::the demo site wrote no privacy page, so a route every footer links to was never checked"
-            exit 1
-          fi
-          # A build that produced no page must fail the run here, with the
-          # reason attached to this step. Otherwise the suite is one skipped
-          # step away from passing having tested nothing at all.
-          DEMO_STATION=$(ls _demo_site/from/*/index.html 2>/dev/null | head -1 || true)
-          if [ -z "$DEMO_STATION" ] || [ ! -s "$DEMO_STATION" ]; then
-            echo "::error title=browser test::the demo site built no station page, so the page in a real browser was not tested"
-            exit 1
-          fi
-          PAGES=("$DEMO_STATION" _demo_site/index.html _demo_site/privacy/index.html)
-          SWEEP=""
-          if [ "$SITE_BUILT" = "true" ]; then
-            if [ ! -s _site/index.html ]; then
-              echo "::error title=browser test::the site was built but there is no page at _site/index.html, so the page that ships was not tested in a browser"
-              exit 1
-            fi
-            if [ ! -s _site/privacy/index.html ]; then
-              echo "::error title=browser test::the site was built but wrote no privacy page, so the route every footer links to was not tested"
-              exit 1
-            fi
-            PAGES+=(_site/index.html _site/privacy/index.html)
-            if [ -d _site/from ]; then
-              PAGES+=(_site/from)
-              SWEEP="--sweep --max ${SWEEP_PAGES:-24}"
-            fi
-          fi
-          # Two page shapes the sweep above cannot otherwise reach. A build that
-          # passes a timetable gives every station page journeys, and a station
-          # page with several rows never runs out of destinations, so the
-          # prices-only shape (no timetable, the times columns stood down) and
-          # the one-page shape (a page whose whole list fits on one page, so
-          # paging never engages) are never met. ADR-0058 records that a fixture
-          # whose list fits on one page cannot catch the paging mistake, so that
-          # is the shape to keep in the run.
-          #
-          # The list is what fits on one page, not one row: the feed takes
-          # --third-origin and --return-network for the same reason the demo
-          # feed does, because a page with one row cannot exercise its own
-          # controls -- nothing to hold in the shortlist, one destination type,
-          # no heritage row -- and the checks it cannot run were skips, which is
-          # what the budget below exists to catch. The six to eight rows it now
-          # prices against each origin still fit on one page. The prices-only
-          # page gets no --date, because a build with no times has no day to
-          # report and a date would be a claim it cannot back; the one-page
-          # build gets the demo site's date for the same reason the demo site
-          # does.
-          #
-          # They join the run as named pages rather than as part of the sweep,
-          # which is what makes them reachable: --max bounds the swept
-          # directory, so the sampling that spreads it across a whole network
-          # cannot sample these away -- and on 16 October 2026 it was doing
-          # exactly that, to a list that had put them at the end of it.
-          #
-          # The budget is stated per shape rather than across the whole run
-          # (SKIP_BUDGET_WITHOUT_TIMES in tests/browser/harness.cjs): the
-          # prices-only page skips every journey check because it has no
-          # timetable, about 10% of the suite, which is a smaller claim about
-          # the page rather than a page with nothing in it.
-          python make_synthetic_feed.py _shape_feed --unserved-station --third-origin --return-network
-          # No --timetable, so the page prices fares only.
-          python build_demo_page.py --feed _shape_feed --origin GRN --out _shape_site/prices-only/index.html
-          python build_demo_page.py --feed _shape_feed --timetable _shape_feed --all-origins --date "$SERVICE_DATE" --out _shape_site/one-page/index.html
-          ONE_PAGE=$(ls _shape_site/one-page/from/*/index.html 2>/dev/null | tail -1 || true)
-          PRICES_ONLY=_shape_site/prices-only/from/grantham/index.html
-          if [ ! -s "$PRICES_ONLY" ] || [ ! -s "$ONE_PAGE" ]; then
-            echo "::error title=browser test::the shape build wrote no prices-only page or no one-page shape, so one of the two page shapes the suite must meet was never checked"
-            exit 1
-          fi
-          PAGES+=("$ONE_PAGE" "$PRICES_ONLY")
-          node tests/browser_test.cjs "${PAGES[@]}" $SWEEP
-
+          python -m tools.verify --browser --require-site
 
       - name: Save the successful feed manifest and build fingerprint
-        run: |
-          mkdir -p .feed-state
-          cp feeds/download-manifest.json .feed-state/download-manifest.json
-          cp feeds/nwr-schedule.sha256 .feed-state/nwr-schedule.sha256
-          python -m tools.build_inputs --fingerprint > .feed-state/build-inputs.sha256
+        run: python -m tools.release.feed_state save
 
       - name: Save the successful feed manifest
         uses: actions/cache/save@v4
@@ -1098,11 +304,8 @@ jobs:
             .feed-state/download-manifest.json
             .feed-state/nwr-schedule.sha256
             .feed-state/build-inputs.sha256
-          # Keyed on the feed FINGERPRINT, not on the manifest's bytes, so the
-          # cache entry is replaced only when the feeds really are different.
-          # A key derived from the manifest file itself would produce a new
-          # entry every run for the reason described above, and the restore
-          # would never match a saved state.
+          # Keyed on the feed fingerprint, not the manifest's bytes, so the
+          # entry is replaced only when the feeds really are different.
           key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ needs.build.outputs.fingerprint }}
 
       # One day: the deploy job takes this artifact in the same run, minutes

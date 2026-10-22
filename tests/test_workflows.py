@@ -21,11 +21,13 @@ the log has.
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
+ACTIONS = ROOT / ".github" / "actions"
 
 # `run:` as a key, with or without the `- ` a list item puts in front of it,
 # with any amount of space after the dash, and with the key quoted. YAML allows
@@ -159,20 +161,18 @@ class BuildBoundTest(unittest.TestCase):
         )
         # The build is told the denominator separately, and a share of 1/11 in a
         # twelve-share matrix silently overlaps or skips a slice.
-        denominator = re.search(r"SHARD:\s*\$\{\{\s*matrix\.shard\s*\}\}/(\d+)", shard_job())
+        denominator = re.search(r"--shard \"\$\{\{\s*matrix\.shard\s*\}\}/(\d+)\"", shard_job())
         self.assertIsNotNone(denominator, "the shard job does not tell the build its share count")
         self.assertEqual(int(denominator.group(1)), stated_shares)
 
     def test_the_nearing_minute_is_the_one_the_record_states(self) -> None:
+        from tools.release import share
+
         stated_minutes = stated("the minute a share counts as nearing its bound")
-        found = re.search(r"NEARING_MINUTES:\s*(\d+)", shard_job())
-        self.assertIsNotNone(
-            found, "the shard job no longer reports the minute a share counts as nearing its bound"
-        )
         self.assertEqual(
-            int(found.group(1)),
+            share.NEARING_MINUTES,
             stated_minutes,
-            f"the workflow warns at {found.group(1)} minutes and "
+            f"tools/release/share.py warns at {share.NEARING_MINUTES} minutes and "
             f"docs/build-performance-findings.md states {stated_minutes}",
         )
 
@@ -235,23 +235,19 @@ class WorkflowShellTest(unittest.TestCase):
             ],
         )
 
-    def test_the_scan_reaches_the_gate_whose_message_the_shell_ate(self) -> None:
+    def test_the_scan_reaches_a_block_of_the_release_workflow(self) -> None:
         # A scan that reads nothing passes the check below by knowing nothing,
-        # and the line it has to reach is the one that went wrong: the SCHEDULE_URL
-        # gate's own message.
+        # so it has to reach a line inside one of deploy.yml's block scalars.
         deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
-        self.assertTrue(
-            any(
-                "no SCHEDULE_URL repository variable is set" in line
-                for _number, line in shell_lines(deploy)
-            ),
-            "the scan did not reach the gate's message: either the scan stopped "
-            "short of it or the message has been reworded, and either way this "
-            "test's anchor is the line to fix",
+        self.assertIn(
+            "python -m tools.verify --fast",
+            [line.strip() for _number, line in shell_lines(deploy)],
+            "the scan did not reach the verify step's block: either the scan stopped "
+            "short of it or the step changed, and either way this anchor is the line to fix",
         )
 
     def test_no_run_block_writes_a_backtick(self) -> None:
-        workflows = sorted(WORKFLOWS.glob("*.yml"))
+        workflows = sorted(WORKFLOWS.glob("*.yml")) + sorted(ACTIONS.glob("*/action.yml"))
         self.assertTrue(workflows, f"there is no workflow to check under {WORKFLOWS}")
         offences = [
             f"{path.name}:{offence}"
@@ -267,6 +263,28 @@ class WorkflowShellTest(unittest.TestCase):
             "$(...) if the substitution is wanted, or drop the backticks.\n  "
             + "\n  ".join(offences),
         )
+
+
+class LocalActionTest(unittest.TestCase):
+    def test_every_local_action_a_workflow_uses_is_tracked(self) -> None:
+        # actionlint skips a local action it cannot find, and .gitignore's
+        # feeds/ rule once swallowed one named feeds: the workflow would have
+        # failed on its first run with every check here green.
+        used = sorted(
+            {
+                match.group(1)
+                for path in WORKFLOWS.glob("*.yml")
+                for match in re.finditer(r"uses:\s*\./(\S+)", path.read_text(encoding="utf-8"))
+            }
+        )
+        self.assertTrue(used, "no workflow uses a local action, so this check reads nothing")
+        tracked = subprocess.run(
+            ["git", "ls-files", "--others", "--cached", "--exclude-standard", ".github/actions"],
+            cwd=ROOT, capture_output=True, text=True,
+        ).stdout.split()
+        for action in used:
+            with self.subTest(action=action):
+                self.assertIn(f"{action}/action.yml", tracked, f"{action}/action.yml is missing or ignored by git")
 
 
 class ServiceDayTest(unittest.TestCase):
@@ -302,33 +320,33 @@ class ServiceDayTest(unittest.TestCase):
         )
 
     def test_each_share_is_built_for_that_day(self) -> None:
-        job = shard_job()
+        from tools.release import share
+
         self.assertIn(
-            "SERVICE_DATE: ${{ needs.build.outputs.service_date }}",
-            job,
+            '--date "${{ needs.build.outputs.service_date }}"',
+            shard_job(),
             "the shard job does not take the day from the build job's output",
         )
-        self.assertIn(
-            '--date "$SERVICE_DATE"',
-            job,
+        built = share.command("1/12", "2026-10-22", 4)
+        self.assertEqual(
+            built[built.index("--date") + 1],
+            "2026-10-22",
             "the share builds without --date, so every page indexes the feed's "
             "whole schedule window and carries no day control "
             "(docs/build-performance-findings.md, 21 October 2026)",
         )
 
     def test_a_share_with_no_day_stops_instead_of_indexing_the_feed(self) -> None:
-        job = shard_job()
-        guard = re.search(r'if \[ -z "\$SERVICE_DATE" \]; then(.*?)\bfi\b', job, re.S)
-        self.assertIsNotNone(
-            guard, "the share no longer checks that it has a day before building"
-        )
-        self.assertIn(
-            "exit 1",
-            guard.group(1),
-            "the guard names a missing day and then builds anyway, which is the "
-            "run that timed out on 21 October 2026",
-        )
+        import contextlib
+        import io
+        from unittest import mock
 
+        from tools.release import share
+
+        with mock.patch.object(share.subprocess, "run") as build, contextlib.redirect_stdout(io.StringIO()):
+            code = share.main(["--shard", "1/12", "--date", ""])
+        self.assertEqual(code, 1)
+        build.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

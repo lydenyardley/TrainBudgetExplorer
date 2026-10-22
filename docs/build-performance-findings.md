@@ -1196,9 +1196,10 @@ timetable every share loads for itself, which does not. Halving the pages
 therefore halves the larger part and leaves the fixed part paid twice over --
 minutes, against the hours the pages take.
 
-**The bound, as a table a check reads.** The workflow's three numbers are stated
-here, and `tests/test_workflows.py` fails naming the workflow's value and this
-table's when they disagree. The document stays the record; the check makes it a
+**The bound, as a table a check reads.** The release's three numbers are stated
+here, and `tests/test_workflows.py` fails naming the value the workflow (or
+`tools/release/share.py`, for the nearing minute) holds and this table's when
+they disagree. The document stays the record; the check makes it a
 rule (A8 of the same audit), because a bound drifting away from its measurement
 is exactly what the 20 October failure cost.
 
