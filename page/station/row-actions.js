@@ -92,6 +92,12 @@ function cardNote(destination) {
       return note;
     }
     note.dataset.state = pair.state;
+    if (pair.state === "undiscounted") {
+      note.textContent = "The " + card.label + " takes nothing off either ticket: the feed's " +
+        "discount table gives the card no discount on these tickets, so the row shows the two " +
+        "standard fares.";
+      return note;
+    }
     if (pair.pricePence === null || pair.pricePence === undefined) {
       note.textContent = "The " + card.label + " is refused on one of the two tickets by the " +
         "feed's own rule, so the row shows both standard fares.";
@@ -162,6 +168,14 @@ function cardNote(destination) {
       "This fare is " + money(priceOf(destination)) + ", and " + card.label +
       " cannot be applied to this fare. The feed's own rule refuses the card on this ticket, " +
       "route or endpoint, so the standard fare is the only price the feed offers here.";
+  } else if (details.state === "undiscounted") {
+    // RSPS5045 §4.16.3: the card's status gives this ticket's discount
+    // category no discount, so the card's price is the fare and no minimum
+    // is involved.
+    note.textContent =
+      "This fare is " + money(priceOf(destination)) + ", and " + card.label +
+      " takes nothing off it: the feed's discount table gives the card no discount on this " +
+      "ticket, so the standard fare is the price.";
   } else if (!cardBeatsStandard) {
     // The three numbers the build already sent are enough to say this. The
     // discounted price before the minimum is not one of them, and recomputing it

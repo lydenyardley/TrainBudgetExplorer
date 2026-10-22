@@ -339,6 +339,28 @@ class FaresPayloadTest(PageTestCase):
         self.assertFalse(rows["NOT"]["restrictionDescribed"])
         self.assertNotIn("1A", payload["restrictionValidity"])
 
+    def test_a_category_the_discount_table_marks_x_gets_the_standard_fare(self) -> None:
+        # RSPS5045 P-02-04 §4.16.3: "'X' or 'N' – Do not apply any discount."
+        # The 24 September 2026 feed marks seven of Two Together's twenty
+        # categories X, and the page took a third off them all the same. The
+        # card's price on such a ticket is the fare itself, no minimum is
+        # involved, and the row says why rather than blaming a minimum fare.
+        from atoc_fare_declarations import StatusDiscount
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fares = FaresDb().load_feed(
+                build_synthetic_feed(Path(tmp) / "fares", include_restrictions=True)
+            )
+        before = {row["crs"]: row for row in build_payload(fares, None, "GRN")["destinations"]}
+        ticket = before["PBO"]["ticket"]
+        fares.railcards["YNG"] = replace(fares.railcards["YNG"], adult_status="003")
+        fares.ticket_types[ticket] = replace(fares.ticket_types[ticket], discount_category="20")
+        fares.status_discounts[("003", "20")] = [StatusDiscount(end_date=None, discount=None)]
+        rows = {row["crs"]: row for row in build_payload(fares, None, "GRN")["destinations"]}
+        self.assertLess(before["PBO"]["railcards"]["YNG"]["pricePence"], before["PBO"]["adultPence"])
+        self.assertEqual(rows["PBO"]["railcards"]["YNG"]["state"], "undiscounted")
+        self.assertEqual(rows["PBO"]["railcards"]["YNG"]["pricePence"], rows["PBO"]["adultPence"])
+
     def test_a_railcard_is_a_constraint_on_the_party_not_a_discount(self) -> None:
         # S15: the cheapest number on screen has to be a fare the party could
         # buy, so a card whose own feed record does not cover the party on

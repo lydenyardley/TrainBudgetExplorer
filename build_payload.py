@@ -314,7 +314,11 @@ def railcard_pair_detail_for(
         price = sum(leg["pricePence"] for leg in legs)
         minimums = [leg["minimumFarePence"] for leg in legs]
         minimum = None if any(value is None for value in minimums) else sum(minimums)
-        state = "eligible"
+        state = (
+            "undiscounted"
+            if all(leg["state"] == "undiscounted" for leg in legs)
+            else "eligible"
+        )
         total_ban = False
     restrictions = [
         (pool.rule_for(leg["rule"]) or {}).get("restrictionCode") for leg in legs
@@ -398,7 +402,13 @@ def railcard_detail_for(
         price = fares.railcard_price(
             railcard_code, one.ticket_code, one.standard_pence, day=context.day
         )
-        state = "eligible"
+        # The feed's status-discount table gives this card nothing on this
+        # ticket's category, which the page says rather than blaming a minimum.
+        state = (
+            "eligible"
+            if fares.railcard_discounts_ticket(railcard_code, one.ticket_code, context.day)
+            else "undiscounted"
+        )
     if rule is not None:
         rule["text"] = (
             f"Current RR {rule['sequence']} for {family.label}: "

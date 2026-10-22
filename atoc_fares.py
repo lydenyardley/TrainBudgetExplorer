@@ -757,14 +757,15 @@ class FaresDb(FaresLoader):
 
     def railcard_discount(
         self, railcard_code: str, ticket_code: str, day: date | None = None
-    ) -> Fraction:
+    ) -> Fraction | None:
         """What the card takes off this ticket, from the feed's DIS table.
 
         The card's adult status and the ticket's discount category name the
-        record. Where the feed states no percentage for the pair -- no DIS file,
-        as in the synthetic fixture, a key it does not carry, or an ``X`` record
-        -- the reading is a third, the published figure this page used before
-        it read the table, so no fare moves on a feed that does not say.
+        record. ``None`` is the record saying the card gives no discount on this
+        ticket (``X`` or ``N``, RSPS5045 §4.16.3): the card's price is then the
+        standard fare. Where the feed has no record for the pair -- no DIS file,
+        as in the synthetic fixture, or a key it does not carry -- the reading
+        is a third, the published figure the page used before it read the table.
         """
         railcard = self.railcards.get(railcard_code)
         ticket = self.ticket_types.get(ticket_code)
@@ -780,10 +781,14 @@ class FaresDb(FaresLoader):
         ]
         if current:
             # The window that ends first is the one in force today.
-            record = min(current, key=lambda record: record.end_date or date.max)
-            if record.discount is not None:
-                return record.discount
+            return min(current, key=lambda record: record.end_date or date.max).discount
         return 1 - RAILCARD_DISCOUNT
+
+    def railcard_discounts_ticket(
+        self, railcard_code: str, ticket_code: str, day: date | None = None
+    ) -> bool:
+        """Whether the feed gives this card any discount on this ticket."""
+        return self.railcard_discount(railcard_code, ticket_code, day) is not None
 
     def railcard_price(
         self,
@@ -797,8 +802,13 @@ class FaresDb(FaresLoader):
         # ticket, not up, and not on the party's total: £12.10 is £8.05 and
         # £13.30 is £8.85 with Two Together (#149), so the step is 5p, and two
         # people pay twice the one ticket.
-        factor = 1 - self.railcard_discount(railcard_code, ticket_code, day)
-        discounted = _round_down_to(standard_pence * factor, ROUNDING_STEP_PENCE)
+        discount = self.railcard_discount(railcard_code, ticket_code, day)
+        if discount is None:
+            # No discount, so no railcard minimum either: the minimum is a floor
+            # under a discounted fare (RSPS5045 §4.15), and the card's price is
+            # the fare itself.
+            return standard_pence
+        discounted = _round_down_to(standard_pence * (1 - discount), ROUNDING_STEP_PENCE)
         minimum = self.minimum_fare(railcard_code, ticket_code, day)
         if minimum is not None:
             discounted = max(discounted, minimum)

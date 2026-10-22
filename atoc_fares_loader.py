@@ -1289,7 +1289,7 @@ class FaresLoader:
         self.status_discounts.setdefault((status, category), []).append(
             StatusDiscount(
                 end_date=_parse_dtd_date(_text(line, STATUS_DISCOUNT_OFFSETS, "end_date")),
-                discount=None if indicator == "X" else Fraction(tenths, 1000),
+                discount=Fraction(tenths, 1000) if indicator == "0" else None,
             )
         )
 

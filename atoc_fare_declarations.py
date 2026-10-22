@@ -33,9 +33,10 @@ ROUNDING_STEP_PENCE = 5
 # (DIS) in tenths of a percent. The mainstream cards read 334 there, 33.4% off,
 # and the difference from a third is a real 5p: £26.50 is £17.65 at a third and
 # £17.60 at 33.4%, and National Rail sold two Two Together Anytime Singles from
-# Grantham to Skegness at £35.20 on 22 October 2026. A third is the reading
-# only where the feed states no percentage (the synthetic fixture writes no DIS
-# file) or marks the category X.
+# Grantham to Skegness at £35.20 on 22 October 2026. A category the record marks
+# X or N gets no discount at all (RSPS5045 P-02-04 §4.16.3, "Do not apply any
+# discount"). A third is the reading only where the feed has no record for the
+# pair, as in the synthetic fixture, which writes no DIS file.
 RAILCARD_DISCOUNT = Fraction(2, 3)
 
 # The station KB FareLocations feed describes fare locations; it does not carry
@@ -2328,9 +2329,13 @@ RAILCARD = (
     ("aaa_status", 3),
 )
 
-# A DIS discount record: what one status takes off one discount category.
-# ``X`` in the indicator means the status gives no discount on that category;
-# the percentage is in tenths, so 334 is 33.4%.
+# A DIS discount record: what one status takes off one discount category
+# (RSPS5045 P-02-04 §4.16.3). ``0`` discounts by the percentage, in tenths, so
+# 334 is 33.4%. ``X`` and ``N`` apply no discount. ``F``, ``M``, ``H`` and ``L``
+# combine the percentage with the status record's flat, maximum or minimum
+# fares; none of the reviewed cards' statuses uses them (24 September 2026
+# feed), so they are read as no discount, the direction that never quotes a
+# fare below the one sold.
 STATUS_DISCOUNT = (
     ("record_type", 1),
     ("status_code", 3),
@@ -2595,7 +2600,8 @@ class StatusDiscount:
     """One DIS record: a status's discount on one category, until ``end_date``."""
 
     end_date: date | None
-    #: None when the record says the status gives no discount (``X``).
+    #: None when the record gives no discount this reader applies: ``X`` or
+    #: ``N``, or an indicator that needs fares this reader does not model.
     discount: Fraction | None
 
     def covers(self, day: date) -> bool:

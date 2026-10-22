@@ -1123,9 +1123,10 @@ class FaresParserTest(unittest.TestCase):
         # #149's two Nottingham prices hold under the feed's figure too.
         self.assertEqual(db.railcard_price("2TR", "SOS", 1210, day=day), 805)
         self.assertEqual(db.railcard_price("2TR", "SOS", 1330, day=day), 885)
-        # Where the feed states no percentage -- an X record, or no record for
-        # the category -- the reading stays the third it was.
-        self.assertEqual(db.railcard_price("2TR", "SXS", 2650, day=day), 1765)
+        # RSPS5045 §4.16.3: an X record applies no discount, so the card's
+        # price is the fare. A category with no record at all keeps the third.
+        self.assertEqual(db.railcard_price("2TR", "SXS", 2650, day=day), 2650)
+        self.assertFalse(db.railcard_discounts_ticket("2TR", "SXS", day))
         self.assertEqual(db.railcard_price("2TR", "SNS", 2650, day=day), 1765)
 
     def test_a_lapsed_status_discount_is_not_applied(self) -> None:
@@ -1146,6 +1147,38 @@ class FaresParserTest(unittest.TestCase):
         db._load_lines("t.dis", ["D04201012020010500", "D04231122999010334"])
         self.assertEqual(db.railcard_price("2TR", "SOS", 2650, day=date(2026, 10, 27)), 1760)
         self.assertEqual(db.railcard_price("2TR", "SOS", 2650, day=date(2019, 6, 1)), 1325)
+
+    def test_an_x_or_n_record_applies_no_discount_and_no_minimum(self) -> None:
+        # "'X' or 'N' – Do not apply any discount" (RSPS5045 P-02-04 §4.16.3).
+        # A railcard minimum is a floor under a discounted fare (§4.15), so with
+        # no discount it cannot raise the fare either. F, M, H and L need the
+        # status record's flat and minimum fares, which this reader does not
+        # model, so they read as no discount: never a fare below the one sold.
+        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from make_synthetic_feed import _line
+
+        db = FaresDb()
+        db._load_lines("t.tty", [
+            _line({"update_marker": "R", "ticket_code": code, "description": code,
+                   "tkt_class": "2", "tkt_type": "S", "discount_category": category}, TICKET_TYPE)
+            for code, category in (("AAS", "05"), ("BBS", "06"), ("CCS", "07"), ("DDS", "08"))
+        ])
+        db._load_lines("t.rlc", [_line(
+            {"railcard_code": "2TR", "description": "TWO TOGETHER", "adult_status": "042"},
+            RAILCARD,
+        )])
+        db._load_lines("t.dis", [
+            "D0423112299905X000",
+            "D0423112299906N000",
+            "D0423112299907F334",
+            "D04231122999080334",
+        ])
+        db._load_lines("t.rcm", ["2TRAAS311229990101202000003000"])
+        day = date(2026, 10, 27)
+        self.assertEqual(db.railcard_price("2TR", "AAS", 2650, day=day), 2650)
+        self.assertEqual(db.railcard_price("2TR", "BBS", 2650, day=day), 2650)
+        self.assertEqual(db.railcard_price("2TR", "CCS", 2650, day=day), 2650)
+        self.assertEqual(db.railcard_price("2TR", "DDS", 2650, day=day), 1760)
 
     @unittest.skipUnless(
         Path("feeds/fares/dtd-fares.zip").is_file(),
