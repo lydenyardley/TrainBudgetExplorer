@@ -106,7 +106,7 @@ async function main() {
     );
     process.exit(1);
   }
-  const server = await serve(pages.map((entry) => entry.body), assets.files);
+  const server = await serve(pages.map((entry) => entry.body), assets.byPage);
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await playwright.chromium.launch();
   const results = [];

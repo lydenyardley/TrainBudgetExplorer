@@ -204,15 +204,26 @@ function requirePlaywright() {
  * page whose picker quietly went missing would otherwise pass by testing less.
  */
 function sharedAssets(pages) {
-  const files = new Map();
+  // Keyed by the page that asked as well as by name, because one run can serve
+  // more than one site and a name is then two different files. The demo site's
+  // `stations.js` lists three synthetic stations under no base path and the
+  // released site's lists the network under `/TrainBudgetExplorer/`; keyed by
+  // name alone, whichever site was read first answered for every page, and the
+  // released site's picker linked `/from/grantham/` -- a demo station, at an
+  // address the release does not serve. That was 24 of the 31 pages in run
+  // 39684806567, every one of them failing a check about a link that was never
+  // on the page their build wrote (22 October 2026).
+  const byPage = new Map();
   const missing = [];
-  for (const entry of pages) {
-    if (!entry.file) continue;
+  pages.forEach((entry, index) => {
+    const files = new Map();
+    byPage.set(index + 1, files);
+    if (!entry.file) return;
     let html = "";
     try {
       html = fs.readFileSync(entry.file, "utf8");
     } catch (error) {
-      continue;
+      return;
     }
     for (const match of html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="([^"]+)"/g)) {
       const name = path.basename(new URL(match[1], "http://x").pathname);
@@ -232,19 +243,37 @@ function sharedAssets(pages) {
       }
       if (!found && !missing.includes(name)) missing.push(name);
     }
-  }
-  return { files, missing };
+  });
+  return { byPage, missing };
 }
 function serve(bodies, assets = new Map()) {
   // One server for the whole run, with one synthetic path per page. The file
   // names are not unique -- a chooser and a station page are both index.html
   // -- and a page served from memory has no directory worth preserving, so
   // the path is a label rather than a location.
+  //
+  // An asset is answered from the copy beside the page that asked for it. The
+  // request carries the page it is for in the Referer (same origin, so the
+  // browser sends the whole URL), and a run can serve several sites whose
+  // assets share a name and not a byte: see sharedAssets.
   const routes = new Map();
   bodies.forEach((body, index) => routes.set(`/page-${index + 1}.html`, body));
+  const assetFor = (request, name) => {
+    const asked = /\/page-(\d+)\.html/.exec(request.headers.referer || "");
+    const own = asked ? assets.get(Number(asked[1])) : null;
+    if (own && own.has(name)) return own.get(name);
+    // A request that names no page -- an asset the browser fetches before the
+    // document it belongs to is known -- falls back to the first page that has
+    // the name. Every page under test does name itself, so this is the
+    // exception rather than the rule.
+    for (const files of assets.values()) {
+      if (files.has(name)) return files.get(name);
+    }
+    return undefined;
+  };
   const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
-    const body = routes.has(pathname) ? routes.get(pathname) : assets.get(path.basename(pathname));
+    const body = routes.has(pathname) ? routes.get(pathname) : assetFor(request, path.basename(pathname));
     if (body === null || body === undefined) {
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("no such page");
