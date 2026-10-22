@@ -337,12 +337,21 @@ async function checkTheFareDetails(world) {
     // would make a control that works look broken.
     const address = () => page.evaluate(() => window.location.href);
     const stateful = await page.evaluate(() => ({
-      chips: Array.from(document.querySelectorAll('input[name="destinationType"]'))
-        .filter((input) => input.value !== "all")
-        .filter((input) => !input.closest("label").hidden)
-        .map((input) => input.value),
       hasParty: !!document.querySelector('input[name="unit"][value="party"]'),
     }));
+    // A chip the page offers is read here, when it is pressed, and not a moment
+    // earlier. Two switches happen between the two points, and the party one
+    // doubles the fare: the budget on screen then reaches almost no kind at all,
+    // so a chip offered at one adult is no longer offered at a pair and pressing
+    // it waits thirty seconds on an input the page has hidden (Reston, 21
+    // October 2026). Nothing is offered at this budget, the mode's own ceiling
+    // is where a reader would widen it to, so it is widened the way
+    // driveTheFilters does for the same reason.
+    const offeredChip = () => page.evaluate(() =>
+      Array.from(document.querySelectorAll('input[name="destinationType"]'))
+        .filter((input) => input.value !== "all" && !input.closest("label").hidden)
+        .map((input) => input.value)[0] || null
+    );
     // One non-default mode, if this page has a second mode with fares in it.
     const otherMode = await page.evaluate(() => {
       // The radio the page opened with, put back after each probe. Unchecking
@@ -378,7 +387,6 @@ async function checkTheFareDetails(world) {
       applyState({ unit: fallback.value });
       return ceiling > 1 ? ceiling : null;
     });
-    const aChip = stateful.chips[0] || null;
     if (otherMode) {
       // force: the radio itself is visually hidden inside its styled label,
       // which is the target a reader actually clicks.
@@ -395,6 +403,11 @@ async function checkTheFareDetails(world) {
     } else {
       check("the address carries the party", notExercised("this page has no party price a pair could be shown"));
     }
+    let aChip = await offeredChip();
+    if (!aChip) {
+      await page.evaluate(() => { setBudget(budgetCeiling()); render(); });
+      aChip = await offeredChip();
+    }
     if (aChip) {
       // A facet chip is one press away, so the disclosure is pressed first, as
       // a reader reaches it: the address then carries a chip a reader could have
@@ -409,13 +422,24 @@ async function checkTheFareDetails(world) {
     // the control rather than repeated here.
     const sharedUrl = await address();
     await page.reload();
+    // Read all three back at once, so a failure names the fact that moved
+    // rather than only the address it should have matched.
+    const reloadedState = await page.evaluate(() => ({
+      budget: document.getElementById("budgetNumber").value,
+      mode: document.querySelector('input[name="ticketMode"]:checked').value,
+      // "All" is the empty selection and is checked whenever no specific chip
+      // is, so counting it would compare 1 with the 0 type parameters a page
+      // with no chip on writes: skelmersdale-bus, 21 October 2026.
+      types: [...document.querySelectorAll('input[name="destinationType"]:checked')]
+        .filter((input) => input.value !== "all").length,
+    }));
+    const shared = new URL(sharedUrl).searchParams;
     check(
       "a refresh keeps the search the address describes",
-      (await page.inputValue("#budgetNumber")) === new URL(sharedUrl).searchParams.get("budget") &&
-        (await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value)) === (new URL(sharedUrl).searchParams.get("mode") || defaultMode) &&
-        (await page.evaluate(() => document.querySelectorAll('input[name="destinationType"]:checked').length)) ===
-          new URL(sharedUrl).searchParams.getAll("types").length,
-      sharedUrl
+      reloadedState.budget === shared.get("budget") &&
+        reloadedState.mode === (shared.get("mode") || defaultMode) &&
+        reloadedState.types === shared.getAll("types").length,
+      JSON.stringify({ reloadedState, wanted: { budget: shared.get("budget"), mode: shared.get("mode") || defaultMode, types: shared.getAll("types").length }, sharedUrl })
     );
     check("and the title still names that budget", new RegExp("up to £" + new URL(sharedUrl).searchParams.get("budget") + "\\b").test(await page.title()), await page.title());
     // Back is one decision, not a direction the page can only go forwards in.
@@ -433,7 +457,16 @@ async function checkTheFareDetails(world) {
     // The budget is the one thing every reader has, so it is the one thing the
     // heading and the tab must both be saying.
     await open(3);
-    check("the tab title follows the budget", /up to £3\b/.test(await page.title()), await page.title());
+    // A page whose budget stops below £3 clamps the request, so its title can
+    // never name £3: skelmersdale-bus stops at £1.
+    const titleCeiling = await page.evaluate(() => Number(document.getElementById("budget").max));
+    check(
+      "the tab title follows the budget",
+      titleCeiling < 3
+        ? notExercised(`this page's budget stops at £${titleCeiling}, so no £3 title can be shown`)
+        : /up to £3\b/.test(await page.title()),
+      await page.title()
+    );
     // 7c. The party, the fare's conditions, the facets, and what an empty
     // list offers. Every fact is read out of this page's own payload and
     // controls, so one run of this section is a test of the page rather than
@@ -1484,7 +1517,9 @@ function saysMoreThan(condition, code) {
     });
     check(
       "every offered chip counts what it would show",
-      facets.length > 0 && facets.every((facet) => facet.shown === `(${facet.count})`),
+      facets.length === 0
+        ? notExercised("this page offers no destination-type chip")
+        : facets.every((facet) => facet.shown === `(${facet.count})`),
       JSON.stringify(facets)
     );
     // Two numbers wear the same dress here, so the line has to say which is

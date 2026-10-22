@@ -235,10 +235,6 @@ async function runPage(browser, index, given, file, body, base) {
   // Every page is opened through here: a navigation throws away the reader,
   // so one way to load means no step can forget to reinstall it. The budget
   // under test is the page's own affordable one unless a step wants another.
-  const open = async (budget) => {
-    await page.goto(url);
-    await installReader();
-    world.pageSize = await page.evaluate(() => PAGE_SIZE);
   // The refinements are folded on every route and at every width, so a
   // navigation always arrives with them closed and every step that drives a
   // chip, a ticket mode or a party choice has to open them first. One place,
@@ -253,6 +249,10 @@ async function runPage(browser, index, given, file, body, base) {
     );
     if (!open) await toggle.click();
   };
+  const open = async (budget) => {
+    await page.goto(url);
+    await installReader();
+    world.pageSize = await page.evaluate(() => PAGE_SIZE);
     await openFilters();
     if (budget !== undefined) await page.fill("#budgetNumber", String(budget));
   };
@@ -282,6 +282,16 @@ async function runPage(browser, index, given, file, body, base) {
   // un-hiding the group behind it. Nothing happens for a chip already in reach.
   const revealType = async (chip) => {
     if (!(await page.locator(chip).count())) return false;
+    // A chip lives inside the refinements disclosure, and a check that closed
+    // it leaves every chip on screen hidden: a press then waits thirty seconds
+    // on an input that is offered and not visible (Reston, 21 October 2026).
+    // Every press site asks this helper to make the chip reachable, so the
+    // disclosure is opened here rather than at each of them.
+    const shut = await page.evaluate(() => {
+      const panel = document.getElementById("moreFilters");
+      return !!panel && panel.dataset.open !== "true";
+    });
+    if (shut) await page.click("#moreFiltersToggle");
     const folded = await page.locator(chip).evaluate((el) => {
       const panel = document.getElementById("moreTypesPanel");
       return !!panel && panel.hidden && panel.contains(el);
