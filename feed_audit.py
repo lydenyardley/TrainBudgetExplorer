@@ -138,6 +138,12 @@ def print_audit(report: dict[str, object], limit: int = SAMPLE_LIMIT) -> None:
         f"London Terminals flows left unpriced {coverage['unexpandedGroupFareFlows']}"
     )
     print(
+        f"  station clusters read {coverage['clusterCodes']}, "
+        f"cluster memberships {coverage['clusterMemberships']}, "
+        f"stations in clusters {coverage['stationsInClusters']}, "
+        f"cluster fare flows {coverage['clusterFareFlows']}"
+    )
+    print(
         f"  stations with multiple location codes {coverage['stationsWithMultipleLocationCodes']}, "
         f"fare flows with missing locations {coverage['fareFlowsWithMissingLocation']}, "
         f"with no station code {coverage['fareFlowsWithNoStationCode']}"

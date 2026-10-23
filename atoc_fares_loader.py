@@ -46,6 +46,8 @@ from atoc_fare_declarations import (
     ONS_COASTAL_BUILT_UP_AREAS_FILE_URL,
     RAILCARD_OFFSETS,
     REVIEWED_SETTLEMENT_FALLBACKS,
+    STATION_CLUSTER_SLICES,
+    STATION_CLUSTER_WIDTH,
     STATUS_DISCOUNT_OFFSETS,
     SUPPORTED_DESTINATION_FACETS,
     TICKET_TYPE_OFFSETS,
@@ -56,6 +58,7 @@ from atoc_fare_declarations import (
     Location,
     MinimumFare,
     Railcard,
+    StationClusterMember,
     StatusDiscount,
     TicketType,
     _as_int,
@@ -153,6 +156,7 @@ class FaresLoader:
         # and this copy keeps a later build from dying on the missing attribute.
         common.location_type_sources = list(getattr(self, "location_type_sources", []))
         common.nlcs_by_crs = self.nlcs_by_crs
+        common.station_clusters = self.station_clusters
         common.ticket_types = self.ticket_types
         common.railcards = self.railcards
         common.minimum_fares = self.minimum_fares
@@ -180,9 +184,10 @@ class FaresLoader:
             location = self.locations_by_crs.get(origin)
             if location is None:
                 continue
-            # Its group's code too, or a group fare (ADR-0074) would be priced
-            # by a full load and missing from the page built through the index.
-            origin_nlcs = self.fare_nlcs(origin)
+            # Its group's and clusters' codes too, or a group (ADR-0074) or
+            # cluster (ADR-0075) fare would be priced by a full load and missing
+            # from the page built through the index.
+            origin_nlcs = self._all_fare_nlcs(origin)
             flow_ids: set[str] = set()
             flows_touching_nlc: dict[str, list[Flow]] = {}
             for nlc in origin_nlcs:
@@ -284,6 +289,43 @@ class FaresLoader:
                     with archive.open(name) as handle:
                         for line in decode_lines(handle, ParseReport()):
                             self._load_location_for_focus(line, origin_crs)
+        if not self._focus_origin_nlcs:
+            return
+        base_nlcs = set(self._focus_origin_nlcs)
+        active_clusters: dict[str, set[tuple[str, str]]] = {}
+        if root.is_dir():
+            for child in sorted(root.iterdir()):
+                if not child.is_file():
+                    continue
+                if child.suffix.lower() == ".fsc":
+                    with child.open("rb") as handle:
+                        for line in decode_lines(handle, ParseReport()):
+                            self._load_cluster_for_focus(
+                                line, base_nlcs, active_clusters
+                            )
+                elif child.suffix.lower() == ".zip" and zipfile.is_zipfile(child):
+                    with zipfile.ZipFile(child) as archive:
+                        for name in sorted(archive.namelist()):
+                            if not name.lower().endswith(".fsc"):
+                                continue
+                            with archive.open(name) as handle:
+                                for line in decode_lines(handle, ParseReport()):
+                                    self._load_cluster_for_focus(
+                                        line, base_nlcs, active_clusters
+                                    )
+        elif root.suffix.lower() == ".zip" and zipfile.is_zipfile(root):
+            with zipfile.ZipFile(root) as archive:
+                for name in sorted(archive.namelist()):
+                    if not name.lower().endswith(".fsc"):
+                        continue
+                    with archive.open(name) as handle:
+                        for line in decode_lines(handle, ParseReport()):
+                            self._load_cluster_for_focus(
+                                line, base_nlcs, active_clusters
+                            )
+        for cluster_id, rows in active_clusters.items():
+            if rows:
+                self._focus_origin_nlcs.add(cluster_id)
 
     def _load_location_for_focus(self, line: str, origin_crs: str) -> None:
         if _text(line, LOCATION_OFFSETS, "record_type").upper() != "L":
@@ -300,6 +342,29 @@ class FaresLoader:
             if group and group != nlc and group not in UNEXPANDED_FARE_GROUPS:
                 self._focus_origin_nlcs.add(group)
 
+    @staticmethod
+    def _load_cluster_for_focus(
+        line: str,
+        base_nlcs: set[str],
+        active_clusters: dict[str, set[tuple[str, str]]],
+    ) -> None:
+        if not line or line.startswith("/") or len(line) < STATION_CLUSTER_WIDTH:
+            return
+        slices = STATION_CLUSTER_SLICES
+        member_nlc = line[slices["cluster_nlc"]].strip()
+        if member_nlc not in base_nlcs:
+            return
+        cluster_id = line[slices["cluster_id"]].strip()
+        if not cluster_id:
+            return
+        key = (member_nlc, line[slices["end_date"]].strip())
+        if line[slices["update_marker"]].strip().upper() == "D":
+            rows = active_clusters.get(cluster_id)
+            if rows is not None:
+                rows.discard(key)
+        else:
+            active_clusters.setdefault(cluster_id, set()).add(key)
+
     def _load_interchange_fares(self, path: str | Path, origin_crs: str) -> None:
         """Read the fares out of the origin's change stations, after the fact.
 
@@ -314,7 +379,7 @@ class FaresLoader:
         origin_nlcs = set(self._focus_origin_nlcs or ())
         wanted: set[str] = set()
         for crs in self.interchange_crs(origin_crs):
-            wanted |= self.fare_nlcs(crs)
+            wanted |= self._all_fare_nlcs(crs)
         wanted -= origin_nlcs
         if not wanted:
             return
@@ -1132,6 +1197,7 @@ class FaresLoader:
             return
         loader = {
             "ffl": self._load_flows,
+            "fsc": self._load_station_clusters,
             "loc": self._load_locations,
             "tty": self._load_ticket_types,
             "rlc": self._load_railcards,
@@ -1259,6 +1325,42 @@ class FaresLoader:
         if location.crs:
             self.nlcs_by_crs.setdefault(location.crs, set()).add(nlc)
             self.locations_by_crs.setdefault(location.crs, location)
+
+    def _load_station_clusters(self, line: str) -> None:
+        _require_width(line, STATION_CLUSTER_WIDTH, "station cluster")
+        slices = STATION_CLUSTER_SLICES
+        marker = line[slices["update_marker"]].strip().upper()
+        cluster_id = line[slices["cluster_id"]].strip()
+        member_nlc = line[slices["cluster_nlc"]].strip()
+        if not cluster_id or not member_nlc:
+            return
+        end_date = _parse_dtd_date(line[slices["end_date"]].strip())
+        bucket = self.station_clusters.get(cluster_id)
+        if marker == "D":
+            if bucket:
+                kept = [
+                    row
+                    for row in bucket
+                    if not (row.member_nlc == member_nlc and row.end_date == end_date)
+                ]
+                if kept:
+                    self.station_clusters[cluster_id] = kept
+                else:
+                    del self.station_clusters[cluster_id]
+            return
+        member = StationClusterMember(
+            member_nlc=member_nlc,
+            start_date=_parse_dtd_date(line[slices["start_date"]].strip()),
+            end_date=end_date,
+        )
+        if bucket is None:
+            self.station_clusters[cluster_id] = [member]
+        else:
+            for index, existing in enumerate(bucket):
+                if existing.member_nlc == member_nlc and existing.end_date == end_date:
+                    bucket[index] = member
+                    return
+            bucket.append(member)
 
     def _load_ticket_types(self, line: str) -> None:
         marker = _text(line, TICKET_TYPE_OFFSETS, "update_marker").upper()

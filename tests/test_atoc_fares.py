@@ -2471,7 +2471,7 @@ class ConditionalFareTest(unittest.TestCase):
     def test_the_table_holds_the_codes_the_feed_actually_used(self) -> None:
         # Guard against a future edit that empties the table, which would
         # silently put every child's fare back on the page.
-        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 108)
+        self.assertEqual(len(atoc_fares.CONDITIONAL_TICKET_CODES), 110)
         for code in ("CTS", "CTR", "TKS", "TKR", "SPN", "S05", "ENT", "25Q"):
             self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
 
@@ -2488,7 +2488,7 @@ class ConditionalFareTest(unittest.TestCase):
         # either at the price the feed quotes: a staff pass at 5p and a
         # concession at 10p are the same fact about a fare as an UNDER 11
         # single, so they are excluded by the same rule.
-        for code in ("BJD", "COS", "COR", "DGA", "KWA"):
+        for code in ("1ZB", "1ZE", "BJD", "COS", "COR", "DGA", "KWA"):
             self.assertIn(code, atoc_fares.CONDITIONAL_TICKET_CODES, code)
 
     def test_a_sentinel_is_a_placeholder_and_not_a_conditional_fare(self) -> None:

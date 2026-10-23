@@ -302,6 +302,59 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "WGW": "city", "DCW": "town", "GNB": "town", "HLC": "small_town",
     "HLU": "small_town", "TNN": "small_town", "TYL": "village",
     "UTY": "village",
+    # ADR-0075 (O21): the 109 stations that station-cluster (.FSC) fare
+    # expansion newly prices as destinations and that the ONS name match misses
+    # because the feed's name carries a transport qualifier (UND, METRO, BUS,
+    # V BWK, NI, CIE, PORT) or because they sit outside England and Wales.
+    # Greater London Underground stations (Southfields, Wimbledon Park) and
+    # Tyne & Wear Metro stations in Sunderland (Stadium of Light, St Peters)
+    # and Jarrow (Fellgate):
+    "SFS": "city", "WPK": "city", "STI": "city", "STZ": "city",
+    "FEG": "town",
+    # Great Britain rail-bus link stops, classified by the settlement each bus
+    # stop serves in the ONS 2021 Built-Up Areas workbook (or Scotland for
+    # Galashiels via Berwick, alongside GAL):
+    "CBZ": "town", "KEZ": "town",
+    "CGT": "small_town", "OUD": "small_town", "PIZ": "small_town",
+    "RMK": "small_town", "WTZ": "small_town", "XAA": "small_town",
+    "BFB": "village", "FLZ": "village", "SIB": "village",
+    # Northern Ireland stations and ports reached through clusters Q791-Q793,
+    # using NISRA Census 2021 settlement populations on the ONS size bands:
+    "BFA": "city", "BFC": "city",
+    "ANM": "town", "BMA": "town", "CEI": "town",
+    "PTS": "small_town",
+    # Hoek van Holland ferry port (Dutch Flyer cluster flows):
+    "HVH": "small_town",
+    # Republic of Ireland (Iarnrod Eireann / CIE and ferry ports) reached
+    # through SailRail clusters Q768-Q770 and Q783-Q786, using CSO Census 2022
+    # built-up area and settlement populations on the ONS size bands (Dublin,
+    # Cork, Limerick and Galway built-up areas as cities; 20,000-74,999 as
+    # towns; 5,000-19,999 as small towns; under 5,000 as villages):
+    "COK": "city", "CSE": "city", "DBP": "city", "DCL": "city",
+    "DDB": "city", "DFP": "city", "DHT": "city", "DMD": "city",
+    "DPS": "city", "GWY": "city", "LRK": "city",
+    "ATO": "town", "BAO": "town", "BZY": "town", "CAW": "town",
+    "CLZ": "town", "DRA": "town", "DUK": "town", "ENS": "town",
+    "KNY": "town", "MOY": "town", "MUL": "town", "NBG": "town",
+    "PTO": "town", "SLI": "town", "TRL": "town", "WFD": "town",
+    "WXF": "town",
+    "ARW": "small_town", "ATY": "small_town", "BAX": "small_town",
+    "BSG": "small_town", "CAH": "small_town", "CCN": "small_town",
+    "CKA": "small_town", "COQ": "small_town", "ENN": "small_town",
+    "GOY": "small_town", "KDR": "small_town", "KLL": "small_town",
+    "LFO": "small_town", "MAW": "small_town", "MIE": "small_town",
+    "MOM": "small_town", "NEN": "small_town", "PRO": "small_town",
+    "RCM": "small_town", "RCR": "small_town", "THM": "small_town",
+    "TPY": "small_town", "TUM": "small_town", "WKL": "small_town",
+    "WPT": "small_town", "XME": "small_town",
+    "ATM": "village", "ATR": "village", "BBY": "village", "BHN": "village",
+    "BIH": "village", "BNU": "village", "BOQ": "village", "CHJ": "village",
+    "CKU": "village", "CLB": "village", "CLQ": "village", "CLX": "village",
+    "CMI": "village", "COU": "village", "EFD": "village", "FAR": "village",
+    "FXF": "village", "GSO": "village", "LJN": "village", "MBH": "village",
+    "RDU": "village", "RMR": "village", "RSB": "village", "TEM": "village",
+    "TUS": "village", "WLA": "village", "XAG": "village", "XCD": "village",
+    "XGR": "village", "XGV": "village", "XMV": "village", "XSB": "village",
 }
 
 # An airport station is a destination in its own right, and the settlement it
@@ -2238,6 +2291,13 @@ CONDITIONAL_TICKET_CODES = frozenset({
     "CTS",  # UNDER 11 SINGLE
     "TCR",  # UNDER 16 RETURN
     "TCS",  # UNDER 16 SINGLE
+    # Caledonian Sleeper staff Friends & Family and staff leisure Classic Solo
+    # tickets (GBP 0.10 on cluster flows Q990/Q991 -> Q992). Their sibling 1ZC
+    # (COMP) and 1ZD (DUTY) codes are caught by NOT_FOR_PUBLIC_SALE_MARKERS and
+    # the Twin 2ZB-2ZE codes by min_passengers=2; 1ZB and 1ZE carry a one-adult
+    # passenger block and blank restriction.
+    "1ZB",  # CS F&F CC SO
+    "1ZE",  # CS LEISURE CC S
 })
 
 # The tally key for a fare that lost the slot because a reader cannot buy it at
@@ -2410,6 +2470,14 @@ MINIMUM_FARE = (
     ("minimum_fare_pence", 8),
 )
 
+STATION_CLUSTER = (
+    ("update_marker", 1),
+    ("cluster_id", 4),
+    ("cluster_nlc", 4),
+    ("end_date", 8),
+    ("start_date", 8),
+)
+
 # A record shorter than its layout is truncated, and slicing it anyway hands
 # back empty fields that read as real values: a cut off fare becomes 0, and a cut
 # off flow id becomes a flow keyed on nothing. The width of the fields actually
@@ -2422,14 +2490,19 @@ def _read_width(spec: tuple[tuple[str, int], ...], last_field: str) -> int:
 
 FLOW_F_WIDTH = _read_width(FLOW_F, "flow_id")
 FLOW_T_WIDTH = _read_width(FLOW_T, "restriction_code")
+STATION_CLUSTER_WIDTH = _read_width(STATION_CLUSTER, "start_date")
 
 FLOW_F_OFFSETS = _offsets(FLOW_F)
 FLOW_T_OFFSETS = _offsets(FLOW_T)
+STATION_CLUSTER_OFFSETS = _offsets(STATION_CLUSTER)
 # The same spans as slice objects, for the FFL reader: a _text call per field
 # cost a Python call and a dict lookup for each of the 53.8M fields it reads,
 # and the reader keeps only these (audit B2).
 FLOW_F_SLICES = {name: slice(start, end) for name, (start, end) in FLOW_F_OFFSETS.items()}
 FLOW_T_SLICES = {name: slice(start, end) for name, (start, end) in FLOW_T_OFFSETS.items()}
+STATION_CLUSTER_SLICES = {
+    name: slice(start, end) for name, (start, end) in STATION_CLUSTER_OFFSETS.items()
+}
 LOCATION_OFFSETS = _offsets(LOCATION)
 TICKET_TYPE_OFFSETS = _offsets(TICKET_TYPE)
 RAILCARD_OFFSETS = _offsets(RAILCARD)
@@ -2638,6 +2711,30 @@ class MinimumFare:
     """
 
     pence: int
+    start_date: date | None
+    end_date: date | None
+
+    def covers(self, day: date) -> bool:
+        """Whether this record's own window includes ``day``, ends included."""
+        return not (
+            (self.start_date is not None and day < self.start_date)
+            or (self.end_date is not None and day > self.end_date)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StationClusterMember:
+    """One ``.FSC`` record: a member code inside a station cluster for a window.
+
+    RSPS5045 section 4.2 keys a cluster row by ``(cluster_id, cluster_nlc,
+    end_date)``, so one member can hold several validity windows inside the same
+    cluster (in the 22 September 2026 download, cluster ``LS57`` carries 19 rows
+    ending 31 October 2026 and 17 renewals starting 1 November 2026). Keeping the
+    window on the membership lets ``fare_nlcs`` and ``stations_for_fare_nlc``
+    expand only the rows covering the query day.
+    """
+
+    member_nlc: str
     start_date: date | None
     end_date: date | None
 

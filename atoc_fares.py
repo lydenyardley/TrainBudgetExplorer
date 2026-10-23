@@ -87,7 +87,12 @@ from atoc_fare_declarations import (
     StatusDiscount,
     ReviewedAttraction,
     SEASIDE_SUPPLEMENT_CRS,
+    STATION_CLUSTER,
+    STATION_CLUSTER_OFFSETS,
+    STATION_CLUSTER_SLICES,
+    STATION_CLUSTER_WIDTH,
     SUPPORTED_DESTINATION_FACETS,
+    StationClusterMember,
     TICKET_TYPE,
     TICKET_TYPE_OFFSETS,
     TicketType,
@@ -152,6 +157,10 @@ class FaresDb(FaresLoader):
         # this for most towns. Flows are keyed by location code, so a query has
         # to consider all of them or it misses fares that are right there.
         self.nlcs_by_crs: dict[str, set[str]] = {}
+        # Keyed by cluster_id (RSPS5045 §4.2). One cluster holds a list of
+        # date-bounded member records, and a member code may be a station NLC or
+        # a fare-group NLC.
+        self.station_clusters: dict[str, list[StationClusterMember]] = {}
         self.ticket_types: dict[str, TicketType] = {}
         self.railcards: dict[str, Railcard] = {}
         self.flows: dict[str, Flow] = {}
@@ -271,6 +280,8 @@ class FaresDb(FaresLoader):
         if focus_origin is not None:
             self._focus_origin_nlcs = set()
             self._preload_focus_locations(path, origin)
+        self._flow_eval_caches = None
+        self._dest_nlc_cache = None
         read_feed_files(path, self.report, self._load_lines)
         if focus_origin is not None:
             self._load_interchange_fares(path, origin)
@@ -288,42 +299,35 @@ class FaresDb(FaresLoader):
         return self
 
     def interchange_crs(self, origin_crs: str) -> set[str]:
-        """Every named station a flow out of the origin reaches.
+        """Every named station a direct or fare-group flow out of the origin reaches.
 
         These are the stations a two-part price can change at (ADR-0061): the
         first ticket is a fare from the origin, so the change station is one
         the origin's own flows name. Read from the flow records, which a
         focused load keeps whole, so the answer is the same before and after
-        the fares themselves have been narrowed to one origin.
+        the fares themselves have been narrowed to one origin. Kept on the
+        station's own and fare-group flows so a single-origin load does not
+        pull in every station reached by a regional cluster.
         """
         origin = self.locations_by_crs.get(origin_crs.strip().upper())
         if origin is None:
             return set()
         found: set[str] = set()
-        for origin_nlc in self.fare_nlcs(origin.crs):
+        for origin_nlc in self._direct_fare_nlcs(origin.crs):
             for flow in self.flows_touching_nlc.get(origin_nlc, ()):
                 other = (
                     flow.origin_nlc
                     if flow.direction == "R" and flow.destination_nlc == origin_nlc
                     else flow.destination_nlc
                 )
-                for location in self.stations_for_fare_nlc(other):
+                for location in self._direct_stations_for_fare_nlc(other):
                     if location.crs == origin.crs or is_pseudo_station(location.crs):
                         continue
                     found.add(location.crs)
         return found
 
-    def fare_nlcs(self, crs: str) -> set[str]:
-        """Every location code a fare for this station can be filed under.
-
-        A station's fares sit under its own codes -- one town often has several
-        -- and under its fare group's: RSPS5045 4.19.2 names each location's
-        FARE_GROUP, and a flow from or to that group code is a fare from or to
-        every member (ADR-0074). Farnborough Main is the case that showed it:
-        its own code priced one destination, Waterloo, while 459 flows sat under
-        FARNBOROUGH STNS. A group that is itself a named station is not read
-        through, and neither is one in UNEXPANDED_FARE_GROUPS.
-        """
+    def _direct_fare_nlcs(self, crs: str) -> set[str]:
+        """The station's own location codes and its expanded fare group's code."""
         code = crs.strip().upper()
         own = self.nlcs_by_crs.get(code)
         if not own:
@@ -337,14 +341,36 @@ class FaresDb(FaresLoader):
                 found.add(location.group_nlc)
         return found
 
-    def stations_for_fare_nlc(self, nlc: str) -> list[Location]:
-        """The named stations a fare filed under this location code reaches.
+    def _all_fare_nlcs(self, crs: str) -> set[str]:
+        """Every location, group or cluster code for ``crs`` across all dates."""
+        found = self._direct_fare_nlcs(crs)
+        station_clusters = getattr(self, "station_clusters", None)
+        if not station_clusters:
+            return found
+        all_clusters_by_member = self._all_clusters_by_member()
+        for nlc in tuple(found):
+            found.update(all_clusters_by_member.get(nlc, ()))
+        return found
 
-        A station's code reaches that station. A fare group's code reaches each
-        member (ADR-0074). Anything else -- a zone, a cluster, a code with no
-        record -- reaches nothing this database can name, and the query counts
-        it as such rather than guessing.
-        """
+    def _all_clusters_by_member(self) -> dict[str, tuple[str, ...]]:
+        station_clusters = getattr(self, "station_clusters", {})
+        key = (len(station_clusters), len(getattr(self.report, "files_read", ())))
+        cached = getattr(self, "_all_clusters_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        by_member: dict[str, set[str]] = {}
+        for cluster_id, rows in station_clusters.items():
+            for row in rows:
+                by_member.setdefault(row.member_nlc, set()).add(cluster_id)
+        result = {
+            member: tuple(sorted(clusters))
+            for member, clusters in by_member.items()
+        }
+        self._all_clusters_cache = (key, result)
+        return result
+
+    def _direct_stations_for_fare_nlc(self, nlc: str) -> list[Location]:
+        """Named stations reached directly by a station or fare-group code."""
         location = self.locations_by_nlc.get(nlc)
         if location is not None and location.crs:
             return [location]
@@ -353,6 +379,91 @@ class FaresDb(FaresLoader):
             for crs in self._fare_group_members().get(nlc, ())
             if crs in self.locations_by_crs
         ]
+
+    def fare_nlcs(self, crs: str, *, day: date | None = None) -> set[str]:
+        """Every location code a fare for this station can be filed under.
+
+        A station's fares sit under its own codes -- one town often has several
+        -- under its fare group's (RSPS5045 §4.19.2, ADR-0074), and under any
+        station cluster whose ``.FSC`` rows include the station's own code or
+        its expanded fare group on ``day`` (RSPS5045 §4.2, ADR-0075). A group
+        that is itself a named station is not read through, and neither is one
+        in ``UNEXPANDED_FARE_GROUPS`` (London Terminals, ``1072``), whether it
+        appears on a location record or inside a cluster.
+        """
+        found = self._direct_fare_nlcs(crs)
+        station_clusters = getattr(self, "station_clusters", None)
+        if not station_clusters:
+            return found
+        query_day = day or date.today()
+        clusters_by_crs, _ = self._cluster_tables(query_day)
+        found.update(clusters_by_crs.get(crs.strip().upper(), ()))
+        return found
+
+    def stations_for_fare_nlc(
+        self, nlc: str, *, day: date | None = None
+    ) -> list[Location]:
+        """The named stations a fare filed under this location code reaches.
+
+        A station's code reaches that station. A fare group's code reaches each
+        member (ADR-0074). A station cluster's code reaches each active member
+        station and each member of an active expanded fare group (ADR-0075).
+        Anything else -- a zone, a county code, an unexpanded group such as
+        London Terminals, or a code with no record -- reaches nothing this
+        database can name, and the query counts it as such rather than guessing.
+        """
+        direct = self._direct_stations_for_fare_nlc(nlc)
+        if direct:
+            return direct
+        station_clusters = getattr(self, "station_clusters", None)
+        if not station_clusters or nlc not in station_clusters:
+            return []
+        query_day = day or date.today()
+        _, stations_by_cluster = self._cluster_tables(query_day)
+        return list(stations_by_cluster.get(nlc, ()))
+
+    def _cluster_tables(
+        self, query_day: date
+    ) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[Location, ...]]]:
+        """Return (crs -> active cluster IDs, cluster ID -> active Locations) on ``query_day``."""
+        station_clusters = getattr(self, "station_clusters", {})
+        key = (len(self.locations_by_nlc), len(station_clusters), len(getattr(self.report, "files_read", ())), query_day)
+        cached = getattr(self, "_cluster_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        groups = self._fare_group_members()
+        clusters_by_crs_sets: dict[str, set[str]] = {}
+        stations_by_cluster: dict[str, tuple[Location, ...]] = {}
+        for cluster_id, rows in station_clusters.items():
+            crs_in_cluster: set[str] = set()
+            for row in rows:
+                if not row.covers(query_day):
+                    continue
+                member = row.member_nlc
+                if member in UNEXPANDED_FARE_GROUPS:
+                    continue
+                location = self.locations_by_nlc.get(member)
+                if location is not None and location.crs:
+                    if location.crs in self.locations_by_crs:
+                        crs_in_cluster.add(location.crs)
+                    continue
+                for crs in groups.get(member, ()):
+                    if crs in self.locations_by_crs:
+                        crs_in_cluster.add(crs)
+            if crs_in_cluster:
+                ordered_crs = sorted(crs_in_cluster)
+                stations_by_cluster[cluster_id] = tuple(
+                    self.locations_by_crs[crs] for crs in ordered_crs
+                )
+                for crs in ordered_crs:
+                    clusters_by_crs_sets.setdefault(crs, set()).add(cluster_id)
+        clusters_by_crs = {
+            crs: tuple(sorted(cluster_ids))
+            for crs, cluster_ids in clusters_by_crs_sets.items()
+        }
+        result = (clusters_by_crs, stations_by_cluster)
+        self._cluster_cache = (key, result)
+        return result
 
     def _fare_group_members(self) -> dict[str, tuple[str, ...]]:
         """Fare group code -> the CRS of each member station, sorted.
@@ -364,7 +475,7 @@ class FaresDb(FaresLoader):
         that is a station -- 5564 HEATHROW BUS, CRS LHR -- keeps meaning that
         station), and it is not one the page refuses to read through.
         """
-        key = len(self.locations_by_nlc)
+        key = (len(self.locations_by_nlc), len(getattr(self.report, "files_read", ())))
         cached = getattr(self, "_fare_group_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -601,7 +712,16 @@ class FaresDb(FaresLoader):
             if self.fares_by_flow.get(flow.flow_id)
             and self._flow_valid_on(flow, query_day)
         }
+        station_clusters = getattr(self, "station_clusters", {})
+        clusters_by_crs, stations_by_cluster = self._cluster_tables(query_day)
+        active_memberships = sum(
+            1
+            for rows in station_clusters.values()
+            for row in rows
+            if row.covers(query_day)
+        )
         group_flows: dict[str, set[str]] = {group: set() for group in groups}
+        cluster_flows: set[str] = set()
         unexpanded_flows: set[str] = set()
         for flow_id in active_fare_flows:
             flow = self.flows[flow_id]
@@ -610,6 +730,8 @@ class FaresDb(FaresLoader):
                     group_flows[nlc].add(flow_id)
                 elif nlc in UNEXPANDED_FARE_GROUPS:
                     unexpanded_flows.add(flow_id)
+                if nlc in station_clusters:
+                    cluster_flows.add(flow_id)
         direct_stations: set[str] = set()
         for crs, nlcs in self.nlcs_by_crs.items():
             if any(
@@ -650,7 +772,10 @@ class FaresDb(FaresLoader):
         for flow in self.flows.values():
             if flow.flow_id not in active_fare_flows:
                 continue
-            if flow.destination_nlc in groups:
+            if (
+                flow.destination_nlc in groups
+                or flow.destination_nlc in stations_by_cluster
+            ):
                 continue
             destination = self.locations_by_nlc.get(flow.destination_nlc)
             if destination is None:
@@ -677,6 +802,10 @@ class FaresDb(FaresLoader):
             "stationsPricedOnlyThroughGroup": len(only_through_group),
             "sampleStationsPricedOnlyThroughGroup": only_through_group[:limit],
             "unexpandedGroupFareFlows": len(unexpanded_flows),
+            "clusterCodes": len(station_clusters),
+            "clusterMemberships": active_memberships,
+            "stationsInClusters": len(clusters_by_crs),
+            "clusterFareFlows": len(cluster_flows),
             "stationsWithMultipleLocationCodes": len(location_aliases),
             "sampleStationsWithMultipleLocationCodes": location_aliases[:limit],
             "fareFlowsWithMissingLocation": missing_location,
@@ -1041,6 +1170,17 @@ class FaresDb(FaresLoader):
                 return "ticket_is_not_for_public_sale"
             return None
 
+        setattr(
+            reject,
+            "_selector_key",
+            (
+                "single",
+                id(restrictions),
+                getattr(restrictions, "parsed_records", 0),
+                include_conditional,
+                include_advance,
+            ),
+        )
         return reject
 
     @staticmethod
@@ -1081,6 +1221,16 @@ class FaresDb(FaresLoader):
                 return "ticket_is_not_for_public_sale"
             return None
 
+        setattr(
+            reject,
+            "_selector_key",
+            (
+                "return",
+                id(restrictions),
+                getattr(restrictions, "parsed_records", 0),
+                include_conditional,
+            ),
+        )
         return reject
 
     def page_destinations_within(
@@ -1349,7 +1499,140 @@ class FaresDb(FaresLoader):
                 return None
             return "fare_restriction_code_is_not_reviewed"
 
+        setattr(reject, "_selector_key", ("publishable", strict))
         return reject
+
+    def _resolved_destination_cache(
+        self, query_day: date
+    ) -> dict[str, tuple[tuple[Location, ...], int, frozenset[str], bool, str]]:
+        station_clusters = getattr(self, "station_clusters", {})
+        key = (len(self.locations_by_nlc), len(station_clusters), len(getattr(self.report, "files_read", ())), query_day)
+        cached = getattr(self, "_dest_nlc_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        table: dict[
+            str, tuple[tuple[Location, ...], int, frozenset[str], bool, str]
+        ] = {}
+        self._dest_nlc_cache = (key, table)
+        return table
+
+    def _resolve_destination_nlc(
+        self, destination_nlc: str, query_day: date
+    ) -> tuple[tuple[Location, ...], int, frozenset[str], bool, str]:
+        destinations = self.stations_for_fare_nlc(destination_nlc, day=query_day)
+        if not destinations:
+            reason = (
+                "destination_has_no_location_record"
+                if destination_nlc not in self.locations_by_nlc
+                else "destination_has_no_station_code"
+            )
+            return ((), 0, frozenset(), False, reason)
+        real_locs = tuple(
+            destination
+            for destination in destinations
+            if not is_pseudo_station(destination.crs)
+        )
+        pseudo_count = len(destinations) - len(real_locs)
+        real_crs = frozenset(destination.crs for destination in real_locs)
+        return (real_locs, pseudo_count, real_crs, True, "")
+
+    def _flow_eval_cache(
+        self,
+        selector_key: tuple[object, ...] | None,
+        budget_pence: int,
+        adults: int,
+        party_budget: bool,
+    ) -> dict[
+        str,
+        tuple[
+            tuple[tuple[str, int], ...],
+            tuple[int, ...],
+            tuple[int, str, str, int, int, bool, str] | None,
+        ],
+    ]:
+        if selector_key is None:
+            return {}
+        db_key = (
+            id(self.fares_by_flow),
+            len(self.fares_by_flow),
+            len(self.ticket_types),
+            len(getattr(self.report, "files_read", ())),
+            getattr(self.restrictions, "parsed_records", 0),
+        )
+        caches = getattr(self, "_flow_eval_caches", None)
+        if caches is None or caches[0] != db_key:
+            caches = (db_key, {})
+            self._flow_eval_caches = caches
+        full_key = (selector_key, budget_pence, adults, party_budget)
+        table = caches[1].get(full_key)
+        if table is None:
+            table = {}
+            caches[1][full_key] = table
+        return table
+
+    def _evaluate_flow_bucket(
+        self,
+        flow_id: str,
+        *,
+        budget_pence: int,
+        adults: int,
+        party_budget: bool,
+        selector: Callable[[Fare, TicketType], str | None] | None,
+    ) -> tuple[
+        tuple[tuple[str, int], ...],
+        tuple[int, ...],
+        tuple[int, str, str, int, int, bool, str] | None,
+    ]:
+        bucket = self.fares_by_flow.get(flow_id)
+        if not bucket:
+            return ((("flow_with_no_fare", 1),), (), None)
+        reject_counts: dict[str, int] = {}
+        accepted_prices: list[int] = []
+        best_meta: tuple[int, str, str, int, int, bool, str] | None = None
+        min_accepted_pence: int | None = None
+        in_bucket_losers = 0
+        for fare in bucket.values():
+            ticket = self.ticket_types.get(fare.ticket_code)
+            if ticket is None:
+                reject_counts["fare_with_no_ticket_type"] = (
+                    reject_counts.get("fare_with_no_ticket_type", 0) + 1
+                )
+                continue
+            if selector is not None:
+                rejection = selector(fare, ticket)
+                if rejection is not None:
+                    reject_counts[rejection] = reject_counts.get(rejection, 0) + 1
+                    continue
+            elif not ticket.is_standard_return:
+                reject_counts["ticket_is_not_a_standard_return"] = (
+                    reject_counts.get("ticket_is_not_a_standard_return", 0) + 1
+                )
+                continue
+            candidate_pence = fare.pence
+            party_pence = candidate_pence * adults
+            tested = party_pence if party_budget else candidate_pence
+            if tested > budget_pence:
+                reject_counts["fare_above_the_budget"] = (
+                    reject_counts.get("fare_above_the_budget", 0) + 1
+                )
+                continue
+            if min_accepted_pence is not None and candidate_pence >= min_accepted_pence:
+                in_bucket_losers += 1
+                continue
+            min_accepted_pence = candidate_pence
+            accepted_prices.append(candidate_pence)
+            best_meta = (
+                candidate_pence,
+                ticket.code,
+                ticket.name,
+                fare.pence,
+                party_pence,
+                ticket.restricted_by_train,
+                fare.restriction_code.strip(),
+            )
+        if in_bucket_losers:
+            reject_counts["cheaper_index_already_held"] = in_bucket_losers
+        return (tuple(reject_counts.items()), tuple(accepted_prices), best_meta)
 
     def _destinations_within(
         self,
@@ -1368,67 +1651,225 @@ class FaresDb(FaresLoader):
         origin = self.locations_by_crs.get(origin_crs.strip().upper())
         if origin is None:
             raise KeyError(f"origin station {origin_crs!r} is not in the feed")
-        # The station's own codes first, then its group's, each in code order:
-        # a tie between two fares keeps the one read first, so a group fare
-        # only displaces a station's own when it is strictly cheaper, and the
-        # same feed always shows the same ticket.
+        # The station's own codes first, then its group's, then its clusters',
+        # each in code order: a tie between two fares keeps the one read first,
+        # so a broader code only displaces a narrower one when it is strictly
+        # cheaper, and the same feed always shows the same ticket.
         own_nlcs = self.nlcs_by_crs.get(origin.crs, {origin.nlc})
+        direct_nlcs = self._direct_fare_nlcs(origin.crs)
         origin_nlcs = sorted(
-            self.fare_nlcs(origin.crs), key=lambda nlc: (nlc not in own_nlcs, nlc)
+            self.fare_nlcs(origin.crs, day=query_day),
+            key=lambda nlc: (
+                0 if nlc in own_nlcs else (1 if nlc in direct_nlcs else 2),
+                nlc,
+            ),
         )
         railcard_code = self.railcard_code(railcard) if railcard else None
         if railcard and railcard_code is None:
             raise KeyError(f"railcard {railcard!r} is not in the feed")
 
-        best_by_crs: dict[str, Reachable] = {}
-        # Only flows queryable from this origin: one grouped list per origin NLC
-        # replaces a scan of every flow in the database per call. The index also
-        # contains reversible flows under their recorded destination, so a query
-        # for the opposite direction reaches the same fare without duplicating it.
+        if railcard_code is not None:
+            best_by_crs: dict[str, Reachable] = {}
+            for origin_nlc in origin_nlcs:
+                for flow in self.flows_touching_nlc.get(origin_nlc, ()):
+                    if not self._flow_valid_on(flow, query_day):
+                        _tally(
+                            tally,
+                            "flow_not_yet_valid"
+                            if flow.start_date is not None and query_day < flow.start_date
+                            else "flow_expired",
+                        )
+                        continue
+                    destination_nlc = (
+                        flow.origin_nlc
+                        if flow.direction == "R" and flow.destination_nlc == origin_nlc
+                        else flow.destination_nlc
+                    )
+                    destinations = self.stations_for_fare_nlc(
+                        destination_nlc, day=query_day
+                    )
+                    if not destinations:
+                        _tally(
+                            tally,
+                            "destination_has_no_location_record"
+                            if destination_nlc not in self.locations_by_nlc
+                            else "destination_has_no_station_code",
+                        )
+                        continue
+                    for destination in destinations:
+                        self._price_flow_to(
+                            flow,
+                            origin,
+                            origin_nlc,
+                            destination,
+                            destination_nlc,
+                            best_by_crs,
+                            budget_pence=budget_pence,
+                            adults=adults,
+                            railcard_code=railcard_code,
+                            party_budget=party_budget,
+                            tally=tally,
+                            selector=selector,
+                            query_day=query_day,
+                        )
+            return sorted(
+                best_by_crs.values(),
+                key=lambda reachable: (reachable.best_pence, reachable.crs),
+            )
+
+        dest_cache = self._resolved_destination_cache(query_day)
+        selector_key: tuple[object, ...] | None = (
+            ("default_return",)
+            if selector is None
+            else getattr(selector, "_selector_key", None)
+        )
+        flow_cache = self._flow_eval_cache(
+            selector_key, budget_pence, adults, party_budget
+        )
+        best_pence_by_crs: dict[str, int] = {}
+        best_entry_by_crs: dict[
+            str,
+            tuple[
+                Location,
+                tuple[int, str, str, int, int, bool, str],
+                str,
+                str,
+                str,
+            ],
+        ] = {}
+        best_nlc_pence: dict[str, int] = {}
+        cheaper_already_held = 0
+
         for origin_nlc in origin_nlcs:
             for flow in self.flows_touching_nlc.get(origin_nlc, ()):
                 if not self._flow_valid_on(flow, query_day):
-                    _tally(
-                        tally,
-                        "flow_not_yet_valid"
-                        if flow.start_date is not None and query_day < flow.start_date
-                        else "flow_expired",
-                    )
+                    if tally is not None:
+                        _tally(
+                            tally,
+                            "flow_not_yet_valid"
+                            if flow.start_date is not None and query_day < flow.start_date
+                            else "flow_expired",
+                        )
                     continue
-                # A reversible flow is indexed under both endpoints, but its
-                # stored destination still points at the recorded origin. Use
-                # the opposite endpoint when this query entered via that side.
                 destination_nlc = (
                     flow.origin_nlc
                     if flow.direction == "R" and flow.destination_nlc == origin_nlc
                     else flow.destination_nlc
                 )
-                destinations = self.stations_for_fare_nlc(destination_nlc)
-                if not destinations:
-                    _tally(
-                        tally,
-                        "destination_has_no_location_record"
-                        if destination_nlc not in self.locations_by_nlc
-                        else "destination_has_no_station_code",
+                resolved = dest_cache.get(destination_nlc)
+                if resolved is None:
+                    resolved = self._resolve_destination_nlc(
+                        destination_nlc, query_day
                     )
+                    dest_cache[destination_nlc] = resolved
+                real_locs, pseudo_count, real_crs, has_any, empty_reason = resolved
+                if not has_any:
+                    if tally is not None:
+                        _tally(tally, empty_reason)
                     continue
-                for destination in destinations:
-                    self._price_flow_to(
-                        flow,
-                        origin,
-                        origin_nlc,
-                        destination,
-                        destination_nlc,
-                        best_by_crs,
+                origin_in_dest = origin.crs in real_crs
+                if tally is not None:
+                    if pseudo_count:
+                        tally["destination_is_a_fare_construction_point"] = (
+                            tally.get("destination_is_a_fare_construction_point", 0)
+                            + pseudo_count
+                        )
+                    if origin_in_dest:
+                        tally["fare_to_the_origin_itself"] = (
+                            tally.get("fare_to_the_origin_itself", 0) + 1
+                        )
+                count_dest = len(real_locs) - (1 if origin_in_dest else 0)
+                if count_dest <= 0:
+                    continue
+                flow_eval = flow_cache.get(flow.flow_id)
+                if flow_eval is None:
+                    flow_eval = self._evaluate_flow_bucket(
+                        flow.flow_id,
                         budget_pence=budget_pence,
                         adults=adults,
-                        railcard_code=railcard_code,
                         party_budget=party_budget,
-                        tally=tally,
                         selector=selector,
-                        query_day=query_day,
                     )
-        return sorted(best_by_crs.values(), key=lambda reachable: (reachable.best_pence, reachable.crs))
+                    flow_cache[flow.flow_id] = flow_eval
+                rejections, accepted_prices, best_meta = flow_eval
+                if tally is not None and rejections:
+                    for reason, reason_count in rejections:
+                        tally[reason] = tally.get(reason, 0) + reason_count * count_dest
+                if best_meta is None:
+                    continue
+                min_pence = best_meta[0]
+                prev_nlc_pence = best_nlc_pence.get(destination_nlc)
+                if prev_nlc_pence is not None and min_pence >= prev_nlc_pence:
+                    if tally is not None:
+                        cheaper_already_held += len(accepted_prices) * count_dest
+                    continue
+                best_nlc_pence[destination_nlc] = min_pence
+                route_code = flow.route_code
+                for destination in real_locs:
+                    crs = destination.crs
+                    if crs == origin.crs:
+                        continue
+                    prev_best = best_pence_by_crs.get(crs)
+                    if prev_best is None:
+                        best_pence_by_crs[crs] = min_pence
+                        best_entry_by_crs[crs] = (
+                            destination,
+                            best_meta,
+                            route_code,
+                            origin_nlc,
+                            destination_nlc,
+                        )
+                    elif min_pence >= prev_best:
+                        if tally is not None:
+                            cheaper_already_held += len(accepted_prices)
+                    else:
+                        if tally is not None and len(accepted_prices) > 1:
+                            for price in accepted_prices:
+                                if price >= prev_best:
+                                    cheaper_already_held += 1
+                                else:
+                                    break
+                        best_pence_by_crs[crs] = min_pence
+                        best_entry_by_crs[crs] = (
+                            destination,
+                            best_meta,
+                            route_code,
+                            origin_nlc,
+                            destination_nlc,
+                        )
+
+        if tally is not None and cheaper_already_held:
+            tally["cheaper_index_already_held"] = (
+                tally.get("cheaper_index_already_held", 0) + cheaper_already_held
+            )
+        return [
+            Reachable(
+                crs=destination.crs,
+                station=destination.name,
+                ticket_code=best_meta[1],
+                ticket_name=best_meta[2],
+                standard_pence=best_meta[3],
+                best_pence=best_meta[0],
+                railcard_pence=None,
+                party_pence=best_meta[4],
+                off_peak=best_meta[5],
+                restriction_code=best_meta[6],
+                route_code=route_code,
+                origin_nlc=origin_nlc,
+                destination_nlc=destination_nlc,
+            )
+            for _pence, _crs, (
+                destination,
+                best_meta,
+                route_code,
+                origin_nlc,
+                destination_nlc,
+            ) in sorted(
+                (best_meta[0], crs, entry)
+                for crs, entry in best_entry_by_crs.items()
+                for best_meta in (entry[1],)
+            )
+        ]
 
     def _price_flow_to(
         self,
@@ -1449,9 +1890,10 @@ class FaresDb(FaresLoader):
     ) -> None:
         """Offer one flow's fares to one named destination, keeping the cheapest.
 
-        A group flow reaches each member, and every member's fare passes the
-        same selector, railcard rules and budget a station's own fare does:
-        the group changes which flows are read, never which fares are kept.
+        A group or cluster flow reaches each member, and every member's fare
+        passes the same selector, railcard rules and budget a station's own
+        fare does: the group or cluster changes which flows are read, never
+        which fares are kept.
         """
         # A zone boundary or a coach stop is where the feed records a fare
         # change, not a place. Dropping it here rather than in each caller is

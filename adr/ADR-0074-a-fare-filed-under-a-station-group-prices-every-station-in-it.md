@@ -4,7 +4,7 @@
 **Date:** 22 October 2026
 **Relates to:** ADR-0005 (a licensed feed is never checked in), ADR-0026 (the
 settlement class and the unsourced count), ADR-0061 (a two-part fare is one row),
-open work O21 in `docs/open-work.md` (and O22, settled in `docs/settled-work.md`)
+O21 (settled by ADR-0075) and O22 in `docs/settled-work.md`
 
 ## Context
 
@@ -99,9 +99,7 @@ Not done here:
 - **Railcard rows keyed on a member's own code.** A railcard restriction row names
   a flow by CRS or NLC; a group flow passes the group code and the member's CRS,
   so a row filed against a member's own NLC alone is not matched. None was seen.
-- **Station clusters.** The `.FSC` file's 2,472 cluster codes, with 43,714
-  memberships, are a second way a fare names many stations, and they are still
-  not read (O21).
+- **Station clusters.** Handled separately in ADR-0075 (closing O21).
 
 `tests/test_fare_groups.py` holds the rule on a synthetic feed: a group-only fare
 prices both members, a station's own cheaper fare wins, the destination side and a
