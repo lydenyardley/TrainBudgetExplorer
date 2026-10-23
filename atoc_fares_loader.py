@@ -165,10 +165,23 @@ class FaresLoader:
         common.report = self.report
         common.files_read = common.report.files_read
         common.feed_stats = self.stats()
+        common._has_full_origin_nlc_dest_nlcs = True
+        common._origin_nlc_dest_nlcs = {
+            nlc: frozenset(
+                flow.origin_nlc
+                if flow.direction == "R" and flow.destination_nlc == nlc
+                else flow.destination_nlc
+                for flow in flows
+            )
+            for nlc, flows in self.flows_touching_nlc.items()
+            if flows
+        }
         self._write_cache(Path(base_path), common)
 
         directory = Path(index_dir)
         directory.mkdir(parents=True, exist_ok=True)
+        clusters_dir = directory / "_clusters"
+        written_clusters: set[str] = set()
         # Each origin's change stations get an index too, because the second
         # ticket of a two-part price is read from the change station's own
         # index (ADR-0061, merge_interchange_indexes). A whole-network build
@@ -180,39 +193,65 @@ class FaresLoader:
                 if crs not in named:
                     named.add(crs)
                     wanted.append(crs)
+        shared_group_nlcs = set(self._fare_group_members())
         for origin in wanted:
             location = self.locations_by_crs.get(origin)
             if location is None:
                 continue
             # Its group's and clusters' codes too, or a group (ADR-0074) or
             # cluster (ADR-0075) fare would be priced by a full load and missing
-            # from the page built through the index.
+            # from the page built through the index. Shared group and cluster
+            # slices are written once under _clusters/ so multi-station groups
+            # (e.g. London Terminals) and regional clusters are not pickled and
+            # unpickled repeatedly for every member interchange station.
+            own_nlcs = set(self.nlcs_by_crs.get(origin) or {location.nlc})
             origin_nlcs = self._all_fare_nlcs(origin)
             flow_ids: set[str] = set()
             flows_touching_nlc: dict[str, list[Flow]] = {}
-            for nlc in origin_nlcs:
-                selected = [
-                    flow
-                    for flow in self.flows_touching_nlc.get(nlc, ())
-                    if flow.flow_id not in flow_ids
-                ]
+            for nlc in sorted(own_nlcs):
+                selected = list(self.flows_touching_nlc.get(nlc, ()))
                 if selected:
                     flows_touching_nlc[nlc] = selected
                     flow_ids.update(flow.flow_id for flow in selected)
+            cluster_nlcs: list[str] = []
+            for nlc in sorted((origin_nlcs - own_nlcs) | (own_nlcs & shared_group_nlcs)):
+                selected = list(self.flows_touching_nlc.get(nlc, ()))
+                if not selected:
+                    continue
+                cluster_nlcs.append(nlc)
+                if nlc not in written_clusters:
+                    if not written_clusters:
+                        clusters_dir.mkdir(parents=True, exist_ok=True)
+                    written_clusters.add(nlc)
+                    self._write_cache(
+                        clusters_dir / f"{nlc}.pickle",
+                        {
+                            "schema": 1,
+                            "nlc": nlc,
+                            "fares": {
+                                flow.flow_id: self.fares_by_flow[flow.flow_id]
+                                for flow in selected
+                                if flow.flow_id in self.fares_by_flow
+                            },
+                            "flows_touching_nlc": selected,
+                        },
+                    )
             self._write_cache(
                 directory / f"{origin}.pickle",
                 {
                     "schema": 1,
                     "origin": origin,
                     "origin_nlcs": set(origin_nlcs),
+                    "cluster_nlcs": cluster_nlcs,
                     "flows": {
                         flow_id: self.flows[flow_id]
                         for flow_id in flow_ids
                         if flow_id in self.flows
                     },
                     "fares": {
-                        flow_id: self.fares_by_flow.get(flow_id, {})
+                        flow_id: self.fares_by_flow[flow_id]
                         for flow_id in flow_ids
+                        if flow_id in self.fares_by_flow
                     },
                     "flows_touching_nlc": flows_touching_nlc,
                 },
@@ -238,10 +277,22 @@ class FaresLoader:
         """Load common metadata and one persisted origin index."""
         return cls.apply_fare_index(cls.load_fare_common(common_path), index_path)
 
-    @classmethod
-    def apply_fare_index(cls, db: "FaresDb", index_path: str | Path) -> "FaresDb":
-        """Apply one origin index to an already loaded common database."""
-        with Path(index_path).open("rb") as handle:
+    @staticmethod
+    def _load_cluster_slice(index_dir: Path, nlc: str) -> dict:
+        path = index_dir / "_clusters" / f"{nlc}.pickle"
+        with path.open("rb") as handle:
+            cluster = pickle.load(handle)
+        if (
+            not isinstance(cluster, dict)
+            or cluster.get("schema") != 1
+            or cluster.get("nlc") != nlc
+        ):
+            raise ValueError(f"invalid cluster fares index for {nlc}")
+        return cluster
+
+    @staticmethod
+    def _load_origin_slice(path: Path) -> dict:
+        with path.open("rb") as handle:
             index = pickle.load(handle)
         if not isinstance(index, dict):
             raise ValueError("invalid fares index")
@@ -250,11 +301,96 @@ class FaresLoader:
         origin = str(index.get("origin", "")).strip().upper()
         if not origin:
             raise ValueError("fares index has no origin")
-        db.flows = index["flows"]
-        db.fares_by_flow = index["fares"]
-        db.flows_touching_nlc = index["flows_touching_nlc"]
+        return index
+
+    def _ensure_interchange_loaded(
+        self,
+        origin_crs: str,
+        origin_nlcs: list[str] | tuple[str, ...],
+        own_nlcs: set[str] | frozenset[str] = frozenset(),
+    ) -> None:
+        directory = getattr(self, "_interchange_index_dir", None)
+        if directory is None:
+            return
+        pending_crs = getattr(self, "_pending_interchange_crs", None)
+        if (
+            pending_crs
+            and origin_crs in pending_crs
+            and (not own_nlcs or any(nlc in own_nlcs for nlc in origin_nlcs))
+        ):
+            pending_crs.discard(origin_crs)
+            index = self._load_origin_slice(directory / f"{origin_crs}.pickle")
+            index_flows = index["flows"]
+            index_fares = index["fares"]
+            for nlc, flows in index["flows_touching_nlc"].items():
+                if nlc not in self.flows_touching_nlc:
+                    self.flows_touching_nlc[nlc] = list(flows)
+                    for flow in flows:
+                        flow_id = flow.flow_id
+                        if flow_id not in self.flows and flow_id in index_flows:
+                            self.flows[flow_id] = index_flows[flow_id]
+                        if flow_id not in self.fares_by_flow and flow_id in index_fares:
+                            self.fares_by_flow[flow_id] = index_fares[flow_id]
+        pending_nlcs = getattr(self, "_pending_cluster_nlcs", None)
+        if pending_nlcs:
+            for nlc in origin_nlcs:
+                if nlc in pending_nlcs:
+                    pending_nlcs.discard(nlc)
+                    if nlc in self.flows_touching_nlc:
+                        continue
+                    cluster_path = directory / "_clusters" / f"{nlc}.pickle"
+                    if not cluster_path.is_file():
+                        continue
+                    cluster = self._load_cluster_slice(directory, nlc)
+                    cluster_flows = cluster["flows_touching_nlc"]
+                    self.flows_touching_nlc[nlc] = list(cluster_flows)
+                    cluster_fares = cluster["fares"]
+                    for flow in cluster_flows:
+                        flow_id = flow.flow_id
+                        if flow_id not in self.flows:
+                            self.flows[flow_id] = flow
+                        if flow_id not in self.fares_by_flow and flow_id in cluster_fares:
+                            self.fares_by_flow[flow_id] = cluster_fares[flow_id]
+
+    @classmethod
+    def apply_fare_index(cls, db: "FaresDb", index_path: str | Path) -> "FaresDb":
+        """Apply one origin index to an already loaded common database."""
+        resolved = Path(index_path)
+        index = cls._load_origin_slice(resolved)
+        origin = str(index.get("origin", "")).strip().upper()
+        flows = dict(index["flows"])
+        fares_by_flow = dict(index["fares"])
+        flows_touching_nlc = {
+            nlc: list(bucket)
+            for nlc, bucket in index["flows_touching_nlc"].items()
+        }
+        cluster_nlcs = index.get("cluster_nlcs", ())
+        if not isinstance(cluster_nlcs, (list, tuple, set, frozenset)):
+            raise ValueError("invalid fares index cluster list")
+        for raw_nlc in cluster_nlcs:
+            nlc = str(raw_nlc).strip()
+            if not nlc or nlc in flows_touching_nlc:
+                continue
+            cluster = cls._load_cluster_slice(resolved.parent, nlc)
+            cluster_flows = cluster["flows_touching_nlc"]
+            flows_touching_nlc[nlc] = list(cluster_flows)
+            cluster_fares = cluster["fares"]
+            for flow in cluster_flows:
+                flow_id = flow.flow_id
+                if flow_id not in flows:
+                    flows[flow_id] = flow
+                if flow_id not in fares_by_flow and flow_id in cluster_fares:
+                    fares_by_flow[flow_id] = cluster_fares[flow_id]
+        db.flows = flows
+        db.fares_by_flow = fares_by_flow
+        db.flows_touching_nlc = flows_touching_nlc
         db._focus_origin_nlcs = set(index["origin_nlcs"])
         db._cache_origin = origin
+        db._interchange_index_dir = resolved.parent
+        db._pending_interchange_crs = set()
+        db._pending_cluster_nlcs = set()
+        db._flow_eval_caches = None
+        db._flows_by_origin_dest_nlc = {}
         return db
 
     def _preload_focus_locations(self, path: str | Path, origin_crs: str) -> None:
@@ -417,32 +553,35 @@ class FaresLoader:
         origin = self._cache_origin
         if origin is None:
             return []
+        directory = Path(index_dir)
+        pending_crs: set[str] = set()
+        pending_nlcs: set[str] = set()
         missing: list[str] = []
+        shared_group_nlcs = set(self._fare_group_members())
         for crs in sorted(self.interchange_crs(origin)):
-            path = Path(index_dir) / f"{crs}.pickle"
-            try:
-                with path.open("rb") as handle:
-                    index = pickle.load(handle)
-            except (OSError, EOFError, pickle.PickleError, AttributeError, TypeError, ValueError):
+            path = directory / f"{crs}.pickle"
+            if not path.is_file():
                 missing.append(crs)
                 continue
-            if (
-                not isinstance(index, dict)
-                or index.get("schema") != 1
-                or str(index.get("origin", "")).strip().upper() != crs
-            ):
-                missing.append(crs)
-                continue
-            for flow_id, flow in index["flows"].items():
-                self.flows.setdefault(flow_id, flow)
-            for flow_id, bucket in index["fares"].items():
-                self.fares_by_flow.setdefault(flow_id, bucket)
-            for nlc, flows in index["flows_touching_nlc"].items():
-                held = self.flows_touching_nlc.setdefault(nlc, [])
-                seen = {flow.flow_id for flow in held}
-                held.extend(flow for flow in flows if flow.flow_id not in seen)
+            station_nlcs = self._all_fare_nlcs(crs)
+            own_nlcs = set(
+                self.nlcs_by_crs.get(crs)
+                or (
+                    {self.locations_by_crs[crs].nlc}
+                    if crs in self.locations_by_crs
+                    else ()
+                )
+            )
+            for nlc in (station_nlcs - own_nlcs) | (own_nlcs & shared_group_nlcs):
+                if nlc not in self.flows_touching_nlc:
+                    pending_nlcs.add(nlc)
+            pending_crs.add(crs)
             if self._focus_origin_nlcs is not None:
-                self._focus_origin_nlcs |= set(index["origin_nlcs"])
+                self._focus_origin_nlcs |= station_nlcs
+        self._interchange_index_dir = directory
+        self._pending_interchange_crs = pending_crs
+        self._pending_cluster_nlcs = pending_nlcs
+        self._flow_eval_caches = None
         return missing
 
     def _load_location_lookup(self, path: str | Path) -> None:
@@ -550,6 +689,8 @@ class FaresLoader:
         # classification yet would cache every attraction's kept CRS as empty,
         # and the pass after the ONS read would reuse it and tag nothing.
         self._attraction_crs_cache.clear()
+        self._heritage_crs_cache = None
+        self._nature_crs_cache = None
         for facet in DESTINATION_FACET_SOURCES:
             if facet.reviewed_station_codes:
                 for crs in facet.reviewed_station_codes:
@@ -1233,10 +1374,18 @@ class FaresLoader:
         return (flow.origin_nlc,)
 
     def _index_flow(self, flow: Flow) -> None:
+        self._flow_eval_caches = None
+        self._has_full_origin_nlc_dest_nlcs = False
+        self._origin_nlc_dest_nlcs = None
+        self._flows_by_origin_dest_nlc = None
         for nlc in self._flow_index_nlcs(flow):
             self.flows_touching_nlc.setdefault(nlc, []).append(flow)
 
     def _unindex_flow(self, flow: Flow) -> None:
+        self._flow_eval_caches = None
+        self._has_full_origin_nlc_dest_nlcs = False
+        self._origin_nlc_dest_nlcs = None
+        self._flows_by_origin_dest_nlc = None
         for nlc in self._flow_index_nlcs(flow):
             flows = self.flows_touching_nlc.get(nlc)
             if flows is not None and flow in flows:

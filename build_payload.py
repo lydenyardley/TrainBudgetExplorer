@@ -181,6 +181,7 @@ class RulePool:
 
     rule_ids: dict[str, str] = field(default_factory=dict)
     railcard_rules: dict[str, dict] = field(default_factory=dict)
+    detail_cache: dict[tuple[object, ...], dict] = field(default_factory=dict)
 
     def share(self, rule: dict | None) -> str | None:
         if rule is None:
@@ -213,7 +214,12 @@ def two_part_query(
 
 
 def two_part_candidates(
-    timetable, origin_crs: str, day: date | None, max_changes: int
+    timetable,
+    origin_crs: str,
+    day: date | None,
+    max_changes: int,
+    *,
+    reached: dict | None = None,
 ) -> dict[str, list[str]]:
     """Where each journey from one origin could be split, keyed by destination.
 
@@ -237,7 +243,8 @@ def two_part_candidates(
     if timetable is None:
         return {}
     timetable = timetable.focused(origin_crs)
-    reached = timetable.journeys_from(origin_crs, max_changes=max_changes, day=day)
+    if reached is None:
+        reached = timetable.journeys_from(origin_crs, max_changes=max_changes, day=day)
     split_at: dict[str, list[str]] = {}
     for crs, journey in reached.items():
         if journey.changes > max_changes or is_pseudo_station(crs):
@@ -367,6 +374,21 @@ def railcard_detail_for(
     fares = context.fares
     origin = context.origin
     railcard_code = family.key
+    start_crs = leg_origin_crs or origin.crs
+    cache_key = (
+        railcard_code,
+        start_crs,
+        one.crs,
+        one.origin_nlc,
+        one.destination_nlc,
+        one.ticket_code,
+        one.route_code,
+        one.standard_pence,
+        context.day,
+    )
+    cached = pool.detail_cache.get(cache_key)
+    if cached is not None:
+        return cached
     rules = fares.railcard_rules(
         railcard_code,
         ticket_code=one.ticket_code,
@@ -417,7 +439,7 @@ def railcard_detail_for(
             f"{'yes' if rule['totalBan'] else 'no'}; restriction "
             f"{rule['restrictionCode']}."
         )
-    return {
+    detail = {
         "state": state,
         "pricePence": price,
         "minimumFarePence": minimum,
@@ -439,6 +461,8 @@ def railcard_detail_for(
             }
         ),
     }
+    pool.detail_cache[cache_key] = detail
+    return detail
 
 
 def describe_restriction(context: PageContext, code: str) -> str:
@@ -486,6 +510,7 @@ def destination_row(
     quality: str,
     journey_db: TimetableDb | None,
     departures_seen: dict[tuple[int, str], list[dict]] | None = None,
+    journeys_by_db: dict[int, dict] | None = None,
 ) -> tuple[dict, TicketLink]:
     # The journey belongs to the origin and the destination, not to the
     # ticket type, so it is read once per destination from the first
@@ -516,7 +541,10 @@ def destination_row(
             continue
         if journey_source is None:
             journey_source = db
-        found = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
+        if journeys_by_db is not None and id(db) in journeys_by_db:
+            found = journeys_by_db[id(db)].get(crs)
+        else:
+            found = db.best_journey(origin.crs, crs, max_changes=max_changes, day=day)
         if found:
             journey, journey_source = found, db
             break
@@ -798,6 +826,7 @@ def build_payload(
     # fare on each leg found separately. Priced on the build's day, like
     # every other row: the day control changes the times and neither price
     # (ADR-0060).
+    journeys_by_db: dict[int, dict] = {}
     if timetable is not None:
         # One page, one station, so the page is built from the slice of the
         # timetable it can use rather than from the national index. The
@@ -809,8 +838,31 @@ def build_payload(
         # path pays nothing here and its pages do not move. The focused
         # database is what the page's own searches use below, which is why the
         # cut is made here and not inside the walk.
+        raw_timetable = timetable
         timetable = timetable.focused(origin.crs)
-    split_at = two_part_candidates(timetable, origin.crs, day, max_changes)
+        if single_timetable is raw_timetable:
+            single_timetable = timetable
+        journeys_by_db[id(timetable)] = timetable.journeys_from(
+            origin.crs, max_changes=max_changes, day=day
+        )
+    if (
+        single_timetable is not None
+        and id(single_timetable) not in journeys_by_db
+        and hasattr(single_timetable, "journeys_from")
+    ):
+        if hasattr(single_timetable, "focused"):
+            single_timetable = single_timetable.focused(origin.crs)
+        if id(single_timetable) not in journeys_by_db:
+            journeys_by_db[id(single_timetable)] = single_timetable.journeys_from(
+                origin.crs, max_changes=max_changes, day=day
+            )
+    split_at = two_part_candidates(
+        timetable,
+        origin.crs,
+        day,
+        max_changes,
+        reached=journeys_by_db.get(id(timetable)) if timetable is not None else None,
+    )
     if split_at:
         for priced, query in (
             (single, fares.page_destinations_within),
@@ -869,6 +921,32 @@ def build_payload(
     # One list of departure times per journey, shared by every fare list that
     # prices it (S1 of the 19 October 2026 critique).
     departures_seen: dict[tuple[int, str], list[dict]] = {}
+    all_row_crs = set(single) | set(single_tickets) | set(anytime_tickets)
+    for db_candidate in (timetable, single_timetable):
+        if (
+            db_candidate is None
+            or not hasattr(db_candidate, "departures_from")
+            or any(db_id == id(db_candidate) for db_id, _ in departures_seen)
+        ):
+            continue
+        db_id = id(db_candidate)
+        by_dest = db_candidate.departures_from(
+            origin.crs, max_changes=max_changes, day=day, limit=departure_limit
+        )
+        for dest_crs in all_row_crs:
+            options = by_dest.get(dest_crs)
+            departures_seen[(db_id, dest_crs)] = (
+                [
+                    {
+                        "depart": option.departure,
+                        "arrive": option.arrival,
+                        "changes": option.changes,
+                    }
+                    for option in options
+                ]
+                if options
+                else []
+            )
     # The row and its link come back together, because the page's two
     # disclosure facts are every row's link folded into one: the payload says
     # once whether this page's links are tracked and what it discloses.
@@ -881,6 +959,7 @@ def build_payload(
             quality="standard return",
             journey_db=timetable,
             departures_seen=departures_seen,
+            journeys_by_db=journeys_by_db,
         )
         destinations.append(row)
         tracked = tracked or link.tracked
@@ -894,6 +973,7 @@ def build_payload(
             quality="outbound single",
             journey_db=single_timetable,
             departures_seen=departures_seen,
+            journeys_by_db=journeys_by_db,
         )
         single_destinations.append(row)
         tracked = tracked or link.tracked
@@ -907,6 +987,7 @@ def build_payload(
             quality="unrestricted Anytime Day Return",
             journey_db=timetable,
             departures_seen=departures_seen,
+            journeys_by_db=journeys_by_db,
         )
         anytime_destinations.append(row)
         tracked = tracked or link.tracked
@@ -1724,35 +1805,46 @@ def encode_payload(payload: dict) -> dict:
             isinstance(value, str) and len(value) >= POOL_MIN_BYTES
         )
 
+    materialized_rows: dict[str, list[list[tuple[object, str | None]]]] = {}
+    first_seen: list[tuple[str, object]] = []
     for key, items in packed_tables.items():
+        cols = columns_by_key[key]
+        table_rows: list[list[tuple[object, str | None]]] = []
         for row in items:
-            for value in row_values(key, row, columns_by_key[key]):
+            row_cells: list[tuple[object, str | None]] = []
+            for value in row_values(key, row, cols):
                 if poolable(value):
                     k = _pool_key(value)
-                    counts[k] = counts.get(k, 0) + 1
+                    count = counts.get(k, 0) + 1
+                    counts[k] = count
+                    if count == 1:
+                        first_seen.append((k, value))
+                    row_cells.append((value, k))
+                else:
+                    row_cells.append((value, None))
+            table_rows.append(row_cells)
+        materialized_rows[key] = table_rows
+
     pool: dict[str, int] = {}
     values: list[object] = []
-    for key, items in packed_tables.items():
-        for row in items:
-            for value in row_values(key, row, columns_by_key[key]):
-                k = _pool_key(value)
-                if counts.get(k, 0) > 1 and k not in pool:
-                    pool[k] = len(values)
-                    values.append(value)
+    for k, value in first_seen:
+        if counts[k] > 1:
+            pool[k] = len(values)
+            values.append(value)
 
-    def cell(value: object) -> object:
+    def cell(value: object, k: str | None) -> object:
         # A pool reference is a negative index, so it cannot be confused with
         # a real cell: -1 is the pool's first entry, and null stays null.
-        position = pool.get(_pool_key(value)) if value is not None else None
+        position = pool.get(k) if k is not None else None
         return -(position + 1) if position is not None else value
 
     encoded = dict(payload)
-    for key, items in packed_tables.items():
+    for key in packed_tables:
         table: dict[str, object] = {
             "columns": columns_by_key[key],
             "rows": [
-                [cell(value) for value in row_values(key, row, columns_by_key[key])]
-                for row in items
+                [cell(value, k) for value, k in row_cells]
+                for row_cells in materialized_rows[key]
             ],
         }
         if key in FARE_LISTS and placed:

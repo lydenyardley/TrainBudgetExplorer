@@ -147,6 +147,8 @@ class FaresDb(FaresLoader):
         # a whole-network build asks for thousands: without this the prune would
         # be recomputed for every attraction on every row.
         self._attraction_crs_cache: dict[str, dict[str, frozenset[str]]] = {}
+        self._heritage_crs_cache: tuple[object, dict[int, frozenset[str]]] | None = None
+        self._nature_crs_cache: tuple[object, dict[tuple[str, str], frozenset[str]]] | None = None
         # Every source whose classes this database carries, in load order. One
         # slot made the provenance line the last writer's: a cache beside the
         # feed described classes the ONS workbook had supplied, and the reviewed
@@ -592,15 +594,33 @@ class FaresDb(FaresLoader):
         code = crs.strip().upper()
         return [self.destination_type(code), *sorted(self.location_facets_by_crs.get(code, set()))]
 
+    def _heritage_crs_by_site(self) -> dict[int, frozenset[str]]:
+        """UNESCO site id -> kept CRS codes, computed once per coordinate set."""
+        key = (
+            len(self.locations_by_crs),
+            id(self._station_coordinates),
+            self._station_coordinates_path,
+        )
+        cached = getattr(self, "_heritage_crs_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        by_site = {
+            site_id: frozenset(self._pruned_heritage_crs(site_id, stations))
+            for site_id, _name, stations in HERITAGE_PROPERTIES
+        }
+        self._heritage_crs_cache = (key, by_site)
+        return by_site
+
     def heritage_sites(self, crs: str) -> list[dict[str, object]]:
         """Return the UNESCO properties that make this station a heritage match."""
         code = crs.strip().upper()
         location = self.locations_by_crs.get(code)
         if location is None or "heritage" not in self.location_facets_by_crs.get(code, set()):
             return []
+        by_site = self._heritage_crs_by_site()
         sites: list[dict[str, object]] = []
-        for site_id, name, stations in HERITAGE_PROPERTIES:
-            if code not in self._pruned_heritage_crs(site_id, stations):
+        for site_id, name, _stations in HERITAGE_PROPERTIES:
+            if code not in by_site.get(site_id, ()):
                 continue
             sites.append(
                 {
@@ -611,17 +631,22 @@ class FaresDb(FaresLoader):
             )
         return sites
 
-    def nature_sites(self, crs: str) -> list[dict[str, object]]:
-        """Return the named nature reserves that make this station a nature match."""
-        code = crs.strip().upper()
-        if "nature" not in self.location_facets_by_crs.get(code, set()):
-            return []
+    def _nature_crs_by_site(self) -> dict[tuple[str, str], frozenset[str]]:
+        """(name, url) -> kept CRS codes for nature reserves, computed once."""
+        key = (
+            len(self.locations_by_crs),
+            id(self._station_coordinates),
+            self._station_coordinates_path,
+        )
+        cached = getattr(self, "_nature_crs_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
         by_name: dict[tuple[str, str], list[str]] = {}
         for site_crs, name, url in NATURE_SITE_PROOFS:
             by_name.setdefault((name, url), []).append(site_crs)
-        results: list[dict[str, object]] = []
         coordinates = None
-        for (name, url), site_codes in by_name.items():
+        by_site: dict[tuple[str, str], frozenset[str]] = {}
+        for pair, site_codes in by_name.items():
             kept = site_codes
             if len(site_codes) > 1:
                 if coordinates is None:
@@ -639,9 +664,20 @@ class FaresDb(FaresLoader):
                     kept = select_nearest_stations(located, (point,))
                     missing = [site_crs for site_crs in site_codes if site_crs not in coordinates]
                     kept = [*kept, *missing]
-            if code in kept:
-                results.append({"name": name, "url": url})
-        return results
+            by_site[pair] = frozenset(kept)
+        self._nature_crs_cache = (key, by_site)
+        return by_site
+
+    def nature_sites(self, crs: str) -> list[dict[str, object]]:
+        """Return the named nature reserves that make this station a nature match."""
+        code = crs.strip().upper()
+        if "nature" not in self.location_facets_by_crs.get(code, set()):
+            return []
+        return [
+            {"name": name, "url": url}
+            for (name, url), kept in self._nature_crs_by_site().items()
+            if code in kept
+        ]
 
     def coastal_sites(self, crs: str) -> list[dict[str, object]]:
         """Return the named coastal day-outs for a seaside-tagged station."""
@@ -1025,7 +1061,7 @@ class FaresDb(FaresLoader):
             for row in self.restrictions.active_railcard_rows(railcard_code)
             if (not row.ticket_code or row.ticket_code == ticket_code)
             and (not row.route_code or row.route_code == route_code)
-            and (not row.location or row.location.strip().upper() in stations)
+            and (not row.location or row.location in stations or row.location.strip().upper() in stations)
         ]
 
     def railcard_restriction(
@@ -1446,6 +1482,30 @@ class FaresDb(FaresLoader):
             return tuple(crs.strip().upper() for crs in value)
 
         direct = priced_from(origin)
+        needed_by_change: dict[str, set[str]] = {}
+        for destination, raw in splits.items():
+            dest = destination.strip().upper()
+            if dest in direct or dest == origin:
+                continue
+            for change in candidates_of(raw):
+                if change in {origin, dest} or change not in direct:
+                    continue
+                needed_by_change.setdefault(change, set()).add(dest)
+        if not needed_by_change:
+            return []
+
+        def priced_from_change(crs: str) -> dict[str, Reachable]:
+            if crs not in asked:
+                if crs not in self.locations_by_crs:
+                    asked[crs] = {}
+                else:
+                    self._two_part_target_crs = frozenset(needed_by_change.get(crs, ()))
+                    try:
+                        asked[crs] = {row.crs: row for row in rows_from(crs)}
+                    finally:
+                        self._two_part_target_crs = None
+            return asked[crs]
+
         found: list[TwoPartFare] = []
         for destination, raw in sorted(splits.items()):
             destination = destination.strip().upper()
@@ -1458,7 +1518,7 @@ class FaresDb(FaresLoader):
                 first = direct.get(change)
                 if first is None:
                     continue
-                second = priced_from(change).get(destination)
+                second = priced_from_change(change).get(destination)
                 if second is None:
                     continue
                 candidate = TwoPartFare(
@@ -1501,6 +1561,79 @@ class FaresDb(FaresLoader):
 
         setattr(reject, "_selector_key", ("publishable", strict))
         return reject
+
+    def _dest_nlcs_for_origin_nlc(
+        self,
+        origin_nlc: str,
+        origin_crs: str,
+        is_own_nlc: bool,
+    ) -> frozenset[str]:
+        if origin_nlc not in self.flows_touching_nlc:
+            if is_own_nlc:
+                if origin_crs not in getattr(self, "_pending_interchange_crs", ()):
+                    return frozenset()
+            elif origin_nlc not in getattr(self, "_pending_cluster_nlcs", ()):
+                return frozenset()
+        table = getattr(self, "_origin_nlc_dest_nlcs", None)
+        if table is None:
+            table = {}
+            self._origin_nlc_dest_nlcs = table
+        cached = table.get(origin_nlc)
+        if cached is not None:
+            return cached
+        if getattr(self, "_has_full_origin_nlc_dest_nlcs", False):
+            return frozenset()
+        if origin_nlc not in self.flows_touching_nlc:
+            self._ensure_interchange_loaded(
+                origin_crs,
+                (origin_nlc,),
+                {origin_nlc} if is_own_nlc else frozenset(),
+            )
+        flows = self.flows_touching_nlc.get(origin_nlc)
+        if not flows:
+            return frozenset()
+        result = frozenset(
+            flow.origin_nlc
+            if flow.direction == "R" and flow.destination_nlc == origin_nlc
+            else flow.destination_nlc
+            for flow in flows
+        )
+        table[origin_nlc] = result
+        return result
+
+    def _flows_for_origin_and_dest_nlcs(
+        self,
+        origin_nlc: str,
+        matching_dest_nlcs: frozenset[str],
+    ) -> list[Flow]:
+        table = getattr(self, "_flows_by_origin_dest_nlc", None)
+        if table is None:
+            table = {}
+            self._flows_by_origin_dest_nlc = table
+        by_dest = table.get(origin_nlc)
+        if by_dest is None:
+            buckets: dict[str, list[tuple[int, Flow]]] = {}
+            for idx, flow in enumerate(self.flows_touching_nlc.get(origin_nlc, ())):
+                dest_nlc = (
+                    flow.origin_nlc
+                    if flow.direction == "R" and flow.destination_nlc == origin_nlc
+                    else flow.destination_nlc
+                )
+                buckets.setdefault(dest_nlc, []).append((idx, flow))
+            by_dest = {
+                dest_nlc: tuple(pairs) for dest_nlc, pairs in buckets.items()
+            }
+            table[origin_nlc] = by_dest
+        if len(matching_dest_nlcs) == 1:
+            only_nlc = next(iter(matching_dest_nlcs))
+            return [flow for _idx, flow in by_dest.get(only_nlc, ())]
+        pairs = [
+            pair
+            for dest_nlc in matching_dest_nlcs
+            for pair in by_dest.get(dest_nlc, ())
+        ]
+        pairs.sort(key=lambda item: item[0])
+        return [flow for _idx, flow in pairs]
 
     def _resolved_destination_cache(
         self, query_day: date
@@ -1554,7 +1687,6 @@ class FaresDb(FaresLoader):
             return {}
         db_key = (
             id(self.fares_by_flow),
-            len(self.fares_by_flow),
             len(self.ticket_types),
             len(getattr(self.report, "files_read", ())),
             getattr(self.restrictions, "parsed_records", 0),
@@ -1667,6 +1799,38 @@ class FaresDb(FaresLoader):
         railcard_code = self.railcard_code(railcard) if railcard else None
         if railcard and railcard_code is None:
             raise KeyError(f"railcard {railcard!r} is not in the feed")
+        target_crs: frozenset[str] | None = (
+            getattr(self, "_two_part_target_crs", None)
+            if tally is None and railcard_code is None
+            else None
+        )
+        matching_by_origin: dict[str, frozenset[str]] | None = None
+        if target_crs is not None:
+            if not target_crs:
+                return []
+            dest_nlc_set: set[str] = set()
+            for crs in target_crs:
+                if crs in self.locations_by_crs and not is_pseudo_station(crs):
+                    dest_nlc_set.update(self.fare_nlcs(crs, day=query_day))
+            if not dest_nlc_set:
+                return []
+            target_dest_nlcs = frozenset(dest_nlc_set)
+            matching_by_origin = {}
+            filtered_origin_nlcs: list[str] = []
+            for nlc in origin_nlcs:
+                matching = (
+                    self._dest_nlcs_for_origin_nlc(nlc, origin.crs, nlc in own_nlcs)
+                    & target_dest_nlcs
+                )
+                if matching:
+                    matching_by_origin[nlc] = matching
+                    filtered_origin_nlcs.append(nlc)
+            if not filtered_origin_nlcs:
+                return []
+            origin_nlcs = filtered_origin_nlcs
+        self._ensure_interchange_loaded(origin.crs, origin_nlcs, own_nlcs)
+        if railcard and railcard_code is None:
+            raise KeyError(f"railcard {railcard!r} is not in the feed")
 
         if railcard_code is not None:
             best_by_crs: dict[str, Reachable] = {}
@@ -1741,7 +1905,14 @@ class FaresDb(FaresLoader):
         cheaper_already_held = 0
 
         for origin_nlc in origin_nlcs:
-            for flow in self.flows_touching_nlc.get(origin_nlc, ()):
+            flows_iter = (
+                self._flows_for_origin_and_dest_nlcs(
+                    origin_nlc, matching_by_origin[origin_nlc]
+                )
+                if matching_by_origin is not None
+                else self.flows_touching_nlc.get(origin_nlc, ())
+            )
+            for flow in flows_iter:
                 if not self._flow_valid_on(flow, query_day):
                     if tally is not None:
                         _tally(
@@ -1807,7 +1978,9 @@ class FaresDb(FaresLoader):
                 route_code = flow.route_code
                 for destination in real_locs:
                     crs = destination.crs
-                    if crs == origin.crs:
+                    if crs == origin.crs or (
+                        target_crs is not None and crs not in target_crs
+                    ):
                         continue
                     prev_best = best_pence_by_crs.get(crs)
                     if prev_best is None:

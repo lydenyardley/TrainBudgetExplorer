@@ -79,6 +79,19 @@ class JourneyFanOutMatchesBestJourneyTest(unittest.TestCase):
                         _rank_or_none(table.get(destination)),
                     )
 
+    def test_departures_from_agrees_with_departures_on_every_station_and_day(self) -> None:
+        for origin in self.stations[:6]:
+            for day in self.days:
+                table = self.db.departures_from(origin, limit=6, max_changes=1, day=day)
+                for destination in self.stations:
+                    with self.subTest(origin=origin, day=day.isoformat(), destination=destination):
+                        self.assertEqual(
+                            self.db.departures(origin, destination, limit=6, max_changes=1, day=day),
+                            table.get(destination, []),
+                            "departures_from disagrees with departures on "
+                            f"{origin} to {destination} on {day.isoformat()}",
+                        )
+
 
 
 class AStationCalledTwiceTest(unittest.TestCase):

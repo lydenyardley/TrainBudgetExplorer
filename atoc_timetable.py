@@ -1469,6 +1469,134 @@ class TimetableDb:
                                 best[destination_crs] = held = journey
         return best
 
+    def departures_from(
+        self,
+        origin_crs: str,
+        *,
+        limit: int = 6,
+        max_changes: int = 1,
+        connection_minutes: int | None = None,
+        day: date | None = None,
+        max_onward: int | None = MAX_ONWARD_DEPARTURES,
+    ) -> dict[str, list[Journey]]:
+        """The next few journeys from the origin to every station it reaches.
+
+        departures() walks the origin's departures, their interchanges and their
+        onward windows once per destination, and for an unreachable station it
+        walks all of them because the list never reaches ``limit``. Walking the
+        origin's departures once in chronological order lets each destination
+        stop as soon as its own list is full and the clock has moved past its
+        latest departure, producing the exact same list departures() returns.
+        """
+        self._ensure_indexes(day)
+        found: dict[str, dict[int, Journey]] = {}
+        max_dep: dict[str, int] = {}
+        done: set[str] = set()
+        for departure, schedule_index, stop_index in self._departures.get(origin_crs, ()):
+            schedule = self.schedules[schedule_index]
+            crs_chain = self._schedule_crs[schedule_index]
+            chosen_by_dest: dict[str, Journey] = {}
+            for later in range(stop_index + 1, len(schedule.stops)):
+                destination_crs = crs_chain[later]
+                if (
+                    destination_crs is None
+                    or destination_crs == origin_crs
+                    or destination_crs in done
+                ):
+                    continue
+                dest_found = found.get(destination_crs)
+                if (
+                    dest_found is not None
+                    and len(dest_found) >= limit
+                    and departure > max_dep[destination_crs]
+                ):
+                    done.add(destination_crs)
+                    continue
+                stop = schedule.stops[later]
+                arrival = stop.alight
+                if arrival is None:
+                    continue
+                if arrival < departure:
+                    arrival += MINUTES_PER_DAY
+                leg = Leg(schedule.train_uid, origin_crs, destination_crs, departure, arrival)
+                journey = Journey(origin_crs, destination_crs, departure, arrival, (leg,))
+                prev = chosen_by_dest.get(destination_crs)
+                if prev is None or _rank(journey) < _rank(prev):
+                    chosen_by_dest[destination_crs] = journey
+            if max_changes >= 1:
+                for interchange_index in range(stop_index + 1, len(schedule.stops)):
+                    interchange_stop = schedule.stops[interchange_index]
+                    interchange_crs = crs_chain[interchange_index]
+                    if interchange_crs is None or interchange_crs == origin_crs:
+                        continue
+                    arrival_at_interchange = interchange_stop.alight
+                    if arrival_at_interchange is None:
+                        continue
+                    if arrival_at_interchange < departure:
+                        arrival_at_interchange += MINUTES_PER_DAY
+                    wait = (
+                        connection_minutes
+                        if connection_minutes is not None
+                        else self._change_times.get(interchange_crs, DEFAULT_CONNECTION_MINUTES)
+                    )
+                    earliest_onward = arrival_at_interchange + max(wait, 1)
+                    entries = self._departures.get(interchange_crs)
+                    if not entries:
+                        continue
+                    times = self._departure_times[interchange_crs]
+                    start = bisect.bisect_left(times, earliest_onward)
+                    window = entries[start:] if max_onward is None else entries[start : start + max_onward]
+                    for onward_departure, onward_index, onward_stop_index in window:
+                        if onward_index == schedule_index:
+                            continue
+                        onward_schedule = self.schedules[onward_index]
+                        for destination_crs, positions in self._schedule_dest_stops[onward_index].items():
+                            if (
+                                destination_crs == origin_crs
+                                or destination_crs == interchange_crs
+                                or destination_crs in done
+                            ):
+                                continue
+                            dest_found = found.get(destination_crs)
+                            if (
+                                dest_found is not None
+                                and len(dest_found) >= limit
+                                and departure > max_dep[destination_crs]
+                            ):
+                                done.add(destination_crs)
+                                continue
+                            held = chosen_by_dest.get(destination_crs)
+                            if held is not None and earliest_onward - departure >= held.duration:
+                                continue
+                            for later in positions[bisect.bisect_right(positions, onward_stop_index) :]:
+                                arrival = onward_schedule.stops[later].alight
+                                if arrival is None:
+                                    continue
+                                if arrival < onward_departure:
+                                    arrival += MINUTES_PER_DAY
+                                legs = (
+                                    Leg(schedule.train_uid, origin_crs, interchange_crs, departure, arrival_at_interchange),
+                                    Leg(onward_schedule.train_uid, interchange_crs, destination_crs, onward_departure, arrival),
+                                )
+                                journey = Journey(origin_crs, destination_crs, departure, arrival, legs)
+                                if held is None or _rank(journey) < _rank(held):
+                                    chosen_by_dest[destination_crs] = held = journey
+            for destination_crs, chosen in chosen_by_dest.items():
+                dest_found = found.get(destination_crs)
+                if dest_found is None:
+                    found[destination_crs] = {departure: chosen}
+                    max_dep[destination_crs] = departure
+                else:
+                    current = dest_found.get(departure)
+                    if current is None or _rank(chosen) < _rank(current):
+                        if current is None and departure > max_dep[destination_crs]:
+                            max_dep[destination_crs] = departure
+                        dest_found[departure] = chosen
+        return {
+            crs: [by_dep[key] for key in sorted(by_dep)][:limit]
+            for crs, by_dep in found.items()
+        }
+
     def intermediate_crs(
         self,
         train_uid: str,
