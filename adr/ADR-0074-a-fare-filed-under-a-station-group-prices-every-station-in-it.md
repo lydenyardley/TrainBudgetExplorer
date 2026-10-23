@@ -4,7 +4,7 @@
 **Date:** 22 October 2026
 **Relates to:** ADR-0005 (a licensed feed is never checked in), ADR-0026 (the
 settlement class and the unsourced count), ADR-0061 (a two-part fare is one row),
-open work O21 and O22 in `docs/open-work.md`
+open work O21 in `docs/open-work.md` (and O22, settled in `docs/settled-work.md`)
 
 ## Context
 
@@ -77,11 +77,22 @@ the page's selector already accepts for a station's own flow, such as Birmingham
 to Coventry at 3.50 on West Midlands' evening return (EF) rather than 7.30. The
 four rows in `tests/known_fares.toml` price the same.
 
-The unsourced-destination count gains every newly priced station that has no
-settlement class, and seven of the twelve stations above are such stations. The
-release measured 1,542 against a ceiling of 1,544 on 22 October 2026, so the gate
-is expected to refuse the first release with this change until the owner decides
-(O22).
+Across the whole 24 September 2026 download, reading through station groups
+raises the number of priced destinations from 2,732 to 2,749 (+17). Five of the
+seventeen already carried a settlement class (`BDQ` Bradford Forster Square,
+`GBL` Gainsborough Lea Road, and the three Heathrow terminals `HAF`, `HWV`,
+`HXX`); the other twelve did not (the seven stations above with no flow of their
+own -- `CFB` Catford Bridge, `DCW` Dorchester West, `GCL` Glasgow Central low
+level, `GLQ` Glasgow Queen Street, `HLC` Helensburgh Central, `HLU` Helensburgh
+Upper and `UTY` Upper Tyndrum -- plus five stations whose own flows carry no
+publishable adult fare: `GNB` Gainsborough Central, `LVL` Liverpool Lime Street
+low level, `TNN` Thorne North, `TYL` Tyndrum Lower and `WGW` Wigan Wallgate).
+Those twelve are classified in `REVIEWED_SETTLEMENT_FALLBACKS` under the
+existing settlement rules (closing O22): five cities (`CFB`, `GCL`, `GLQ`,
+`LVL`, `WGW`), two towns (`DCW`, `GNB`), three small towns (`HLC`, `HLU`, `TNN`)
+and two villages (`TYL`, `UTY`). That keeps the net change to the
+unsourced-destination count at zero (1,528 before and after on the local 24
+September 2026 download; 1,542 against the 1,544 ceiling on the live feed).
 
 Not done here:
 

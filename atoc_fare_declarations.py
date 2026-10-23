@@ -287,6 +287,21 @@ REVIEWED_SETTLEMENT_FALLBACKS: dict[str, str] = {
     "HLY": "village", "DGY": "village", "LLY": "village", "TPN": "village",
     "TRD": "village", "TRH": "village", "YNW": "village", "GFF": "village",
     "PGM": "village", "QYD": "village", "TDU": "village", "TIR": "village",
+    # ADR-0074 (O22): the twelve stations that group-NLC fare expansion newly
+    # prices as destinations and that the ONS name match misses because of a
+    # station qualifier or because they sit in London or Scotland. Cities:
+    # Catford Bridge in Greater London; Glasgow Central low level and Glasgow
+    # Queen Street in Glasgow; Liverpool Lime Street low level in Liverpool;
+    # Wigan Wallgate in Wigan (large BUA). Towns: Dorchester West in Dorchester,
+    # Dorset (medium BUA; bare Dorchester collides with the Oxfordshire village)
+    # and Gainsborough Central in Gainsborough (medium BUA, alongside GBL).
+    # Small towns: Helensburgh Central and Helensburgh Upper in Helensburgh, and
+    # Thorne North in Thorne (small BUA). Villages: Tyndrum Lower and Upper
+    # Tyndrum in Tyndrum.
+    "CFB": "city", "GCL": "city", "GLQ": "city", "LVL": "city",
+    "WGW": "city", "DCW": "town", "GNB": "town", "HLC": "small_town",
+    "HLU": "small_town", "TNN": "small_town", "TYL": "village",
+    "UTY": "village",
 }
 
 # An airport station is a destination in its own right, and the settlement it

@@ -182,6 +182,50 @@ class FareGroupTest(unittest.TestCase):
             {"FNN"},
         )
 
+    def test_newly_priced_group_member_destinations_carry_their_settlement_class(self) -> None:
+        # O22: reading through station groups newly prices 17 destinations on
+        # the real feed, 12 of which had no settlement class from the ONS name
+        # lookup because of a station qualifier or because they sit in London or
+        # Scotland. All 12 are classified in REVIEWED_SETTLEMENT_FALLBACKS so
+        # group-NLC expansion adds zero unsourced priced destinations.
+        expected = {
+            "CFB": ("5047", "CATFORD BRIDGE", "0258", "city"),
+            "DCW": ("5962", "DORCHESTER WEST", "0429", "town"),
+            "GCL": ("9922", "GLASGOW CENT LL", "0433", "city"),
+            "GLQ": ("9950", "GLASGOW QUEEN ST", "0433", "city"),
+            "GNB": ("6465", "GAINSBOROUGH CTL", "0415", "town"),
+            "HLC": ("9981", "HELENSBURGH CTL", "0404", "small_town"),
+            "HLU": ("9982", "HELENSBURGH UPP", "0404", "small_town"),
+            "LVL": ("2270", "LIVERPOOL L S LL", "0435", "city"),
+            "TNN": ("6530", "THORNE NORTH", "0271", "small_town"),
+            "TYL": ("8728", "TYNDRUM LOWER", "0443", "village"),
+            "UTY": ("8838", "UPPER TYNDRUM", "0443", "village"),
+            "WGW": ("2406", "WIGAN WALLGATE", "0446", "city"),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            feed = build_synthetic_feed(Path(tmp) / "o22")
+            with (feed / "rjfaf.loc").open("a", encoding="utf-8") as handle:
+                for crs, (nlc, name, group, _) in expected.items():
+                    handle.write(
+                        _line(
+                            {
+                                "update_marker": "A",
+                                "record_type": "L",
+                                "nlc": nlc,
+                                "description": name,
+                                "crs": crs,
+                                "group_nlc": group,
+                            },
+                            LOCATION,
+                        )
+                        + "\n"
+                    )
+            db = FaresDb().load_feed(feed)
+        self.assertEqual(
+            {crs: db.destination_type(crs) for crs in expected},
+            {crs: kind for crs, (_, _, _, kind) in expected.items()},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
