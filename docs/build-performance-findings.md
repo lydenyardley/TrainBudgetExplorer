@@ -858,6 +858,15 @@ the fast loop noticing. That is the trade the audit asked for -- the release
 still runs `--full` before publishing -- and the ceiling is what makes the trade
 visible rather than silent.
 
+**Measured again 24 October 2026, because the paragraph above came true.**
+`tools/test_check_known_fares` was one of the modules left out, and it went red
+when ADR-0076 stopped listing a place no journey reaches: four of its rows
+priced Sleaford's fare, which the fixture's page now drops. Nothing ran it until
+the release's own assemble job did, two days later. It is on the list now, and
+`python -m tools.verify --fast` on this machine took **52.7 s** for the 293 unit
+tests and 54.8 s for the command; 3 s of that is the fare gate's own synthetic
+site, which is the whole price of noticing next time.
+
 ## The type-check census, measured
 
 Measured 15 October 2026 with mypy 2.4.0, on this machine, `--no-incremental`, one

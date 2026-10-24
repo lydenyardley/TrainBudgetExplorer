@@ -611,8 +611,15 @@ The first whole-network release since ADR-0076 and ADR-0077 stopped in the
 assemble job, before publishing: `the manifest names 2,594 route(s) but the
 folder holds 2,838 page(s)`. It was one defect with two halves, and both were in
 the lists the merge writes rather than in the pages. Driving the merged release
-for it also turned up the fourth row, a check that was asking a page to say a
-word the page had deliberately stopped saying.
+for it also turned up the browser rows below, checks that were asking a page to
+say a word it had deliberately stopped saying or to render a list it does not
+have.
+
+Behind that failure stood a second, one gate later: with the manifest agreed,
+the known-fares gate could not read the release at all (`Extra data: line 1
+column 233653`), so the fares a person checked by hand had not been checked
+since ADR-0069's amendment landed two days earlier. Nothing ran the suite that
+holds that gate until the release did.
 
 | Item | Closed by | Held by |
 |---|---|---|
@@ -620,6 +627,8 @@ word the page had deliberately stopped saying.
 | A single build's chooser still offered a station whose page ADR-0076 had emptied, because the index was rewritten with each page's own count after `build_station_index` had filtered it | the all-origins build passes the chooser `offered`, the rows whose page lists something, while the write set, the picker and the manifest are unchanged (ADR-0076 decision 5) | the same test's chooser assertion, and `test_the_chooser_offers_every_page_and_no_others` for the build whose pages all answer |
 | The browser suite could not drive a page that lists nothing -- it waited thirty seconds on the refinements the page hides, failed the checks that assume a row, and counted 16 of that page's 52 checks against a 5% budget -- so the assemble job's browser step would have refused the release one gate after the manifest did | a page that lists no place is its own shape: the driver reads it off the payload, the eight sections about a list report one named skip each, the matrix and the page's own sentence still run, and `harness.report` names those pages apart from the skip budget rather than inventing a budget that would say nothing | `node tests/browser_test.cjs` over a built page that lists nothing: 52 of 52 checks pass with 16 not exercised, and 501 of 501 over a site holding two of them beside one with rows, which exits 0 (24 October 2026) |
 | A one-station release's root failed `the option carries the station's own name, code and count`, on a page that was right: the chooser's row carries the count as a bare number and its noun in the count's accessible name (C12/D10 of the 17 October 2026 critique), and the check read the rendered text | `tests/browser/release-root.cjs` reads the count's `aria-label`, which is what a screen reader says | the same sweep: the release root of that site offers one station, so it is driven as a release root and passes |
+| The known-fares gate refused the release with `Extra data: line 1 column 233653`: it found each station's page by reading `stations.js` from the first `=` to the end of the file, and ADR-0069's amendment had put every station's facts below the picker's options, so the second document arrived as data after the first and no checked fare could be read at all | `build_assets.STATION_INDEX_MARKER` names the line that introduces the options: the writer uses it and `tools/check_known_fares.py` imports it, decoding that one document and stopping there; an asset with no such line is a site it could not read (exit 2 with a sentence), not a traceback | `test_the_station_index_is_read_past_the_facts_below_it` and `test_an_asset_with_no_station_index_is_a_site_it_could_not_read` in `tools/test_check_known_fares.py`; the gate over a two-shard merged release read its pages and said `all 3 known fare(s) agree with the pages` (24 October 2026) |
+| The same module's four Grantham rows priced Sleaford, which ADR-0076 stopped listing: the fixture's timetable calls at no Sleaford, so the page prices the place and drops it, and those rows went red without anyone running the suite that holds them | the rows price Lincoln and Nottingham instead, at the prices the fixture's fare records state -- Lincoln's £8.70 return, which `tests/test_build_fares.py` asserts from the records, and the £5.80 the same fare's card gives -- so the gate's arithmetic is held to a price the feed states rather than to the page alone | `tools/test_check_known_fares.py`'s five passing rows, the £8.70 / £8.90 mismatch and its exit-code table; `tests/test_build_fares.py` holds Lincoln's £8.70 and its £5.80 card price from the feed. The module is now on `--fast`'s list, which is the loop a change is checked with, because nothing but the thirty-five-minute run read it when it went red (293 tests in 55 s, 24 October 2026) |
 
 ## Rejected designs, with the reason
 
