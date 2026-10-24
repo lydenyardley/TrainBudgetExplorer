@@ -636,11 +636,21 @@ def merge_shards(args) -> int:
             file=sys.stderr,
         )
         return 2
-    counts: dict[str, int] = {}
+    # Every page the shares wrote, from the rows they wrote beside it. Two
+    # lists come out of this and they are not the same list: the picker and the
+    # manifest name every page the release serves, and the chooser offers only
+    # the ones that answer. ADR-0076 writes a page for a station whose every
+    # priced place is unreachable, which is a page that lists nothing, so a
+    # station can be in the folder without being an answer (ADR-0019 decision
+    # 3: a zero count is not offered). Reading the chooser's list back as the
+    # route list is what the assemble job refused on 24 October 2026 -- 2,594
+    # routes against 2,838 pages -- because the pages were all written.
+    pages: dict[str, dict] = {}
     for _, manifest in shards:
         for row in manifest.get("index", []):
-            counts[row["crs"]] = row["destinations"]
-    index = build_station_index(counts, fares.locations_by_crs)
+            pages[row["crs"]] = row
+    served = sorted(pages.values(), key=lambda row: (-row["destinations"], row["crs"]))
+    index = [row for row in served if row["destinations"] > 0]
     coverage: UnsourcedReport = UnsourcedReport()
     for _, manifest in shards:
         for crs, data in (manifest.get("coverage") or {}).items():
@@ -669,6 +679,20 @@ def merge_shards(args) -> int:
                 )
                 return 2
             owners[child.name] = shard_dir
+    # A folder no share's index names is a page from another build that this
+    # merge would copy and publish under a manifest that had to name it. The
+    # routes are the folders now, so their membership is checked here instead
+    # of being implied by the list they are written from.
+    named = {row.get("slug") for row in served}
+    unnamed = sorted(slug for slug in owners if slug not in named)
+    if unnamed:
+        print(
+            "error: " + ", ".join(f"{slug} (from {owners[slug].name})" for slug in unnamed)
+            + " holds a page no share's index names, so this merge cannot tell it "
+            "from a page an earlier build left behind; rebuild that share.",
+            file=sys.stderr,
+        )
+        return 2
     existing = out_dir / "from"
     if existing.is_dir() and any(existing.iterdir()):
         print(
@@ -685,16 +709,20 @@ def merge_shards(args) -> int:
     write_station_style(out_dir)
     write_station_script(out_dir)
     write_chooser_script(out_dir)
-    station_rows = station_asset_rows(index, release.get("base_path", ""))
+    station_rows = station_asset_rows(served, release.get("base_path", ""))
     write_page_atomic(
         out_dir / STATION_ASSET_NAME, render_station_asset(station_rows, facts)
     )
     write_release(
         out_dir,
         index=index,
+        # The folders that were copied, not the list above: the manifest says
+        # which pages this release serves, and a page that lists nothing is
+        # still one a reader may be leaving from (ADR-0076). Named from the
+        # pages for the reason in the comment above their rows.
         routes=[
-            with_base(release.get("base_path", ""), f"/from/{entry['slug']}/")
-            for entry in index
+            with_base(release.get("base_path", ""), f"/from/{slug}/")
+            for slug in sorted(owners)
         ],
         # The shard's own figure, so a merge of shards built at another budget
         # opens where they did rather than at this process's constant (E7).
@@ -1093,6 +1121,12 @@ def _build_all_origins(ctx: BuildContext) -> int:
         {**entry, "destinations": page_places.get(entry["crs"], entry["destinations"])}
         for entry in index
     ]
+    # The chooser offers the pages that answer (ADR-0019 decision 3). The write
+    # set is untouched -- a page is still written for every station the feed
+    # prices, which is ADR-0076 decision 5 -- but that rule can empty a page,
+    # and an entry whose page lists nothing would send a reader to an empty
+    # table. The page stays in the folder, in the picker and in the manifest.
+    offered = [entry for entry in index if entry["destinations"] > 0]
     if args.fast_all_origins:
         print(f"station pages complete: {len(completed):,}/{len(index):,}", flush=True)
     # Always said, including the all-resumed build that wrote nothing: the
@@ -1118,7 +1152,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
     # writes is write_release's own subject.
     write_release(
         out_dir,
-        index=index,
+        index=offered,
         routes=[with_base(base_path, f"/from/{slug}/") for slug in sorted(written)],
         budget_pounds=OPENING_BUDGET_POUNDS,
         note=note,

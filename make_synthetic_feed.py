@@ -44,6 +44,15 @@ STATIONS = (
 UNSERVED_STATION = ("7000", "SLP", "TOWER HILL UND")
 UNSERVED_FLOW = ("0000007", "1000", "7000", "00000")
 UNSERVED_FARE = ("0000007", "SDR", 1200, "")
+# A fare FROM the station that has no train: an origin the fares feed prices
+# and no journey ever reaches. ADR-0076 still writes that page and it lists
+# nothing, which is the page the 24 October 2026 assemble job refused -- the
+# merge built its route list from the chooser's, which drops a zero count
+# (ADR-0019), and left 244 real pages unnamed. Added with the fix in
+# build_pool.py's merge. 0000098 rather than a free-looking number: 0000099 is
+# REAL_SHAPE_FARES' fare with no flow, and a flow of that id would give it one.
+UNSERVED_ORIGIN_FLOW = ("0000098", "7000", "1000", "00000")
+UNSERVED_ORIGIN_FARE = ("0000098", "SDR", 900, "")
 
 TICKET_TYPES = (
     ("SDR", "ANYTIME DAY R", "2", "R", "0"),
@@ -478,6 +487,7 @@ def build_synthetic_feed(
     path: str | Path,
     *,
     include_unserved_station: bool = False,
+    include_unserved_origin: bool = False,
     include_real_shapes: bool = False,
     include_restrictions: bool = False,
     include_third_origin: bool = False,
@@ -488,7 +498,9 @@ def build_synthetic_feed(
 ) -> Path:
     """Write the fares feed.
 
-    The unserved station carries a fare and no train. The real shapes add the
+    The unserved station carries a fare and no train; the unserved origin also
+    carries a fare it is the origin of, so the build prices it and its page
+    lists nothing (ADR-0076). The real shapes add the
     awkward records: several route codes for one station pair, destinations with
     a fare and no station code, a flow with no fare, and a fare with no flow.
     The third origin prices a departure from a station that is only ever a
@@ -503,9 +515,15 @@ def build_synthetic_feed(
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
 
-    stations = STATIONS + (UNSERVED_STATION,) if include_unserved_station else STATIONS
+    unserved = include_unserved_station or include_unserved_origin
+    stations = STATIONS + (UNSERVED_STATION,) if unserved else STATIONS
     flows = FLOWS + (UNSERVED_FLOW,) if include_unserved_station else FLOWS
     fares = FARES + (UNSERVED_FARE,) if include_unserved_station else FARES
+    if include_unserved_origin:
+        # The station also needs a fare it is the origin of, or it prices
+        # nothing and no page is written for it at all.
+        flows += (UNSERVED_ORIGIN_FLOW,)
+        fares += (UNSERVED_ORIGIN_FARE,)
     types = dict(LOCATION_TYPES)
     facets = dict(LOCATION_FACETS)
     if include_real_shapes:

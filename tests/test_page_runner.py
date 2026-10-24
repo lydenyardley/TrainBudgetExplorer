@@ -33,6 +33,7 @@ import run
 from atoc_fares import FLOW_T, FaresDb
 from build_workers import ONE_WORKER_FLOOR, PARENT_BYTES, RESERVED_BYTES, WORKER_BYTES, free_memory_bytes, worker_budget
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from tools.release import manifest as release_manifest
 
 from tests.page_harness import setUpModule, embedded_payload, station_page, tearDownModule
 
@@ -263,6 +264,67 @@ class AllOriginsCliTest(unittest.TestCase):
         # The progress record is written after every page whatever the mode.
         self.build()
         self.assertTrue((self.out.parent / ".trainbudget-build.json").is_file())
+
+    def test_a_page_that_lists_nothing_is_published_and_named(self) -> None:
+        # The assemble job of 24 October 2026 refused a release whose manifest
+        # named 2,594 routes over a folder of 2,838 pages. The 244 it did not
+        # name were pages ADR-0076 writes for an origin no journey leaves --
+        # pages that say so -- and the chooser does not offer them, because
+        # their count is zero (ADR-0019 decision 3). The merge built the
+        # release's routes from that chooser list, so it named the pages it had
+        # just copied only when they were also offered.
+        root = Path(self._tmp.name) / "unserved"
+        feed = build_synthetic_feed(
+            root / "fares", include_unserved_origin=True, include_restrictions=True
+        )
+        shards = []
+        for number in (1, 2):
+            out = root / f"shard-{number}" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = build_demo_page.main(
+                    [
+                        "--feed", str(feed),
+                        "--timetable", str(self.timetable),
+                        # A day, or the reachability rule has no week to read
+                        # and keeps the row that says no train runs.
+                        "--date", "2026-10-05",
+                        "--all-origins", "--shard", f"{number}/2",
+                        "--out", str(out),
+                    ]
+                )
+            self.assertEqual(code, 0, buffer.getvalue())
+            shards.append(out.parent)
+        self.assertTrue(
+            any((shard / "from" / "tower-hill-und").is_dir() for shard in shards),
+            "a station the feed prices still gets a page, even with no journey out",
+        )
+        site = root / "site"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = build_demo_page.main(
+                [
+                    "--merge", *[str(shard) for shard in shards],
+                    "--feed", str(feed),
+                    "--out", str(site / "index.html"),
+                ]
+            )
+        self.assertEqual(code, 0, buffer.getvalue())
+        page = (site / "from" / "tower-hill-und" / "index.html").read_text(encoding="utf-8")
+        payload = embedded_payload(page)
+        for key in ("destinations", "singleDestinations", "anytimeDestinations"):
+            self.assertEqual(payload[key], [], f"{key} on a page that lists nothing")
+        self.assertEqual(payload["unreachableDestinationCount"], 1)
+        chooser = (site / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("/from/tower-hill-und/", chooser, "an empty page is not offered")
+        self.assertNotIn("0 destination", chooser)
+        routes = json.loads((site / "release-manifest.json").read_text(encoding="utf-8"))["routes"]
+        self.assertIn("/from/tower-hill-und/", routes, "but the release serves it")
+        self.assertEqual(
+            release_manifest.problems(site),
+            [],
+            "the manifest has to name every page the release serves",
+        )
 
     def test_a_bad_shard_share_is_refused_before_anything_builds(self) -> None:
         for spec in ("0/2", "3/2", "1/0", "half", "1/2/3"):
@@ -497,6 +559,19 @@ class AllOriginsCliTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("different revision", said)
         self.assertFalse((self.out.parent / "from").exists(), "a refused merge copies nothing")
+
+    def test_a_merge_refuses_a_page_no_share_names(self) -> None:
+        # The routes are the folders the merge copies, so a folder no share's
+        # index names is a page from another build: naming it would publish it
+        # under a manifest that had to vouch for it.
+        shards = self._shards()
+        stray = shards[0] / "from" / "leftover"
+        stray.mkdir(parents=True)
+        (stray / "index.html").write_text("from an earlier build", encoding="utf-8")
+        code, said = self._merge(shards)
+        self.assertEqual(code, 2)
+        self.assertIn("leftover", said)
+        self.assertIn("no share's index names", said)
 
     def test_a_merge_refuses_a_folder_that_already_holds_pages(self) -> None:
         shards = self._shards()
