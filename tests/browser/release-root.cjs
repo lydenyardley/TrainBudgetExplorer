@@ -51,11 +51,22 @@ async function checkReleaseRoot(page, url, check) {
     `${options} of ${listed.length}`
   );
   const rows = await page.evaluate(() =>
-    Array.from(document.querySelectorAll("#picks a")).map((a) => ({
-      href: a.getAttribute("href"),
-      text: a.textContent,
-      tall: a.getBoundingClientRect().height,
-    }))
+    Array.from(document.querySelectorAll("#picks a")).map((a) => {
+      const count = a.querySelector(".count");
+      return {
+        href: a.getAttribute("href"),
+        text: a.textContent,
+        // The row's count is a bare number on screen: the chooser's heading
+        // carries the phrase, and repeating it in all 2,712 rows was C12/D10 of
+        // the 17 October 2026 critique. The noun is the count's accessible
+        // name, which is what a screen reader reads, so that is what is
+        // checked here -- reading the rendered text asked the page to say a
+        // word it deliberately stopped saying, and only a one-station release
+        // (which no run drove) could show it.
+        count: count ? count.getAttribute("aria-label") || "" : "",
+        tall: a.getBoundingClientRect().height,
+      };
+    })
   );
   check(
     "and it is a link to that station's page",
@@ -70,7 +81,7 @@ async function checkReleaseRoot(page, url, check) {
       (row) =>
         row.text.includes(station.name) &&
         row.text.includes(station.crs) &&
-        /\d+ destinations?/.test(row.text)
+        /^\d+ destinations?$/.test(row.count)
     ),
     JSON.stringify(rows[0] || null)
   );
