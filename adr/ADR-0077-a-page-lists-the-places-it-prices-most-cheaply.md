@@ -99,7 +99,7 @@ the page it replaces.
   fixture now gives that origin its trains, `tools/verify.py` clears its fixture
   sites before building, and the suite's page list fails rather than passing on a
   page no build wrote.
-- **The number is the sample's, not the network's.** `tools/page_bytes --site
-  _site` on a whole-network run still decides whether 600 is enough; the twelve
+- **The number is the sample's, not the network's.** `python -m tools.page_bytes
+  --site _site` on a whole-network run still decides whether 600 is enough; the twelve
   pages are a spread of small, medium and large stations rather than a random
   draw.
