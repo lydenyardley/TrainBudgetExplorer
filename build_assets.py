@@ -300,7 +300,15 @@ def station_asset_rows(index: list[dict], base_path: str = "") -> list[dict]:
     ]
 
 
-def render_station_asset(rows: list[dict]) -> str:
+# The station's own facts, as a file the shard merge reads and rewrites: each
+# shard computes them from the same feed, so the merge takes one copy rather
+# than parsing millions of flows again to recompute them (D1 of the 23 October
+# 2026 byte audit). Written beside the pages rather than linked from them, and
+# never published -- the merge folds it into the shared station list.
+STATION_FACTS_NAME = "station-facts.json"
+
+
+def render_station_asset(rows: list[dict], facts: dict[str, dict] | None = None) -> str:
     """The one shared file the picker reads: a station list, loaded by every page.
 
     Plain objects rather than the column-and-cell encoding a page payload uses.
@@ -308,6 +316,14 @@ def render_station_asset(rows: list[dict]) -> str:
     rather than once per page, so the saving is tens of KB on the whole network;
     and the objects keep ``"href": "/from/..."`` in the file, which is the shape
     the route crawl reads to prove every picker option resolves (S03).
+
+    ``facts`` is the station's own facts by CRS, read by every page that lists
+    the place: what kind it is and which named sites it is a proof for. They are
+    here because they are the same on every page, and a page that carried them
+    itself paid for them 2,900 times over (D1 of the 23 October 2026 byte
+    audit). They cover every station the feed names, which is why they are a
+    map of their own rather than columns on the picker's options: an option is
+    a page a reader can go to, and a destination is not always one.
     """
     header = (
         "// The station picker's options, one file for the whole site. Every page\n"
@@ -315,9 +331,19 @@ def render_station_asset(rows: list[dict]) -> str:
         "// of this file did not arrive states the station as text rather than\n"
         "// offering a control that opens nothing.\n"
     )
-    return header + "window.TBE_STATIONS = " + json.dumps(
+    asset = header + "window.TBE_STATIONS = " + json.dumps(
         rows, ensure_ascii=False, separators=(",", ":")
     ) + ";\n"
+    if facts:
+        asset += (
+            "// Each station's own facts, which its page would otherwise repeat:\n"
+            "// its destination type and the reviewed sites it is a proof for.\n"
+            "// Keyed by CRS; a station whose list is empty has none.\n"
+            "window.TBE_STATION_FACTS = " + json.dumps(
+                facts, ensure_ascii=False, separators=(",", ":")
+            ) + ";\n"
+        )
+    return asset
 
 
 def station_asset_tag(src: str | None) -> str:

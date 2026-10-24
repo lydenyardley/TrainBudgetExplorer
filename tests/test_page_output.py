@@ -71,12 +71,20 @@ class SharedStationAssetTest(unittest.TestCase):
         )
         asset = assets[0].read_text(encoding="utf-8")
         self.assertIn("window.TBE_STATIONS = ", asset)
-        rows = json.loads(asset.split("window.TBE_STATIONS = ", 1)[1].rstrip().rstrip(";"))
+        # Read as two JSON documents rather than by splitting on punctuation: a
+        # station name or a site URL can carry any byte the semicolon can.
+        decoder = json.JSONDecoder()
+        rows = decoder.raw_decode(asset.split("window.TBE_STATIONS = ", 1)[1])[0]
         # Every station this build wrote, including each page's own: a page
         # filters its own origin out as it loads, which is what keeps this one
         # file byte-identical for every page.
         self.assertEqual(sorted(row["crs"] for row in rows), ["GRN", "NOT"])
         self.assertTrue(all(row["href"].startswith("/from/") for row in rows))
+        # D1: the station's own facts travel beside the options, once for the
+        # site, because every page that lists the place carried them itself.
+        facts = decoder.raw_decode(asset.split("window.TBE_STATION_FACTS = ", 1)[1])[0]
+        self.assertEqual(facts["GRN"]["types"], ["town"])
+        self.assertEqual(facts["NOT"]["types"], ["city", "university"])
         self.assertIn("stations.js", self.log)
 
     def test_a_station_page_names_the_asset_and_ships_no_station_rows(self) -> None:
@@ -91,6 +99,14 @@ class SharedStationAssetTest(unittest.TestCase):
             # deferred one, because the table is in the page already.
             self.assertIn('<script src="/stations.js" defer></script>', html)
             self.assertNotIn('"stations":', embedded_text(html))
+            # D1: the station's own facts are the second thing this page leaves
+            # to the shared asset, and they leave the page entirely -- a row
+            # that still carried them would be paying for them once per page.
+            # The type chip markup is the renderer's own, so it is still here.
+            embedded = embedded_text(html)
+            self.assertNotIn('"destinationTypes"', embedded)
+            self.assertNotIn('"heritageSites"', embedded)
+            self.assertIn('name="destinationType"', html)
             # The page keeps its own destination rows, and the heading control
             # is still the page's own markup rather than something built here.
             self.assertIn('id="changeOrigin"', html)
@@ -943,12 +959,135 @@ class EncodedPayloadTest(unittest.TestCase):
         value = pool[-nottingham - 1] if isinstance(nottingham, int) and nottingham < 0 else nottingham
         self.assertIsInstance(value, dict, "DIS before YNG is not the page's order, so it is not packed")
 
+    # A payload whose fare lists agree on a station's columns, so they are
+    # placed once: the shape a .FSC-priced page has, where a place's own
+    # repeated values are what the page pays for.
+    places_payload = {
+        "destinations": [
+            {"crs": "LCN", "name": "LINCOLN", "link": {"url": "https://example.invalid/search"},
+             "departures": [{"depart": 341, "arrive": 523, "changes": 1}]},
+            {"crs": "NOT", "name": "NOTTINGHAM", "link": {"url": "https://example.invalid/search"},
+             "departures": [{"depart": 400, "arrive": 523, "changes": 0}]},
+        ],
+        "singleDestinations": [
+            {"crs": "LCN", "name": "LINCOLN", "link": {"url": "https://example.invalid/search"},
+             "departures": [{"depart": 341, "arrive": 523, "changes": 1}]},
+            {"crs": "NOT", "name": "NOTTINGHAM", "link": {"url": "https://example.invalid/search"},
+             "departures": [{"depart": 400, "arrive": 523, "changes": 0}]},
+        ],
+    }
+
+    def test_a_place_shares_a_value_that_repeats(self) -> None:
+        encoded = encode_payload(self.places_payload)
+        self.assertEqual(json.dumps(encoded).count("https://example.invalid/search"), 1)
+        link = encoded["places"]["columns"].index("link")
+        self.assertLess(encoded["places"]["rows"]["NOT"][link], 0, "a place's link is a pool reference")
+        self.assertEqual(decode_payload(encoded)["destinations"], self.places_payload["destinations"])
+
+    def test_a_departure_option_is_sent_as_its_three_values(self) -> None:
+        encoded = encode_payload(self.places_payload)
+        self.assertEqual(encoded["rowCodec"]["departures"], ["depart", "arrive", "changes"])
+        departures = encoded["places"]["columns"].index("departures")
+        self.assertIsInstance(encoded["places"]["rows"]["NOT"][departures][0], list)
+        self.assertEqual(
+            decode_payload(encoded)["singleDestinations"], self.places_payload["singleDestinations"]
+        )
+
+    def test_a_column_of_repeated_words_is_sent_as_indices(self) -> None:
+        payload = {
+            "destinations": [
+                {"crs": "NOT", "ticket": "SDR"},
+                {"crs": "SLP", "ticket": "SDR"},
+                {"crs": "LCN", "ticket": "SDR"},
+                {"crs": "BOT", "ticket": "SDR"},
+                {"crs": "GRN", "ticket": "CDS"},
+            ]
+        }
+        encoded = encode_payload(payload)
+        table = encoded["destinations"]
+        self.assertEqual(table["dicts"]["ticket"], ["SDR", "CDS"])
+        ticket = table["columns"].index("ticket")
+        self.assertEqual(table["rows"][0][ticket], 0)
+        self.assertEqual(decode_payload(encoded)["destinations"], payload["destinations"])
+
+    def test_a_column_of_unique_words_keeps_its_words(self) -> None:
+        payload = {
+            "destinations": [
+                {"crs": "NOT", "name": "NOTTINGHAM"},
+                {"crs": "SLP", "name": "SLEAFORD"},
+            ]
+        }
+        self.assertNotIn("dicts", encode_payload(payload)["destinations"])
+
+    def test_a_party_price_of_two_adults_is_read_back_from_the_adult_price(self) -> None:
+        payload = {
+            "destinations": [
+                {"crs": "NOT", "adultPence": 700, "partyPence": 1400},
+                {"crs": "SLP", "adultPence": 800, "partyPence": 1600},
+            ]
+        }
+        encoded = encode_payload(payload)
+        self.assertEqual(encoded["destinations"]["derived"], ["partyPence"])
+        self.assertEqual(decode_payload(encoded)["destinations"], payload["destinations"])
+
+    def test_a_party_price_that_is_not_two_adults_travels_as_it_was(self) -> None:
+        payload = {"destinations": [{"crs": "NOT", "adultPence": 700, "partyPence": 1500}]}
+        encoded = encode_payload(payload)
+        self.assertNotIn("derived", encoded["destinations"])
+        self.assertEqual(decode_payload(encoded)["destinations"], payload["destinations"])
+
+    def test_the_week_is_sent_once_per_station_and_read_back_as_day_tables(self) -> None:
+        payload = {
+            "destinations": [{"crs": "NOT"}],
+            "serviceWeek": [[{"NOT": [18, 0]}, {"NOT": [20, 1]}, {}]],
+        }
+        encoded = encode_payload(payload)
+        self.assertEqual(encoded["serviceWeek"], [{"NOT": [[18, 0], [20, 1], None]}])
+        self.assertEqual(decode_payload(encoded)["serviceWeek"], payload["serviceWeek"])
+
+    def test_a_day_that_answers_what_the_day_before_did_travels_as_true(self) -> None:
+        # A weekday timetable repeats itself, and so does a week with no service:
+        # on the Grantham page 4,870 of 8,216 answers were their predecessor's.
+        payload = {
+            "destinations": [{"crs": "NOT"}],
+            "serviceWeek": [
+                [
+                    {"NOT": [18, 0]},
+                    {"NOT": [18, 0]},
+                    {"NOT": [20, 1]},
+                    {},
+                    {},
+                    {},
+                    {"NOT": [18, 0]},
+                ]
+            ],
+        }
+        encoded = encode_payload(payload)
+        self.assertEqual(
+            encoded["serviceWeek"],
+            [{"NOT": [[18, 0], True, [20, 1], None, True, True, [18, 0]]}],
+        )
+        self.assertEqual(decode_payload(encoded)["serviceWeek"], payload["serviceWeek"])
+
+    def test_a_week_no_station_runs_in_keeps_one_day_table_for_each_day(self) -> None:
+        # A region whose week names no station is what a build with no
+        # departures leaves behind, and an empty transpose would take the day
+        # count with it: three empty days have to read back as three.
+        payload = {"destinations": [{"crs": "NOT"}], "serviceWeek": [[{}, {}, {}]]}
+        self.assertEqual(
+            decode_payload(encode_payload(payload))["serviceWeek"], payload["serviceWeek"]
+        )
+
     def test_a_rendered_page_carries_the_tables_and_the_hydrator(self) -> None:
         self.assertIn('"columns":', embedded_text(self.page))
         self.assertNotIn('"partyPence":', embedded_text(self.page))
         # The tables travel inline; the hydrator travels in the route's shared
-        # script, which the page names beside the stylesheet.
-        self.assertIn("hydrate", page_script(self.page))
+        # script, which the page names beside the stylesheet. It reads a place
+        # through the same pool and dictionary a row does, unpacks a departure
+        # option, and derives the party price.
+        script = page_script(self.page)
+        self.assertIn("hydrate", script)
+        self.assertIn("unpackDepartures", script)
 
     def test_a_rendered_page_reads_back_as_the_payload_it_was_built_from(self) -> None:
         self.assertTrue(embedded_payload(self.page)["destinations"])

@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 from atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS, FLOW_F, FaresDb
 from build_demo_page import build_payload, render_page
+from build_payload import unreachable_places
 from make_synthetic_feed import _line, build_synthetic_feed
 from tests.page_harness import page_markup, page_script, setUpModule, tearDownModule, PageTestCase
 
@@ -212,7 +213,7 @@ class FaresPayloadTest(PageTestCase):
             page_script(self.html),
         )
         self.assertIn(
-            "destinations, each on its cheapest fare of any ticket type, in the feed", page_script(self.html)
+            "destinations, each on its cheapest fare of any ticket type, listed here", page_script(self.html)
         )
 
     def test_the_count_line_names_the_mix_and_what_the_party_is_two_of(self) -> None:
@@ -230,7 +231,7 @@ class FaresPayloadTest(PageTestCase):
             page_script(self.html),
         )
         self.assertIn(
-            "destinations, each on its cheapest fare of any ticket type, in the feed", page_script(self.html)
+            "destinations, each on its cheapest fare of any ticket type, listed here", page_script(self.html)
         )
 
     def test_the_cheapest_destination_is_listed_first(self) -> None:
@@ -398,14 +399,30 @@ class FaresPayloadTest(PageTestCase):
             "no_timetable",
         )
         dated = build_payload(self.fares, self.timetable, "GRN", day=date(2026, 9, 28))
-        # Tower Hill has a fare and no train, so the row names the week the build
-        # asked as well as the day: a reader who cannot reach either date is
-        # owed that, and the old sentence stopped at the day.
-        unserved = next(row for row in dated["destinations"] if row["crs"] == "SLP")
-        self.assertEqual(unserved["journeyState"], "no_service")
+        # Tower Hill has a fare and no train on any day of the week the build
+        # walked, so D2 leaves it out: the page counts it as unreachable rather
+        # than pricing a place with "No service" beside the price for all eight
+        # days. What an absence still words is a place that runs on another day,
+        # which ``unreachable_places`` keeps.
+        listed = {
+            row["crs"]
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in dated[key]
+        }
+        self.assertNotIn("SLP", listed)
+        # Three places in this fixture's week are priced and reached on none of
+        # its days; the count is places, not rows, so a place priced twice counts
+        # once.
+        self.assertEqual(dated["unreachableDestinationCount"], 3)
         self.assertEqual(dated["serviceDate"], "2026-09-28")
         self.assertEqual(dated["serviceHorizon"], 7)
-        self.assertNotIn("nextService", unserved)
+        self.assertEqual(dated["maxChanges"], 1)
+        # The rule itself, on the two facts it reads: a day the page carries, or
+        # a day ``nextService`` names. A build with no timetable is never asked.
+        found = {"crs": "NOT", "journeyState": "found"}
+        runs_later = {"crs": "SLP", "journeyState": "no_service", "nextService": "2026-10-03"}
+        nothing = {"crs": "LCN", "journeyState": "no_service"}
+        self.assertEqual(unreachable_places([found, runs_later, nothing]), {"LCN"})
 
     def test_the_page_counts_what_it_could_not_classify(self) -> None:
         # S29: an unreviewed destination is still listed, so the count of the

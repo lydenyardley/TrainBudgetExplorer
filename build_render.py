@@ -29,7 +29,7 @@ from build_assets import (
     write_chooser_script,
     write_page_atomic,
 )
-from build_payload import encode_payload
+from build_payload import encode_payload, without_station_facts
 from build_provenance import human_date
 from build_release import (
     DEFAULT_NOTE,
@@ -303,9 +303,15 @@ def render_page(
     opening = max(int(budget_pounds), -(-min(prices or [100]) // 100))
     # The picker's list is the one thing a page no longer carries once the
     # build serves it as the shared asset: sending both would be the hundreds
-    # of MB across the network the asset exists to remove.
+    # of MB across the network the asset exists to remove. The station's own
+    # facts -- its type and its named sites -- are the second, and they are the
+    # same document (D1 of the 23 October 2026 byte audit): on a cluster-priced
+    # page they were 120 KB of a 690 KB page, identical on every page of the
+    # release that lists the place.
     embedded_payload = (
-        {key: value for key, value in payload.items() if key != "stations"}
+        without_station_facts(
+            {key: value for key, value in payload.items() if key != "stations"}
+        )
         if payload.get("stationsSrc")
         else payload
     )

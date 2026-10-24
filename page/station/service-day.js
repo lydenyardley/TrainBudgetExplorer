@@ -84,7 +84,12 @@ function absenceText(destination, brief) {
 // for a day the network does not serve, and for a row this build holds no week
 // for, and the two are worded differently by the caller rather than collapsed
 // into one "unknown".
-function serviceAnswer(destination) {
+// One station's answers for the week, in day order, or undefined for a row the
+// build holds no week for. The build sends the week transposed -- the station
+// key once and the eight day answers under it -- because a table per day sent a
+// station's code eight times: the week was 105 KB of the Grantham page and 70 KB
+// after the transpose.
+function weekAnswers(destination) {
   const days = DATA.serviceWeek;
   if (!days || !days.length) return undefined;
   const index = destination.serviceWeekIndex;
@@ -92,21 +97,21 @@ function serviceAnswer(destination) {
   // holds no week for rather than -1: a pool reference is a negative number,
   // so -1 would have decoded into pool entry zero and named a railcard.
   if (index === undefined || index === null || index < 0) return undefined;
-  const perDay = days[index];
-  if (!perDay) return undefined;
-  // The day's table is keyed by station, so the row's own station is looked
-  // up in it. Handing back the day's whole table instead is a row that
-  // prints a dash for every station on the page, because the object has no
-  // index 0 in it to read a duration from.
-  const day = perDay[STATE.day];
-  if (!day) return undefined;
-  // The build keeps only the stations a walk reached, so a station this
-  // day's table does not name is one it did not run to on that day. The row
-  // is known to this table -- the build asked about every station a row
-  // names -- so its absence is an answer, not a gap in what was asked.
-  return Object.prototype.hasOwnProperty.call(day, destination.crs)
-    ? day[destination.crs]
+  const week = days[index];
+  if (!week) return undefined;
+  return Object.prototype.hasOwnProperty.call(week, destination.crs)
+    ? week[destination.crs]
     : null;
+}
+function serviceAnswer(destination) {
+  const week = weekAnswers(destination);
+  if (week === undefined) return undefined;
+  // The build keeps only the stations a walk reached, so a station this
+  // week does not name is one it did not run to on any day of it. The row is
+  // known to this week -- the build asked about every station a row names --
+  // so its absence is an answer, not a gap in what was asked.
+  if (week === null) return null;
+  return week[STATE.day] || null;
 }
 // The minutes and changes to print, which are the chosen day's rather than the
 // build's whenever the build carried a week. Day zero is the build's own answer
@@ -134,14 +139,13 @@ function dayAbsenceText(destination, brief) {
   const day = { short: shortDay(iso), long: iso ? humanDate(iso) : "" };
   let later = null;
   const answer = serviceAnswer(destination);
-  const perDay = DATA.serviceWeek && DATA.serviceWeek[destination.serviceWeekIndex];
-  if (perDay) {
-    // The next day this station does run on, looked up in that day's table
-    // the same way the chosen day is. A day whose table does not name the
-    // station is not a day it runs on, so it is passed over.
-    for (let index = STATE.day + 1; index < perDay.length; index++) {
-      const table = perDay[index];
-      if (table && Object.prototype.hasOwnProperty.call(table, destination.crs)) {
+  const week = weekAnswers(destination);
+  if (week) {
+    // The next day this station does run on, read from the same eight answers
+    // the chosen day came from. A day with no answer is not a day it runs on,
+    // so it is passed over.
+    for (let index = STATE.day + 1; index < week.length; index++) {
+      if (week[index]) {
         later = days[index];
         break;
       }

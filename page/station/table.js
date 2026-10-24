@@ -50,7 +50,30 @@ function renderCoverage() {
         (DATA.destinations.length
           ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
           : "");
-  coverage.textContent = lead + classifiedNote() + unnameableNote();
+  coverage.textContent = lead + classifiedNote() + unnameableNote() + unreachableNote();
+}
+// D2 of the 23 October 2026 byte audit: a place no journey reaches is not
+// listed, and on a cluster-priced page that is most of the network -- 1,725 of
+// Grantham's 2,752 priced places. The page says so, because the count above it
+// would otherwise read as coverage of everything the feed prices from here.
+// The bound is the build's own, so the sentence names the rule it was judged
+// against rather than one the page guessed.
+function journeyLimitPhrase() {
+  if (!DATA.hasJourneys) return "";
+  const limit = DATA.maxChanges;
+  if (limit === 0) return " on a direct train";
+  if (!limit) return "";
+  return " within " + (limit === 1 ? "one change" : limit + " changes");
+}
+function unreachableNote() {
+  const count = DATA.unreachableDestinationCount;
+  if (!count) return "";
+  const days = (DATA.serviceDays || []).length;
+  const one = count === 1;
+  return " " + count + (one ? " more place carries" : " more places carry") +
+    " a fare the feed sells, but no journey reaches " + (one ? "it" : "them") +
+    " from here" + journeyLimitPhrase() + " on any of the " + days +
+    " days this page covers, so " + (one ? "it is" : "they are") + " not listed.";
 }
 function droppedFromFeed() {
   // The naming gap is not listed here. It used to be, in the return mode's

@@ -103,8 +103,12 @@ class OnlyStationsCliTest(unittest.TestCase):
         stations_js = (self.out.parent / build_demo_page.STATION_ASSET_NAME).read_text(
             encoding="utf-8"
         )
-        self.assertIn('"name":"GRANTHAM"', stations_js)
-        self.assertNotIn("NOTTINGHAM", stations_js)
+        # The options are what the picker offers, and they are the pages this
+        # build wrote. The facts below them cover every station the feed names,
+        # because a page's rows can name a place whose own page does not exist.
+        options = stations_js.split("window.TBE_STATION_FACTS", 1)[0]
+        self.assertIn('"name":"GRANTHAM"', options)
+        self.assertNotIn("NOTTINGHAM", options)
 
     def test_the_release_manifest_names_the_subset(self) -> None:
         self.build("--only-stations", "GRN")
@@ -506,6 +510,28 @@ class AllOriginsCliTest(unittest.TestCase):
         self.assertEqual(
             sorted(child.name for child in (self.out.parent / "from").iterdir()), ["sleepy"]
         )
+
+    def test_a_merge_refuses_a_shard_without_the_station_facts(self) -> None:
+        # D1: the merge publishes the station's own facts into the site's one
+        # station list, and a shard is the only place it can read them -- the
+        # merge loads the feed's locations only (E6), not the flows the facts
+        # are computed from. A shard built before the facts existed would
+        # otherwise publish pages whose type chips and site lists have no
+        # answer, so it is refused before anything is copied.
+        shards = self._shards()
+        facts = shards[0] / build_assets.STATION_FACTS_NAME
+        self.assertTrue(facts.is_file(), "a shard writes the facts its pages read")
+        facts.unlink()
+        code, said = self._merge(shards)
+        self.assertEqual(code, 2, said)
+        self.assertIn("holds no readable", said)
+        self.assertFalse((self.out.parent / "from").exists(), "a refused merge copies nothing")
+        # And two shards whose facts disagree are refused the same way: one
+        # site cannot serve two answers for one place.
+        facts.write_text('{"GRN": {"types": ["city"]}}', encoding="utf-8")
+        code, said = self._merge(shards)
+        self.assertEqual(code, 2, said)
+        self.assertIn("different station list", said)
 
     def test_fast_all_origins_reports_progress_and_resumes_completed_pages(self) -> None:
         first = io.StringIO()

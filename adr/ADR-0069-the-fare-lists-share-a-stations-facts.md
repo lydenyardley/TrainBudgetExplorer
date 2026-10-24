@@ -72,3 +72,77 @@ mirrors it for the Python suite.
   packing never guesses at a shape it was not given.
 - The 498 MB figure in the workflow was measured on 1 October, before
   two-ticket rows; the byte budget stays at 800 MB.
+## Amendment -- 23 October 2026: the pool reaches the places, and a column can carry a dictionary
+
+`.FSC` cluster flows (ADR-0075) price a fare to **2,752 destinations** from
+Grantham, so `places` became the largest part of a page -- 806,498 bytes of
+1,333,421 -- and the pool above never saw it, because it was built from the row
+tables only. The same page then measured what the shape costs:
+
+- **A place's cells join the page pool.** A value that repeats is sent once and
+  referred to by a negative index wherever it sits. The same ticket link on all
+  2,752 places was 272,448 bytes and is now 8,256.
+- **A departure option is an array.** `{depart, arrive, changes}` becomes
+  `[341, 1095, 1]`, with the three names once per page in
+  `rowCodec.departures`. 189,089 bytes became 56,726.
+- **A column of repeating words is a list of indices.** `table.dicts` holds the
+  values and each cell is its index, for a column whose values are all strings or
+  booleans (an index cannot be told from a real number) and only where the
+  indices cost less. The route code, ticket code, restriction code and wording,
+  `quality`, `isAdvance`, `offPeak`, `journeyState` and `destinationType` are
+  worth 162,000 bytes between them on that page.
+- **A party price of two adults is derived.** `partyPence` is twice `adultPence`
+  on every row the build writes, so `table.derived` names the column, the row
+  keeps its place in the key order, and the hydrator multiplies. A payload whose
+  rows disagree is sent as it was.
+- **The service week is transposed.** It was a table per day keyed by station, so
+  a destination running all eight days sent its code eight times: 105,169 bytes
+  became 70,552.
+- **A pooled value has to pay for itself.** Sharing a value that repeats n times
+  costs one copy plus n references, and a reference into a 754-entry pool is four
+  bytes against an empty list's two, so pooling everything repeated made `places`
+  larger. The pool now keeps only the entries whose reference is cheaper.
+
+**Measured, same page and same rows:** 1,368,721 bytes -> **690,977 (-49.5%)**,
+the payload 1,333,421 -> 655,677, and a small station (Ashwell & Morden)
+1,301,965 -> 657,135 with 6,056 rows either side. The old encoder run over the new
+page's own decoded payload reproduces the old bytes exactly, and every row reads
+back as the object the build wrote, in order. The full profile, and the two
+decisions the remaining bytes need, are in
+`docs/audits/2026-10-23-page-byte-budget.md`.
+
+**What the amendment does not buy.** The same page gzips from 139,782 to 128,201
+bytes, **8.3%**, because the repetition removed was what deflate was already
+removing. The wire form is smaller and the release is smaller; a reader's
+transfer is not where the gain is.
+
+## Amendment -- 24 October 2026: the station's facts leave the page, and a day can repeat the day before
+
+The byte audit's D1 asked for the same treatment the picker's list already had.
+`name` is the station's, and so are `destinationType`, `destinationTypes` and the
+six named-site lists: they are the same on every page of the release that lists
+the place, and a page that carried them paid for them 2,930 times.
+
+- **The station's own facts travel in the shared station list.**
+  `window.TBE_STATION_FACTS` sits beside `window.TBE_STATIONS` in the one
+  document every station page already fetches, keyed by CRS and covering every
+  station the feed names rather than only the ones with a page: a page's rows can
+  name a place whose own page does not exist (a zone boundary, a station whose
+  only flows leave it). `page/station/payload.js` joins them to each row by CRS,
+  so every panel below reads a row exactly as before. A page whose copy of the
+  document did not arrive gives every row no type, and the chips stand down
+  instead of offering a filter that can only empty the list.
+- **A day that answers what the day before it did travels as `true`.** The week
+  was already transposed to one entry per station; a weekday timetable then
+  repeated the same [minutes, changes] five days running, and a place with no
+  service repeated nothing six times. `true` cannot be an answer, so it needs no
+  escape, and the hydrator carries the previous day forward.
+
+**Measured the same day, on the same Grantham page.** The facts out of the page
+and into the shared list: 426,972 -> **386,505** bytes, with 3,436 stations'
+facts in a 124,286-byte `stations.js` the release serves once. The week's
+run-length: 70,552 -> 57,443 bytes, and the page **373,396**. Against the
+690,977 this page measured before ADR-0076 or this amendment, that is **46%**.
+
+The single-origin build keeps its facts inline: it writes no shared list, so a
+page that dropped them would have no way to read them back.

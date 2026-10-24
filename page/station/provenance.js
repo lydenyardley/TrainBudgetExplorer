@@ -183,8 +183,19 @@ function provenance() {
   // own way forward — not an empty table under a slider that can't help.
   if (!DATA.destinations.length && !DATA.singleDestinations.length && !DATA.anytimeDestinations.length) {
     const unpriced = document.getElementById("unpriced");
-    const intro = "We couldn't price any journeys from " + DATA.origin.name +
-      " (" + DATA.origin.crs + ") in this feed.";
+    // A page the reachability rule (D2) emptied is not a page that priced
+    // nothing: the feed sells fares from here, and no journey reaches any of
+    // their places. Saying "we couldn't price any journeys" there would name
+    // the wrong cause, and unpricedNote is only sent by a build that priced
+    // nothing at all.
+    const unreachable = DATA.unreachableDestinationCount || 0;
+    const intro = unreachable
+      ? "The feed prices " + unreachable + (unreachable === 1 ? " place" : " places") +
+        " from " + DATA.origin.name + " (" + DATA.origin.crs +
+        "), but no journey reaches any of them" + journeyLimitPhrase() +
+        " on any of the " + (DATA.serviceDays || []).length + " days this page covers."
+      : "We couldn't price any journeys from " + DATA.origin.name +
+        " (" + DATA.origin.crs + ") in this feed.";
     const why = DATA.unpricedNote ? " " + DATA.unpricedNote : "";
     if (DATA.stations && DATA.stations.length) {
       const link = document.createElement("a");
@@ -213,11 +224,14 @@ function provenance() {
   // The same set names itself here as it does above the table: a provenance
   // line counting "return destinations" on a page showing the cheapest fare of
   // any type is the feed's vocabulary, not the reader's.
+  // "Listed" rather than "in the feed": the count is the places this page
+  // lists, which since D2 is not every place the feed prices from here. What
+  // was left out is counted by the coverage line above the table.
   const listed = {
-    cheapest: "destinations, each on its cheapest fare of any ticket type, in the feed",
-    single: "outbound single destinations in the feed",
-    anytime: "unrestricted Anytime Day Return destinations in the feed",
-    return: "return destinations in the feed",
+    cheapest: "destinations, each on its cheapest fare of any ticket type, listed here",
+    single: "outbound single destinations listed here",
+    anytime: "unrestricted Anytime Day Return destinations listed here",
+    return: "return destinations listed here",
   };
   const parts = [
     "Origin " + DATA.origin.name + " (" + DATA.origin.crs + ")",

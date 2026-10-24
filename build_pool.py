@@ -24,6 +24,7 @@ from atoc_fares import EVERYTHING_PENCE, FaresDb, is_pseudo_station
 from atoc_timetable import TimetableDb
 from build_assets import (
     STATION_ASSET_NAME,
+    STATION_FACTS_NAME,
     published_routes_for,
     render_station_asset,
     station_asset_rows,
@@ -38,6 +39,7 @@ from build_payload import (
     build_payload,
     build_station_index,
     places_in_payload,
+    station_facts,
 )
 from build_provenance import describe_restriction_note, reference_fingerprint
 from build_release import (
@@ -519,6 +521,42 @@ def shard_agreement(shared: dict) -> dict:
     return json.loads(json.dumps(agreement, sort_keys=True, default=str))
 
 
+def _shard_station_facts(shards: list[tuple[Path, dict]]) -> dict | None:
+    """The station facts a merge publishes, proved equal across the shards.
+
+    Every shard computed them from the same feed, so they have to be identical,
+    and this is where that is proved rather than assumed: two copies would let
+    the merge publish one shard's facts beside another shard's pages. The merge
+    reads them instead of computing them because it loads the feed's locations
+    only (E6), and the facts need the site registries and the coordinates the
+    full load reads.
+    """
+    facts: dict | None = None
+    for shard_dir, _manifest in shards:
+        try:
+            text = (shard_dir / STATION_FACTS_NAME).read_text(encoding="utf-8")
+            theirs = json.loads(text)
+        except (OSError, ValueError) as error:
+            print(
+                f"error: {shard_dir} holds no readable {STATION_FACTS_NAME} ({error}), so "
+                "this merge cannot publish the station facts its pages read; rebuild "
+                "that shard with this checkout.",
+                file=sys.stderr,
+            )
+            return None
+        if facts is None:
+            facts = theirs
+        elif theirs != facts:
+            print(
+                f"error: {shard_dir} was built from a different station list than the "
+                "shards before it, so the merged site would serve two answers for one "
+                "place; rebuild the shards from the same feeds.",
+                file=sys.stderr,
+            )
+            return None
+    return facts or {}
+
+
 def merge_shards(args) -> int:
     """Combine shard folders into the one site their pages belong to.
 
@@ -610,7 +648,12 @@ def merge_shards(args) -> int:
         return coverage.exit_code(True)
     # Every refusal before the first copy, so a refused merge leaves no
     # half-merged site behind, and an overlap is told apart from a folder
-    # that already holds an earlier build.
+    # that already holds an earlier build. The station facts are read here,
+    # with the other refusals rather than beside the file they are written
+    # into, because a shard without them is a merge this cannot publish.
+    facts = _shard_station_facts(shards)
+    if facts is None:
+        return 2
     owners: dict[str, Path] = {}
     for shard_dir, _manifest in shards:
         source = shard_dir / "from"
@@ -642,7 +685,9 @@ def merge_shards(args) -> int:
     write_station_script(out_dir)
     write_chooser_script(out_dir)
     station_rows = station_asset_rows(index, release.get("base_path", ""))
-    write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+    write_page_atomic(
+        out_dir / STATION_ASSET_NAME, render_station_asset(station_rows, facts)
+    )
     write_release(
         out_dir,
         index=index,
@@ -802,13 +847,32 @@ def _build_all_origins(ctx: BuildContext) -> int:
     # 2026, measured from this build's own output).
     write_station_style(out_dir)
     write_station_script(out_dir)
+    # D1 of the 23 October 2026 byte audit: what is the station's rather than
+    # the page's -- its type and the reviewed sites it is a proof for -- goes
+    # once into the shared list, because a page that carried it paid for the
+    # same facts 2,900 times over. Every station the feed names, not only the
+    # ones this build writes a page for: a page's rows can name a place whose
+    # own page does not exist.
+    facts = station_facts(fares)
     station_rows = station_asset_rows(index, base_path)
-    write_page_atomic(out_dir / STATION_ASSET_NAME, render_station_asset(station_rows))
+    write_page_atomic(
+        out_dir / STATION_ASSET_NAME, render_station_asset(station_rows, facts)
+    )
     print(
         f"wrote {out_dir / STATION_ASSET_NAME} with {len(station_rows):,} station(s) "
-        "for every page's picker",
+        f"and the facts of {len(facts):,} stations for every page's picker",
         flush=True,
     )
+    if shard is not None:
+        # Beside the shard's pages for the merge alone: the merge rewrites the
+        # shared list from the union of the shards' route indexes, and it reads
+        # the feed's locations only, so it cannot compute these facts without
+        # parsing millions of flows again (E6). Every shard computed them from
+        # the same feed, and the merge refuses shards that disagree.
+        write_page_atomic(
+            out_dir / STATION_FACTS_NAME,
+            json.dumps(facts, ensure_ascii=False, separators=(",", ":")),
+        )
     by_crs = {entry["crs"]: entry for entry in index}
     # One shared config for every page, handed to workers once through the
     # pool initialiser; each job then carries only its own origin (audit

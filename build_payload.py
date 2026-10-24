@@ -715,6 +715,27 @@ def destination_row(
     return row, link
 
 
+def unreachable_places(rows: list[dict]) -> set[str]:
+    """The places among ``rows`` that no day the page carries reaches.
+
+    A row is reached when the build's own day found a journey, or when the
+    week walk found a day it runs -- ``nextService`` is only ever set from that
+    walk, so the two facts are the whole answer. Asked only by a build that
+    walked the week: a build with no timetable has no answer to give, and says
+    so with ``no_timetable`` rather than with an absence.
+
+    A place is the unit rather than a row, because the three fare lists price
+    the same place three ways: dropping one list's row and keeping another's
+    would leave a page that says no journey reaches a place beside a price for
+    it.
+    """
+    return {
+        row["crs"]
+        for row in rows
+        if row["journeyState"] != JOURNEY_FOUND and not row.get("nextService")
+    }
+
+
 def day_answer(row: dict, offset: int, service_week: list[list[dict]]) -> list[int] | None:
     # What this row's station is on the day at this offset, or nothing.
     # The row names its own database by index, so a row read by the second
@@ -1123,6 +1144,45 @@ def build_payload(
                     row["nextService"] = service_days[offset]
                     break
 
+    # D2 of the 23 October 2026 byte audit: a place no journey reaches is a
+    # fare, not an answer, and a cluster-priced feed gives every page one of
+    # those for most of the network. From Grantham 1,730 of 2,752 places were
+    # priced and reachable on none of the eight days the page covers, which was
+    # a third of the page's bytes spent on rows whose Time column said "No
+    # service" beside a price.
+    #
+    # Only an absence every day of the walk drops the row. A place that runs on
+    # any day keeps its row and carries that day in ``nextService``, which is
+    # the answer the page already words ("no service on Sunday, and it runs on
+    # Monday"), so a Sunday build does not lose the stations that run the rest
+    # of the week. A build with no timetable has no week to judge and drops
+    # nothing: it never enters this branch, because ``service_week`` is empty
+    # when the walk did not run.
+    had_rows = bool(destinations or single_destinations or anytime_destinations)
+    unreachable_count = 0
+    if service_week:
+        unreachable = unreachable_places(
+            [row for collection in collections for row in collection]
+        )
+        unreachable_count = len(unreachable)
+        for collection in collections:
+            collection[:] = [row for row in collection if row["crs"] not in unreachable]
+        reached = {
+            crs
+            for collection in collections
+            for crs in (row["crs"] for row in collection)
+        }
+        # The week narrows with the rows: an answer for a place the page no
+        # longer lists is a station code and eight durations nobody reads, and
+        # on this page the dropped places were most of it.
+        service_week = [
+            [
+                {crs: answer for crs, answer in day.items() if crs in reached}
+                for day in week
+            ]
+            for week in service_week
+        ]
+
     # C08: the feed's own outward and return validity for each restriction
     # code these rows carry. Keyed by code and held once, because the rows
     # already carry the code: repeating the wording on every row would put the
@@ -1180,11 +1240,14 @@ def build_payload(
         "checkedAt": reference_check.checked_at,
         "verified": reference_check.verified,
     }
+    # Asked of what the feed priced, not of what the page lists: a page emptied
+    # by the reachability rule above is explained by ``unreachableDestinationCount``
+    # instead, and a note about ITX placeholders would name the wrong cause.
     unpriced_note = (
         explain_unpriced(
             len(raw_destinations), len(excluded_itx), excluded_codes, raw_tally
         )
-        if not destinations and not single_destinations and not anytime_destinations
+        if not had_rows
         else None
     )
 
@@ -1260,6 +1323,13 @@ def build_payload(
         # reviewed registry. Shown beside the counts so "every destination"
         # stays a defensible claim.
         "unclassifiedDestinationCount": len(unclassified),
+        # D2: places the feed prices that no journey reaches on any day the
+        # page carries. They are not listed, and the page says how many and why
+        # rather than letting the gap read as coverage.
+        "unreachableDestinationCount": unreachable_count,
+        # The journey limit the reachability rule above was judged against, so
+        # the sentence that explains it names the same bound the build used.
+        "maxChanges": max_changes if has_journeys else None,
         "locationTypeReviewed": bool(fares.location_type_source),
         "unpricedNote": unpriced_note,
         # The picker's options, from the route manifest of pages this release
@@ -1516,6 +1586,80 @@ def places_in_payload(payload: dict) -> int:
     )
 
 
+# The station's own facts: what kind of place it is, and the reviewed named
+# sites that make it a day out. Every one of them is identical on every page of
+# the release that lists that station, so they belong to the station rather
+# than to an origin's page (D1 of the 23 October 2026 byte audit). They travel
+# once in the shared station list and each page joins its own destinations to
+# them by CRS.
+STATION_FACT_FIELDS = (
+    "destinationType",
+    "destinationTypes",
+    "heritageSites",
+    "natureSites",
+    "coastalSites",
+    "rspbSites",
+    "nationalTrustSites",
+    "nationalParkSites",
+)
+
+
+def station_facts(fares: FaresDb) -> dict[str, dict[str, object]]:
+    """Every station's own facts, keyed by CRS, for the one shared document.
+
+    Every station the feed names, not only the ones this release writes a page
+    for: a page's rows can name a station that prices nothing from itself (a
+    zone boundary, a station whose only flows leave it), and a destination with
+    no facts of its own would lose its type chips and its site proofs.
+
+    A fact that is empty is left out rather than sent as ``[]``, because most
+    stations have no site list and seven empty lists apiece would be a third of
+    the document. ``destinationType`` is left out for the same reason it is
+    derivable: it is the first of ``types``, which is the order the fares
+    queries already give them in.
+    """
+    facts: dict[str, dict[str, object]] = {}
+    for crs in fares.locations_by_crs:
+        entry: dict[str, object] = {"types": fares.destination_types(crs)}
+        for field, values in (
+            ("heritageSites", fares.heritage_sites(crs)),
+            ("natureSites", fares.nature_sites(crs)),
+            ("coastalSites", fares.coastal_sites(crs)),
+            ("rspbSites", fares.rspb_sites(crs)),
+            ("nationalTrustSites", fares.national_trust_sites(crs)),
+            ("nationalParkSites", fares.national_park_sites(crs)),
+        ):
+            if values:
+                entry[field] = values
+        facts[crs] = entry
+    return facts
+
+
+def without_station_facts(payload: dict) -> dict:
+    """The payload as a page embeds it, with the station's own facts left out.
+
+    A release page fetches them with the shared station list instead, which is
+    the same document on every page and therefore one copy of the facts rather
+    than one per page (D1). The build still holds them while it renders: the
+    destination-type chips are markup, and the build is the only thing that can
+    write them.
+
+    A payload that names no shared station list is returned unchanged, because
+    the page that embeds it has no other way to reach the facts -- a
+    single-origin build carries its own.
+    """
+    dropped = set(STATION_FACT_FIELDS)
+    stripped = dict(payload)
+    for key in FARE_LISTS:
+        rows = payload.get(key)
+        if isinstance(rows, list):
+            stripped[key] = [
+                {field: value for field, value in row.items() if field not in dropped}
+                for row in rows
+            ]
+    return stripped
+
+
 def build_station_index(
     priced_by_origin: dict[str, int], all_locations: dict[str, object]
 ) -> list[dict[str, str]]:
@@ -1561,12 +1705,169 @@ ROW_LISTS = ("destinations", "singleDestinations", "anytimeDestinations", "stati
 POOL_MIN_BYTES = 12
 
 
+# A departure option's three facts, in the order the wire sends them. An option
+# was an object with three keys, so a page paying for 4,548 of them paid about
+# 28 bytes of key names each: 127 KB of a 1.3 MB payload. The names are sent
+# once per page instead, in ``rowCodec``, and the page packs them back into the
+# objects every reader of a departure already expects.
+DEPARTURE_COLUMNS = ("depart", "arrive", "changes")
+
+
+# The most values a column may stand for and still be sent as a list of indices.
+# A column with more is one whose values are mostly unique (a fare, a name), and
+# an index into a list that long costs as much as the value it replaces.
+DICT_MAX_VALUES = 64
+
+
+def _wire_bytes(value: object) -> int:
+    """What one cell costs on the wire, with the separator after it."""
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 1
+
+
+def _pack_departures(value: object) -> object:
+    """One list of departure options as arrays, in ``DEPARTURE_COLUMNS`` order.
+
+    Anything that is not an option in that exact order is left as it was, so a
+    payload written elsewhere -- a test's own rows, an older page -- still reads
+    back through the codec's absence.
+    """
+    if not isinstance(value, list):
+        return value
+    packed = []
+    for option in value:
+        if not isinstance(option, dict) or list(option) != list(DEPARTURE_COLUMNS):
+            return value
+        packed.append([option[field] for field in DEPARTURE_COLUMNS])
+    return packed
+
+
+def _pack_service_week(week: object) -> object:
+    """One entry per station, holding its answer for every day of the week.
+
+    The week was a table per day, keyed by station, so a destination that runs
+    all eight days sent its three-letter code eight times: on the Grantham page
+    the week was 105 KB of a 1.3 MB payload, and transposing it returned 35 KB.
+    Now the key is sent once and the answers are a list the page indexes by the
+    day it is showing.
+
+    A day table is ordered by the walk's own reach, so the transpose also
+    removes the one place the payload's bytes depended on a dict's iteration
+    order across days.
+    """
+    if not isinstance(week, list):
+        return week
+    packed = []
+    for source in week:
+        if not isinstance(source, list) or not all(isinstance(day, dict) for day in source):
+            packed.append(source)
+            continue
+        stations: dict[str, list[object]] = {}
+        for day in source:
+            for crs in day:
+                stations.setdefault(crs, [None] * len(source))
+        for offset, day in enumerate(source):
+            for crs, answer in day.items():
+                stations[crs][offset] = answer
+        # A day that answers what the day before it did travels as ``true``.
+        # A weekday timetable repeats the same duration and change count five
+        # days running, and a place with no service repeats nothing six times:
+        # on the Grantham page 4,870 of 8,216 answers were their predecessor's,
+        # worth 24 KB of a 427 KB page. ``true`` cannot be an answer -- one is a
+        # [minutes, changes] pair or null -- so it needs no escape.
+        for crs, answers in stations.items():
+            for offset in range(len(answers) - 1, 0, -1):
+                if answers[offset] == answers[offset - 1]:
+                    answers[offset] = True
+        # A week no station runs in stays as it was: transposed it would be an
+        # empty dict, and the day count -- which is what read-back needs to
+        # rebuild one empty table per day -- would go with it.
+        packed.append(stations if stations else source)
+    return packed
+
+
+def _unpack_service_week(week: object) -> object:
+    if not isinstance(week, list):
+        return week
+    days = []
+    for source in week:
+        if isinstance(source, list) or not isinstance(source, dict):
+            days.append(source)
+            continue
+        tables = [{} for _ in range(len(next(iter(source.values()), [])))]
+        for crs, answers in source.items():
+            # Each station's answers are resolved first, because a ``true`` says
+            # "the day before" and the day tables below are one day at a time.
+            resolved: list[object] = []
+            for answer in answers:
+                resolved.append(
+                    resolved[-1] if answer is True and resolved else answer
+                )
+            for offset, answer in enumerate(resolved):
+                if offset < len(tables) and answer is not None:
+                    tables[offset][crs] = answer
+        days.append(tables)
+    return days
+
+
+def _unpack_departures(value: object, columns: object) -> object:
+    if not isinstance(columns, list) or not isinstance(value, list):
+        return value
+    return [
+        {field: option[index] for index, field in enumerate(columns)}
+        if isinstance(option, list)
+        else option
+        for option in value
+    ]
+
+
 def _pool_key(value: object) -> str:
     """A value's identity, so two equal railcard records share one entry."""
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
 FARE_LISTS = ("destinations", "singleDestinations", "anytimeDestinations")
+
+
+def _column_dictionaries(columns: list[str], rows: list[list[object]]) -> dict[str, list[object]]:
+    """The columns a short index can stand in for, and the values they stand for.
+
+    A row's words repeat across the page: on the Grantham page the route code
+    was one of 41 five-character strings across 4,690 rows and the ticket code
+    one of 18, and the page paid 66 KB for them. A column whose values are all
+    short strings or booleans becomes a small int per cell and a list of the
+    values once in the table, which is the same trade the page-level pool makes
+    across lists rather than inside one.
+
+    Only strings and booleans qualify. A cell that is a number is either a real
+    number or a reference into the pool, and an index cannot be told from
+    either; a value is only sent as an index when the whole column costs less
+    that way, so a list of unique names gains nothing and is left alone.
+    """
+    dictionaries: dict[str, list[object]] = {}
+    if not rows:
+        return dictionaries
+    for position, column in enumerate(columns):
+        values = [row[position] for row in rows]
+        if not all(isinstance(value, (str, bool)) for value in values):
+            continue
+        distinct: list[object] = []
+        index: dict[str, int] = {}
+        for value in values:
+            marker = _pool_key(value)
+            if marker not in index:
+                index[marker] = len(distinct)
+                distinct.append(value)
+        if len(distinct) > DICT_MAX_VALUES:
+            continue
+        now = sum(_wire_bytes(value) for value in values)
+        then = sum(len(str(index[_pool_key(value)])) + 1 for value in values)
+        then += sum(_wire_bytes(value) for value in distinct)
+        if then >= now:
+            continue
+        for row in rows:
+            row[position] = index[_pool_key(row[position])]
+        dictionaries[column] = distinct
+    return dictionaries
 
 
 TICKET_NAME_FIELDS = (("fromCrs", "fromName"), ("toCrs", "toName"))
@@ -1768,6 +2069,20 @@ def encode_payload(payload: dict) -> dict:
         if ticket_codec["names"] is not None:
             codec["tickets"]["names"] = ticket_codec["names"]
 
+    packed_departures = False
+
+    def pack_departures_in(row: dict) -> dict:
+        nonlocal packed_departures
+        if "departures" not in row:
+            return row
+        out = dict(row)
+        options = out["departures"]
+        packed = _pack_departures(options)
+        if packed is not options:
+            out["departures"] = packed
+            packed_departures = True
+        return out
+
     def packed_row(key: str, row: dict) -> dict:
         if key not in FARE_LISTS:
             return row
@@ -1776,7 +2091,12 @@ def encode_payload(payload: dict) -> dict:
             out["railcards"] = _pack_railcards(out["railcards"], railcard_codec)
         if ticket_codec and "tickets" in out:
             out["tickets"] = _pack_tickets(out["tickets"], ticket_codec)
-        return out
+        return pack_departures_in(out)
+
+    # The place's own fields travel through the same packing, because a
+    # departure option's keys are no cheaper for having been sent once per
+    # station rather than once per row.
+    by_station = {crs: pack_departures_in(entry) for crs, entry in by_station.items()}
 
     packed_tables = {
         key: [packed_row(key, row) for row in items] for key, items in tables.items()
@@ -1798,39 +2118,107 @@ def encode_payload(payload: dict) -> dict:
                     columns.append(field)
         columns_by_key[key] = columns
 
-    counts: dict[str, int] = {}
+    # A party price of two adults is twice the adult price on every row the
+    # build writes, so the page can multiply rather than carry it: 27 KB of the
+    # Grantham page's 1.3 MB. It is only left out when the relation holds on
+    # every row of every fare list and the adult column comes first, which is
+    # what lets the page read it back in the place the row wrote it.
+    def party_is_double(row: dict) -> bool:
+        adult = row.get("adultPence")
+        return (
+            isinstance(adult, int)
+            and not isinstance(adult, bool)
+            and row.get("partyPence") == adult * 2
+        )
+
+    fare_rows = [row for key in FARE_LISTS for row in packed_tables.get(key, [])]
+    party_from_adult = bool(fare_rows) and all(party_is_double(row) for row in fare_rows)
+    party_from_adult = party_from_adult and all(
+        "adultPence" in columns
+        and columns.index("adultPence") < columns.index("partyPence")
+        for key, columns in columns_by_key.items()
+        if key in FARE_LISTS and "partyPence" in columns
+    )
+
+    # Each column's own dictionary is decided before the page's pool is built,
+    # because a cell that has already become an index is a number, and a number
+    # is neither poolable nor distinguishable from a real one.
+    dictionary_rows: dict[str, list[list[object]]] = {}
+    dictionaries_by_key: dict[str, dict[str, list[object]]] = {}
+    derived_by_key: dict[str, list[str]] = {}
+    for key, items in packed_tables.items():
+        # A table that carries ``placed`` columns leaves them out of its cells;
+        # the picker's list carries none, so its cells are all of its columns.
+        skip = placed_set if key in FARE_LISTS else set()
+        own = [field for field in columns_by_key[key] if field not in skip]
+        if party_from_adult and key in FARE_LISTS and "partyPence" in own:
+            own = [field for field in own if field != "partyPence"]
+            derived_by_key[key] = ["partyPence"]
+        rows = [list(row_values(key, row, own)) for row in items]
+        dictionaries_by_key[key] = _column_dictionaries(own, rows)
+        dictionary_rows[key] = rows
+
+    place_dictionary_rows = {
+        crs: [entry.get(field) for field in placed] for crs, entry in by_station.items()
+    }
+    place_dictionaries = _column_dictionaries(placed, list(place_dictionary_rows.values()))
 
     def poolable(value: object) -> bool:
         return isinstance(value, (dict, list)) or (
             isinstance(value, str) and len(value) >= POOL_MIN_BYTES
         )
 
+    counts: dict[str, int] = {}
     materialized_rows: dict[str, list[list[tuple[object, str | None]]]] = {}
+    materialized_places: dict[str, list[tuple[object, str | None]]] = {}
     first_seen: list[tuple[str, object]] = []
-    for key, items in packed_tables.items():
-        cols = columns_by_key[key]
-        table_rows: list[list[tuple[object, str | None]]] = []
-        for row in items:
-            row_cells: list[tuple[object, str | None]] = []
-            for value in row_values(key, row, cols):
-                if poolable(value):
-                    k = _pool_key(value)
-                    count = counts.get(k, 0) + 1
-                    counts[k] = count
-                    if count == 1:
-                        first_seen.append((k, value))
-                    row_cells.append((value, k))
-                else:
-                    row_cells.append((value, None))
-            table_rows.append(row_cells)
-        materialized_rows[key] = table_rows
 
-    pool: dict[str, int] = {}
-    values: list[object] = []
-    for k, value in first_seen:
-        if counts[k] > 1:
-            pool[k] = len(values)
-            values.append(value)
+    def record(value: object) -> tuple[object, str | None]:
+        """The cell as it travels, and the pool key it shares or None."""
+        if poolable(value):
+            k = _pool_key(value)
+            count = counts.get(k, 0) + 1
+            counts[k] = count
+            if count == 1:
+                first_seen.append((k, value))
+            return value, k
+        return value, None
+
+    for crs, cells in place_dictionary_rows.items():
+        materialized_places[crs] = [record(value) for value in cells]
+
+    # The places table is counted into the same pool as the rows. A place's
+    # columns were the largest single item on a .FSC-priced page -- 806 KB of
+    # the Grantham page's 1.3 MB, of which 272 KB was the same ticket link
+    # repeated 2,752 times -- because only the row tables ever asked the pool
+    # for a value. A place is not part of a fare, which is the reason it moved
+    # out of the rows (ADR-0069), not a reason its repeated values should be
+    # beyond the pool's reach.
+    for key, rows in dictionary_rows.items():
+        materialized_rows[key] = [[record(value) for value in cells] for cells in rows]
+
+    # A referenced value has to be worth referencing. Sharing a value that
+    # repeats n times costs one copy of it plus n references, against n copies
+    # of it: an empty list or a short boolean is two bytes and a reference into
+    # a 700-entry pool is four, so pooling every repeated value made the places
+    # table of a .FSC-priced page *larger* (empty site lists, 2,752 of them).
+    # The index length is settled by the pool's own size, which is only known
+    # once the entries are chosen, so the decision repeats until it stops
+    # dropping entries -- two rounds in practice, and never more than three.
+    candidates = [(k, value) for k, value in first_seen if counts[k] > 1]
+    for _ in range(3):
+        pool = {k: position for position, (k, _value) in enumerate(candidates)}
+        values = [value for _k, value in candidates]
+        kept = [
+            (k, value)
+            for k, value in candidates
+            if (counts[k] - 1) * _wire_bytes(value) > counts[k] * (len(str(-(pool[k] + 1))) + 1)
+        ]
+        if len(kept) == len(candidates):
+            break
+        candidates = kept
+    pool = {k: position for position, (k, _value) in enumerate(candidates)}
+    values = [value for _k, value in candidates]
 
     def cell(value: object, k: str | None) -> object:
         # A pool reference is a negative index, so it cannot be confused with
@@ -1838,27 +2226,44 @@ def encode_payload(payload: dict) -> dict:
         position = pool.get(k) if k is not None else None
         return -(position + 1) if position is not None else value
 
+    def table_rows(key: str) -> list[list[object]]:
+        return [
+            [cell(value, k) for value, k in row_cells]
+            for row_cells in materialized_rows[key]
+        ]
+
     encoded = dict(payload)
     for key in packed_tables:
         table: dict[str, object] = {
             "columns": columns_by_key[key],
-            "rows": [
-                [cell(value, k) for value, k in row_cells]
-                for row_cells in materialized_rows[key]
-            ],
+            "rows": table_rows(key),
         }
+        if dictionaries_by_key[key]:
+            table["dicts"] = dictionaries_by_key[key]
+        if derived_by_key.get(key):
+            table["derived"] = derived_by_key[key]
         if key in FARE_LISTS and placed:
             table["placed"] = [field for field in columns_by_key[key] if field in placed_set]
         encoded[key] = table
     if placed:
-        encoded["places"] = {
+        place_table: dict[str, object] = {
             "columns": placed,
-            "rows": {crs: [entry.get(field) for field in placed] for crs, entry in by_station.items()},
+            "rows": {
+                crs: [cell(value, k) for value, k in cells]
+                for crs, cells in materialized_places.items()
+            },
         }
+        if place_dictionaries:
+            place_table["dicts"] = place_dictionaries
+        encoded["places"] = place_table
+    if packed_departures:
+        codec["departures"] = list(DEPARTURE_COLUMNS)
     if codec:
         encoded["rowCodec"] = codec
     if values:
         encoded["pool"] = values
+    if "serviceWeek" in encoded:
+        encoded["serviceWeek"] = _pack_service_week(encoded["serviceWeek"])
     return encoded
 
 
@@ -1910,15 +2315,26 @@ def decode_payload(payload: dict) -> dict:
     pool = payload.get("pool") or []
     codec = payload.get("rowCodec") or {}
     places = payload.get("places") or {"columns": [], "rows": {}}
+    place_dicts = places.get("dicts") or {}
+    place_at = {column: index for index, column in enumerate(places.get("columns") or [])}
 
     def value(cell):
         return pool[-cell - 1] if isinstance(cell, int) and not isinstance(cell, bool) and cell < 0 else cell
+
+    def place_cell(station: dict | list, column: str):
+        """One of a place's columns, through the pool and its dictionary."""
+        if not station or column not in place_at:
+            return None
+        cell = value(station[place_at[column]])
+        return place_dicts[column][cell] if column in place_dicts else cell
 
     for key in ("destinations", "singleDestinations", "anytimeDestinations", "stations"):
         table = payload.get(key)
         if not (isinstance(table, dict) and isinstance(table.get("rows"), list)):
             continue
         placed = set(table.get("placed") or [])
+        dictionaries = table.get("dicts") or {}
+        derived = set(table.get("derived") or [])
         own = [column for column in table["columns"] if column not in placed]
         rows = []
         for cells in table["rows"]:
@@ -1926,17 +2342,30 @@ def decode_payload(payload: dict) -> dict:
             row, at = {}, 0
             for column in table["columns"]:
                 if column in placed:
-                    row[column] = station[places["columns"].index(column)] if station else None
+                    cell = place_cell(station, column)
+                    if column == "departures":
+                        cell = _unpack_departures(cell, codec.get("departures"))
+                    row[column] = cell
+                    continue
+                if column in derived:
+                    adult = row.get("adultPence")
+                    row[column] = adult * 2 if isinstance(adult, int) else None
                     continue
                 cell = value(cells[at])
                 at += 1
-                if column == "railcards":
+                if column in dictionaries:
+                    cell = dictionaries[column][cell]
+                elif column == "railcards":
                     cell = _unpack_railcards(cell, codec.get("railcards"))
                 elif column == "tickets":
                     cell = _unpack_tickets(cell, codec.get("tickets"))
+                elif column == "departures":
+                    cell = _unpack_departures(cell, codec.get("departures"))
                 row[column] = cell
             rows.append(row)
         payload[key] = rows
+    if "serviceWeek" in payload:
+        payload["serviceWeek"] = _unpack_service_week(payload["serviceWeek"])
     for key in ("pool", "places", "rowCodec"):
         payload.pop(key, None)
     return payload

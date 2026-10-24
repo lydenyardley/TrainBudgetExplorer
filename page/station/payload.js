@@ -57,12 +57,29 @@ function unpackTickets(value, codec) {
     return ticket;
   });
 }
+// A departure option's three facts, sent as an array in the order the codec
+// names rather than as an object that spells its keys out on every option.
+function unpackDepartures(value, columns) {
+  if (!columns || !Array.isArray(value)) return value;
+  return value.map((option) => {
+    if (!Array.isArray(option)) return option;
+    const out = {};
+    columns.forEach((field, i) => { out[field] = option[i]; });
+    return out;
+  });
+}
+// A column of words that repeat is sent as a list of the words once and an
+// index per row, so the page reads the word back from the table's own
+// dictionary rather than carrying it on every row.
 function hydrate(table) {
   if (!table || !Array.isArray(table.rows)) return table || [];
   const pool = DATA.pool || [];
   const codec = DATA.rowCodec || {};
+  const dicts = table.dicts || {};
+  const derived = new Set(table.derived || []);
   const placed = new Set(table.placed || []);
   const places = DATA.places || { columns: [], rows: {} };
+  const placeDicts = places.dicts || {};
   const placeAt = {};
   places.columns.forEach((column, i) => { placeAt[column] = i; });
   const own = table.columns.filter((column) => !placed.has(column));
@@ -70,18 +87,34 @@ function hydrate(table) {
   // A negative cell is an index into the page's pool of values that repeat,
   // so the rows that share a link or a railcard record share one object.
   const value = (cell) => (typeof cell === "number" && cell < 0 ? pool[-cell - 1] : cell);
+  // A place's columns are read the same way a row's are, because they are
+  // counted into the same pool and their own dictionaries.
+  const placeCell = (station, column) => {
+    const cell = value(station[placeAt[column]]);
+    return Object.prototype.hasOwnProperty.call(placeDicts, column) ? placeDicts[column][cell] : cell;
+  };
   return table.rows.map((cells) => {
     const row = {};
     const station = placed.size ? places.rows[value(cells[crsAt])] : null;
     let at = 0;
     for (const column of table.columns) {
       if (placed.has(column)) {
-        row[column] = station ? station[placeAt[column]] : null;
+        let cell = station ? placeCell(station, column) : null;
+        if (column === "departures") cell = unpackDepartures(cell, codec.departures);
+        row[column] = cell;
+        continue;
+      }
+      // A column the build left out because another column already says it:
+      // the party price of two adults is twice the adult price on every row.
+      if (derived.has(column)) {
+        row[column] = typeof row.adultPence === "number" ? row.adultPence * 2 : null;
         continue;
       }
       let cell = value(cells[at++]);
-      if (column === "railcards") cell = unpackRailcards(cell, codec.railcards);
+      if (Object.prototype.hasOwnProperty.call(dicts, column)) cell = dicts[column][cell];
+      else if (column === "railcards") cell = unpackRailcards(cell, codec.railcards);
       else if (column === "tickets") cell = unpackTickets(cell, codec.tickets);
+      else if (column === "departures") cell = unpackDepartures(cell, codec.departures);
       row[column] = cell;
     }
     return row;
@@ -89,6 +122,57 @@ function hydrate(table) {
 }
 for (const key of ["destinations", "singleDestinations", "anytimeDestinations", "stations"]) {
   DATA[key] = hydrate(DATA[key]);
+}
+// A station's week is one entry per station and eight answers, and a day that
+// answers what the day before it did travels as true: the weekday timetable
+// repeats itself five days running. Resolved here, so every reader below sees a
+// day's own answer. `true` is not an answer -- an answer is [minutes, changes]
+// or null -- which is what makes it usable as the marker.
+for (const week of DATA.serviceWeek || []) {
+  for (const crs of Object.keys(week)) {
+    const answers = week[crs];
+    if (!Array.isArray(answers)) continue;
+    for (let day = 1; day < answers.length; day++) {
+      if (answers[day] === true) answers[day] = answers[day - 1];
+    }
+  }
+}
+// ADR-0069, third half: a station's own facts -- the kind of place it is and
+// the reviewed sites it is a proof for -- are the same on every page of the
+// release that lists it, so they travel in the shared station list rather than
+// in each page. On a cluster-priced page they were 120 KB of a 690 KB page,
+// repeated 2,900 times over. Joined here, by CRS, so everything below reads a
+// row exactly as it did before.
+const STATION_FACTS = window.TBE_STATION_FACTS || null;
+if (STATION_FACTS) {
+  for (const key of ["destinations", "singleDestinations", "anytimeDestinations"]) {
+    for (const row of DATA[key]) {
+      const facts = STATION_FACTS[row.crs];
+      // A destination the feed has no location record for is "other" here as
+      // it was in the build, which is the same default the fares query gives
+      // it. A place with no facts at all would otherwise lose its type
+      // silently, and the "other" chip is offered from the same answer.
+      row.destinationType = facts ? facts.types[0] : "other";
+      row.destinationTypes = facts ? facts.types : ["other"];
+      if (!facts) continue;
+      row.heritageSites = facts.heritageSites || [];
+      row.natureSites = facts.natureSites || [];
+      row.coastalSites = facts.coastalSites || [];
+      row.rspbSites = facts.rspbSites || [];
+      row.nationalTrustSites = facts.nationalTrustSites || [];
+      row.nationalParkSites = facts.nationalParkSites || [];
+    }
+  }
+} else if (DATA.stationsSrc) {
+  // This page was built expecting the shared file and it did not arrive, so no
+  // row knows its type. An empty list rather than a missing field, because the
+  // chips are offered on "a row carries this type": with none, every chip
+  // stands down instead of offering a filter that can only empty the list. The
+  // rows themselves are unaffected -- prices, times and names are all in the
+  // page's own bytes.
+  for (const key of ["destinations", "singleDestinations", "anytimeDestinations"]) {
+    for (const row of DATA[key]) row.destinationTypes = [];
+  }
 }
 // ADR-0033 is re-scoped for the picker: its list is one file the site
 // serves once, because the same list on every page was the release's
