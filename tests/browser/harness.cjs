@@ -393,8 +393,14 @@ function report(results) {
   // It is measured in two buckets, one per page shape: see
   // SKIP_BUDGET_WITHOUT_TIMES for why the shape of the page, rather than one
   // fraction for everything, is what the figure is stated against.
+  // A page ADR-0076 emptied lists no place at all: there are no rows for the
+  // checks about a list to read, so its tally is mostly skips by construction
+  // rather than a page with too little in it. Its own sentence is the claim
+  // that page makes, and the matrix below still measures it, so it is named
+  // apart from the budget rather than given a budget that would say nothing.
   const skippable = results.filter(
-    (result) => result.kind === "station" || result.kind === "chooser"
+    (result) =>
+      (result.kind === "station" || result.kind === "chooser") && result.lists !== false
   );
   const buckets = [
     { label: "page(s) with a timetable", budget: SKIP_BUDGET, times: true },
@@ -412,8 +418,6 @@ function report(results) {
       ),
     };
   });
-  const skipTotal = buckets.reduce((sum, bucket) => sum + bucket.checks, 0);
-  const skipCount = buckets.reduce((sum, bucket) => sum + bucket.skipped, 0);
   const overBudget = buckets.filter((bucket) => bucket.skipped > bucket.checks * bucket.budget);
   const broken = results.filter(
     (result) => result.stopped || result.checks.some((entry) => !entry.ok && !entry.skipped)
@@ -425,12 +429,15 @@ function report(results) {
   const offTopic = results.filter((result) => result.notStation);
   const tested = results.length - offTopic.length;
   const nothingTested = tested === 0;
-  // A run with no page carrying a timetable has not exercised the times half of
-  // the suite at all, however many pages it swept. The deploy workflow builds
-  // that page (`_shape_site/one-page`) beside the prices-only one for exactly
-  // this, and a run that quietly lost it would report every journey check as a
-  // skip on a prices-only page and read as a pass.
-  const noTimesAtAll = tested > 0 && buckets[0].pages.length === 0;
+  // A run with no page that lists a place and carries a timetable has not
+  // exercised the times half of the suite at all, however many pages it swept.
+  // The deploy workflow builds that page (`_shape_site/one-page`) beside the
+  // prices-only one for exactly this, and a run that quietly lost it would
+  // report every journey check as a skip on a prices-only page and read as a
+  // pass. A page ADR-0076 emptied is named as not carrying one for this: its
+  // times checks are skipped with the rows that would have timed.
+  const noTimesAtAll =
+    tested > 0 && !results.some((result) => Boolean(result.times) && result.lists !== false);
   if (offTopic.length) {
     console.log(
       `\n${offTopic.length} page(s) were not station pages and were not checked: ${offTopic
@@ -448,6 +455,14 @@ function report(results) {
         `(${results.filter((r) => routes.includes(r.kind)).length} page(s) in light and dark, at desktop, phone and 200% zoom)`
     );
   }
+  const emptied = results.filter((result) => result.lists === false);
+  if (emptied.length) {
+    console.log(
+      `\n${emptied.length} page(s) list no place at all, so the checks about a list are not ` +
+        `exercised there and are not counted against the budget (ADR-0076): ` +
+        emptied.map((result) => result.given).join(", ")
+    );
+  }
   if (nothingTested) {
     console.error(
       `\nNo page in this run is a station page, so no check was made: ${offTopic
@@ -461,14 +476,20 @@ function report(results) {
   const summary = broken.length
     ? `${broken.length} of ${results.length} page(s) failed: ${total - failed - skipped}/${total - skipped} checks passed (${broken.map((result) => result.given).join(", ")})`
     : `${tested} of ${results.length} page(s) checked, ${total - skipped - failed}/${total - skipped} browser checks passed`;
+  // The fraction is stated per bucket, and a run whose every page lists nothing
+  // has no bucket to state it against: the paragraph above has already named
+  // those pages, so the line says so rather than ending in an empty pair of
+  // brackets.
+  const stated = buckets.filter((bucket) => bucket.pages.length);
   console.log(
     `\n${summary}` +
       (skipped
         ? `, ${skipped} check(s) not exercised by the pages swept (` +
-          buckets
-            .filter((bucket) => bucket.pages.length)
-            .map((bucket) => `${bucket.skipped} of ${bucket.checks} on the ${bucket.label}`)
-            .join(", ") +
+          (stated.length
+            ? stated
+                .map((bucket) => `${bucket.skipped} of ${bucket.checks} on the ${bucket.label}`)
+                .join(", ")
+            : "all on pages that list nothing, so no page carried a list to measure") +
           ")"
         : "")
   );
@@ -478,10 +499,14 @@ function report(results) {
     // "the count was printed" is the thing this budget exists because the
     // suite would not let pass.
     console.error(
-      `\nNo page in this run carries a timetable, so the checks about times, days, ` +
-        `journeys and splits were not exercised at all -- the ${skipCount} skip(s) above ` +
-        `are how they would read on a prices-only page.\nAdd a page built with a ` +
-        `timetable to the run; the deploy workflow's \`_shape_site/one-page\` is that page.`
+      `\nNo page in this run lists a destination and carries a timetable, so the checks ` +
+        `about times, days, journeys and splits were not exercised at all -- the ` +
+        // `skipped`, not the budgeted total: a page exempted from the budget is
+        // still one of the skips printed above, and quoting the budgeted figure
+        // here would call sixteen skips zero.
+        `${skipped} skip(s) above are how they would read on a page without one.\n` +
+        `Add a page built with a timetable and a list to the run; the deploy ` +
+        `workflow's \`_shape_site/one-page\` is that page.`
     );
   }
   // The budget is stated in the failure as a number, because "too many checks

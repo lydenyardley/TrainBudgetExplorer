@@ -130,6 +130,22 @@ async function runPage(browser, index, given, file, body, base) {
   // this page, so a sentence in the template cannot decide it.
   const times =
     kind === "station" ? await page.evaluate(() => Boolean(DATA.hasJourneys)) : null;
+  // Whether this page lists any place at all. ADR-0076 writes a page for a
+  // station whose every priced place no journey reaches, and that page has no
+  // rows, no chips and no ticket actions to drive: its own sentence is the
+  // claim, and the checks about a list have nothing to read. Read off the
+  // payload like every other fact here, and reported with the page because an
+  // emptied page is a shape of its own rather than a page with too little in it
+  // (harness.report, which exempts it from the skip budget for that reason).
+  const lists =
+    kind === "station"
+      ? await page.evaluate(
+          () =>
+            (DATA.destinations || []).length +
+              (DATA.singleDestinations || []).length +
+              (DATA.anytimeDestinations || []).length > 0
+        )
+      : null;
   // S41: the matrix runs first and on every route, including the privacy page,
   // which used to be reported as 0/0 because it carries no controls. It is a
   // published route a reader can land on from every footer on the site.
@@ -145,7 +161,7 @@ async function runPage(browser, index, given, file, body, base) {
     notStation = kind === "other";
     printPage();
     await context.close();
-    return { given, file, checks, stopped, notStation, kind, times };
+    return { given, file, checks, stopped, notStation, kind, times, lists };
   }
   if (kind === "chooser" || kind === "release") {
     try {
@@ -161,7 +177,7 @@ async function runPage(browser, index, given, file, body, base) {
     notStation = false;
     printPage();
     await context.close();
-    return { given, file, checks, stopped, notStation, kind, times };
+    return { given, file, checks, stopped, notStation, kind, times, lists };
   }
   // Every expectation below is read out of the page's own payload. The suite
   // used to name Nottingham, Lincoln, Peterborough and the Tower of London,
@@ -247,7 +263,10 @@ async function runPage(browser, index, given, file, body, base) {
     const open = await page.evaluate(
       () => (document.getElementById("moreFilters") || {}).dataset.open === "true"
     );
-    if (!open) await toggle.click();
+    // Visible as well as present: a page that lists nothing hides the whole
+    // refinements bar (its list cannot be narrowed), and a press on a control
+    // that is off screen waits thirty seconds and stops the run.
+    if (!open && (await toggle.isVisible())) await toggle.click();
   };
   const open = async (budget) => {
     await page.goto(url);
@@ -420,20 +439,39 @@ async function runPage(browser, index, given, file, body, base) {
     revealType,
     budgetFor,
     kind,
+    lists,
     context,
     pageSize: 20,
   };
 
+  // A page ADR-0076 emptied has no row, no chip and no ticket action: it hides
+  // the refinements bar its list cannot be narrowed by, and every section below
+  // is about a list. Each is named here so the log says what this page could
+  // not exercise rather than going quiet about it, and the sections that are
+  // about the page rather than its rows -- the matrix above, the build's own
+  // sentence, the two asset failures -- still run.
+  const listSections = [
+    ["the budget, the ticket modes and the type chips narrow the list", driveTheFilters],
+    ["a row's ticket link and copy handoff go where they say", checkTheRowActions],
+    ["a row's own disclosure says what its fare is", checkTheFareDetails],
+    ["the shortlist holds the rows a reader chose", checkTheShortlist],
+    ["a place priced in two parts is one row at both fares", checkTheTwoTicketRow],
+    ["the dock and the table agree", compareTheDockWithTheTable],
+    ["the layout holds at every width", measureTheLayout],
+    ["the heading's station can be changed", checkTheOriginPicker],
+  ];
   try {
     await renderThePage(world);
-    await driveTheFilters(world);
-    await checkTheRowActions(world);
-    await checkTheFareDetails(world);
-    await checkTheShortlist(world);
-    await checkTheTwoTicketRow(world);
-    await compareTheDockWithTheTable(world);
-    await measureTheLayout(world);
-    await checkTheOriginPicker(world);
+    for (const [what, section] of listSections) {
+      if (lists === false) {
+        check(
+          what,
+          notExercised("this page lists no destination, so it has no list to drive")
+        );
+        continue;
+      }
+      await section(world);
+    }
     await checkWithoutTheStylesheet(world);
     await checkWithoutTheScript(world);
   } catch (error) {
@@ -447,6 +485,6 @@ async function runPage(browser, index, given, file, body, base) {
     printPage();
     await context.close();
   }
-  return { given, file, checks, stopped, notStation, kind, times };
+  return { given, file, checks, stopped, notStation, kind, times, lists };
 }
 module.exports = { runPage };

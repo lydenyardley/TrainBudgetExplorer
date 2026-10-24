@@ -69,7 +69,13 @@ async function renderThePage(world) {
     await page.fill("#budgetNumber", String(facts.affordable));
     const initial = await rows();
     world.initial = initial;
-    check("renders priced rows", initial > 0, `${initial} rows; ${facts.destinations} destinations in the feed`);
+    check(
+      "renders priced rows",
+      // The payload decides which claim this page makes: a page that lists
+      // nothing says so, and one that lists a place must show it.
+      facts.destinations ? initial > 0 : notExercised("this page lists no destination to price"),
+      `${initial} rows; ${facts.destinations} destinations in the feed`
+    );
     // Q4: the list that opens is the cheapest fare of any ticket type to each
     // destination, and the fare it chose is the fare the row names. The
     // expectation is composed from the payload by the reader above; the page's
@@ -183,7 +189,9 @@ async function renderThePage(world) {
     });
     check(
       "and the party figure says it is two of the fare each row names",
-      /two of the fare each row names/.test(partyBasis),
+      facts.destinations
+        ? /two of the fare each row names/.test(partyBasis)
+        : notExercised("this page shows no row to price for two"),
       partyBasis
     );
     // C04: the opening sentence has to be true of this build. A page with no

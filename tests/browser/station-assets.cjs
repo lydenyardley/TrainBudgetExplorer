@@ -125,9 +125,13 @@ async function checkWithoutTheStylesheet(world) {
     }));
     check(
       WITHOUT_STYLE[0],
-      unstyled.rows > 0 &&
-        /\d+ destinations?/.test(unstyled.summary) &&
-        unstyled.prices.every((text) => /\u00a3\d/.test(text)),
+      world.lists === false
+        // A page ADR-0076 emptied has no row to keep; the claim this check
+        // makes is about rows surviving a missing stylesheet.
+        ? notExercised("this page lists no destination, so it has no row to keep")
+        : unstyled.rows > 0 &&
+          /\d+ destinations?/.test(unstyled.summary) &&
+          unstyled.prices.every((text) => /\u00a3\d/.test(text)),
       `${unstyled.rows} row(s), count line "${unstyled.summary}"`
     );
     check(

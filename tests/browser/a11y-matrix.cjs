@@ -24,6 +24,8 @@
  *   - keyboard: the focus ring, read off the focused element, and the fact that
  *     Tab reaches a control without a mouse.
  */
+const { notExercised } = require("./harness.cjs");
+
 async function checkAccessibilityMatrix(page, url, check, routeKind) {
   // ------------------------------------------------------------- the names
   // Read from the browser's own accessibility tree rather than from the
@@ -134,7 +136,13 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   });
   check(
     `the ${routeKind} names each ticket link for its destination`,
-    !isStation || (ticketNames.total > 0 && ticketNames.distinct === ticketNames.total),
+    !isStation
+      ? true
+      : ticketNames.total === 0
+        // A page ADR-0076 emptied carries no row and so no ticket action; its
+        // own sentence is its claim, and there is no name here to be wrong.
+        ? notExercised("this page lists no destination, so there is no ticket link to name")
+        : ticketNames.distinct === ticketNames.total,
     `${ticketNames.distinct} distinct of ${ticketNames.total}` +
       (ticketNames.sample.length ? " -- " + JSON.stringify(ticketNames.sample) : "")
   );
