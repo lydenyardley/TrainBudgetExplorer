@@ -75,7 +75,7 @@ object the build wrote, field for field and in order, and the page hydrates it i
 gzips 139,782 -> 128,201, **8.3%**, because the repetition removed was what
 deflate was already removing.
 
-### 24 October: what the page carries (ADR-0076, ADR-0069 amendment)
+### 24 October: what the page carries (ADR-0076, ADR-0077, ADR-0069 amendment)
 
 The wire had stopped being the problem. The page was listing 2,752 places of
 which the timetable reached 1,027, and carrying each station's own facts
@@ -95,6 +95,12 @@ which the timetable reached 1,027, and carrying each station's own facts
 3. **A day that repeats the day before travels as `true`**: 4,870 of the
    Grantham page's 8,216 day answers were their predecessor's, and the week went
    from 70,552 to 57,443 bytes.
+4. **A page lists the places it prices most cheaply, up to 600** (ADR-0077). The
+   three fare lists are 36% of the page and no re-encoding of them pays, so every
+   list is cut to the same 600 places, ranked by the cheapest standard adult
+   fare. The payload carries `cappedDestinationCount` and the page says where it
+   stops. Across the twelve pages this audit measured, the mean page is
+   407,289 -> 265,946 bytes and the release 1,138 -> 743 MiB.
 
 **Grantham, same feed and day: 690,977 -> 373,396 bytes, 46% off**, gzip
 127,158 -> 82,961 (35%). Unlike the wire pass, this one removes content a reader
@@ -150,19 +156,33 @@ page)**, then `name` 23,003, `legs` 11,162, `changeStations` 8,067 and `link`
 
 ## What is still open
 
-**O1. Two pages' worth of levers were taken; the total still breaches both the
-budget and the host's limit.** The site is about 1.19 GB on this sample's mean --
-11% over 1 GiB, 49% over `SITE_BUDGET_MB` -- so a release would be refused by its
-own gate. What closes it is a whole-network run that prints the real mean, and
-that run will refuse rather than publish if the mean is where this sample's is.
-Nothing in this audit can substitute for it.
+**O1. Three levers were taken; the total still breaches both the budget and the
+host's limit on this sample, unless the cap holds on the whole network.** The
+sample's 200 pages are about 1.19 GB -- 11% over 1 GiB, 49% over `SITE_BUDGET_MB`
+-- so a release built without ADR-0077 would be refused by its own gate. What
+closes it is a whole-network run that prints the real mean, and that run will
+refuse rather than publish if the mean is where this sample's is. Nothing in this
+audit can substitute for it. **O2 now costs the lever that would make it pass,
+and the owner took it**: ADR-0077 caps a page at the 600 places it prices most
+cheaply, which lands this sample 7% inside the budget.
 
 **O2. The levers left, measured.** Each is real, each costs something, and each
 is a product decision rather than an encoding one.
 
-- **The three fare lists are 36% of a page.** They are three different fares to
-  the same place, so one row per place cannot serve the mode filters; the only
-  version of this lever that works is fewer modes or fewer places per page.
+- **The three fare lists are 36% of a page, and the version that keeps the
+  filters is a cap on places.** Measured on the twelve pages on 24 October 2026:
+  every fare list cut to the cheapest 600 places, with the service week narrowing
+  as it already does, takes the mean page from 407,289 to 265,946 bytes and gzip
+  from 87,144 to 58,713, so 2,930 pages are **743 MiB of the 800 MiB budget**
+  instead of 1,138. Every mode still means "every fare of this kind to a place
+  this page lists", and every fare below the stop is unchanged -- but 5,932 of
+  the twelve pages' 12,579 places are never shown, from Manchester Piccadilly
+  nothing above £47.40, and a railcard cannot move the cap. Merging the lists
+  into one row per place serves the same filters and saves 2.9%, so the lever is
+  the number of places rather than the shape of the lists. The figures, the loss
+  table and the refuted alternative are in
+  `docs/build-performance-findings.md` under "A cap on the places a page
+  lists"; ADR-0077 takes it at 600.
 - **`departures` was 16%, and the estimate was wrong by a factor of seven.**
   Built and measured on the twelve pages on 24 October 2026: an option's two
   minutes as indices into one page-level list, ordered by use, saves **1.24%

@@ -125,6 +125,21 @@ page), `departures` (16%), `name` (4%), `legs` (2%) and the service week (15%)
 -- are product decisions about what a page carries, and taking any of them is a
 change to what a reader sees rather than to how it is encoded.
 
+**24 October 2026, second reading: the cap is taken at 600 places.** Cutting every
+fare list to the cheapest N places keeps all four ticket-mode filters -- each list
+still holds every fare to a place the page lists -- and at N = 600 the mean page
+falls from 407,289 to 265,946 bytes, so 2,930 pages are **743 MiB of the 800 MiB
+budget** with every fare below the stop unchanged
+(`docs/build-performance-findings.md`, "A cap on the places a page lists").
+ADR-0077 takes it: the release passes `--max-places 600`, every fare list is cut
+to the same places, the payload carries `cappedDestinationCount`, and the coverage
+line says where the page stops. What a reader loses is stated there: 53% of the
+places the twelve pages reach stay off them, and from Manchester Piccadilly the
+page stops at £47.40 where the feed prices £186.30. **What is still open is the
+number.** 700 is the edge of the gate at 808 MiB, and the twelve pages are a
+bracket rather than a draw, so the release run's `tools/page_bytes.py` decides
+whether 600 holds on the whole network and, if it refuses, whether to lower it.
+
 **The earlier stop.** The push run of 19 October 2026 halted on a missing
 `SCHEDULE_URL` repository variable, and the 20 October run's two-byte probe
 answered that the fares feed's credential pair is refused by the CIF endpoint with

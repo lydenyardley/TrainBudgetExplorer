@@ -1660,3 +1660,96 @@ raw page falls 1.2%, which is 15.5 MB off the release's 1,193 MB -- 13% of the
 every reader's transfer grows 1.9%. The change was reverted rather than shipped:
 the estimate in the audit is corrected, and the trade is recorded there as a
 decision rather than taken as an encoding win.
+
+## A cap on the places a page lists, 24 October 2026
+
+**Plan.** The 23 October audit left the three fare lists as the largest lever it
+had measured and not taken: they are 36% of its largest page, and the rows are
+three different fares to the same place, so one fare per place cannot serve the
+ticket-mode filters. The version that keeps every filter is a cap on the places
+themselves -- every list cut to the same places, so a mode still means "every
+fare of this kind to a place this page lists". This costs that cap, and says what
+a reader loses. Written before the figures were taken.
+
+**Method.** `python -m tools.measure_place_cap --site _scratch --census grantham`
+over the same twelve release-shaped pages the audit measured (`--all-origins
+--only-stations LIN,IPS,NOR,CBG,KGX,GRA,OXF,PLY,NOT,SHF,NCL,MAN --date
+2026-10-05`, built 24 October 2026). For each cap the tool decodes a page's
+payload, cuts the three fare lists to the cheapest N places by standard adult
+fare, prunes the service week the way the build already prunes it after a row
+filter, re-encodes, rebuilds the page around the new payload, and measures the
+rebuilt page and its `gzip -9`. **The check that it is measuring the page it
+replaces:** at no cap the rebuilt page is the built page byte for byte, 12 of 12.
+The release figure is the twelve's mean times the 2,930 pages the release writes,
+against the 800 MiB budget `tools/page_bytes.py` holds the site to. **Units:**
+every figure in this section is MiB or a raw byte count, because that is what the
+gate counts; the audit's 1,193 MB is the same release in decimal megabytes.
+
+**Figure.**
+
+| Places a page lists | Mean page | Mean gzip | 2,930 pages | Of the 800 MiB budget |
+|---|---:|---:|---:|---:|
+| no cap | 407,289 | 87,144 | 1,138 MiB | 142% |
+| 700 | 289,101 | 63,598 | 808 MiB | 101% |
+| 600 | 265,946 | 58,713 | **743 MiB** | **93%** |
+| 500 | 236,344 | 52,696 | 660 MiB | 83% |
+| 400 | 207,034 | 46,860 | 579 MiB | 72% |
+
+**What a reader loses at 600 places.** The twelve pages price and reach 12,579
+places between them and would list 6,647. The cap is a price, not a cut: every
+fare below the stop is unchanged, so the page answers every budget up to it
+exactly as it does now, and the two small stations are untouched.
+
+| Station | Places listed | Dearest fare listed | Dearest fare the feed prices |
+|---|---:|---:|---:|
+| Manchester Piccadilly | 600 of 1,731 | £47.40 | £186.30 |
+| Sheffield | 600 of 1,691 | £54.50 | £235.00 |
+| Newcastle | 600 of 1,480 | £55.00 | £316.90 |
+| Nottingham | 600 of 1,397 | £63.00 | £254.80 |
+| Plymouth | 600 of 1,270 | £138.90 | £328.20 |
+| Oxford | 600 of 1,122 | £80.00 | £242.30 |
+| Grantham | 600 of 1,027 | £72.40 | £206.30 |
+| Cambridge | 600 of 937 | £60.90 | £261.80 |
+| London Kings Cross | 600 of 658 | £88.00 | £268.30 |
+| Normanton | 600 of 619 | £192.60 | £243.60 |
+| Ipswich | 380 of 380 | £111.70 | £272.80 |
+| Linlithgow | 267 of 267 | £255.90 | £328.20 |
+
+**The design, in three places.** The rule goes in `build_payload` beside the
+reachability cut (ADR-0076), the one place every fare list is already narrowed:
+rank the places by their cheapest standard adult fare, ties by CRS, keep the
+first N, and let the service week narrow with the rows as it already does. The
+payload carries the count the rule left out, beside `unreachableDestinationCount`,
+and `table.js` writes one sentence from it beside `unreachableNote()`. Nothing
+else changes: the budget ceiling, the mode counts, the empty-state doors and the
+shortlist all read the rows, so they agree with the cap by construction. It is a
+build flag (off for the synthetic fixture) rather than a page-side rule, because
+which places a page carries is the build's answer to the same question D2 was.
+One check had to follow it: `tools/check_known_fares.py` holds a page to fares
+checked by hand, and a row for a place beyond a page's stop would report as a
+fare the page lacks. It does not bite: Grantham's four rows are to Nottingham and
+Skegness, which rank 19th and 100th of its 1,027 places, so the table reads the
+same pages it always did at 600. A cap low enough to exclude a hand-checked fare
+would have to be 19 or less at this station, and the check's own message names
+the destination it could not find, which is what sent a reader to this ranking
+rather than to the tool.
+
+**Why merging the fare lists is not this lever.** A merged row per place, holding
+that place's fares, serves the same filters and saves only what the three lists
+repeat: Grantham's place key is 4,030 + 5,135 + 1,295 bytes across its three
+lists, and across the twelve pages the keys are 144,155 bytes of their 4,887,468
+-- 2.9%, and about 1.7% once each place keeps one. The cells that make a fare a
+fare are per fare: on Grantham's page the ticket records are 28,017 bytes and the
+railcard decisions 22,473, and both are the fare's own, not the station's. The
+lever is how many places a page lists, not how the lists are shaped.
+
+**What it means.** At 600 a page lists 53% of the places it reaches, stops between
+£47.40 and £255.90 depending on the station, and lands 7% inside the budget --
+93% of it against 142% now, and 27% inside the host's 1 GiB where the page shape
+was 11% over. **700 is the edge**: 808 MiB against the 800 budget, so the most a
+whole-network run could justify is about 650. Two costs come with it. The ranking
+is the build's standard adult fare, so a railcard cannot move the cap: a place a
+card would make cheaper than a listed row stays off the page. And the page stops
+saying the station's range of fares -- it says where it stops, which is the one
+sentence the design owes a reader. The picker still reaches every station, so the
+loss is what this page can discover, not what the network holds.
