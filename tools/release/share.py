@@ -41,6 +41,15 @@ NEARING_MINUTES = 100
 
 OUT = "_shard/index.html"
 
+#: The places a page lists. Without a cap the release is about 1.14 GiB of HTML
+#: against the 800 MiB budget `tools/page_bytes.py` holds it to, and the three
+#: fare lists are most of a page; cutting every list to the cheapest 600 places
+#: lands the twelve measured pages at 743 MiB with every fare below the stop
+#: unchanged (docs/build-performance-findings.md, "A cap on the places a page
+#: lists"). `tools/test_release.py` holds this number, because a cap that
+#: drifted from the figure that justifies it would be a budget nobody measured.
+PLACE_CAP = 600
+
 
 def command(shard: str, day: str, workers: int, base_path: str = "") -> list[str]:
     build = [sys.executable, "build_demo_page.py", "--feed", "feeds/fares"]
@@ -49,6 +58,7 @@ def command(shard: str, day: str, workers: int, base_path: str = "") -> list[str
     build += [
         "--knowledgebase", "feeds/knowledgebase",
         "--date", day,
+        "--max-places", str(PLACE_CAP),
         "--all-origins",
         "--workers", str(workers),
         "--shard", shard,

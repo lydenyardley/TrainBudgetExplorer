@@ -292,6 +292,7 @@ def build_page_job(job: dict) -> tuple[str, str, str, int]:
         _WORKER.get("timetable"),
         origin_crs,
         max_changes=_WORKER["max_changes"],
+        max_places=_WORKER.get("max_places"),
         day=_WORKER["day"],
         note=_WORKER["note"],
         attribution=_WORKER["attribution"],

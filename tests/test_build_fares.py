@@ -424,6 +424,50 @@ class FaresPayloadTest(PageTestCase):
         nothing = {"crs": "LCN", "journeyState": "no_service"}
         self.assertEqual(unreachable_places([found, runs_later, nothing]), {"LCN"})
 
+    def test_a_capped_page_lists_the_cheapest_places_and_counts_the_rest(self) -> None:
+        # The 24 October 2026 findings: the three fare lists are most of a page
+        # and no re-encoding shrinks them, so the version that keeps every
+        # ticket-mode filter is fewer places. Ranked by the cheapest standard
+        # adult fare -- the fare the page's opening mode picks with -- so every
+        # fare below the stop is unchanged.
+        uncapped = build_payload(self.fares, self.timetable, "GRN")
+        capped = build_payload(self.fares, self.timetable, "GRN", max_places=2)
+        modes = ("destinations", "singleDestinations", "anytimeDestinations")
+        cheapest = {}
+        for key in modes:
+            for row in uncapped[key]:
+                cheapest[row["crs"]] = min(
+                    row["adultPence"], cheapest.get(row["crs"], row["adultPence"])
+                )
+        ranked = sorted(cheapest, key=lambda crs: (cheapest[crs], crs))
+        self.assertGreater(len(ranked), 2, "the fixture must price more places than it lists")
+        # Every fare of a listed place survives: the cap cuts places, not fares,
+        # which is what makes the single and Anytime filters still mean what
+        # they say on the page.
+        for key in modes:
+            self.assertEqual(
+                sorted(row["crs"] for row in capped[key]),
+                sorted(row["crs"] for row in uncapped[key] if row["crs"] in ranked[:2]),
+                key,
+            )
+        # The count is the places left out, and it is carried apart from the
+        # ones no journey reaches, which stays the reachability rule's own count.
+        self.assertEqual(capped["cappedDestinationCount"], len(ranked) - 2)
+        self.assertEqual(uncapped["cappedDestinationCount"], 0)
+        day = date(2026, 9, 28)
+        dated = build_payload(self.fares, self.timetable, "GRN", day=day, max_places=1)
+        self.assertEqual(dated["unreachableDestinationCount"], 3)
+        self.assertEqual(dated["cappedDestinationCount"], 1)
+
+    def test_a_cap_larger_than_the_page_lists_nothing_away(self) -> None:
+        uncapped = build_payload(self.fares, self.timetable, "GRN")
+        capped = build_payload(
+            self.fares, self.timetable, "GRN", max_places=10_000
+        )
+        for key in ("destinations", "singleDestinations", "anytimeDestinations"):
+            self.assertEqual(capped[key], uncapped[key], key)
+        self.assertEqual(capped["cappedDestinationCount"], 0)
+
     def test_the_page_counts_what_it_could_not_classify(self) -> None:
         # S29: an unreviewed destination is still listed, so the count of the
         # ones no chip can select is the difference between "every type" and

@@ -1668,6 +1668,33 @@ function saysMoreThan(condition, code) {
       }),
       coverage
     );
+    // 7d. The 24 October 2026 findings: a page lists the places it prices most
+    // cheaply and says where it stops. The sentence is written from the
+    // payload's own count, so the check drives that count, reads the sentence
+    // back, and takes it away again -- a page with no cap carries neither.
+    const capped = await page.evaluate(() => {
+      const before = document.getElementById("feedCoverage").textContent;
+      DATA.cappedDestinationCount = 3;
+      render();
+      const withCount = document.getElementById("feedCoverage").textContent;
+      delete DATA.cappedDestinationCount;
+      render();
+      return {
+        before,
+        withCount,
+        after: document.getElementById("feedCoverage").textContent,
+      };
+    });
+    check(
+      "a capped page says how many places it stopped listing",
+      /3 more places carry a fare the feed sells, but this page lists only the \d+ it prices most cheaply/.test(capped.withCount),
+      capped.withCount
+    );
+    check(
+      "and a page with no cap carries no such sentence",
+      !/prices most cheaply/.test(capped.before) && !/prices most cheaply/.test(capped.after),
+      `${capped.before} | ${capped.after}`
+    );
     // 7e. S33: the age of the numbers, beside the numbers. A synthetic feed has
     // no download to date, so the fares sentence is conditional; the timetable
     // sentence is not, and is what the check below judges.

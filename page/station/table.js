@@ -50,7 +50,7 @@ function renderCoverage() {
         (DATA.destinations.length
           ? " Raise the budget to include more of the " + DATA.destinations.length + " displayable destinations."
           : "");
-  coverage.textContent = lead + classifiedNote() + unnameableNote() + unreachableNote();
+  coverage.textContent = lead + classifiedNote() + unnameableNote() + unreachableNote() + cappedNote();
 }
 // D2 of the 23 October 2026 byte audit: a place no journey reaches is not
 // listed, and on a cluster-priced page that is most of the network -- 1,725 of
@@ -74,6 +74,27 @@ function unreachableNote() {
     " a fare the feed sells, but no journey reaches " + (one ? "it" : "them") +
     " from here" + journeyLimitPhrase() + " on any of the " + days +
     " days this page covers, so " + (one ? "it is" : "they are") + " not listed.";
+}
+// 24 October 2026 findings: a page lists only the places it prices most
+// cheaply, so the count above it would otherwise read as everything the feed
+// prices from here. Counted apart from the places no journey reaches, because
+// "no journey reaches it" and "it is dearer than the last place this page
+// lists" are different reasons, and a page that gave the first for the second
+// would explain its gap with the wrong fact.
+function listedPlaceCount() {
+  const places = new Set();
+  for (const key of Object.values(MODE_LISTS)) {
+    for (const row of DATA[key] || []) places.add(row.crs);
+  }
+  return places.size;
+}
+function cappedNote() {
+  const count = DATA.cappedDestinationCount;
+  if (!count) return "";
+  const one = count === 1;
+  return " " + count + (one ? " more place carries" : " more places carry") +
+    " a fare the feed sells, but this page lists only the " + listedPlaceCount() +
+    " it prices most cheaply, so " + (one ? "it is" : "they are") + " not listed.";
 }
 function droppedFromFeed() {
   // The naming gap is not listed here. It used to be, in the return mode's

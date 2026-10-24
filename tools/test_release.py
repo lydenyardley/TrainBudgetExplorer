@@ -243,6 +243,11 @@ class ShareTest(unittest.TestCase):
         self.assertIn("--all-origins", built)
         self.assertIn("--require-live-reviewed-codes", built)
         self.assertNotIn("--base-path", share.command("3/12", "2026-10-22", 4))
+        # The page's place cap, at the number the twelve measured pages were
+        # costed at (docs/build-performance-findings.md). A release that stopped
+        # passing it would build pages twice the site's budget again.
+        self.assertEqual(share.PLACE_CAP, 600)
+        self.assertEqual(built[built.index("--max-places") + 1], "600")
 
     def test_a_share_that_nears_the_bound_says_so(self) -> None:
         clock = iter([0.0, share.NEARING_MINUTES * 60.0])

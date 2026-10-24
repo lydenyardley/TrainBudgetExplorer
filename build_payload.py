@@ -753,6 +753,11 @@ def build_payload(
     *,
     single_timetable: TimetableDb | None = None,
     max_changes: int = 1,
+    # How many places a page lists, or None to list every place the feed prices
+    # (as does zero, which the command refuses rather than passing on). The
+    # release sets it to fit the site's byte budget; the tests and the synthetic
+    # fixture leave it off, so their pages hold every destination.
+    max_places: int | None = None,
     day: date | None = None,
     note: str = DEFAULT_NOTE,
     attribution: str | None = None,
@@ -794,6 +799,12 @@ def build_payload(
     build started, so a miss here is a file that vanished or will not read --
     and it raises, because a page assembled without times would say the station
     has no services.
+
+    ``max_places`` is how many places the page lists: every fare list is cut to
+    the same cheapest places, and the rest are counted in
+    ``cappedDestinationCount`` so the page can say where it stops. ``None``
+    lists every place the feed prices, which is what a test or a prices-only
+    page builds with.
     """
     if timetable is None and timetable_index is not None:
         timetable = timetable_index.load(origin_crs)
@@ -1167,6 +1178,35 @@ def build_payload(
         unreachable_count = len(unreachable)
         for collection in collections:
             collection[:] = [row for row in collection if row["crs"] not in unreachable]
+
+    # The 24 October 2026 findings: a page lists the places it reaches most
+    # cheaply. The three fare lists are 36% of its largest page and no
+    # re-encoding makes them smaller -- three lists price three different fares
+    # to the same place -- so the version of that saving which keeps every
+    # ticket-mode filter is fewer places, each list cut to the same ones here.
+    #
+    # Ranked by the cheapest standard adult fare, which is the fare the page's
+    # opening mode picks with, so every fare below the stop is unchanged and the
+    # page answers every budget up to it exactly as it did. Ties go to the
+    # station code, so two builds of one feed agree on which page a place is on.
+    # A card cannot move the cap: the ranking is the build's own fare, and a
+    # card's price is a reader's answer rather than the page's.
+    capped_count = 0
+    if max_places:
+        cheapest: dict[str, int] = {}
+        for collection in collections:
+            for row in collection:
+                price = row["adultPence"]
+                if row["crs"] not in cheapest or price < cheapest[row["crs"]]:
+                    cheapest[row["crs"]] = price
+        ranked = sorted(cheapest, key=lambda crs: (cheapest[crs], crs))
+        keep = set(ranked[:max_places])
+        capped_count = len(ranked) - len(keep)
+        if capped_count:
+            for collection in collections:
+                collection[:] = [row for row in collection if row["crs"] in keep]
+
+    if service_week:
         reached = {
             crs
             for collection in collections
@@ -1174,7 +1214,9 @@ def build_payload(
         }
         # The week narrows with the rows: an answer for a place the page no
         # longer lists is a station code and eight durations nobody reads, and
-        # on this page the dropped places were most of it.
+        # on this page the dropped places were most of it. A capped page pays
+        # nothing for the places it stops listing, which is where a third of
+        # the saving comes from.
         service_week = [
             [
                 {crs: answer for crs, answer in day.items() if crs in reached}
@@ -1327,6 +1369,11 @@ def build_payload(
         # page carries. They are not listed, and the page says how many and why
         # rather than letting the gap read as coverage.
         "unreachableDestinationCount": unreachable_count,
+        # Places the cap left out: priced and reached, but dearer than the last
+        # place the page lists. Counted apart from the ones above, because a
+        # reader is owed the reason a page stops and "no journey reaches it"
+        # would be a different one.
+        "cappedDestinationCount": capped_count,
         # The journey limit the reachability rule above was judged against, so
         # the sentence that explains it names the same bound the build used.
         "maxChanges": max_changes if has_journeys else None,

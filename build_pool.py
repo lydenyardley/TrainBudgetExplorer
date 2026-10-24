@@ -366,6 +366,7 @@ def price_one_payload(ctx: BuildContext) -> int:
             ctx.payload_origin,
             single_timetable=ctx.single_timetable,
             max_changes=args.max_changes,
+            max_places=args.max_places,
             day=ctx.day,
             note=ctx.note,
             attribution=notices_or_attribution(args),
@@ -880,6 +881,10 @@ def _build_all_origins(ctx: BuildContext) -> int:
     # process boundary 2,500 times is minutes of waste at network scale).
     shared = {
         "max_changes": args.max_changes,
+        # Only when the page is capped, so an uncapped build's resume state is
+        # the same signature it has always had rather than one invalidated by
+        # a key that means nothing to it.
+        **({"max_places": args.max_places} if args.max_places else {}),
         "day": day,
         "note": note,
         "attribution": notices_or_attribution(args),

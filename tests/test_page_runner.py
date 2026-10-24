@@ -34,7 +34,7 @@ from atoc_fares import FLOW_T, FaresDb
 from build_workers import ONE_WORKER_FLOOR, PARENT_BYTES, RESERVED_BYTES, WORKER_BYTES, free_memory_bytes, worker_budget
 from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
-from tests.page_harness import setUpModule, tearDownModule
+from tests.page_harness import setUpModule, embedded_payload, station_page, tearDownModule
 
 
 class OnlyStationsCliTest(unittest.TestCase):
@@ -684,6 +684,51 @@ class FreshOutputFolderTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         self.assertIn("GRANTHAM", out.read_text(encoding="utf-8"))
+
+class PlaceCapCliTest(unittest.TestCase):
+    """`--max-places`: a page lists its cheapest places, and the count says so.
+
+    The rule is the build's (the same places in every fare list, ranked by the
+    cheapest standard fare), so this checks the flag reaches the payload the
+    page actually ships rather than the function in isolation. The sentence it
+    feeds is the browser suite's, because the page writes it after load.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.feed = build_synthetic_feed(self.root / "fares", include_restrictions=True)
+        self.out = self.root / "site" / "index.html"
+
+    def _build(self, *extra: str) -> tuple[int, str]:
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            code = build_demo_page.main(
+                ["--feed", str(self.feed), "--out", str(self.out), *extra]
+            )
+        return code, buffer.getvalue()
+
+    def test_the_cap_reaches_the_payload_the_page_ships(self) -> None:
+        code, said = self._build("--max-places", "2")
+        self.assertEqual(code, 0, said)
+        payload = embedded_payload(station_page(self.out).read_text(encoding="utf-8"))
+        places = {
+            row["crs"]
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in payload[key]
+        }
+        # The fixture's prices-only page lists four places, so a cap of two
+        # leaves two counted rather than listed.
+        self.assertEqual(len(places), 2)
+        self.assertEqual(payload["cappedDestinationCount"], 2)
+
+    def test_a_cap_of_nothing_is_refused_rather_than_writing_an_empty_page(self) -> None:
+        code, said = self._build("--max-places", "0")
+        self.assertEqual(code, 2)
+        self.assertIn("lists no places at all", said)
+        self.assertFalse((self.out.parent / "from").exists())
+
 
 class RunnerPassthroughTest(unittest.TestCase):
     """What `python run.py` can reach on the builder.

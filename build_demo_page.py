@@ -206,6 +206,17 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--max-changes", type=int, default=1)
     parser.add_argument(
+        "--max-places",
+        type=int,
+        default=None,
+        metavar="N",
+        help="list only the N cheapest places a page prices, cutting every fare "
+        "list to the same places. The page counts the rest and says where it "
+        "stops. Off by default: the release sets it to fit the site's byte "
+        "budget (docs/build-performance-findings.md, 'A cap on the places a "
+        "page lists')",
+    )
+    parser.add_argument(
         "--fail-on-unsourced",
         action="store_true",
         help="refuse to write pages when a priced destination has no settlement "
@@ -381,6 +392,13 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
+    if args.max_places is not None and args.max_places < 1:
+        print(
+            f"error: --max-places {args.max_places} lists no places at all; "
+            "leave the flag off to list every place the feed prices.",
+            file=sys.stderr,
+        )
+        return 2
     day: date | None = None
     if args.date:
         try:
