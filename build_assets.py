@@ -86,6 +86,12 @@ def station_slugs_for(locations: dict[str, object]) -> dict[str, str]:
 # 30 September 2026 -- a page still carries its own destinations inline).
 STATION_ASSET_NAME = "stations.js"
 
+# The line that introduces the picker's options in that file. The page never
+# searches for it -- it evaluates the file -- but a reader that has to find the
+# options *alone*, with the facts below them left out, needs the name the writer
+# used (ADR-0069's amendment put a second document under this one).
+STATION_INDEX_MARKER = "window.TBE_STATIONS = "
+
 
 # The station route's stylesheet (ADR-0047). The page's own answer is in its
 # own bytes; this is the part of a station page that is the same on every page
@@ -331,7 +337,7 @@ def render_station_asset(rows: list[dict], facts: dict[str, dict] | None = None)
         "// of this file did not arrive states the station as text rather than\n"
         "// offering a control that opens nothing.\n"
     )
-    asset = header + "window.TBE_STATIONS = " + json.dumps(
+    asset = header + STATION_INDEX_MARKER + json.dumps(
         rows, ensure_ascii=False, separators=(",", ":")
     ) + ";\n"
     if facts:

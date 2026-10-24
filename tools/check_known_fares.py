@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from build_assets import STATION_INDEX_MARKER
 from build_payload import decode_payload
 from page_templates import PAYLOAD_MARKER
 
@@ -102,9 +103,20 @@ def read_table(path: Path) -> list[KnownFare]:
 
 
 def station_pages(site: Path) -> dict[str, Path]:
-    """CRS to station page, from the station index every page loads."""
-    text = (site / "stations.js").read_text(encoding="utf-8")
-    stations = json.loads(text[text.index("=") + 1 :].strip().rstrip(";"))
+    """CRS to station page, from the station index every page loads.
+
+    The asset holds two documents since ADR-0069's amendment: the picker's
+    options, then every station's own facts. This reads the options and stops
+    there. Reading to the end of the file instead parsed the facts as data after
+    the options and refused the whole release -- ``Extra data: line 1 column
+    233653`` in the 24 October 2026 assemble job, one character after the
+    options' closing bracket.
+    """
+    asset = site / "stations.js"
+    text = asset.read_text(encoding="utf-8")
+    if STATION_INDEX_MARKER not in text:
+        raise ValueError(f"{asset} carries no station index, so the release's pages cannot be found")
+    stations = json.JSONDecoder().raw_decode(text.split(STATION_INDEX_MARKER, 1)[1])[0]
     pages = {}
     for station in stations:
         slug = re.search(r"/from/([^/]+)/$", station["href"])
