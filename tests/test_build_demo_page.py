@@ -1810,6 +1810,35 @@ class ReviewedOriginFixtureTest(unittest.TestCase):
         opening_ceiling = max(row["adultPence"] for row in rows)
         self.assertGreater(min(row["partyPence"] for row in priced), opening_ceiling)
 
+    def test_the_shape_page_still_lists_its_places_with_a_timetable(self) -> None:
+        # ADR-0076 lists only the places a journey reaches, so a reviewed origin
+        # with fares and no trains was a page with no rows: `tools/verify.py
+        # --browser` wrote no station page and drove an older one. The fixture's
+        # timetable carries this origin's trains, and this is what holds them.
+        feed = self.tmp / "feed"
+        build_synthetic_feed(
+            feed,
+            include_restrictions=True,
+            include_return_network=True,
+            include_reviewed_origin=True,
+        )
+        timetable = build_synthetic_timetable(
+            feed, include_return_network=True, include_reviewed_origin=True
+        )
+        fares = FaresDb().load_feed(feed)
+        payload = build_demo_page.build_payload(
+            fares, TimetableDb().load_feed(timetable), "KGX", day=date(2026, 10, 5)
+        )
+        listed = {
+            row["crs"]
+            for key in ("destinations", "singleDestinations", "anytimeDestinations")
+            for row in payload[key]
+        }
+        # Five of the six priced places are called at; Retford is the unpriced-by-
+        # service row the return network carries, so it is not listed here.
+        self.assertEqual(listed, {"GRN", "MAT", "SLD", "LEC", "BUL"})
+        self.assertEqual(payload["unreachableDestinationCount"], 1)
+
     def test_the_flag_is_what_prices_kings_cross(self) -> None:
         # Off by default, so every other fixture keeps the feed it counts.
         self.assertFalse(self._page(include_return_network=True).exists())

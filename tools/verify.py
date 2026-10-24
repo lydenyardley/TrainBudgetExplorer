@@ -348,6 +348,14 @@ def browser(require_site: bool = False) -> Step:
         return step.done(None, "node is not on PATH")
     if not (ROOT / PLAYWRIGHT_VERSION).is_file():
         return step.done(None, f"{PLAYWRIGHT_VERSION} names no browser version")
+    # Every page the suite drives has to be written by this run. A build that
+    # writes no page used to leave the folder as it found it, so the suite drove
+    # yesterday's page -- and, on 24 October 2026, a script this tree no longer
+    # writes: the reviewed-name shape priced nothing once a place no journey
+    # reaches stopped being listed (ADR-0076), and its checks kept passing
+    # against the stale page. Cleared here, so that inner check fails instead.
+    for folder in (DEMO_SITE, SHAPE_SITE):
+        shutil.rmtree(Path(ROOT, folder), ignore_errors=True)
     steps = [
         # --long-list is what gives the driven station page a second page: the
         # table shows twenty rows before it offers a pager, so a fixture whose

@@ -114,6 +114,24 @@ REVIEWED_ORIGIN_FARES = (
     ("5000", "8400", 1700),  # London Kings Cross -> Bulwell
 )
 
+# The reviewed origin's own trains, added 24 October 2026.
+#
+# A place no journey reaches is not listed (ADR-0076), so a reviewed origin with
+# fares and no trains became a page with no rows: `tools/verify.py --browser`
+# wrote no station page for the reviewed-name shape and the suite drove the page
+# an earlier build had left in the folder, against a script this tree no longer
+# writes. Retford is priced and still never called at, which is the "no service"
+# row's shape and is the return network's to carry; every other priced place here
+# has a train, so the page the suite drives has rows and times.
+REVIEWED_ORIGIN_TIMETABLE_STATIONS = (("KGXX", "KGX", "LONDON KINGS CROSS", "10"),)
+REVIEWED_ORIGIN_TIMETABLE_TRAINS = (
+    ("T30001", ("KGXX", "0900"), (("NOTT", "1010", "1015"),), ("GRNT", "1100"), "1111110", "P"),
+    ("T30002", ("KGXX", "0930"), (), ("MATL", "1130"), "1111110", "P"),
+    ("T30003", ("KGXX", "1000"), (), ("SLDK", "1210"), "1111110", "P"),
+    ("T30004", ("KGXX", "1030"), (), ("LEIC", "1140"), "1111110", "P"),
+    ("T30005", ("KGXX", "1100"), (("NOTT", "1210", "1220"),), ("BULW", "1245"), "1111110", "P"),
+)
+
 # A real network for the two secondary origins, off by default with the rest of
 # the optional blocks.
 #
@@ -804,7 +822,11 @@ def _restriction_lines() -> list[str]:
 
 
 def build_synthetic_timetable(
-    path: str | Path, *, include_return_network: bool = False, include_passing_stop: bool = False
+    path: str | Path,
+    *,
+    include_return_network: bool = False,
+    include_passing_stop: bool = False,
+    include_reviewed_origin: bool = False,
 ) -> Path:
     """Write a CIF timetable and a station names file in the real record layouts."""
     path = Path(path)
@@ -815,6 +837,14 @@ def build_synthetic_timetable(
     if include_return_network:
         stations += RETURN_NETWORK_TIMETABLE_STATIONS
         trains += RETURN_NETWORK_TIMETABLE_TRAINS
+    if include_reviewed_origin:
+        if not include_return_network:
+            raise ValueError(
+                "the reviewed origin runs to the return network's stations; "
+                "pass include_return_network too"
+            )
+        stations += REVIEWED_ORIGIN_TIMETABLE_STATIONS
+        trains += REVIEWED_ORIGIN_TIMETABLE_TRAINS
     cif_lines = [_line({"record_type": "HD", "file_identity": "SYNTHETIC"}, CIF_HEADER)]
     for train_uid, origin, intermediates, terminus, days, stp_indicator in trains:
         cif_lines.append(
@@ -1449,6 +1479,12 @@ if __name__ == "__main__":
             )
         )
     if arguments.kind in {"timetable", "both"}:
-        print(build_synthetic_timetable(arguments.path, include_return_network=arguments.return_network))
+        print(
+            build_synthetic_timetable(
+                arguments.path,
+                include_return_network=arguments.return_network,
+                include_reviewed_origin=arguments.reviewed_origin,
+            )
+        )
     if arguments.knowledgebase:
         print(build_synthetic_knowledgebase(arguments.knowledgebase))
