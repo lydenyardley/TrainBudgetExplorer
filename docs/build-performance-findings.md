@@ -1623,3 +1623,40 @@ are bytes a reader was actually being sent.
 machine, not from the Network Rail CIF the release reads, and twelve stations are
 a spread rather than a random sample. The assembled site's
 `python -m tools.page_bytes --site _site` is still the figure that decides O1.
+
+## A lever measured and refused: the clock times as one list, 24 October 2026
+
+**Why this was taken.** The twelve-page section above leaves the site 1,193 MB
+against a 1 GB limit, and named `departures` as the second largest column of a
+page -- 103,614 bytes of Manchester Piccadilly's 637,545 -- with an estimate of
+about 29 KB recoverable by sending each clock time once and each option as an
+index into that list. The estimate was not measured, so it was built.
+
+**The plan.** Rebuild the same twelve pages on the same day and date with one
+change: a departure option travels as `[departureIndex, arrivalIndex, changes]`,
+`rowCodec.departureTimes` holds each distinct minute once, and the list is
+ordered by how often a time is used so the commonest clock is a single
+character. The encoder sends the list only when every time on the page is a
+minute and the rewrite is smaller, so a page of a handful of trains keeps its
+times. The round trip through `decode_payload` was byte-identical, and the built
+page's `DATA.destinations[0].departures` read back as
+`{depart: 341, arrive: 523, changes: 1}` -- minutes, not indices.
+
+| | before | after | change |
+|---|---:|---:|---:|
+| mean page, raw | 407,296 | 401,996 | **-1.24%** |
+| mean page, gzip -9 | 87,146 | 88,802 | **+1.91%** |
+| Grantham, raw | 373,396 | 369,315 | -4,081 |
+| Grantham, gzip | 82,961 | 84,531 | +1,570 |
+| Manchester Piccadilly, raw | 637,545 | 629,183 | -8,362 |
+| Manchester Piccadilly, gzip | 134,076 | 136,465 | +2,389 |
+
+**What it does not buy, and why the estimate was wrong.** A page names between
+400 and 1,040 distinct minutes -- each destination's next few departures are its
+own, not its line's -- so the list is 2 to 4 KB of the page on its own, and
+deflate already spends a few bits on a repeated three- or four-digit clock. The
+raw page falls 1.2%, which is 15.5 MB off the release's 1,193 MB -- 13% of the
+119 MB it is over 1 GiB, 4% of the 393 MB it is over the 800 MB budget -- while
+every reader's transfer grows 1.9%. The change was reverted rather than shipped:
+the estimate in the audit is corrected, and the trade is recorded there as a
+decision rather than taken as an encoding win.

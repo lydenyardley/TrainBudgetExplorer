@@ -163,11 +163,19 @@ is a product decision rather than an encoding one.
 - **The three fare lists are 36% of a page.** They are three different fares to
   the same place, so one row per place cannot serve the mode filters; the only
   version of this lever that works is fewer modes or fewer places per page.
-- **`departures` is 16%.** A destination's three departure times are mostly
-  shared with the other places on the same line -- the same train leaves at
-  05:41 -- so the departure minute could be an index into one page-level list of
-  times. Estimated at **about 29 KB of Manchester Piccadilly's 103,614**, which
-  is 4.5% of the page; not measured on the wire, so it is an estimate.
+- **`departures` was 16%, and the estimate was wrong by a factor of seven.**
+  Built and measured on the twelve pages on 24 October 2026: an option's two
+  minutes as indices into one page-level list, ordered by use, saves **1.24%
+  of the raw page and costs 1.91% of its gzip** (mean 5,300 bytes off 407,296,
+  and 1,656 bytes on 87,146). A page has 400 to 1,040 distinct minutes, so the
+  list is 2 to 4 KB of its own and deflate already encodes a repeated clock in
+  a few bits. The estimate here was about 29 KB of Manchester Piccadilly's
+  103,614; the measurement is 8,362. **Left, not taken:** 15.5 MB off the
+  release's 1,193 MB -- 13% of the 119 MB it is over 1 GiB, 4% of the 393 MB it
+  is over the 800 MB budget -- while every reader's transfer grows 1.9%. That is
+  a trade somebody has to want rather than an encoding win, so it is filed as a
+  decision and the code is unchanged. The figures and the method are in
+  `docs/build-performance-findings.md` under "A lever measured and refused".
 - **`name` is 4% of a page and is already in the shared station list**, for the
   stations that have a page. Moving it is the same rule as D1 and would leave a
   page whose rows have no names if that document did not arrive.
