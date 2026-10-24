@@ -21,11 +21,24 @@ card's price for each traveller when the card covers the party and is cheaper.
 
 A row older than MAX_AGE_DAYS warns rather than fails: fares change every
 March, and a stale row is a prompt to check it again, not proof the page is
-wrong. A row whose page, destination, railcard or mode is missing fails, because
-a check that cannot find its subject has checked nothing.
+wrong. A row whose page, railcard or mode is missing fails, because a check that
+cannot find its subject has checked nothing.
 
-Exit codes: 0 every row agrees, 1 a row disagrees or could not be checked, 2 the
-table or the site could not be read.
+A destination is the one exception, and only where the page says why it is
+absent. Two rules narrow a page by design: ADR-0076 drops the places no journey
+reaches within ``maxChanges``, and ADR-0077 stops at the cheapest places it
+lists. Each carries its own count in the payload, so a hand-checked fare to one
+of those places is a fare the page does not list on purpose. That row warns and
+names the rule, because failing it would hold every release on a price the page
+never showed and the only cure a person has is to delete the row, which loses
+the check. A page that reports it left nothing out has lost a fare the feed
+prices, and that still fails.
+
+Exit codes: 0 every row agrees, or is absent only where the page says why it is
+absent (a warning, and the last line counts those rows apart so a release cannot
+read "all" when some had no price to compare); 1 a row disagrees, or the page
+could not answer it, or every row is one of those explained absences so nothing
+was compared; 2 the table or the site could not be read.
 """
 
 from __future__ import annotations
@@ -46,6 +59,11 @@ from page_templates import PAYLOAD_MARKER
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "tests" / "known_fares.toml"
 MAX_AGE_DAYS = 90
+
+#: The words that mark a row the page had no price for, said once so the last
+#: line can count them: a release that names the rows it checked cannot claim
+#: that every row agreed.
+UNCHECKED = "no price on the page to check"
 
 #: The page's ticket modes and the payload list each one shows
 #: (MODE_LISTS in page/station/ticket-modes.js). "cheapest" is all three.
@@ -133,8 +151,14 @@ def page_payload(page: Path) -> dict:
     return decode_payload(json.loads(match.group(1)))
 
 
-def page_price(payload: dict, row: KnownFare) -> int | str:
-    """What the page shows for the row, in pence, or why it shows nothing."""
+def page_price(payload: dict, row: KnownFare) -> int | str | None:
+    """What the page shows for the row, in pence, or why it shows nothing.
+
+    ``None`` means the page carries no fare of the row's kind for the place,
+    which is the answer ``modes_listing`` reads: a place absent from every list
+    may be one the page dropped by rule, and one absent from a single list is
+    not.
+    """
     party = row.adults == 2
     card = None
     if row.railcard:
@@ -154,9 +178,53 @@ def page_price(payload: dict, row: KnownFare) -> int | str:
             if decision and decision.get("pricePence") is not None:
                 price = min(price, decision["pricePence"] * (2 if party else 1))
             prices.append(price)
-    if not prices:
-        return f"the page lists no {row.destination} in its {row.mode} fares"
-    return min(prices)
+    return min(prices) if prices else None
+
+
+def modes_listing(payload: dict, crs: str) -> list[str]:
+    """The page's ticket modes that list the place, in the table's own words."""
+    return [
+        mode
+        for mode in ("return", "single", "anytime")
+        if any(destination["crs"] == crs for destination in payload.get(MODE_LISTS[mode][0]) or [])
+    ]
+
+
+def _places(count: int) -> str:
+    return f"{count:,} place" if count == 1 else f"{count:,} places"
+
+
+def left_out(payload: dict) -> str:
+    """What the page says it did not list, or "" when it left nothing out.
+
+    The two narrowing rules each keep their own count, so the sentence says
+    which bound put the place beyond the page rather than guessing: a place no
+    journey reaches is not on the page because there is nothing to travel to,
+    and a place past the cap is on the feed at a fare dearer than the page's
+    stop.
+    """
+    clauses = []
+    unreachable = payload.get("unreachableDestinationCount") or 0
+    if unreachable:
+        # The page's own journeyLimitPhrase words the bound, because a warning
+        # that named a different one would describe a rule the build did not
+        # use: no changes allowed reads "on a direct train", and a payload with
+        # no week carries no bound at all.
+        changes = payload.get("maxChanges")
+        if changes == 0:
+            limit = " on a direct train"
+        elif changes:
+            limit = " within one change" if changes == 1 else f" within {changes} changes"
+        else:
+            limit = ""
+        reaches = "it" if unreachable == 1 else "them"
+        clauses.append(
+            f"it leaves {_places(unreachable)} out because no journey from here reaches {reaches}{limit}"
+        )
+    capped = payload.get("cappedDestinationCount") or 0
+    if capped:
+        clauses.append(f"it stops before {_places(capped)} dearer than the ones it lists")
+    return "; ".join(clauses)
 
 
 def check(site: Path, rows: list[KnownFare], today: date) -> tuple[list[str], list[str]]:
@@ -174,9 +242,28 @@ def check(site: Path, rows: list[KnownFare], today: date) -> tuple[list[str], li
             continue
         if row.origin not in payloads:
             payloads[row.origin] = page_payload(page)
-        shown = page_price(payloads[row.origin], row)
+        payload = payloads[row.origin]
+        shown = page_price(payload, row)
+        modes = modes_listing(payload, row.destination) if shown is None else []
+        dropped = left_out(payload) if shown is None and not modes else ""
         if isinstance(shown, str):
             failures.append(f"{row}: {shown}")
+        elif shown is None and dropped:
+            warnings.append(
+                f"{row}: the page lists no {row.destination} in any of its fare lists, and {dropped}, "
+                f"so there is {UNCHECKED}; check the fare at {row.link} and retire the row if it is gone"
+            )
+        elif shown is None and modes:
+            failures.append(
+                f"{row}: the page shows no {row.mode} fare to {row.destination}, though it lists the "
+                f"place in its {' and '.join(modes)} fares"
+            )
+        elif shown is None:
+            failures.append(
+                f"{row}: the page lists no {row.destination} in any of its fare lists, and left no place "
+                f"out, so nothing on the page explains the absence; check the fare at {row.link}, then "
+                "correct the page or retire the row"
+            )
         elif shown != row.pence:
             failures.append(
                 f"{row}: the page shows £{shown / 100:.2f}, and National Rail sold £{row.pence / 100:.2f} "
@@ -203,7 +290,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"::error title=known fare::{line}")
     if failures:
         return 1
-    print(f"all {len(rows)} known fare(s) agree with the pages")
+    unchecked = sum(1 for line in warnings if UNCHECKED in line)
+    if unchecked == len(rows):
+        # The module's own rule, applied to the table rather than to a row: a
+        # check that cannot find any of its subjects has checked nothing, and a
+        # release whose fare gate compared no price at all must not read green.
+        print(
+            "::error title=known fare::every row is for a place its page left out by rule, so not one "
+            "price was compared; add a row for a place the page lists"
+        )
+        return 1
+    if unchecked:
+        print(
+            f"{len(rows) - unchecked} of {len(rows)} known fare(s) agree with the pages; "
+            f"{unchecked} could not be checked here"
+        )
+    else:
+        print(f"all {len(rows)} known fare(s) agree with the pages")
     return 0
 
 

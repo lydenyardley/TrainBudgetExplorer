@@ -6,6 +6,16 @@
 # days old warns: check it again and update seen_on, or delete it if the fare
 # is gone.
 #
+# A row for a place the page does not list at all also warns, when the page says
+# why it left places out: it lists only the places a journey reaches (ADR-0076)
+# and stops at the cheapest ones (ADR-0077), each with its own count in the
+# payload. The fare is real and the page is right, so there is no price to
+# disagree with; the warning names the rule and the count so the row can be
+# re-checked or retired. A page that reports it left nothing out still fails on
+# an absent place, and so does a place it lists in another ticket mode. A table
+# whose every row is one of those absences also fails, because the gate would
+# then have compared no price at all.
+#
 # One row per price the page should show:
 #   origin, destination  CRS codes, as the page's own station index names them
 #   mode                 the page's ticket mode: cheapest, single, return or anytime

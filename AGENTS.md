@@ -14,7 +14,7 @@ python -m tools.verify --browser   # the demo and shape builds, then tests/brows
 ```
 
 `--fast` is the page's own modules and the checks that speak for the release --
-**293 tests, about 55 s** measured 24 October 2026 -- and it fails when its unit
+**300 tests, about 90 s** measured 24 October 2026 -- and it fails when its unit
 step passes the five-minute ceiling, so a module added to the list is a decision
 rather than a drift. `--full` is every
 module including the feed-scale ones, **35 min** measured 15 October 2026. Both
@@ -59,7 +59,7 @@ October 2026 plan).
 | No commit credits Codebuff or Freebuff, in the author or in a trailer | `tools/check_commit_message.py`, run by `.githooks/commit-msg` before the commit exists, and in CI over the commits a push adds | exits 1 naming the tool the message credits and the line it sits on, or the author identity that credits it, and says to keep the why and drop the credit |
 | A line of shell in a workflow's `run:` block carries no backtick, so the shell cannot run a message instead of printing it | `tests/test_workflows.py`, in both unit runs | fails naming the workflow, the line and the shell line it read; a scan that did not reach the verify step's block fails too |
 | A built page stays inside its byte budget | `tools/page_bytes.py --site _site` in CI | exits 1 naming the route and its overage; exits 2 rather than passing on a page whose payload it did not parse, or on a site with no page |
-| A fare checked by hand against National Rail is the fare the page shows | `tools/check_known_fares.py --site _site` in the assemble job, over `tests/known_fares.toml` | exits 1 naming the row, the page's price and the one National Rail sold, or the page, destination or card the page lacks; warns on a row checked more than 90 days ago; exits 2 when the table or the site could not be read |
+| A fare checked by hand against National Rail is the fare the page shows | `tools/check_known_fares.py --site _site` in the assemble job, over `tests/known_fares.toml` | exits 1 naming the row, the page's price and the one National Rail sold, or the page, destination or card the page lacks, unless the page says it left that destination out by the reachability rule (ADR-0076) or the place cap (ADR-0077), which warns naming the rule and its count; warns on a row checked more than 90 days ago; exits 2 when the table or the site could not be read |
 | A page that shows a fare carries the National Rail credit | `tools/check_source_credit.py --site _site` in the assemble job | exits 1 naming the page that carries a fare and no credit; exits 2 when it could not read the page it was given |
 | The facet reference data matches the registry | `tools/check_facet_reference.py` in CI | exits 1 naming the facet and the two values that differ; exits 2 when either side could not be read |
 | Rebuild when any build input changed | `tools/build_inputs.py` in both workflow steps, held by `tools/test_build_inputs.py` | exits 1 in the step that would publish a stale site; `tools/test_build_inputs.py` fails naming the input the list forgot |

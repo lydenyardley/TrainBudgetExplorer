@@ -79,7 +79,10 @@ For each mismatch:
    the date you checked, the search link and where it was reported. The
    field list is at the top of that file.
 2. Prove the row reaches the page: `python -m tools.check_known_fares --site _site`
-   must fail on it, naming both prices.
+   must fail on it, naming both prices. A row that warns instead, naming the
+   reachability rule (ADR-0076) or the place cap (ADR-0077) and its count, is
+   for a place the page does not list on purpose: pick a destination the page
+   lists from that origin, because there is no price there to hold.
 3. Find and fix the cause. Then add the smallest synthetic record that
    reproduces it to `make_synthetic_feed.py`, with a comment naming the
    commit that fixed it (F7, AGENTS.md).
