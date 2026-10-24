@@ -630,6 +630,42 @@ holds that gate until the release did.
 | The known-fares gate refused the release with `Extra data: line 1 column 233653`: it found each station's page by reading `stations.js` from the first `=` to the end of the file, and ADR-0069's amendment had put every station's facts below the picker's options, so the second document arrived as data after the first and no checked fare could be read at all | `build_assets.STATION_INDEX_MARKER` names the line that introduces the options: the writer uses it and `tools/check_known_fares.py` imports it, decoding that one document and stopping there; an asset with no such line is a site it could not read (exit 2 with a sentence), not a traceback | `test_the_station_index_is_read_past_the_facts_below_it` and `test_an_asset_with_no_station_index_is_a_site_it_could_not_read` in `tools/test_check_known_fares.py`; the gate over a two-shard merged release read its pages and said `all 3 known fare(s) agree with the pages` (24 October 2026) |
 | The same module's four Grantham rows priced Sleaford, which ADR-0076 stopped listing: the fixture's timetable calls at no Sleaford, so the page prices the place and drops it, and those rows went red without anyone running the suite that holds them | the rows price Lincoln and Nottingham instead, at the prices the fixture's fare records state -- Lincoln's £8.70 return, which `tests/test_build_fares.py` asserts from the records, and the £5.80 the same fare's card gives -- so the gate's arithmetic is held to a price the feed states rather than to the page alone | `tools/test_check_known_fares.py`'s five passing rows, the £8.70 / £8.90 mismatch and its exit-code table; `tests/test_build_fares.py` holds Lincoln's £8.70 and its £5.80 card price from the feed. The module is now on `--fast`'s list, which is the loop a change is checked with, because nothing but the thirty-five-minute run read it when it went red (293 tests in 55 s, 24 October 2026) |
 
+## What a place a page drops by rule means for the known-fares gate, 24 October 2026
+
+ADR-0076 lists only the places a journey reaches and ADR-0077 stops at the
+cheapest 600, so a page deliberately does not carry every place the feed prices.
+The known-fares table carries fares a person checked by hand, and the two met
+badly: a row for a place either rule dropped failed the release on a page that
+was right and a fare that was right. The only cure a person had was to delete a
+fare they had just checked, which is the check lost for good.
+
+Decided, and implemented in `tools/check_known_fares.py`: the gate asks the page
+why the place is absent. Each narrowing rule carries its own count, so a row for
+a place absent from every fare list warns and names the rule, the count and the
+bound. Two verdicts stay failures. A page that reports it left nothing out has
+lost a fare the feed prices. A place the page lists in another ticket mode is a
+disagreement, because no rule drops a mode; ADR-0077 decision 2 keeps every list
+cut to the same places, so the place is there and its fare of that kind is not.
+
+A third verdict stays a failure, and it is the one this change could have
+created rather than closed: a table whose every row is an explained absence has
+compared no price at all, so it fails with the reason and the fix. The module
+already refused a single row it could not find -- a check that cannot find its
+subject has checked nothing -- and a whole table of them is the same rule one
+level up. The warning also names the row's own link and says the row can be
+retired, so a warning a release carries is a row somebody can act on rather than
+a sentence that reads like a defect.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| A hand-checked fare whose place ADR-0076 or ADR-0077 dropped failed the release, and the fix a person had was to delete the row | the gate reads the page's own `unreachableDestinationCount` with `maxChanges`, and `cappedDestinationCount`, and warns with the reason the place is missing; absence still fails where the page left nothing out or lost one ticket mode of a place it lists, and a table with no row left to compare fails rather than reads green | `tools/test_check_known_fares.py` over three builds of the fixture: Tower Hill, priced at £12.00 and called at by nothing, warns on the timetable build and passes on the fares-only one, which drops nothing; Sleaford at £41.10 warns on the capped build and passes uncapped; a fares-only page fails on an absent place; Lincoln's missing single fails naming the return and anytime fares it is in; one place on a direct-only build words the bound and the pronoun the page words; and a table of nothing but explained absences exits 1 |
+
+**What the warning cannot tell.** The page carries a count of the places it left
+out, not their codes, so a feed that lost a priced place on a page that also
+dropped some would warn rather than fail. Naming the dropped places on the page
+is what ADR-0076 measured as 34% of a page's bytes and refused; holding this
+exactly needs the build, not the site, and no gate reads one today.
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a

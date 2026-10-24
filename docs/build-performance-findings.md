@@ -867,6 +867,14 @@ the release's own assemble job did, two days later. It is on the list now, and
 tests and 54.8 s for the command; 3 s of that is the fare gate's own synthetic
 site, which is the whole price of noticing next time.
 
+**Measured again 24 October 2026, at 300 tests**, because the gate now answers
+one more question. What a page leaves out decides what a row's absence means, so
+the module builds its site three ways -- with the timetable, with the place cap
+at two, and fares only -- and it costs about 10 s where the one build cost 3 s.
+Four runs took 72.6 s, 80.2 s and 93.9 s for the unit step and 201 s on a loaded
+machine, so the figure to plan against is about 90 s and the five-minute ceiling
+is not a formality: a busy desktop can eat most of the margin.
+
 ## The type-check census, measured
 
 Measured 15 October 2026 with mypy 2.4.0, on this machine, `--no-incremental`, one
