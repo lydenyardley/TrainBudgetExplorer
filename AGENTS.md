@@ -13,9 +13,10 @@ python -m tools.verify --full      # every unit test, the type check, and the pa
 python -m tools.verify --browser   # the demo and shape builds, then tests/browser_test.cjs
 ```
 
-`--fast` is the page's own modules -- 228 tests, **about 50 s** measured 21
-October 2026 -- and it fails when its unit step passes the five-minute ceiling,
-so a module added to the list is a decision rather than a drift. `--full` is every
+`--fast` is the page's own modules and the checks that speak for the release --
+**293 tests, about 55 s** measured 24 October 2026 -- and it fails when its unit
+step passes the five-minute ceiling, so a module added to the list is a decision
+rather than a drift. `--full` is every
 module including the feed-scale ones, **35 min** measured 15 October 2026. Both
 figures are dated and reproducible in `docs/build-performance-findings.md`. A step
 that could not run (node missing, mypy missing, actionlint missing, a build that

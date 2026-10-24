@@ -62,6 +62,11 @@ FAST_MODULES = (
     "tools.test_verify",
     "tools.test_release",
     "tools.test_commit_hook",
+    # The release's own fare gate, which is what stands between a wrong price and
+    # a reader. It runs here because it did not: its rows priced a place ADR-0076
+    # stopped listing, they went red on 24 October 2026, and nothing ran them
+    # until the release did (3 s over a synthetic site).
+    "tools.test_check_known_fares",
 )
 
 #: The wall clock `--fast`'s unit step may take before the command fails naming
