@@ -66,6 +66,11 @@ first paint was timed on a throttled connection (720 to 865 ms, a fare on screen
 at 1.25 to 1.37 s), and the ticket-mode split was costed at 10 KB gzip saved
 against a round trip of 150 ms. The split was refused, and the figures are in
 `docs/build-performance-findings.md` under "A real-feed station page's bytes".
+The second sentence above stopped being true on 23 October 2026: `.FSC` cluster
+flows (ADR-0075) took a cluster-priced page to 1.3 MB, so the 800 MB gate is the
+constraint again and the pages measure 160 to 638 KB after the two contents
+changes -- `docs/audits/2026-10-23-page-byte-budget.md`, and O1 in
+`docs/open-work.md`.
 
 ### Ask 2 -- [P2] The phone has no fold budget, and at 320x640 it has no answer above it (S5, tracks O7)
 

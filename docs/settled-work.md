@@ -592,6 +592,18 @@ undoes it.
 | Task 3, a credited commit was refused only at push | `.githooks/commit-msg`, enabled per clone with `git config core.hooksPath .githooks`; the CI step stays as the backstop | `tools/test_commit_hook.py`, four tests, three of which fail with the hook moved aside |
 | Task 4, checking a fare against National Rail was a judgement only the owner made | `.agents/skills/fare-verification/SKILL.md` | each run leaves a `tests/known_fares.toml` row and an F7 synthetic record |
 
+### What the 24 October 2026 page-byte audit closed
+
+`docs/audits/2026-10-23-page-byte-budget.md` is open on the release's total, not
+on these three: each was a change to what a page carries, each is in the ADR it
+was argued in, and the figures are in `docs/build-performance-findings.md`.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| The wire form: a place's cells join the page pool, a departure option is three values, a repeated column is indices, the party price is derived, the week is transposed and run-length encoded, and a pooled value has to pay for itself | ADR-0069's 23 October 2026 amendment: Grantham's page 1,368,721 -> 690,977 bytes with the same 4,690 rows, and 139,782 -> 128,201 gzipped | `tests/test_page_output.py` round-trips every encoding through `decode_payload` (including a week no station runs in), and `page/station/payload.js` hydrates them back into the objects the build wrote |
+| **D2**, a page listed 1,725 places that no journey reached on any of its eight days, each rendering "No service" beside a price | ADR-0076: a place is dropped only when no day of the walk reaches it, a place that runs another day keeps its row, a build with no timetable drops nothing, and the page says how many it left out and by which journey limit | `unreachable_places` and the fixture's three dropped places in `tests/test_build_fares.py`; the count and the bound travel as `unreachableDestinationCount` and `maxChanges` |
+| **D1**, a station's own facts (its type and the six named-site lists) were repeated on every page that listed the place -- 120 KB of a 690 KB page | ADR-0069's 23 October 2026 amendment: the facts travel once in `stations.js` as `window.TBE_STATION_FACTS`, and the page joins them to its rows by CRS as it loads | `SharedStationAssetTest` reads both documents out of the built asset and proves the page carries neither; `test_a_merge_refuses_a_shard_without_the_station_facts` proves a merge cannot publish pages whose facts are missing or disagree |
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a

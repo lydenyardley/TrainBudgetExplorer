@@ -1501,3 +1501,125 @@ the assemble job since 19 October 2026: one push stopped on a missing
 `SCHEDULE_URL` and the next answered HTTP 401 from the CIF endpoint. Nothing in
 this section changes that. What it adds is the page the budget is per, measured
 rather than extrapolated, and the bracket the open item now states.
+
+## A .FSC-priced page's bytes, 23 October 2026
+
+**Why this was taken.** O1's bracket was four pages of 283 to 449 KB, measured on
+21 October 2026 before `.FSC` cluster flows priced nearly the whole network from
+every origin. The release report then projected 1,940 MB for 12 shards and asked
+for the page to be profiled rather than projected. The plan was to build one
+heavy page and one small one from the local feeds, split each into stylesheet,
+script, payload and markup with `tools/page_bytes.py`, compress the same file at
+`gzip -9` the way the host does, and cost every payload key separately. The
+figures below are all from that plan; nothing here was estimated before it was
+measured.
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+    --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
+    --out _scratch/before/index.html --workers 1
+python -m tools.page_bytes _scratch/before/from/grantham/index.html
+```
+
+**The page shape.** Grantham prices **2,752 destinations** in three fare lists
+(1,666 returns, 2,752 singles, 272 Anytime Day Returns): **4,690 rows** and
+2,752 places, 8 days of service week. **1,730 of the places carry
+`journeyState: no_service`** on every day the page walks, so 2,584 of the rows are
+a price for a place the timetable does not reach within one change. Ashwell &
+Morden, a small station, has 6,056 rows and 2,756 places, which is the same shape.
+
+| origin | before | after | gzip before | gzip after | payload before | payload after |
+| --- | --- | --- | --- | --- | --- | --- |
+| Grantham | 1,368,721 B | 690,977 B | 139,782 B | 128,201 B | 1,333,421 B | 655,677 B |
+| Ashwell & Morden | 1,301,965 B* | 657,135 B | not kept | 114,176 B | 1,266,617 B | 621,787 B |
+
+\* Ashwell & Morden's before page was not built: that figure is the old encoder
+run over the page's own decoded payload (1,266,617 B) plus the 35,348 bytes of
+markup the page carries. Every other figure in the table is a measured file.
+
+**The raw page halves and the compressed page barely moves.** Grantham is 49.5%
+smaller on disk and **8.3% smaller over the wire** (139,782 -> 128,201), because
+the redundancy the wire carried -- one ticket link on 2,752 places, the same
+column names on every row -- is exactly what deflate was already removing. Raw is
+what the 1 GB published-site limit counts and what `page_bytes.py` gates, so the
+change is real for the release; a reader's transfer is not what it buys.
+
+**Why the projection was low.** The release report took 343.5 MiB of compressed
+shard zips and divided by 5.65:1. These pages compress at **9.8:1 before** the
+change (1,368,721 -> 139,782) and **5.4:1 after**, so 343.5 MiB is about **3.4 GB**
+of HTML, not 1.94 GB. 120 KB gzipped a page divided by 9.8 is 1.18 MB a page,
+which is where the two measured origins sit.
+
+**Where the payload went, before and after.** `places` 806,498 -> 274,496, the
+fare rows 354,914 -> 235,078, `serviceWeek` 105,169 -> 70,552, page pool
+42,137 -> 50,805, payload 1,333,421 -> 655,677. The largest single item was the
+same `link` object on all 2,752 places, 272,448 bytes, because the page-level pool
+(ADR-0046) only ever saw the row tables; the second was a departure option
+spelled as an object (189,089 bytes). The per-column table and the six changes are
+in `docs/audits/2026-10-23-page-byte-budget.md`.
+
+**What it does not settle.** These pages come from the DTD timetable on this
+machine, not from the Network Rail CIF the release reads, and two origins are not
+the network. The assembled site's `python -m tools.page_bytes --site _site` is
+still the figure that decides O1, and 1 GB over 2,930 pages is 366 KB a page
+(341 KB if a gigabyte is 10^9 bytes) against the 674,056 bytes the two measured
+pages average.
+
+## Twelve release-shaped pages, 24 October 2026
+
+**Why this was taken.** The 23 October section above halved the raw page and
+left the site about 1.19 GB by projection. Two changes to what a page carries
+were costed there and not measured: dropping the places no journey reaches
+(ADR-0076) and moving the station's own facts into the shared list (ADR-0069
+amendment). The plan was to build twelve stations in the release's own shape --
+`--all-origins --only-stations`, so each page fetches the station list and
+carries no facts -- from the same feeds and one service date, then read each
+page's bytes, its gzip size, its payload, its places and its rows out of the
+page itself. Twelve rather than one because a cluster-priced page's size tracks
+how much of the network it reaches, and one origin would be a socket for the
+network's average.
+
+```
+python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+    --all-origins --only-stations LIN,IPS,NOR,CBG,KGX,GRA,OXF,PLY,NOT,SHF,NCL,MAN \
+    --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
+    --out _scratch/sample2/index.html --workers 2
+```
+
+| station | page | gzip | payload | places | rows | unreachable |
+|---|---:|---:|---:|---:|---:|---:|
+| Linlithgow | 159,870 | 37,981 | 124,456 | 267 | 716 | 2,469 |
+| Ipswich | 198,313 | 45,401 | 162,730 | 380 | 987 | 2,352 |
+| Normanton | 277,041 | 62,655 | 241,278 | 619 | 1,498 | 2,112 |
+| Cambridge | 363,518 | 79,055 | 327,755 | 937 | 2,511 | 1,821 |
+| London Kings Cross | 371,949 | 74,361 | 336,333 | 658 | 1,255 | 19 |
+| Grantham | 373,396 | 82,961 | 337,636 | 1,027 | 2,092 | 1,725 |
+| Oxford | 422,228 | 93,758 | 386,474 | 1,122 | 2,705 | 1,632 |
+| Plymouth | 426,613 | 87,774 | 390,853 | 1,270 | 2,760 | 1,478 |
+| Nottingham | 512,978 | 109,013 | 477,212 | 1,397 | 3,215 | 1,322 |
+| Sheffield | 570,314 | 121,449 | 534,551 | 1,691 | 3,821 | 1,037 |
+| Newcastle | 573,788 | 117,267 | 538,025 | 1,480 | 3,152 | 1,252 |
+| Manchester Piccadilly | 637,545 | 134,076 | 601,746 | 1,731 | 4,119 | 995 |
+
+**What the twelve say.** Mean **407,296 bytes**, median 397,812, gzip mean
+87,146. At that mean 2,930 pages are **1,193 MB** of HTML: 11% over 1 GiB, 19%
+over 10^9, and 49% over `SITE_BUDGET_MB`. The gzip mean projects the release's
+shard zips near 255 MB, against the 343.5 MiB that raised the audit.
+
+**What each change was worth, on Grantham, one at a time.**
+
+| state | page | gzip |
+|---|---:|---:|
+| after the wire pass (23 October) | 690,977 | 127,158 |
+| + a page lists only what a journey reaches (ADR-0076) | 426,972 | 90,017 |
+| + the station's facts in the shared list (ADR-0069 amendment) | 386,505 | 83,626 |
+| + a day that repeats the day before travels as `true` | 373,396 | 82,961 |
+
+The contents changes take **46%** off the raw page and **35%** off its gzip,
+unlike the wire pass: a place nobody can reach and a fact repeated on every page
+are bytes a reader was actually being sent.
+
+**What it does not settle.** These pages come from the DTD timetable on this
+machine, not from the Network Rail CIF the release reads, and twelve stations are
+a spread rather than a random sample. The assembled site's
+`python -m tools.page_bytes --site _site` is still the figure that decides O1.

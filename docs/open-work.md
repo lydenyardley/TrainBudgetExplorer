@@ -102,6 +102,29 @@ station page. So this is not a curiosity about a number any more: if the average
 is where these four pages are, **the release's own byte gate will refuse it**,
 and the only way to know is the run.
 
+**23 October 2026: the page shape changed, the payload halved, and the site is
+still about twice the limit.** The `.FSC` cluster flows (ADR-0075) price a fare to
+**2,752 destinations from Grantham**, which is nearly every station the feed
+knows, so the page is no longer the 369 KB of the four pages above: it is
+**1,368,721 bytes**, of which the places table alone is 806 KB. Six wire-format
+changes took the same page to **690,977 bytes (49.5% off)** and Ashwell & Morden
+from 1,301,965 to 657,135, with the row count unchanged
+(`docs/audits/2026-10-23-page-byte-budget.md` has the profile and each change).
+The same page's gzip moved only 8.3%, because the repetition the wire carried
+was what deflate was already removing.
+
+**24 October 2026: both product decisions are taken, and the site is still 11%
+over the host's limit.** A page now lists only the places a journey reaches
+(ADR-0076) and carries a station's own facts once, in the shared station list
+(ADR-0069 amendment): Grantham went from 690,977 to **373,396 bytes** with the
+same schedule behind it. Twelve release-shaped pages measured the same day
+average **407,296 bytes** (median 397,812), so 2,930 pages are **1,193 MB**: 11%
+over the host's 1 GiB, 19% over it at 10^9, and 49% over the 800 MB budget. The
+levers the audit measured and did not take -- the three fare lists (36% of a
+page), `departures` (16%), `name` (4%), `legs` (2%) and the service week (15%)
+-- are product decisions about what a page carries, and taking any of them is a
+change to what a reader sees rather than to how it is encoded.
+
 **The earlier stop.** The push run of 19 October 2026 halted on a missing
 `SCHEDULE_URL` repository variable, and the 20 October run's two-byte probe
 answered that the fares feed's credential pair is refused by the CIF endpoint with
@@ -111,8 +134,9 @@ endpoint accepts.
 
 **What closes it.** One release run that reaches the assemble job. Its
 `python -m tools.page_bytes --site _site` prints the assembled site's bytes whether
-it passes or refuses, and that figure replaces the extrapolation. No code change
-is on this path.
+it passes or refuses, and that figure replaces every projection above. The
+levers in the 23 October audit are what a passing run needs; the run itself is
+still the measurement.
 
 ---
 
