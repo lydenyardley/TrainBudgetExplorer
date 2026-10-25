@@ -699,6 +699,25 @@ build is the same row passing where nothing was dropped, and the capped build is
 the other rule's sentence and its count. A cap sentence checked against a
 hand-made payload would never pass through the gate's own reading of a page.
 
+## What the 25 October 2026 browser step closed
+
+The first release to reach the browser step since the manifest and the
+listed-nothing pages stopped it failed three checks on three pages: the chooser
+at the site root, Norwich and Limerick. No page was wrong. Each check held an
+assumption about the licensed download that the download no longer met, and the
+assumptions lasted because nothing had driven a whole-network release since
+ADR-0076 and ADR-0077 landed.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| `a three-letter code finds its station` required the code's search to answer exactly one row; AGL answers five, because `stationMatches` reads a name substring as well as a code prefix and "agl" is inside HAGLEY, GLENEAGLES, BAGLAN and EAGLESCLIFFE | the row is found by the page it links to, and the answer must still be narrower than the directory, so a matcher that offered every station would not pass by offering this one | the check driven over the release's own station lists (AGL, five rows, its own among them) and over a shard's chooser whose second code collides (NBY, two of 229 rows) |
+| `the heading a screen reader reads ... names the station` compared the accessible name with the payload's raw name; the feed spells Limerick's `LIMERICK    (CIE`, four spaces before the bracket, and an accessible name squeezes a run of whitespace to one | both sides are squeezed the same way, because the check's question is whether the heading names this station rather than how many spaces the feed typed | the page the run failed on, whose heading reads `Train fares up to £20 from LIMERICK (CIE` under an origin of `LIMERICK    (CIE` |
+| `a page with no cap carries no such sentence` assumed no page carries one; every release page is capped at 600 places and Norwich says it stopped before 256 of its 856 | the payload's own count is read first, the resting sentence must name it, the driven count and its removal still prove the sentence comes from the payload, and the count is put back so the page the check leaves is the page it found | Norwich's page, which carries `256 more places` at rest and loses it when the count is deleted |
+
+What none of the three was: a page defect to fix. The chooser offered the
+station, the heading named it, and the coverage line counted what it said it
+counted.
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
