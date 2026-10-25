@@ -14,9 +14,10 @@ python -m tools.verify --browser   # the demo and shape builds, then tests/brows
 ```
 
 `--fast` is the page's own modules and the checks that speak for the release --
-**300 tests, about 90 s** measured 24 October 2026 -- and it fails when its unit
-step passes the five-minute ceiling, so a module added to the list is a decision
-rather than a drift. `--full` is every
+**300 tests, 73-182 s** measured 24-25 October 2026, the spread being the fare
+gate's three builds and the machine -- and it fails when its unit step passes the
+five-minute ceiling, so a module added to the list is a decision rather than a
+drift. `--full` is every
 module including the feed-scale ones, **35 min** measured 15 October 2026. Both
 figures are dated and reproducible in `docs/build-performance-findings.md`. A step
 that could not run (node missing, mypy missing, actionlint missing, a build that

@@ -867,13 +867,30 @@ the release's own assemble job did, two days later. It is on the list now, and
 tests and 54.8 s for the command; 3 s of that is the fare gate's own synthetic
 site, which is the whole price of noticing next time.
 
-**Measured again 24 October 2026, at 300 tests**, because the gate now answers
+**Measured 24 and 25 October 2026, at 300 tests**, because the gate now answers
 one more question. What a page leaves out decides what a row's absence means, so
 the module builds its site three ways -- with the timetable, with the place cap
-at two, and fares only -- and it costs about 10 s where the one build cost 3 s.
-Four runs took 72.6 s, 80.2 s and 93.9 s for the unit step and 201 s on a loaded
-machine, so the figure to plan against is about 90 s and the five-minute ceiling
-is not a formality: a busy desktop can eat most of the margin.
+at two, and fares only -- and it costs **25-32 s** where the one build cost 3 s.
+Seventeen of those seconds are the three builds of one three-origin fixture, one
+per rule the gate has to tell apart; the rest is the module's own tests reading
+the pages it just built.
+
+**The ceiling still fits, and the margin is thinner than the figure implied.**
+Before the gate grew, four runs of the same 300 tests took **72.6 s, 80.2 s and
+93.9 s** for the unit step on 24 October, with **201 s** while four site builds
+held the CPU. After it, four runs took **137 s, 158 s, 180 s and 182 s** on
+25 October. The gate's three builds and seven extra tests are about 25 s of that
+difference; subtracting them, the same work still took **1.5-1.7x** as long,
+which is this desktop rather than the suite. So the figure to plan against is
+the slowest run, and against the five minutes the audit asked for it leaves
+about 120 s -- one more fixture-building module and no more. CI's own rate from
+the 25 October release run (1,376 tests in 731 s) puts the same 300 tests near
+160 s there, the same margin against a slower machine.
+
+The decision is to keep `FAST_CEILING` at 300 s. The audit asked for five
+minutes, `tools/test_verify.py` holds the number there, and a run that trips it
+with no module added says the machine is slower than the figure was taken on,
+which is a reason to measure again rather than to raise it.
 
 ## The type-check census, measured
 

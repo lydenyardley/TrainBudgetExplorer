@@ -666,6 +666,39 @@ dropped some would warn rather than fail. Naming the dropped places on the page
 is what ADR-0076 measured as 34% of a page's bytes and refused; holding this
 exactly needs the build, not the site, and no gate reads one today.
 
+## What the fast loop's five-minute ceiling still buys, 25 October 2026
+
+That gate's tests build the synthetic site three ways, so the loop a page change
+is checked with grew by 25-32 s where it had cost 3 s. The question was whether
+the five minutes `FAST_CEILING` holds still fits around it.
+
+**Measured, and it does, with a margin thinner than the figure implied.** Four
+runs of the same 300 tests took 72.6 s, 80.2 s and 93.9 s for the unit step on
+24 October, with 201 s while four site builds held the CPU; four more took
+137 s, 158 s, 180 s and 182 s on 25 October. The gate's three builds and seven
+extra tests are about 25 s of that, and subtracting them the same work still
+took 1.5-1.7x as long, so the rest is this desktop. At the slowest run the
+ceiling leaves about 120 s, which is one more fixture-building module and no
+more; the audit's "five minutes" held a 53 s loop with 247 s to spare when it
+was written. CI's own rate from the 25 October run (1,376 tests in 731 s) puts
+the same 300 tests near 160 s there.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| Whether `--fast`'s 300 s ceiling still fits, now that `tools/test_check_known_fares` builds its fixture three times | it stays at the five minutes A5 of the 20 October 2026 audit asked for, and the record says what the margin is made of: 73-94 s for the 300 tests before the gate built three ways, 137-182 s after, of which 17 s is the builds and the rest this desktop | `tools/test_verify.py`'s `test_the_ceiling_is_the_five_minutes_the_audit_asked_for` pins the number, `tools/verify.py` states the measured spread beside it, and the runs are in `docs/build-performance-findings.md` |
+
+**Refused: raising it to ten minutes.** The ceiling's job is that adding a module
+is a decision, and a trip is the question being asked. A higher number buys room
+for a slower machine by making a module that costs an extra 200 s invisible,
+which is the drift the audit asked to prevent. A machine slower than the figure
+was taken on is answered by measuring again, not by moving the number.
+
+**Refused: building two of the three sites.** Each build proves a verdict the
+others cannot: the timetable build is the dropped-by-rule warning, the fares-only
+build is the same row passing where nothing was dropped, and the capped build is
+the other rule's sentence and its count. A cap sentence checked against a
+hand-made payload would never pass through the gate's own reading of a page.
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a

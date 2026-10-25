@@ -65,14 +65,24 @@ FAST_MODULES = (
     # The release's own fare gate, which is what stands between a wrong price and
     # a reader. It runs here because it did not: its rows priced a place ADR-0076
     # stopped listing, they went red on 24 October 2026, and nothing ran them
-    # until the release did (3 s over a synthetic site).
+    # until the release did. It costs 25-32 s rather than the 3 s of a read site,
+    # because a row's absence means what the page left out, and that is three
+    # builds of the synthetic site: with the week, capped, and fares only
+    # (measured 25 October 2026).
     "tools.test_check_known_fares",
 )
 
 #: The wall clock `--fast`'s unit step may take before the command fails naming
-#: it. Measured at 53 s on 21 October 2026, so this is headroom for a slower
-#: machine rather than a target: a module added to the list is what breaks it,
-#: and the message says which way to go.
+#: it. This is the five minutes A5 of the 20 October 2026 audit asked for, and
+#: `tools/test_verify.py` holds it there; headroom for a slower machine rather
+#: than a target, and a module added to the list is the usual thing that breaks
+#: it. How much is left depends on the machine as much as on the suite: the same
+#: 300 tests took 72.6, 80.2 and 93.9 s on 24 October 2026, before the fare gate
+#: built its fixture three ways, and 137, 158, 180 and 182 s on 25 October once
+#: it did. The gate is about 25 s of that and the rest is the desktop. At the
+#: slowest run this leaves about two minutes, which is one more fixture-building
+#: module and no more; a trip with nothing added means the machine, so measure
+#: again before raising the number.
 FAST_CEILING = 300.0
 
 #: The page's own JavaScript, which no Python check can parse (audit C2). The
