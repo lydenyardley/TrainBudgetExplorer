@@ -352,6 +352,47 @@ async function driveTheFilters(world) {
       atTop && atTop.hidden && atTop.inlineVisible && atTop.inert,
       JSON.stringify(atTop)
     );
+    // A slider below the fold has not been scrolled past. "Not intersecting"
+    // is true both for a control the reader has passed and for one they have
+    // not reached yet, and reading only that raised the rail at the very top of
+    // a 304px page whose slider sat under the fold: the rail's own ceiling note
+    // then sat over the theme control and took the click meant for it (25
+    // October 2026, where the accessibility matrix waited thirty seconds on that
+    // click and stopped the page). The window is made short enough here that the
+    // slider is off the bottom of the screen, which is the state a zoomed reader
+    // reaches on a page with a taller heading than this fixture's.
+    const readingViewport = page.viewportSize() || { width: 1280, height: 720 };
+    await page.setViewportSize({ width: 304, height: 240 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleFrame();
+    const belowFold = await page.evaluate(() => {
+      const rail = document.getElementById("budgetRail");
+      const slider = document.getElementById("budget").getBoundingClientRect();
+      const toggle = document.getElementById("themeToggle");
+      const box = toggle ? toggle.getBoundingClientRect() : null;
+      const hit = box && box.bottom > 0 && box.top < window.innerHeight
+        ? document.elementFromPoint(Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2))
+        : null;
+      return {
+        sliderTop: Math.round(slider.top),
+        fold: window.innerHeight,
+        belowFold: slider.top >= window.innerHeight,
+        hidden: rail.hidden,
+        inert: document.getElementById("railBudget").offsetParent === null,
+        // What the reader's click on the theme control would actually reach.
+        covered: Boolean(hit && toggle && !toggle.contains(hit)),
+        reach: hit ? (hit.id || hit.className || hit.tagName) : null,
+      };
+    });
+    check(
+      "and a slider below the fold has not been scrolled past, so its rail stays away",
+      !belowFold.belowFold
+        ? notExercised("this page's slider is above the fold even at 240px, so there is no passed-or-not state to read")
+        : belowFold.hidden && belowFold.inert && !belowFold.covered,
+      JSON.stringify(belowFold)
+    );
+    await page.setViewportSize(readingViewport);
+    await settleFrame();
     await page.evaluate(() => window.scrollTo(0, Math.round(document.body.scrollHeight / 2)));
     await settleFrame();
     const away = await railState();
