@@ -1671,19 +1671,24 @@ function saysMoreThan(condition, code) {
     // 7d. The 24 October 2026 findings: a page lists the places it prices most
     // cheaply and says where it stops. The sentence is written from the
     // payload's own count, so the check drives that count, reads the sentence
-    // back, and takes it away again -- a page with no cap carries neither.
+    // back, and takes it away again. The page's own count is put back after
+    // that, because a release page is capped -- Norwich said it stopped before
+    // 256 places -- and the sentence such a page carries is the payload's, not
+    // something this check may leave deleted.
     const capped = await page.evaluate(() => {
+      const own = DATA.cappedDestinationCount;
       const before = document.getElementById("feedCoverage").textContent;
       DATA.cappedDestinationCount = 3;
       render();
       const withCount = document.getElementById("feedCoverage").textContent;
       delete DATA.cappedDestinationCount;
       render();
-      return {
-        before,
-        withCount,
-        after: document.getElementById("feedCoverage").textContent,
-      };
+      const after = document.getElementById("feedCoverage").textContent;
+      if (own !== undefined) {
+        DATA.cappedDestinationCount = own;
+        render();
+      }
+      return { before, withCount, after, own: own || 0 };
     });
     check(
       "a capped page says how many places it stopped listing",
@@ -1691,9 +1696,13 @@ function saysMoreThan(condition, code) {
       capped.withCount
     );
     check(
-      "and a page with no cap carries no such sentence",
-      !/prices most cheaply/.test(capped.before) && !/prices most cheaply/.test(capped.after),
-      `${capped.before} | ${capped.after}`
+      "and the page carries that sentence only when its payload caps it",
+      !/prices most cheaply/.test(capped.after) &&
+        (capped.own
+          ? capped.before.includes(String(capped.own) + (capped.own === 1 ? " more place " : " more places ")) &&
+            /prices most cheaply/.test(capped.before)
+          : !/prices most cheaply/.test(capped.before)),
+      `${capped.own ? capped.own + " left out" : "no cap"}: ${capped.before} | ${capped.after}`
     );
     // 7e. S33: the age of the numbers, beside the numbers. A synthetic feed has
     // no download to date, so the fares sentence is conditional; the timetable
