@@ -1,10 +1,16 @@
 """A row with no service is asked the week, not only the build's day.
 
 Every service in the synthetic timetable runs Monday to Saturday, so a build
-for a Sunday has no journey on most destinations. That is the smallest version
-of the real case: twenty-six of Nottingham's ninety-six rows read "No service"
-on the Sunday the build ran for, and every one of them is a direct journey on
-the Monday.
+for a Sunday has no journey to most of the places it prices. That is the
+smallest version of the real case: twenty-six of Nottingham's ninety-six rows
+read "No service" on the Sunday the build ran for, and every one of them is a
+direct journey on the Monday.
+
+Since ADR-0076 the page carries only the places some day of the week reaches,
+so the gap a Sunday page still words is the place that runs on a later day. A
+place no day reaches is left out and counted rather than priced with
+"No service" beside it for all eight days, which is the shape these tests had
+before that rule landed on 24 October 2026.
 """
 
 import tempfile
@@ -44,13 +50,21 @@ class ServiceWeekTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._tmp.cleanup()
 
-    def test_the_sunday_build_leaves_most_destinations_without_a_journey(self) -> None:
+    def test_the_sunday_build_lists_a_gap_and_the_day_after_it(self) -> None:
         # The precondition, stated so a fixture change cannot quietly turn this
-        # into a test that passes because there was nothing to find.
+        # into a test that passes because there was nothing to find. Both states
+        # have to be on the page for the sweep to mean anything: a place the
+        # Sunday runs to, and a place it does not run to until Monday.
         rows = self.sunday["destinations"]
-        without = [row["crs"] for row in rows if row["journeyState"] == "found"]
-        self.assertEqual(len(without) < len(rows) // 2, True, "the Sunday should have no service")
-        self.assertNotEqual(without, [], "a Sunday build with no gaps cannot test this")
+        found = [row["crs"] for row in rows if row["journeyState"] == "found"]
+        gaps = [row["crs"] for row in rows if row["journeyState"] == "no_service"]
+        self.assertEqual(found, ["NOT"], "the Sunday should still run a train to Nottingham")
+        self.assertEqual(gaps, ["LCN"], "the Sunday should leave Lincoln without a journey")
+        self.assertEqual(
+            next(row for row in rows if row["crs"] == "LCN")["nextService"],
+            MONDAY.isoformat(),
+            "the gap should name the Monday it runs on",
+        )
 
     def test_every_no_service_row_is_answered_one_way_or_the_other(self) -> None:
         # The invariant. A row either names a day the week reaches it on, or
@@ -79,13 +93,17 @@ class ServiceWeekTest(unittest.TestCase):
                     # carrying no key at all.
                     self.assertNotIn("nextService", row)
 
-    def test_a_station_the_week_never_reaches_is_not_given_a_day(self) -> None:
+    def test_a_station_the_week_never_reaches_is_left_out_rather_than_given_a_day(self) -> None:
         # Tower Hill has a fare and no train on any day of the synthetic week.
         # It is the case the reader's Wirksworth is, and it must not be dressed
-        # up as a weekday.
-        unserved = [row for row in self.sunday["destinations"] if row["crs"] == "SLP"]
-        self.assertEqual(len(unserved), 1, "the unserved station should be priced here")
-        self.assertNotIn("nextService", unserved[0])
+        # up as a weekday. ADR-0076 leaves it off the page and counts it: there
+        # is no day to name, and a price with "No service" beside it on every
+        # day of the walk is the shape that rule stopped page bytes paying for.
+        for key in LISTS:
+            self.assertNotIn("SLP", [row["crs"] for row in self.sunday[key]], key)
+        # The other two are the places this fixture prices from Grantham that no
+        # service calls at, so the count is places rather than rows.
+        self.assertEqual(self.sunday["unreachableDestinationCount"], 3)
 
     def test_the_sweep_does_not_touch_a_row_that_has_a_journey(self) -> None:
         # Nottingham is served on the Sunday by a train the synthetic feed runs
@@ -204,21 +222,22 @@ class ServiceWeekPayloadTest(unittest.TestCase):
             named += 1
         self.assertGreater(named, 0, "a Sunday build of a weekday-only feed should name a day")
 
-    def test_a_station_the_week_never_reaches_is_absent_from_every_day(self) -> None:
+    def test_no_day_of_the_week_answers_a_station_nothing_reaches(self) -> None:
         # Tower Hill has a fare and no train on any day of the synthetic week.
-        # It must be absent rather than present-and-empty, because the page
-        # reads a station missing from a day's table as no service on that day
-        # and would otherwise print a journey of no minutes.
-        for row in self.rows(self.sunday):
-            if row["crs"] != "SLP":
-                continue
-            index = row["serviceWeekIndex"]
-            present = [offset for offset, table in enumerate(self.sunday["serviceWeek"][index])
-                       if row["crs"] in table]
-            self.assertEqual(present, [], "a station with no train is in the week")
-            self.assertNotIn("nextService", row)
-            return
-        self.fail("the unserved station should be priced here")
+        # It must be absent from the week rather than present-and-empty,
+        # because the page reads a station missing from a day's table as no
+        # service on that day and would otherwise print a journey of no
+        # minutes. The row itself is gone with ADR-0076, so this reads the
+        # tables rather than a row's index into them.
+        week = self.sunday["serviceWeek"]
+        self.assertTrue(week, "no week was walked, so this proves nothing")
+        self.assertTrue(
+            any("LCN" in table for per_day in week for table in per_day),
+            "the week answers nothing at all, so an absent station proves nothing",
+        )
+        for per_day in week:
+            for offset, table in enumerate(per_day):
+                self.assertNotIn("SLP", table, f"day {offset} answers a station with no train")
 
     def test_a_build_with_no_day_sends_no_week_and_names_no_table(self) -> None:
         # A build made without a date has nothing to walk the week from, so it
