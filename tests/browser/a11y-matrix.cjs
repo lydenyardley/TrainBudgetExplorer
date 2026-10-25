@@ -72,9 +72,17 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
         : routeKind === "release"
           ? await page.evaluate(() => (STATIONS[0] || {}).name || "")
           : "";
+    // A station name is the feed's spelling, and the feed spaces some of them
+    // oddly: the 25 October 2026 release carried "LIMERICK    (CIE", four
+    // spaces before the bracket. The accessible name squeezes a run of
+    // whitespace to one, so the browser reads back "LIMERICK (CIE" and a raw
+    // substring test failed a heading that names the station correctly. Both
+    // sides are squeezed the same way, because the question is whether the
+    // heading names this station, not how many spaces the feed typed.
+    const squeezed = (text) => text.replace(/\s+/g, " ").trim();
     check(
       `the heading a screen reader reads states the budget in pounds${origin ? " and names the station" : ""}`,
-      /up to £\s*\d+/.test(headingName) && (!origin || headingName.includes(origin)),
+      /up to £\s*\d+/.test(headingName) && (!origin || squeezed(headingName).includes(squeezed(origin))),
       headingName || "(no heading name)"
     );
   }
