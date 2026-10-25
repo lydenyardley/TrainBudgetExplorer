@@ -386,12 +386,28 @@ async function checkChooser(page, url, check) {
       : narrowed > 0 && narrowed < options && /Showing|list/i.test(await page.textContent("#pickStatus")),
     `${query} -> ${narrowed} of ${options}`
   );
-  const code = listed[1] ? listed[1].crs : first.crs;
-  await page.fill("#originSearch", code);
+  // A code is a prefix of another station's name more often than it looks: on
+  // the 25 October 2026 release AGL is also the middle of HAGLEY, GLENEAGLES,
+  // BAGLAN and EAGLESCLIFFE, so typing it answers five rows and a count of
+  // exactly one failed the release over a station that was found. What the
+  // check is for is that the code reaches its own station, so the row is found
+  // by the page it links to rather than by counting the rows around it.
+  const pick = listed[1] || first;
+  await page.fill("#originSearch", pick.crs);
+  const byCode = await page.evaluate((href) => {
+    const rows = [...document.querySelectorAll("#picks a")];
+    const wanted = new URL(href, window.location.href).pathname;
+    const own = rows.find((a) => new URL(a.href, window.location.href).pathname === wanted);
+    return { rows: rows.length, text: own ? own.textContent : "" };
+  }, pick.href);
   check(
     "a three-letter code finds its station",
-    (await page.locator("#picks a").count()) === 1 && (await page.textContent("#picks")).includes(code),
-    code
+    // The list still has to be a search rather than the whole directory, so a
+    // matcher that offered every station would not pass by offering this one.
+    Boolean(byCode.text) &&
+      byCode.text.includes(pick.crs) &&
+      (listed.length < 2 || byCode.rows < listed.length),
+    `${pick.crs} -> ${byCode.rows} of ${listed.length} row(s)${byCode.text ? "" : ", its own station not offered"}`
   );
   await page.fill("#originSearch", "zzzz");
   const noMatch = await page.locator("#nomatch").isVisible();
