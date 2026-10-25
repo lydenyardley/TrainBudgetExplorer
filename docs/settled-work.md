@@ -718,6 +718,19 @@ What none of the three was: a page defect to fix. The chooser offered the
 station, the heading named it, and the coverage line counted what it said it
 counted.
 
+The step then failed on Limerick alone, and this one was the page. At 200% zoom
+the page is one 304px column, and a heading tall enough to matter puts the
+budget slider below the fold. "Not intersecting" is true for a control the
+reader has passed and for one they have not reached yet, and the rail only asked
+the first, so it arrived at the very top of the page and its own ceiling note sat
+over the theme control. The matrix's click on `#themeToggle` waited thirty
+seconds under that note and took the whole page's run down with it, which is why
+the page reported no failed check at all.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| the budget rail appeared over the theme control at 304px, because a slider **below** the fold reads as out of view just as a passed one does | `wiring.js` raises the rail only when the observer says the slider is out of view **and** above the viewport, which is the state that means the reader has moved past it | `station-filters.cjs` shortens the window until the slider is off the bottom and reads the rail hidden, inert and not over the theme control; under the old rule that check fails on all four station pages the suite drives |
+
 ## Rejected designs, with the reason
 
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
