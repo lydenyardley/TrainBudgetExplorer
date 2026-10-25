@@ -25,9 +25,18 @@ if (railBudget) {
 // the reader has scrolled past, so it appears only while that control is out of
 // view. A page with no IntersectionObserver keeps the rail hidden and loses
 // nothing it had before.
+//
+// Out of view is not the same as scrolled past. At a 200% zoom the page is one
+// narrow 304px column and the slider sits below the fold, so "not intersecting"
+// was true at the very top of the page: the rail arrived over the theme control
+// before the reader had scrolled anywhere, and the rail's own ceiling note took
+// the click meant for the switch (the accessibility matrix timed out on it for
+// thirty seconds, 25 October 2026). A control below the fold has not been
+// reached yet; only one above it has been passed.
 if (budgetRail && "IntersectionObserver" in window) {
   new IntersectionObserver((entries) => {
-    const away = !entries[entries.length - 1].isIntersecting;
+    const entry = entries[entries.length - 1];
+    const away = !entry.isIntersecting && entry.boundingClientRect.top < 0;
     budgetRail.hidden = !away;
     // The sticky column headings and the row scroll margin move down while the
     // rail is up, or the two would cover each other.
