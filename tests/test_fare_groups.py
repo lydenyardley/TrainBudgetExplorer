@@ -17,8 +17,8 @@ from pathlib import Path
 
 from datetime import date
 
-from atoc_fares import FLOW_F, FLOW_T, LOCATION, STATION_CLUSTER, TICKET_TYPE, FaresDb
-from make_synthetic_feed import _line, build_synthetic_feed
+from trainbudget.fares.atoc_fares import FLOW_F, FLOW_T, LOCATION, STATION_CLUSTER, TICKET_TYPE, FaresDb
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed
 
 GROUP_STATIONS = (
     # (nlc, crs, name, group)

@@ -27,7 +27,7 @@ DEFAULT_FEED = "feeds/fares/dtd-fares.zip"
 
 def _load(feed: str, locations_only: bool) -> tuple[float, dict[str, tuple[str, str, str]]]:
     """Load once and return the seconds and the location map as plain values."""
-    from atoc_fares import FaresDb
+    from trainbudget.fares.atoc_fares import FaresDb
 
     started = time.perf_counter()
     db = FaresDb().load_feed(feed, locations_only=locations_only)

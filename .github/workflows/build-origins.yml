@@ -50,7 +50,7 @@ jobs:
         env:
           NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds
+        run: python -m trainbudget.feeds.dtd_download --output-root feeds
 
       - name: Download the Knowledgebase reference feeds
         # Tolerant, as in deploy.yml: a different subscription, and the pages
@@ -60,7 +60,7 @@ jobs:
           NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
         run: |
-          if python dtd_download.py --output-root feeds --kb-only; then
+          if python -m trainbudget.feeds.dtd_download --output-root feeds --kb-only; then
             echo "reference feeds downloaded"
           else
             echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded; the pages will say no independent reference feed was checked."
@@ -73,7 +73,7 @@ jobs:
           ORIGINS: ${{ inputs.origins }}
         shell: bash
         run: |
-          python build_demo_page.py \
+          python -m trainbudget.build.build_demo_page \
             --feed feeds/fares \
             --timetable feeds/timetable \
             --knowledgebase feeds/knowledgebase \

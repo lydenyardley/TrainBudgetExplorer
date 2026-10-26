@@ -16,12 +16,12 @@ import os
 import sys
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_knowledgebase import Knowledgebase
-from atoc_timetable import SliceIndex, TimetableDb
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_knowledgebase import Knowledgebase
+from trainbudget.timetable.atoc_timetable import SliceIndex, TimetableDb
 
-from build_release import OPENING_BUDGET_POUNDS
-from build_demo_page import (
+from trainbudget.build.build_release import OPENING_BUDGET_POUNDS
+from trainbudget.build.build_demo_page import (
     STATION_ASSET_NAME,
     build_payload,
     places_in_payload,

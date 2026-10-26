@@ -145,7 +145,7 @@ the Trainline URL is verifiable **without** the account, by opening a link that
   the recorded pairing is the one `pairing_warning` stays quiet about. The code
   and the record now agree instead of the record being silent.
 - The build command for the recorded pairing is:
-  `python build_demo_page.py --feed <feeds> --timetable <feeds> --origin GRN
+  `python -m trainbudget.build.build_demo_page --feed <feeds> --timetable <feeds> --origin GRN
   --provider trainline --affiliate-network partnerize --advertiser-id <id>
   --publisher-id <id>`
 - Because tracking is a redirect wrapper (ADR-0014), changing the seller later

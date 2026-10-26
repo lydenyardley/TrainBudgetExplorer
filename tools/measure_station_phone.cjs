@@ -11,7 +11,7 @@
  *       desktop figure is 7.4 ms against a 50 ms budget, and the machine beside
  *       a figure is part of the figure (ADR-0032).
  *
- *   python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+ *   python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
  *       --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
  *       --out _real_site/index.html
  *   node tools/measure_station_phone.cjs _real_site

@@ -14,9 +14,9 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-import fuzz_feed
-from atoc_fares import FLOW_T, FaresDb
-from fuzz_feed import (
+from trainbudget.feeds import fuzz_feed
+from trainbudget.fares.atoc_fares import FLOW_T, FaresDb
+from trainbudget.feeds.fuzz_feed import (
     MUTATIONS,
     Round,
     _appears,
@@ -27,7 +27,7 @@ from fuzz_feed import (
     one_round,
     timetable_violations,
 )
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
 ROUNDS = 60
 
@@ -158,7 +158,7 @@ class FuzzRunTest(unittest.TestCase):
         # Build the failing state directly rather than hoping a mutation finds
         # it, and assert the check sees the object it broke. A check that
         # cannot fail is decoration.
-        from atoc_timetable import CallingPoint, Schedule, TimetableDb
+        from trainbudget.timetable.atoc_timetable import CallingPoint, Schedule, TimetableDb
 
         db = TimetableDb().load_feed(self.timetable)
         db.schedules.append(

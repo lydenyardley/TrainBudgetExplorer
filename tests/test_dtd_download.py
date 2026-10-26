@@ -16,8 +16,8 @@ from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
-from dtd_audit import audit_dtd
-from dtd_download import (
+from trainbudget.feeds.dtd_audit import audit_dtd
+from trainbudget.feeds.dtd_download import (
     AUTH_URL,
     DEFAULT_RETRIES,
     DTD_FEEDS,
@@ -39,8 +39,8 @@ from dtd_download import (
     previous_records,
     write_manifest,
 )
-from dtd_download import main as dtd_download_main
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.feeds.dtd_download import main as dtd_download_main
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
 
 class FakeResponse:
@@ -598,8 +598,8 @@ class PortalBurstTest(unittest.TestCase):
             stderr = io.StringIO()
             with mock.patch.dict(
                 os.environ, {"NRDP_USERNAME": "user", "NRDP_PASSWORD": "secret"}
-            ), mock.patch("dtd_download.urlopen", side_effect=portal), mock.patch(
-                "dtd_download.time.sleep", return_value=None
+            ), mock.patch("trainbudget.feeds.dtd_download.urlopen", side_effect=portal), mock.patch(
+                "trainbudget.feeds.dtd_download.time.sleep", return_value=None
             ), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
                 status = dtd_download_main(["--output-root", tmp, "--dtd", "fares"])
             self.assertEqual(status, 0, stderr.getvalue())
@@ -616,8 +616,8 @@ class PortalBurstTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(
                 os.environ, {"NRDP_USERNAME": "user", "NRDP_PASSWORD": "wrong"}
-            ), mock.patch("dtd_download.urlopen", side_effect=portal), mock.patch(
-                "dtd_download.time.sleep", return_value=None
+            ), mock.patch("trainbudget.feeds.dtd_download.urlopen", side_effect=portal), mock.patch(
+                "trainbudget.feeds.dtd_download.time.sleep", return_value=None
             ), contextlib.redirect_stderr(io.StringIO()):
                 status = dtd_download_main(["--output-root", tmp, "--dtd", "fares"])
             self.assertEqual(status, 2)
@@ -645,9 +645,9 @@ class RequiredKnowledgebaseTest(unittest.TestCase):
         waits: list[float] = []
         with tempfile.TemporaryDirectory() as tmp:
             stdout, stderr = io.StringIO(), io.StringIO()
-            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
-                "dtd_download.urlopen", side_effect=self._refusing_portal(seen)
-            ), mock.patch("dtd_download.time.sleep", side_effect=waits.append), contextlib.redirect_stdout(
+            with mock.patch("trainbudget.feeds.dtd_download.authenticate", return_value="token"), mock.patch(
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=self._refusing_portal(seen)
+            ), mock.patch("trainbudget.feeds.dtd_download.time.sleep", side_effect=waits.append), contextlib.redirect_stdout(
                 stdout
             ), contextlib.redirect_stderr(stderr):
                 status = dtd_download_main(["--output-root", tmp, "--kb-only", "--required"])
@@ -668,9 +668,9 @@ class RequiredKnowledgebaseTest(unittest.TestCase):
         seen: list[str] = []
         with tempfile.TemporaryDirectory() as tmp:
             stdout = io.StringIO()
-            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
-                "dtd_download.urlopen", side_effect=self._refusing_portal(seen)
-            ), mock.patch("dtd_download.time.sleep", return_value=None), contextlib.redirect_stdout(
+            with mock.patch("trainbudget.feeds.dtd_download.authenticate", return_value="token"), mock.patch(
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=self._refusing_portal(seen)
+            ), mock.patch("trainbudget.feeds.dtd_download.time.sleep", return_value=None), contextlib.redirect_stdout(
                 stdout
             ), contextlib.redirect_stderr(io.StringIO()):
                 status = dtd_download_main(["--output-root", tmp, "--kb-only", "--retries", "0"])
@@ -708,10 +708,10 @@ class StaggerTest(unittest.TestCase):
             return _response(request, {})
 
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("dtd_download.authenticate", side_effect=login), mock.patch(
-                "dtd_download.urlopen", side_effect=portal
+            with mock.patch("trainbudget.feeds.dtd_download.authenticate", side_effect=login), mock.patch(
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=portal
             ), mock.patch(
-                "dtd_download.time.sleep", side_effect=lambda seconds: events.append(("wait", seconds))
+                "trainbudget.feeds.dtd_download.time.sleep", side_effect=lambda seconds: events.append(("wait", seconds))
             ), contextlib.redirect_stdout(io.StringIO()):
                 status = dtd_download_main(["--output-root", tmp, "--dtd", "fares", "--stagger", "5"])
         self.assertEqual(status, 0)
@@ -719,9 +719,9 @@ class StaggerTest(unittest.TestCase):
 
     def test_a_job_that_is_not_a_shard_does_not_wait(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch("dtd_download.authenticate", return_value="token"), mock.patch(
-                "dtd_download.urlopen", side_effect=lambda request, timeout: _response(request, {})
-            ), mock.patch("dtd_download.time.sleep") as sleep, contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch("trainbudget.feeds.dtd_download.authenticate", return_value="token"), mock.patch(
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=lambda request, timeout: _response(request, {})
+            ), mock.patch("trainbudget.feeds.dtd_download.time.sleep") as sleep, contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(dtd_download_main(["--output-root", tmp, "--dtd", "fares"]), 0)
         sleep.assert_not_called()
 
@@ -950,12 +950,12 @@ class CommandLineTest(unittest.TestCase):
         return ["--output-root", tmp, *extra]
 
     def _patched_auth(self, token: str = "short-lived"):
-        return mock.patch("dtd_download.authenticate", return_value=token)
+        return mock.patch("trainbudget.feeds.dtd_download.authenticate", return_value=token)
 
     def _no_sleeping(self):
         """Stop the retry backoff from being real inside a unit test."""
 
-        return mock.patch("dtd_download.time.sleep", return_value=None)
+        return mock.patch("trainbudget.feeds.dtd_download.time.sleep", return_value=None)
 
     def test_retries_cannot_be_negative(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -983,7 +983,7 @@ class CommandLineTest(unittest.TestCase):
                 raise not_modified
 
             with self._patched_auth(), mock.patch(
-                "dtd_download.urlopen", side_effect=conditional
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=conditional
             ), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "fares")), 0)
             self.assertEqual(offered, ['"v1"'])
@@ -992,7 +992,7 @@ class CommandLineTest(unittest.TestCase):
             # escape hatch for a local file that has gone bad underneath us.
             offered.clear()
             with self._patched_auth(), mock.patch(
-                "dtd_download.urlopen",
+                "trainbudget.feeds.dtd_download.urlopen",
                 side_effect=lambda request, timeout: offered.append(
                     request.get_header("If-none-match") or "-"
                 )
@@ -1016,7 +1016,7 @@ class CommandLineTest(unittest.TestCase):
             )
             printed = io.StringIO()
             with self._patched_auth(), mock.patch(
-                "dtd_download.urlopen", side_effect=not_modified
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=not_modified
             ), contextlib.redirect_stdout(printed):
                 self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "fares")), 0)
             output = printed.getvalue()
@@ -1028,7 +1028,7 @@ class CommandLineTest(unittest.TestCase):
             headers = {"ETag": '"v1"'}
             for run in range(2):
                 with self._patched_auth(), mock.patch(
-                    "dtd_download.urlopen",
+                    "trainbudget.feeds.dtd_download.urlopen",
                     side_effect=lambda request, timeout: _response(request, headers),
                 ), contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "fares")), 0)
@@ -1071,7 +1071,7 @@ class CommandLineTest(unittest.TestCase):
                 return response
 
             with self._patched_auth(), mock.patch(
-                "dtd_download.urlopen", side_effect=opener
+                "trainbudget.feeds.dtd_download.urlopen", side_effect=opener
             ), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "all")), 0)
             self.assertEqual(offered, ['"fares-v1"', "-"])
@@ -1083,7 +1083,7 @@ class CommandLineTest(unittest.TestCase):
             stderr = io.StringIO()
             attempts: list[int] = []
             with self._patched_auth(), self._no_sleeping(), mock.patch(
-                "dtd_download.urlopen",
+                "trainbudget.feeds.dtd_download.urlopen",
                 side_effect=lambda request, timeout: attempts.append(1) or _raise_timeout(),
             ), contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(dtd_download_main(self._args(tmp, "--dtd", "fares")), 1)

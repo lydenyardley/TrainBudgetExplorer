@@ -26,6 +26,8 @@ from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
 
+from trainbudget import ROOT
+
 ROUNDING_STEP_PENCE = 5
 
 # What a card takes off is the feed's own figure: the railcard's adult status
@@ -2010,7 +2012,7 @@ def location_lookup_candidates(path: str | Path) -> list[Path]:
     """
     root = Path(path)
     candidates: list[Path] = []
-    candidates.extend((Path(__file__).parent / "reference-data").glob("*.json"))
+    candidates.extend((ROOT / "reference-data").glob("*.json"))
     if root.is_dir():
         candidates.extend(root.glob("*.xml"))
         candidates.extend(root.glob("*.json"))

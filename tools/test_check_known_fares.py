@@ -51,7 +51,7 @@ class KnownFaresTest(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         tmp = Path(cls._tmp.name)
         subprocess.run(
-            [sys.executable, "make_synthetic_feed.py", str(tmp / "feed"), "--unserved-station", "--third-origin",
+            [sys.executable, "-m", "trainbudget.feeds.make_synthetic_feed", str(tmp / "feed"), "--unserved-station", "--third-origin",
              "--return-network", "--long-list", "--knowledgebase", str(tmp / "kb")],
             cwd=ROOT, check=True, capture_output=True,
         )
@@ -62,7 +62,7 @@ class KnownFaresTest(unittest.TestCase):
             ("fares", []),
         ):
             subprocess.run(
-                [sys.executable, "build_demo_page.py", "--feed", str(tmp / "feed"),
+                [sys.executable, "-m", "trainbudget.build.build_demo_page", "--feed", str(tmp / "feed"),
                  "--knowledgebase", str(tmp / "kb"), "--all-origins", *extra,
                  "--out", str(tmp / name / "index.html")],
                 cwd=ROOT, check=True, capture_output=True,

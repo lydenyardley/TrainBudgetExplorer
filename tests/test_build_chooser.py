@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import json
 import re
-import build_demo_page
-from build_demo_page import build_payload, build_station_index, render_chooser, render_page, render_privacy
+from trainbudget.build import build_demo_page
+from trainbudget.build.build_demo_page import build_payload, build_station_index, render_chooser, render_page, render_privacy
 from tests.page_harness import embedded_payload, page_script, setUpModule, tearDownModule, PageTestCase
 
 
@@ -374,7 +374,7 @@ class ChooserTest(PageTestCase):
         self.assertNotIn("id=\"picksColumns\"", render_chooser([], budget_pounds=20))
 
     def test_a_zero_station_chooser_stands_the_search_down_and_says_so(self) -> None:
-        from page_templates import CHOOSER_SCRIPT
+        from trainbudget.build.page_templates import CHOOSER_SCRIPT
 
         html = render_chooser([], budget_pounds=20)
         self.assertIn("There is nothing here yet", CHOOSER_SCRIPT)

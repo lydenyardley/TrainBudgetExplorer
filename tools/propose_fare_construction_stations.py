@@ -33,12 +33,12 @@ import sys
 from pathlib import Path
 
 
-from atoc_fares import (
+from trainbudget.fares.atoc_fares import (
     FARE_CONSTRUCTION_CRS,
     FARE_CONSTRUCTION_NAME_MARKERS,
     looks_like_fare_construction,
 )
-from feeds_cli import add_feed_args
+from trainbudget.feeds.feeds_cli import add_feed_args
 from tools.regenerate_destination_facets import load_stations
 
 

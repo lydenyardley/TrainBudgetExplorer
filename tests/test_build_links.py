@@ -7,8 +7,8 @@ tests out of the class they all shared, by subject, over the fixture in
 
 from __future__ import annotations
 
-from build_demo_page import build_payload, render_page
-from retailer import DISCLOSURE
+from trainbudget.build.build_demo_page import build_payload, render_page
+from trainbudget.fares.retailer import DISCLOSURE
 from tests.page_harness import page_script, setUpModule, tearDownModule, PageTestCase
 
 

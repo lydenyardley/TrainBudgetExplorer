@@ -78,7 +78,7 @@ whose every fixture made the list and the table the same shape.
 ## Read by running
 
 ```
-python build_stations.py --no-serve
+python -m trainbudget.build.build_stations --no-serve
 cd tests && npx --yes --package playwright node browser_test.cjs \
   ../_stations/from/nottingham/index.html
 ```

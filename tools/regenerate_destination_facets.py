@@ -28,13 +28,13 @@ import sys
 import zipfile
 
 
-from atoc_fares import (
+from trainbudget.fares.atoc_fares import (
     DESTINATION_FACET_SOURCES,
     LOCATION_TYPE_SOURCE,
     SUPPORTED_DESTINATION_FACETS,
     FaresDb,
 )
-from feeds_cli import add_feed_args
+from trainbudget.feeds.feeds_cli import add_feed_args
 
 DEFAULT_FEED = Path("feeds") / "fares" / "dtd-fares.zip"
 DEFAULT_OUT = Path(__file__).resolve().parent.parent / "reference-data" / "destination-facets.json"

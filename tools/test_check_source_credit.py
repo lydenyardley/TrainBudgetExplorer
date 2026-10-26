@@ -22,8 +22,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from build_release import nre_attribution, nre_source_line
-from page_templates import TEMPLATE
+from trainbudget.build.build_release import nre_attribution, nre_source_line
+from trainbudget.build.page_templates import TEMPLATE
 from tools.check_source_credit import (
     CREDIT_MARKS,
     FARE_MARK,

@@ -24,11 +24,11 @@ import sys
 import zipfile
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from dtd_download import DTD_FEEDS, inspect_local_download
-from feed_audit import audit as parser_audit
-from feed_audit import print_audit
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.dtd_download import DTD_FEEDS, inspect_local_download
+from trainbudget.feeds.feed_audit import audit as parser_audit
+from trainbudget.feeds.feed_audit import print_audit
 
 
 DEFAULT_FARES = "feeds/fares"

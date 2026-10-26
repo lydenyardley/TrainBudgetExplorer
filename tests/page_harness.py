@@ -21,13 +21,13 @@ import shutil
 import tempfile
 import unittest
 
-import build_demo_page
-import build_state
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
-from build_payload import decode_payload
-from page_templates import PAYLOAD_MARKER
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_state
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.build.build_payload import decode_payload
+from trainbudget.build.page_templates import PAYLOAD_MARKER
 
 
 class PageTestCase(unittest.TestCase):
@@ -70,7 +70,7 @@ class PageTestCase(unittest.TestCase):
         station page, written beside them by the build -- rather than against
         the page, which no longer carries any of it.
         """
-        from page_templates import STATION_STYLESHEET
+        from trainbudget.build.page_templates import STATION_STYLESHEET
 
         return STATION_STYLESHEET
 

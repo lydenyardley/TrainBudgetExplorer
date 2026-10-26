@@ -179,7 +179,7 @@ was told "No railcard is selected" while every row showed a card price.
 Item 3's data half turned out not to be a question about the index at all. One
 real build, read on 16 October 2026:
 
-    python build_demo_page.py --feed feeds/fares --timetable feeds/timetable-nwr \
+    python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable-nwr \
       --origin GRA --notices nre,rdg,ogl,accuracy --out <site>/index.html
 
 gives a chooser row reading *"GRANTHAM GRA 331 destinations this feed prices"*

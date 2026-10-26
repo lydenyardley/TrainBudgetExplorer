@@ -7,7 +7,7 @@
  * throttled connection before anyone decided whether the payload is the thing
  * to split, and this is the harness that took it.
  *
- *   python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+ *   python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
  *       --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
  *       --out _real_site/index.html
  *   node tools/measure_station_paint.cjs _real_site

@@ -28,10 +28,10 @@ import statistics
 import sys
 from pathlib import Path
 
-from atoc_fares import FaresDb, Reachable, format_pence
-from atoc_timetable import TimetableDb
-from feed_audit import audit
-from feeds_cli import add_feed_args, find_origin
+from trainbudget.fares.atoc_fares import FaresDb, Reachable, format_pence
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.feed_audit import audit
+from trainbudget.feeds.feeds_cli import add_feed_args, find_origin
 
 TWO_TOGETHER = "Two Together"
 DEFAULT_MARGIN = 0.10

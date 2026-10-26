@@ -100,7 +100,7 @@ Read by running:
 ```bash
 python _cache/origin_spread.py feeds/fares
 python run.py --all-origins
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
   --all-origins --workers 3 --out _cache/net_probe/index.html --notices nre,rdg,ogl,accuracy
 python -m tools.page_bytes --site _cache/net_probe
 ```

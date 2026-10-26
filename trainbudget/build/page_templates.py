@@ -11,7 +11,7 @@ each template at the bottom of this module, so a route's own block holds only
 what is genuinely its own.
 """
 
-from pathlib import Path
+from trainbudget import ROOT
 
 # The markers a built page introduces its inlined payload with. They live beside
 # the templates that write them, because the line and the name of the line are
@@ -29,7 +29,7 @@ CHOOSER_MARKER = "window.TBE_CHOOSER_STATIONS = "
 # bytes of a shared asset are the bytes of the file. The read normalizes line
 # endings, because a checkout that hands back CRLF must not rewrite every page
 # of the release.
-_PAGE_ASSETS = Path(__file__).with_name("page")
+_PAGE_ASSETS = ROOT / "page"
 
 
 def _page_file(name: str) -> str:

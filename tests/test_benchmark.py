@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import MAX_ONWARD_DEPARTURES, TimetableDb
-from benchmark import build_targets, measure, rank
-from make_synthetic_feed import build_large_synthetic_feed
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import MAX_ONWARD_DEPARTURES, TimetableDb
+from trainbudget.measure.benchmark import build_targets, measure, rank
+from trainbudget.feeds.make_synthetic_feed import build_large_synthetic_feed
 
 STATIONS = 40
 SCHEDULES = 60

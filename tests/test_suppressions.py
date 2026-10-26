@@ -97,7 +97,7 @@ class SuppressionCensusTest(unittest.TestCase):
         # stops finding either, the check above has stopped checking anything.
         files = python_files()
         self.assertGreater(len(files), 50, f"only {len(files)} Python file(s) found")
-        self.assertIn(ROOT / "fuzz_feed.py", files)
+        self.assertIn(ROOT / "trainbudget" / "feeds" / "fuzz_feed.py", files)
         found = [entry for path in files for entry in causes(path)[0]]
         self.assertGreater(len(found), 3, "the walk found almost no suppressions")
 

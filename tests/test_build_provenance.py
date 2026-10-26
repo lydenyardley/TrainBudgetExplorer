@@ -16,12 +16,12 @@ import contextlib
 import io
 from pathlib import Path
 import argparse
-import build_demo_page
-import build_release
-from build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
-from atoc_timetable import TimetableDb
-from build_demo_page import nre_attribution, wants_nre_credit, build_payload, render_chooser, render_page, render_privacy
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_release
+from trainbudget.build.build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_demo_page import nre_attribution, wants_nre_credit, build_payload, render_chooser, render_page, render_privacy
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 from tools.check_release_clearance import PRIVACY, parse_sections
 from tests.page_harness import browser_suite_text, page_script, setUpModule, station_page, tearDownModule, PageTestCase
 

@@ -13,9 +13,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import FaresDb, Reachable, format_pence
-from atoc_timetable import Journey, TimetableDb, format_minutes
-from feeds_cli import add_feed_args, find_origin
+from trainbudget.fares.atoc_fares import FaresDb, Reachable, format_pence
+from trainbudget.timetable.atoc_timetable import Journey, TimetableDb, format_minutes
+from trainbudget.feeds.feeds_cli import add_feed_args, find_origin
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

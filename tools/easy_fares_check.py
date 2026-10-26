@@ -1,7 +1,7 @@
 """Reality-check the budget model against the real fares database.
 
 Usage:
-    EASY_FARES_KEY=... python easy_fares_check.py
+    EASY_FARES_KEY=... python -m tools.easy_fares_check
 
 The free demo allows 100 calls per 30 days, so this script is deliberately
 frugal: one call per origin-destination-railcard combination per day, responses

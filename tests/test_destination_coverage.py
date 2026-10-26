@@ -12,8 +12,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-import destination_coverage
-from destination_coverage import UNSOURCED, UnsourcedReport
+from trainbudget.fares import destination_coverage
+from trainbudget.fares.destination_coverage import UNSOURCED, UnsourcedReport
 
 
 def row(crs: str, name: str, kind: str = "town") -> dict:

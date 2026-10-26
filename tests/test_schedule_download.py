@@ -17,9 +17,9 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from atoc_timetable import TimetableDb
-from make_synthetic_feed import build_synthetic_whole_cif
-from schedule_download import (
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_whole_cif
+from trainbudget.feeds.schedule_download import (
     DownloadError,
     FeedValidationError,
     ScheduleProbe,
@@ -277,7 +277,7 @@ class CommandLineTest(unittest.TestCase):
     def test_a_failed_download_is_exit_one(self) -> None:
         stderr = io.StringIO()
         failure = DownloadError("the feed refused https://example.test/cif.gz (HTTP 403)")
-        with mock.patch("schedule_download.download_one", side_effect=failure):
+        with mock.patch("trainbudget.feeds.schedule_download.download_one", side_effect=failure):
             with contextlib.redirect_stderr(stderr):
                 code = main(["--url", "https://example.test/cif.gz"])
         self.assertEqual(code, 1)
@@ -292,7 +292,7 @@ class CommandLineTest(unittest.TestCase):
             seconds=1.25,
         )
         env = {"SCHEDULE_USERNAME": "", "SCHEDULE_PASSWORD": ""}
-        with mock.patch("schedule_download.probe", return_value=found), mock.patch.dict(os.environ, env):
+        with mock.patch("trainbudget.feeds.schedule_download.probe", return_value=found), mock.patch.dict(os.environ, env):
             with contextlib.redirect_stdout(stdout):
                 code = main(["--probe", "--url", "https://example.test/cif.gz?X-Amz-Signature=secret"])
         printed = stdout.getvalue()
@@ -304,7 +304,7 @@ class CommandLineTest(unittest.TestCase):
     def test_a_failed_probe_is_exit_one(self) -> None:
         stderr = io.StringIO()
         failure = DownloadError("the feed refused https://example.test/cif.gz (HTTP 401)")
-        with mock.patch("schedule_download.probe", side_effect=failure):
+        with mock.patch("trainbudget.feeds.schedule_download.probe", side_effect=failure):
             with contextlib.redirect_stderr(stderr):
                 code = main(["--probe", "--url", "https://example.test/cif.gz"])
         self.assertEqual(code, 1)

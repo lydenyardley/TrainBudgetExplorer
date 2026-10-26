@@ -25,27 +25,59 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from atoc_fares import FaresDb, location_lookup_candidates
-from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex
+from trainbudget import ROOT
+from trainbudget.fares.atoc_fares import FaresDb, location_lookup_candidates
+from trainbudget.timetable.atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex
 # The shared assets' names are read through the module rather than bound here.
 # They are the identity of the code the pages fetch, so a reader that holds one
 # by value holds a copy of a name this release may have stopped writing: a test
 # that changes the assets has to change them in one place, and a build that
 # resumed past a page because its own copy still matched would leave the page
 # naming a file the prune then deletes (ADR-0071).
-import build_assets
-from build_assets import replace_published
-from page_templates import PAYLOAD_MARKER
+from trainbudget.build import build_assets
+from trainbudget.build.build_assets import replace_published
+from trainbudget.build.page_templates import PAYLOAD_MARKER
 
 
 BUILD_STATE_NAME = ".trainbudget-build.json"
 
 
-CACHE_DIR = Path(__file__).parent / "_cache"
+CACHE_DIR = ROOT / "_cache"
+
+
+def module_path(root: Path, dotted: str) -> Path | None:
+    """The file a dotted module name lives in, or None for a name that is not ours.
+
+    ``root`` is the repository root and a module is ``trainbudget/build/x.py``, so
+    a name the walker cannot find is the standard library, a third party package
+    or a misspelling -- all of which this list has no business hashing.
+    """
+    module = root.joinpath(*dotted.split("."))
+    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _imports_of(node: ast.AST) -> tuple[str, ...]:
+    """Every module name an import statement could be reaching, as dotted names.
+
+    ``from trainbudget.build import build_assets`` names a module through its
+    parent, so both readings are offered and the walker keeps whichever one is a
+    file: the package's ``__init__`` and the module beside it are both sources a
+    page depends on.
+    """
+    if isinstance(node, ast.Import):
+        return tuple(alias.name for alias in node.names)
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        return (node.module,) + tuple(
+            f"{node.module}.{alias.name}" for alias in node.names
+        )
+    return ()
 
 
 def module_sources(root: Path, start: str) -> tuple[str, ...]:
-    """Every module of this project that ``start`` reaches through its imports.
+    """Every source file of this project that ``start`` reaches through its imports.
 
     A build is a function of the code it runs, and that list used to be kept by
     hand -- once here and again in the runner -- so a module named by neither
@@ -54,23 +86,25 @@ def module_sources(root: Path, start: str) -> tuple[str, ...]:
     ``destination_coverage``, and neither list named one of them (F4 of the 8
     October 2026 agent-efficiency audit, which fixed CI's list the same way).
     The imports answer it now, so nothing has to be remembered.
+
+    ``start`` is a dotted name and the answer is a list of paths relative to
+    ``root``, because the modules no longer share one folder: a bare filename
+    would name two different files the same thing the day two areas collide.
     """
-    found: list[str] = []
-    pending = [start]
+    found: list[Path] = []
+    pending = [module_path(root, start)]
     while pending:
-        name = pending.pop()
-        if name in found:
+        path = pending.pop()
+        if path is None or path in found:
             continue
-        found.append(name)
-        for node in ast.walk(ast.parse((root / name).read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Import):
-                reached = [alias.name.split(".")[0] for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                reached = [node.module.split(".")[0]]
-            else:
-                continue
-            pending.extend(f"{module}.py" for module in reached if (root / f"{module}.py").is_file())
-    return tuple(sorted(found))
+        found.append(path)
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            pending.extend(
+                candidate
+                for dotted in _imports_of(node)
+                if (candidate := module_path(root, dotted)) is not None
+            )
+    return tuple(sorted(path.relative_to(root).as_posix() for path in found))
 
 
 # Read as data rather than imported, and therefore not reachable by walking
@@ -84,9 +118,9 @@ DATA_PATTERNS = ("reference-data/*.json", "assets/*")
 
 DATA_SOURCES = tuple(
     sorted(
-        path.relative_to(Path(__file__).parent).as_posix()
+        path.relative_to(ROOT).as_posix()
         for pattern in DATA_PATTERNS
-        for path in Path(__file__).parent.glob(pattern)
+        for path in ROOT.glob(pattern)
         if path.is_file()
     )
 )
@@ -94,7 +128,7 @@ DATA_SOURCES = tuple(
 
 # What a generated page is a function of, hashed into `source_fingerprint` and
 # so into every cache key built from it.
-SOURCE_FILES = module_sources(Path(__file__).parent, "build_demo_page.py") + DATA_SOURCES
+SOURCE_FILES = module_sources(ROOT, "trainbudget.build.build_demo_page") + DATA_SOURCES
 
 
 @functools.lru_cache(maxsize=1)
@@ -104,11 +138,10 @@ def source_fingerprint() -> str:
     Cached because it is asked once per page by a 2,500-page build, and the
     sources cannot change while one process is running.
     """
-    root = Path(__file__).parent
     digest = hashlib.sha256()
     for name in SOURCE_FILES:
         digest.update(name.encode("utf-8"))
-        digest.update((root / name).read_bytes())
+        digest.update((ROOT / name).read_bytes())
     return digest.hexdigest()[:16]
 
 

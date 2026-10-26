@@ -18,7 +18,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from make_synthetic_feed import build_synthetic_feed
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed
 from tools import propose_nature_stations as proposer
 
 FEED_STATIONS = {

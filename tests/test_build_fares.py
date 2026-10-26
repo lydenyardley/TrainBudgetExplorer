@@ -12,10 +12,10 @@ import tempfile
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS, FLOW_F, FaresDb
-from build_demo_page import build_payload, render_page
-from build_payload import unreachable_places
-from make_synthetic_feed import _line, build_synthetic_feed
+from trainbudget.fares.atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS, FLOW_F, FaresDb
+from trainbudget.build.build_demo_page import build_payload, render_page
+from trainbudget.build.build_payload import unreachable_places
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed
 from tests.page_harness import page_markup, page_script, setUpModule, tearDownModule, PageTestCase
 
 
@@ -76,7 +76,7 @@ class FaresPayloadTest(PageTestCase):
     def test_a_nature_destination_carries_its_named_reserve(self) -> None:
         # The synthetic GRN page has no ATB row; the builder still stamps the
         # field on every destination, and the page template names the proof.
-        from atoc_fares import FaresDb, Location
+        from trainbudget.fares.atoc_fares import FaresDb, Location
 
         for row in self.payload["destinations"]:
             self.assertIn("natureSites", row)
@@ -95,7 +95,7 @@ class FaresPayloadTest(PageTestCase):
         )
 
     def test_a_coastal_destination_carries_its_named_day_out(self) -> None:
-        from atoc_fares import FaresDb, Location
+        from trainbudget.fares.atoc_fares import FaresDb, Location
 
         for row in self.payload["destinations"]:
             self.assertIn("coastalSites", row)
@@ -346,7 +346,7 @@ class FaresPayloadTest(PageTestCase):
         # categories X, and the page took a third off them all the same. The
         # card's price on such a ticket is the fare itself, no minimum is
         # involved, and the row says why rather than blaming a minimum fare.
-        from atoc_fare_declarations import StatusDiscount
+        from trainbudget.fares.atoc_fare_declarations import StatusDiscount
 
         with tempfile.TemporaryDirectory() as tmp:
             fares = FaresDb().load_feed(

@@ -17,8 +17,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
 
 
 def add_feed_args(

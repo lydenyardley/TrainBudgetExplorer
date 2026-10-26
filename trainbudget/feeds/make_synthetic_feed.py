@@ -12,7 +12,7 @@ import random
 import json
 from pathlib import Path
 
-from atoc_fares import (
+from trainbudget.fares.atoc_fares import (
     FLOW_F,
     FLOW_T,
     LOCATION,
@@ -21,8 +21,8 @@ from atoc_fares import (
     RAILCARD,
     TICKET_TYPE,
 )
-from atoc_restrictions import RESTRICTION_LAYOUTS, RESTRICTION_OFFSETS
-from atoc_timetable import (
+from trainbudget.fares.atoc_restrictions import RESTRICTION_LAYOUTS, RESTRICTION_OFFSETS
+from trainbudget.timetable.atoc_timetable import (
     CIF_HEADER,
     CIF_INTERMEDIATE,
     CIF_ORIGIN,

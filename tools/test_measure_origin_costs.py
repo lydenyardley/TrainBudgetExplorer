@@ -19,9 +19,9 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 
-import build_demo_page
-import build_state
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_state
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 from tools import measure_origin_costs
 
 

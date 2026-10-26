@@ -105,9 +105,9 @@ Timetable data**. If it does, set `NRDP_USERNAME` and `NRDP_PASSWORD` in the
 local environment and run:
 
 ```bash
-python dtd_download.py
-python dtd_audit.py
-python grantham_sweep.py --feed feeds/fares --origin GRA --budget 20 --adults 2 --railcard "Two Together"
+python -m trainbudget.feeds.dtd_download
+python -m trainbudget.feeds.dtd_audit
+python -m trainbudget.measure.grantham_sweep --feed feeds/fares --origin GRA --budget 20 --adults 2 --railcard "Two Together"
 ```
 
 The real Grantham code is `GRA`; `GRN` belongs only to the synthetic fixture.

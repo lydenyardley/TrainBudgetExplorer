@@ -16,12 +16,12 @@ import urllib.request
 import zipfile
 from unittest import mock
 
-import atoc_fares
-import atoc_restrictions
+from trainbudget.fares import atoc_fares
+from trainbudget.fares import atoc_restrictions
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import (
+from trainbudget.fares.atoc_fares import (
     COASTAL_SITE_PROOFS,
     SEASIDE_SUPPLEMENT_CRS,
     seaside_crs_missing_coastal_proofs,
@@ -62,8 +62,8 @@ from atoc_fares import (
     is_advance_ticket,
     is_pseudo_station,
 )
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates, write_delete_marker
-from atoc_restrictions import RESTRICTION_LAYOUTS
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates, write_delete_marker
+from trainbudget.fares.atoc_restrictions import RESTRICTION_LAYOUTS
 
 
 def facet(key: str):
@@ -1096,8 +1096,8 @@ class FaresParserTest(unittest.TestCase):
         # 22 October 2026, £17.60 each, where a third off £26.50 is £17.65 and
         # the page said £35.30. The card's adult status and the ticket's
         # discount category are the key, as the feed writes them.
-        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
-        from make_synthetic_feed import _line
+        from trainbudget.fares.atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from trainbudget.feeds.make_synthetic_feed import _line
 
         def ticket(code: str, category: str) -> str:
             return _line(
@@ -1130,8 +1130,8 @@ class FaresParserTest(unittest.TestCase):
         self.assertEqual(db.railcard_price("2TR", "SNS", 2650, day=day), 1765)
 
     def test_a_lapsed_status_discount_is_not_applied(self) -> None:
-        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
-        from make_synthetic_feed import _line
+        from trainbudget.fares.atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from trainbudget.feeds.make_synthetic_feed import _line
 
         db = FaresDb()
         db._load_lines("t.tty", [_line(
@@ -1154,8 +1154,8 @@ class FaresParserTest(unittest.TestCase):
         # no discount it cannot raise the fare either. F, M, H and L need the
         # status record's flat and minimum fares, which this reader does not
         # model, so they read as no discount: never a fare below the one sold.
-        from atoc_fare_declarations import RAILCARD, TICKET_TYPE
-        from make_synthetic_feed import _line
+        from trainbudget.fares.atoc_fare_declarations import RAILCARD, TICKET_TYPE
+        from trainbudget.feeds.make_synthetic_feed import _line
 
         db = FaresDb()
         db._load_lines("t.tty", [
@@ -1185,8 +1185,8 @@ class FaresParserTest(unittest.TestCase):
         # 24 September 2026 feed writes for FAMILY SGL 1+1, UNDER 11 SINGLE
         # and ANYTIME DAY S. A blank block, as the synthetic fixture writes,
         # sets no limit.
-        from atoc_fare_declarations import TICKET_TYPE
-        from make_synthetic_feed import _line
+        from trainbudget.fares.atoc_fare_declarations import TICKET_TYPE
+        from trainbudget.feeds.make_synthetic_feed import _line
 
         blocks = {
             "FYA": ("002", "002", "001", "001", "001", "001"),

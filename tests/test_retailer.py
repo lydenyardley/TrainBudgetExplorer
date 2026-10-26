@@ -11,7 +11,7 @@ import unittest
 from datetime import date
 from urllib.parse import parse_qs, unquote, urlparse
 
-from retailer import (
+from trainbudget.fares.retailer import (
     AFFILIATE_NETWORKS,
     DISCLOSURE,
     PROVIDERS,

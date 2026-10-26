@@ -32,7 +32,7 @@ one it took.**
 - `--no-build` never builds and **fails** if there is nothing to serve, rather
   than quietly building what it was told not to.
 
-The build remains `python build_demo_page.py` with its own flags, which is what
+The build remains `python -m trainbudget.build.build_demo_page` with its own flags, which is what
 the deploy workflow already calls directly and what every "build one origin and
 read the page" instruction in the README already tells a reader to type. Nothing
 about building a page changed; what changed is that the runner stopped being the

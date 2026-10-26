@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import page_templates
+from trainbudget.build import page_templates
 
 #: Each file under page/, and the string the page ships it in. A file that is
 #: not in its holder is a block that stopped being read, which leaves the page

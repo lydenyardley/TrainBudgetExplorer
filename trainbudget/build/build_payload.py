@@ -16,30 +16,30 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
-from atoc_fare_declarations import Location, RailcardFamily, Reachable
-from atoc_fares import (
+from trainbudget.fares.atoc_fare_declarations import Location, RailcardFamily, Reachable
+from trainbudget.fares.atoc_fares import (
     EVERYTHING_PENCE,
     FaresDb,
     PLACEHOLDER_TICKET_CODES,
     TwoPartFare,
     is_pseudo_station,
 )
-from atoc_knowledgebase import ABSENT, Knowledgebase, RestrictionCheck, check_restrictions
-from atoc_timetable import SliceIndex, TimetableDb
+from trainbudget.timetable.atoc_knowledgebase import ABSENT, Knowledgebase, RestrictionCheck, check_restrictions
+from trainbudget.timetable.atoc_timetable import SliceIndex, TimetableDb
 # The asset names are read through the module: they are digests of the bytes
 # the route fetches, so the payload must name what this release writes, and a
 # test that changes the assets changes them in one place (ADR-0071).
-import build_assets
-from build_assets import (
+from trainbudget.build import build_assets
+from trainbudget.build.build_assets import (
     LINK_NOTE_FALLBACK,
     station_slugs_for,
     with_base,
 )
-from build_provenance import STALE_AFTER_DAYS, cif_date_to_iso, restriction_codes_shown
-from build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE, service_claim
-from build_state import read_service_week, source_fingerprint, write_service_week
-from destination_coverage import UnsourcedReport, unnameable_from_tally
-from retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
+from trainbudget.build.build_provenance import STALE_AFTER_DAYS, cif_date_to_iso, restriction_codes_shown
+from trainbudget.build.build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE, service_claim
+from trainbudget.build.build_state import read_service_week, source_fingerprint, write_service_week
+from trainbudget.fares.destination_coverage import UnsourcedReport, unnameable_from_tally
+from trainbudget.fares.retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
 
 
 DEPARTURE_LIMIT = 5

@@ -63,15 +63,19 @@ class VerdictTest(unittest.TestCase):
         return code, buffer.getvalue()
 
     def test_an_error_in_a_listed_file_fails(self) -> None:
-        code, said = self.check(report("build_demo_page.py:1: error: nope  [misc]"))
+        code, said = self.check(
+            report("trainbudget/build/build_demo_page.py:1: error: nope  [misc]")
+        )
         self.assertEqual(code, 1)
-        self.assertIn("build_demo_page.py", said)
+        self.assertIn("trainbudget/build/build_demo_page.py", said)
 
     def test_an_error_in_a_file_that_is_not_listed_does_not_fail(self) -> None:
         # atoc_fares_loader has 108 errors of its own today and is not on the
         # list: a check that failed on it would be red before it was written.
-        self.assertNotIn("atoc_fares_loader.py", check_types.CLEAN)
-        code, said = self.check(report("atoc_fares_loader.py:84: error: nope  [attr-defined]"))
+        self.assertNotIn("trainbudget/fares/atoc_fares_loader.py", check_types.CLEAN)
+        code, said = self.check(
+            report("trainbudget/fares/atoc_fares_loader.py:84: error: nope  [attr-defined]")
+        )
         self.assertEqual(code, 0)
         self.assertIn("no type error", said)
 
@@ -86,7 +90,10 @@ class VerdictTest(unittest.TestCase):
         self.assertIn("read nothing", said)
 
     def test_the_census_prints_and_does_not_fail(self) -> None:
-        code, said = self.check(report("atoc_fares_loader.py:1: error: nope  [misc]"), argv=["--all"])
+        code, said = self.check(
+            report("trainbudget/fares/atoc_fares_loader.py:1: error: nope  [misc]"),
+            argv=["--all"],
+        )
         self.assertEqual(code, 0)
         self.assertIn("1 file(s) with errors of their own", said)
 

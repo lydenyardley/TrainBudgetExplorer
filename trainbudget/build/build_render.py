@@ -12,13 +12,13 @@ import json
 import re
 from pathlib import Path
 
-from atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS
+from trainbudget.fares.atoc_fares import DESTINATION_FACET_SOURCES, DESTINATION_TYPE_FILTERS
 # The asset names come from the module that writes the assets, so a release
 # that renames one (a script edit, a stylesheet edit) renames it for the pages
 # and the prune in the same place, and a test that changes the assets patches
 # one name rather than four copies of it (ADR-0071).
-import build_assets
-from build_assets import (
+from trainbudget.build import build_assets
+from trainbudget.build.build_assets import (
     chooser_script_tag,
     page_path_for_route,
     prune_shared_assets,
@@ -29,9 +29,9 @@ from build_assets import (
     write_chooser_script,
     write_page_atomic,
 )
-from build_payload import encode_payload, without_station_facts
-from build_provenance import human_date
-from build_release import (
+from trainbudget.build.build_payload import encode_payload, without_station_facts
+from trainbudget.build.build_provenance import human_date
+from trainbudget.build.build_release import (
     DEFAULT_NOTE,
     DEFAULT_PRICE_SOURCE,
     SYNTHETIC_BANNER,
@@ -43,7 +43,7 @@ from build_release import (
     nre_source_line,
     write_release_manifest,
 )
-from page_templates import CHEVRON, CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
+from trainbudget.build.page_templates import CHEVRON, CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
 
 
 def write_release(

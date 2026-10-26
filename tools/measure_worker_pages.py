@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from build_workers import WORKER_BYTES, _WORKER, build_page_job, init_worker
+from trainbudget.build.build_workers import WORKER_BYTES, _WORKER, build_page_job, init_worker
 
 MB = 1_000_000
 
@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", default=None)
     args = parser.parse_args(argv)
 
-    from build_demo_page import fares_index_cache_paths
+    from trainbudget.build.build_demo_page import fares_index_cache_paths
 
     common_cache, index_dir = fares_index_cache_paths(args.feed)
     if not Path(common_cache).is_file():
@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     trace.say(f"index: {stats.get('schedules', 0):,} schedules, "
               f"{stats.get('calling_points', 0):,} calling points")
 
-    from atoc_fares import FaresDb
+    from trainbudget.fares.atoc_fares import FaresDb
 
     built = 0
     for code in origins:

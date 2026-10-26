@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from build_stations import build_command, missing_feeds
+from trainbudget.build.build_stations import build_command, missing_feeds
 
 
 class MissingFeedsTest(unittest.TestCase):

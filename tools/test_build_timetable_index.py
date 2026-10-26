@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from make_synthetic_feed import build_synthetic_timetable
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_timetable
 from tools.build_timetable_index import main
 
 

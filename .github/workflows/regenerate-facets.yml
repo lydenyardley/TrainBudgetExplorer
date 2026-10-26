@@ -36,7 +36,7 @@ jobs:
         env:
           NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds
+        run: python -m trainbudget.feeds.dtd_download --output-root feeds
 
       - name: Download the Knowledgebase reference feeds
         # Needed, not optional, for a faithful regeneration: the heritage prune
@@ -49,7 +49,7 @@ jobs:
         env:
           NRDP_USERNAME: ${{ secrets.NRDP_USERNAME }}
           NRDP_PASSWORD: ${{ secrets.NRDP_PASSWORD }}
-        run: python dtd_download.py --output-root feeds --kb-only
+        run: python -m trainbudget.feeds.dtd_download --output-root feeds --kb-only
 
       - name: List the feed's station codes
         # Codes only, the public three-letter CRS, so a reviewer can name the

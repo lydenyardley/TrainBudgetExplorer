@@ -20,11 +20,11 @@ import os
 from pathlib import Path
 import pickle
 
-from atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
-from atoc_fares_loader import LOCATION_FILE_SUFFIXES, FaresLoader
-from parse_report import ParseReport, read_feed_files
+from trainbudget.fares.atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
+from trainbudget.fares.atoc_fares_loader import LOCATION_FILE_SUFFIXES, FaresLoader
+from trainbudget.fares.parse_report import ParseReport, read_feed_files
 
-from atoc_fare_declarations import (
+from trainbudget.fares.atoc_fare_declarations import (
     ADVANCE_REASON,
     ADVANCE_RESTRICTION_CODES,
     COASTAL_SITE_PROOFS,

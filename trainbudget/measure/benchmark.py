@@ -20,9 +20,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import MAX_ONWARD_DEPARTURES, TimetableDb
-from make_synthetic_feed import build_large_synthetic_feed
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import MAX_ONWARD_DEPARTURES, TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_large_synthetic_feed
 
 UNLIMITED = 0
 DEFAULT_CAPS = (UNLIMITED, 20, 60, 200)

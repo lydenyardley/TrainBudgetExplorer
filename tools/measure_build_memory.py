@@ -30,14 +30,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from build_demo_page import (
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_demo_page import (
     _priced_destinations,
     fares_index_cache_paths,
     is_pseudo_station,
 )
-from build_workers import (
+from trainbudget.build.build_workers import (
     ONE_WORKER_FLOOR,
     PARENT_BYTES,
     RESERVED_BYTES,
@@ -45,7 +45,7 @@ from build_workers import (
     free_memory_bytes,
     worker_budget,
 )
-from destination_coverage import UnsourcedReport
+from trainbudget.fares.destination_coverage import UnsourcedReport
 
 MB = 1_000_000
 

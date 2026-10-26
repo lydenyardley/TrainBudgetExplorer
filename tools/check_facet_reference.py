@@ -45,8 +45,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 
-from atoc_fares import SUPPORTED_DESTINATION_FACETS
-from feeds_cli import add_feed_args
+from trainbudget.fares.atoc_fares import SUPPORTED_DESTINATION_FACETS
+from trainbudget.feeds.feeds_cli import add_feed_args
 from tools.regenerate_destination_facets import DEFAULT_FEED, build
 
 DEFAULT_REFERENCE = (

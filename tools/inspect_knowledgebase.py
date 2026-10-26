@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-from atoc_knowledgebase import (
+from trainbudget.timetable.atoc_knowledgebase import (
     CODE_NAMES,
     DESCRIPTION_NAMES,
     OUTWARD_NAMES,
@@ -314,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         if not arguments.path.exists():
             print(
                 f"{arguments.path} is not there. Download the reference feeds with "
-                "`python dtd_download.py --output-root feeds --kb-only`, or pass the path "
+                "`python -m trainbudget.feeds.dtd_download --output-root feeds --kb-only`, or pass the path "
                 "to a feed you have.",
                 file=sys.stderr,
             )

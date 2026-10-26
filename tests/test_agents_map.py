@@ -19,7 +19,15 @@ def mapped(path: Path) -> bool:
 
 class AgentsMapTest(unittest.TestCase):
     def test_every_module_the_site_is_made_of_is_on_the_map(self) -> None:
-        for path in sorted(ROOT.glob("*.py")):
+        # The modules live in `trainbudget/`, so the walk goes below the root: a
+        # check that read only the files beside this test would find `run.py` and
+        # pass while every module the site is made of went unnamed.
+        modules = [
+            path
+            for path in list(ROOT.glob("*.py")) + list((ROOT / "trainbudget").rglob("*.py"))
+            if path.name != "__init__.py"
+        ]
+        for path in sorted(modules):
             with self.subTest(module=path.name):
                 self.assertTrue(mapped(path), f"{path.name} is not named in AGENTS.md")
 

@@ -48,8 +48,8 @@ from pathlib import Path
 import time
 
 
-from atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex, TimetableDb
-from build_demo_page import (
+from trainbudget.timetable.atoc_timetable import SLICE_INDEX_SCHEMA, SliceIndex, TimetableDb
+from trainbudget.build.build_demo_page import (
     TIMETABLE_INDEX_ROOT,
     timetable_index_location,
 )

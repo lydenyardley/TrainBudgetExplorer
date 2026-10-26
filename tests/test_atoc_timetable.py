@@ -13,7 +13,7 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
-from atoc_timetable import (
+from trainbudget.timetable.atoc_timetable import (
     CIF_INTERMEDIATE,
     CIF_ORIGIN,
     CIF_SCHEDULE,
@@ -25,7 +25,7 @@ from atoc_timetable import (
     TimetableDb,
     format_minutes,
 )
-from make_synthetic_feed import (
+from trainbudget.feeds.make_synthetic_feed import (
     WHOLE_CIF_NAME,
     _line,
     build_synthetic_timetable,
@@ -805,7 +805,7 @@ class TimetableFocusTest(unittest.TestCase):
     def test_the_focus_set_covers_every_list_the_page_composes(self) -> None:
         # The focus set is built where the timetable is loaded, which is
         # build_pool.py's own phase since the split (ADR-0071).
-        source = Path(__file__).resolve().parent.parent / "build_pool.py"
+        source = Path(__file__).resolve().parent.parent / "trainbudget/build/build_pool.py"
         code = source.read_text(encoding="utf-8")
         start = code.index("focus_destinations: set[str] = set()")
         block = code[start:code.index("cache_path = (", start)]
@@ -1136,7 +1136,7 @@ class SliceIndexTest(unittest.TestCase):
         # The file on disk is something else -- a truncated write, another
         # program's file -- which is the failure a writer has to notice, because
         # every build after this one would read a miss and say nothing.
-        with mock.patch("atoc_timetable.pickle.load", return_value=None):
+        with mock.patch("trainbudget.timetable.atoc_timetable.pickle.load", return_value=None):
             with self.assertRaises(OSError):
                 self.index.save("GRN", self.db.focused("GRN"))
 

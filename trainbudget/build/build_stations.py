@@ -65,14 +65,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from build_demo_page import NOTICES
+from trainbudget import ROOT
+from trainbudget.build.build_demo_page import NOTICES
 # The floor is the measured cost of the feeds plus the reserve, not a guess: a
 # machine short of it still builds, on one page at a time, with Windows paging.
 # Said before the build starts rather than discovered halfway through it.
-from build_workers import ONE_WORKER_FLOOR, free_memory_bytes
+from trainbudget.build.build_workers import ONE_WORKER_FLOOR, free_memory_bytes
 from run import serve
 
-ROOT = Path(__file__).parent
 SITE = ROOT / "_stations"
 PORT_DEFAULT = 8742
 DEFAULT_CODES = ("GRA", "NOT")
@@ -96,7 +96,10 @@ def build_command(args: argparse.Namespace, codes: list[str]) -> list[str]:
     """The builder invocation, assembled here so the script states what it runs."""
     return [
         sys.executable,
-        "build_demo_page.py",
+        # A module rather than a path: the builder is one file of a package now,
+        # so it is named the way any other module of it is.
+        "-m",
+        "trainbudget.build.build_demo_page",
         "--feed", str(args.feed),
         "--timetable", str(args.timetable),
         "--knowledgebase", str(args.knowledgebase),

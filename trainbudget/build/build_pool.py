@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from atoc_fares import EVERYTHING_PENCE, FaresDb, is_pseudo_station
-from atoc_timetable import TimetableDb
-from build_assets import (
+from trainbudget.fares.atoc_fares import EVERYTHING_PENCE, FaresDb, is_pseudo_station
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_assets import (
     STATION_ASSET_NAME,
     STATION_FACTS_NAME,
     published_routes_for,
@@ -34,15 +34,15 @@ from build_assets import (
     write_station_script,
     write_station_style,
 )
-from build_payload import (
+from trainbudget.build.build_payload import (
     _priced_destinations,
     build_payload,
     build_station_index,
     places_in_payload,
     station_facts,
 )
-from build_provenance import describe_restriction_note, reference_fingerprint
-from build_release import (
+from trainbudget.build.build_provenance import describe_restriction_note, reference_fingerprint
+from trainbudget.build.build_release import (
     DEFAULT_NOTE,
     DEFAULT_PRICE_SOURCE,
     DEFAULT_PRIVACY_CONTACT,
@@ -53,8 +53,8 @@ from build_release import (
     site_features,
     wants_nre_credit,
 )
-from build_render import render_page, write_release
-from build_state import (
+from trainbudget.build.build_render import render_page, write_release
+from trainbudget.build.build_state import (
     BUILD_STATE_NAME,
     fares_cache_identity,
     fares_index_cache_paths,
@@ -73,8 +73,8 @@ from build_state import (
     write_priced_facts,
     write_resume_state,
 )
-from destination_coverage import UnsourcedReport
-from retailer import DISCLOSURE, pairing_warning
+from trainbudget.fares.destination_coverage import UnsourcedReport
+from trainbudget.fares.retailer import DISCLOSURE, pairing_warning
 
 
 # The per-origin tripwire (ADR-0024): one origin should take tens of seconds
@@ -1051,7 +1051,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
         # It used to keep the parent's whole feed, and that is what paged:
         # 2.1 GB of fares held beside the national timetable through every
         # page of the render, on a machine whose own floor is 6.4 GB free.
-        from build_workers import (
+        from trainbudget.build.build_workers import (
             _WORKER,
             build_page_job,
             configure_worker,
@@ -1080,7 +1080,7 @@ def _build_all_origins(ctx: BuildContext) -> int:
         # here, instead of an imap that waits forever on a dead queue.
         # Completion is consumed as each page finishes, not in submission
         # order, so a slow early station cannot hide progress on the rest.
-        from build_workers import build_page_job, init_worker
+        from trainbudget.build.build_workers import build_page_job, init_worker
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         # The parent is finished with every database it loaded. The fare

@@ -29,7 +29,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-from dtd_download import feed_fingerprint
+from trainbudget.feeds.dtd_download import feed_fingerprint
 from tools.build_inputs import fingerprint as build_inputs
 from tools.release import output
 

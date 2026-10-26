@@ -20,13 +20,13 @@ import contextlib
 import io
 from pathlib import Path
 import argparse
-import build_demo_page
-import build_state
-from atoc_fares import FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
-from atoc_timetable import TimetableDb
-from build_demo_page import build_payload, explain_unpriced, render_page
-from build_release import SERVICE_CLAIM, SERVICE_CLAIM_WITHOUT_TIMES
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_state
+from trainbudget.fares.atoc_fares import FLOW_F, FLOW_T, TICKET_TYPE, FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_demo_page import build_payload, explain_unpriced, render_page
+from trainbudget.build.build_release import SERVICE_CLAIM, SERVICE_CLAIM_WITHOUT_TIMES
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from tests.page_harness import browser_suite_text, embedded_payload, embedded_text, js_function, page_markup, page_script, serialised_callback_lines, setUpModule, station_page, tearDownModule, PageTestCase
 
 
@@ -169,7 +169,7 @@ class DemoPageTest(PageTestCase):
         # DS7 of the 19 October 2026 distill pass: the column headings wear the
         # one uppercase label rule, so the hold column carries both classes.
         self.assertIn('<th scope="col" class="eyebrow hold">Shortlist</th>', self.html)
-        from page_templates import STATION_STYLESHEET
+        from trainbudget.build.page_templates import STATION_STYLESHEET
 
         self.assertIn(
             "th.hold, td.hold { width: 1%; white-space: nowrap; padding-left: .2rem; text-align: center; }",
@@ -449,7 +449,7 @@ class DemoPageTest(PageTestCase):
         # what it is: the two single-page routes inline it, and the station route
         # -- 2,712 pages carrying the same 34.6 KB -- fetches the one file the
         # build writes.
-        from page_templates import (
+        from trainbudget.build.page_templates import (
             CHOOSER_TEMPLATE,
             PRIVACY,
             SHARED_CSS,
@@ -638,7 +638,7 @@ class DemoPageTest(PageTestCase):
         # border on three sides, no fill and no gap under it, and the open toggle
         # squares off its bottom corners to meet it. These live in the stylesheet
         # the build writes, not in the page that links it.
-        from page_templates import STATION_STYLESHEET
+        from trainbudget.build.page_templates import STATION_STYLESHEET
 
         panel_rule = STATION_STYLESHEET.split(
             '.more-filters[data-open="true"] .more-filters-panel {', 1
@@ -1204,7 +1204,7 @@ class DemoPageTest(PageTestCase):
         self.assertIn('const CHEVRON = "<svg class=', script)
         # 2.75rem is the 44px the row's other control is held to, and the
         # rotated state is what distinguishes open from closed.
-        from page_templates import STATION_STYLESHEET
+        from trainbudget.build.page_templates import STATION_STYLESHEET
 
         stylesheet = STATION_STYLESHEET
         self.assertIn(".row-expand {", stylesheet)

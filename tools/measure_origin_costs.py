@@ -33,8 +33,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-import build_demo_page
-from atoc_timetable import TimetableDb
+from trainbudget.build import build_demo_page
+from trainbudget.timetable.atoc_timetable import TimetableDb
 
 #: The service week the build searches, as days past the service date. Eight
 #: days, because the build walks SERVICE_WEEK_HORIZON + 1 past its day, and a

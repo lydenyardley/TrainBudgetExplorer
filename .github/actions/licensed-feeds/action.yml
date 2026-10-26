@@ -46,7 +46,7 @@ runs:
         NRDP_USERNAME: ${{ inputs.nrdp-username }}
         NRDP_PASSWORD: ${{ inputs.nrdp-password }}
         SHARD: ${{ inputs.shard }}
-      run: python dtd_download.py --output-root feeds --stagger "$SHARD"
+      run: python -m trainbudget.feeds.dtd_download --output-root feeds --stagger "$SHARD"
 
     - name: Download the timetable the release publishes from
       shell: bash
@@ -72,10 +72,10 @@ runs:
       run: |
         case "$KNOWLEDGEBASE" in
           required)
-            python dtd_download.py --output-root feeds --kb-only --required --stagger "$SHARD"
+            python -m trainbudget.feeds.dtd_download --output-root feeds --kb-only --required --stagger "$SHARD"
             ;;
           tolerant)
-            python dtd_download.py --output-root feeds --kb-only --stagger "$SHARD" || echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. They are a different subscription from the DTD fares and timetable, so this is usually an entitlement question; the pages will say no independent reference feed was checked."
+            python -m trainbudget.feeds.dtd_download --output-root feeds --kb-only --stagger "$SHARD" || echo "::warning title=reference feed::the Knowledgebase reference feeds could not be downloaded. They are a different subscription from the DTD fares and timetable, so this is usually an entitlement question; the pages will say no independent reference feed was checked."
             ;;
           *)
             echo "::error title=licensed feeds::knowledgebase must be required or tolerant, not $KNOWLEDGEBASE"

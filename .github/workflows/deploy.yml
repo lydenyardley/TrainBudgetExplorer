@@ -124,7 +124,7 @@ jobs:
         # The cache key for the next run: two runs with the same fingerprint
         # published the same prices.
         id: feed_fingerprint
-        run: echo "value=$(python dtd_download.py --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
+        run: echo "value=$(python -m trainbudget.feeds.dtd_download --print-fingerprint feeds/download-manifest.json)" >> "$GITHUB_OUTPUT"
 
       - name: Name the day this release publishes times for
         # One day for the whole run, decided once: two shares built either side
@@ -144,7 +144,7 @@ jobs:
 
       - name: Audit downloaded feeds
         if: steps.feed_check.outputs.changed == 'true'
-        run: python dtd_audit.py --feed feeds/fares --timetable feeds/timetable
+        run: python -m trainbudget.feeds.dtd_audit --feed feeds/fares --timetable feeds/timetable
 
       # Audit D2: hold today's measured unsourced count so the gap cannot
       # regrow silently between deliberate review passes. The ceiling falls
@@ -157,7 +157,7 @@ jobs:
         # 3,437 to 3,453 (5f5df69), adding 11 unsourced priced destinations
         # (e.g. CPK, WFH, WFJ, BID, PMT). Lower it again as reviewed classes
         # are added.
-        run: python destination_coverage.py --feed feeds/fares --unsourced-ceiling 1544
+        run: python -m trainbudget.fares.destination_coverage --feed feeds/fares --unsourced-ceiling 1544
 
       - name: Gate the published price per minute
         # The band, its measurement and why it has no exception list are in
@@ -262,7 +262,7 @@ jobs:
       - name: Merge the shares into one site
         # --merge refuses shares that overlap, leave a gap, or were built from
         # another download or another revision of the code.
-        run: python build_demo_page.py --feed feeds/fares --merge _shards/shard-* --out _site/index.html
+        run: python -m trainbudget.build.build_demo_page --feed feeds/fares --merge _shards/shard-* --out _site/index.html
 
       - name: Hold the site inside the byte budget
         # The one step that reads the bytes: every other check here is still
@@ -318,7 +318,11 @@ jobs:
             .feed-state/build-inputs.sha256
           # Keyed on the feed fingerprint, not the manifest's bytes, so the
           # entry is replaced only when the feeds really are different.
-          key: feed-manifest-v3-${{ hashFiles('build_demo_page.py', 'atoc_fares.py', 'page_templates.py') }}-${{ needs.build.outputs.fingerprint }}
+          # The three paths are the ones `tools/build_inputs.py` names as the
+          # build's own rule; they moved into the package, and a path that no
+          # longer exists hashes to nothing, which would have keyed every commit
+          # the same without saying so.
+          key: feed-manifest-v3-${{ hashFiles('trainbudget/build/build_demo_page.py', 'trainbudget/fares/atoc_fares.py', 'trainbudget/build/page_templates.py') }}-${{ needs.build.outputs.fingerprint }}
 
       # One day: the deploy job takes this artifact in the same run, minutes
       # later, and a public repository's artifacts are downloadable by anyone.

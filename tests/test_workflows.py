@@ -371,7 +371,7 @@ class KnowledgebaseFeedTest(unittest.TestCase):
         self.assertNotIn("||", required)
 
     def test_every_portal_download_is_staggered(self) -> None:
-        downloads = [line for line in self.action().splitlines() if "python dtd_download.py" in line]
+        downloads = [line for line in self.action().splitlines() if "python -m trainbudget.feeds.dtd_download" in line]
         self.assertEqual(len(downloads), 3)
         for line in downloads:
             self.assertIn('--stagger "$SHARD"', line)

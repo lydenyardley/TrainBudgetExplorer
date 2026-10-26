@@ -25,9 +25,9 @@ Etiquette: one request per seller, no retries, no crawling, and nothing is read
 out of a response beyond which kind of page it is. This does not harvest fares,
 and it must not grow into something that does.
 
-    python check_links.py
-    python check_links.py --provider trainline --origin GRA --destination NOT
-    python check_links.py --mode fallback
+    python -m tools.check_links
+    python -m tools.check_links --provider trainline --origin GRA --destination NOT
+    python -m tools.check_links --mode fallback
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import urllib.request
 from datetime import date
 
 
-from retailer import PROVIDERS, ticket_link
+from trainbudget.fares.retailer import PROVIDERS, ticket_link
 
 TIMEOUT_SECONDS = 20
 # Identifies the check so a seller's logs say what knocked.

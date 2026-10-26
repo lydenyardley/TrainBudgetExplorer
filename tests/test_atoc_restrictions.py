@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from atoc_restrictions import (
+from trainbudget.fares.atoc_restrictions import (
     RESTRICTION_WIDTHS,
     RestrictionIndex,
     parse_header,

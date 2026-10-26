@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from grantham_sweep import enrich_with_journeys
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.measure.grantham_sweep import enrich_with_journeys
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
 
 class SweepMergeTest(unittest.TestCase):

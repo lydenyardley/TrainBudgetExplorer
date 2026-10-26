@@ -16,15 +16,15 @@ import io
 from pathlib import Path
 from unittest import mock
 
-import build_demo_page
-import build_render
-from build_assets import page_path_for_route
-from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
-from atoc_timetable import TimetableDb
-from build_demo_page import build_payload, build_station_index, encode_payload, render_page
-from build_payload import decode_payload
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
-from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_render
+from trainbudget.build.build_assets import page_path_for_route
+from trainbudget.fares.atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_demo_page import build_payload, build_station_index, encode_payload, render_page
+from trainbudget.build.build_payload import decode_payload
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from trainbudget.build.page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
 
 from tests.page_harness import embedded_payload, embedded_text, page_script, setUpModule, station_page, tearDownModule
 
@@ -130,7 +130,7 @@ class SharedStationAssetTest(unittest.TestCase):
         # a new file: a cached copy can never be served beside a page built
         # from another revision of the CSS, and no build step has to be told to
         # rename anything.
-        from page_templates import STATION_STYLESHEET
+        from trainbudget.build.page_templates import STATION_STYLESHEET
 
         name = build_demo_page.station_style_asset_name()
         assets = sorted(path.name for path in self.site.rglob("*.css"))
@@ -142,7 +142,7 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertIn(name, self.log, "the build says what it wrote and where")
 
     def test_every_station_page_names_the_script_and_inlines_none_of_it(self) -> None:
-        from page_templates import STATION_SCRIPT
+        from trainbudget.build.page_templates import STATION_SCRIPT
 
         pages = sorted((self.site / "from").glob("*/index.html"))
         self.assertEqual(len(pages), 2)
@@ -166,7 +166,7 @@ class SharedStationAssetTest(unittest.TestCase):
         # file: a cached copy can never be served beside a page built from
         # another revision of the code, and no build step has to be told to
         # rename anything.
-        from page_templates import STATION_SCRIPT
+        from trainbudget.build.page_templates import STATION_SCRIPT
 
         name = build_demo_page.station_script_asset_name()
         assets = sorted(
@@ -301,7 +301,7 @@ class SharedStationAssetTest(unittest.TestCase):
         # The chooser's code moves out of the page for the same reason the
         # station route's does (T10): one file beside the release rather than a
         # copy inside the one page that carries it.
-        from page_templates import CHOOSER_SCRIPT
+        from trainbudget.build.page_templates import CHOOSER_SCRIPT
 
         chooser = (self.site / "index.html").read_text(encoding="utf-8")
         name = build_demo_page.chooser_script_asset_name()

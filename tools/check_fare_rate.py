@@ -32,8 +32,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
 
 # The sentinel budget: what every origin can reach, so nothing is dropped for
 # price before the rate is measured.

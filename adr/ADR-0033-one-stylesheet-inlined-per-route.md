@@ -121,7 +121,7 @@ projection is retired, because a build of the whole network now exists and
 disagrees with it: **583 MB over 2,714 pages against the 800 MB budget**, from
 
 ```
-python build_demo_page.py --feed feeds/fares --fast-all-origins \
+python -m trainbudget.build.build_demo_page --feed feeds/fares --fast-all-origins \
   --notices nre,rdg,ogl,accuracy --out _cache/site_measure/index.html
 python -m tools.page_bytes --site _cache/site_measure
 ```

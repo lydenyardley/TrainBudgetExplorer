@@ -24,8 +24,11 @@ licences/*.pdf
 # Downloaded feeds and the non-secret download manifest. Licensed data: it is
 # not ours to redistribute (ADR-0005; see the DTD research for the current
 # publication gate), and the fares feed is large. `feeds/` is the folder the
-# README's live commands use.
-feeds/
+# README's live commands use. Anchored to the root on purpose: an unanchored
+# pattern would also ignore `trainbudget/feeds/`, which is the package's own
+# feed downloaders, and a source file that is silently ignored is a file that is
+# silently left out of a commit.
+/feeds/
 RJFAF*/
 rjfaf*/
 *.zip

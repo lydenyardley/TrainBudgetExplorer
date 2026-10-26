@@ -15,7 +15,8 @@ import re
 import sys
 from pathlib import Path
 
-from build_assets import internal_hrefs, page_path_for_route, write_page_atomic
+from trainbudget import ROOT
+from trainbudget.build.build_assets import internal_hrefs, page_path_for_route, write_page_atomic
 
 
 DEFAULT_NOTE = (
@@ -292,7 +293,7 @@ def notices_or_attribution(args: argparse.Namespace) -> str | list[str] | None:
     return args.attribution
 
 
-NRE_LOGO = Path(__file__).resolve().parent / "assets" / "powered-by-national-rail.svg"
+NRE_LOGO = ROOT / "assets" / "powered-by-national-rail.svg"
 
 
 NRE_WEBSITE = "https://www.nationalrail.co.uk/developers/"

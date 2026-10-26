@@ -6,16 +6,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FLOW_F, FLOW_T, LOCATION, FaresDb
-from atoc_timetable import (
+from trainbudget.fares.atoc_fares import FLOW_F, FLOW_T, LOCATION, FaresDb
+from trainbudget.timetable.atoc_timetable import (
     CIF_ORIGIN,
     CIF_SCHEDULE,
     CIF_TERMINUS,
     CIF_TIPLOC_INSERT,
     TimetableDb,
 )
-from feed_audit import audit
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from trainbudget.feeds.feed_audit import audit
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 
 
 class FeedAuditTest(unittest.TestCase):

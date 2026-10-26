@@ -123,7 +123,7 @@ want of a name as it goes. Summed over the origins the coverage report
 checks, it drops 41,034 rows for having no location record and 39,982 for
 having no station code — 81,016 rows in all, 1,001 of them on ECW's page
 alone. No reviewed list closes this gap, because a flow runs to an NLC the
-feed never locates. `python destination_coverage.py --feed feeds/fares`
+feed never locates. `python -m trainbudget.fares.destination_coverage --feed feeds/fares`
 prints the count beside the unsourced stations. Re-measured on 30 September
 2026 against the same download, the same three reasons sum to **84,544** rows:
 41,034 with no location record, 39,986 with no station code, and 3,524 to a
@@ -147,7 +147,7 @@ left unclassified for no reason but the bracket. Keying the workbook name
 without its district closed it: 43 stations the feed prices gained the
 workbook's own class, 42 of them as priced destinations, and the coverage
 report's count fell from **1,575 to 1,533** on the 24 September 2026 download
-(`python destination_coverage.py --feed feeds/fares`). That measured floor is
+(`python -m trainbudget.fares.destination_coverage --feed feeds/fares`). That measured floor is
 what the CI ceiling now holds.
 
 Where one name the workbook holds twice collapses onto the same key with

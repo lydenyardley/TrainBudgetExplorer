@@ -28,7 +28,7 @@ real network. They bound the work and expose the direction of the error.
 
 ## Measurements
 
-`python benchmark.py --shape uniform --stations 300 --schedules 8000 --queries 30 --caps 0,60,200`
+`python -m trainbudget.measure.benchmark --shape uniform --stations 300 --schedules 8000 --queries 30 --caps 0,60,200`
 on 38 priced target pairs:
 
 | cap | total s | median ms | p95 ms | journeys worse than uncapped |
@@ -37,7 +37,7 @@ on 38 priced target pairs:
 | 60 | 9.38 | 282.9 | 494.8 | 0 |
 | 200 | 13.09 | 395.6 | 679.6 | 0 |
 
-`python benchmark.py --shape hub_spoke --stations 300 --schedules 8000 --queries 30 --caps 0,60,200 --transfer-only`
+`python -m trainbudget.measure.benchmark --shape hub_spoke --stations 300 --schedules 8000 --queries 30 --caps 0,60,200 --transfer-only`
 on 30 pairs that need a change:
 
 | cap | total s | median ms | p95 ms | journeys worse than uncapped |

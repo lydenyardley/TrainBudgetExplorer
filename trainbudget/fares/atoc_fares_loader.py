@@ -22,7 +22,7 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from atoc_fare_declarations import (
+from trainbudget.fares.atoc_fare_declarations import (
     UNEXPANDED_FARE_GROUPS,
     DESTINATION_FACET_READERS,
     DESTINATION_FACET_SOURCES,
@@ -69,7 +69,7 @@ from atoc_fare_declarations import (
     dtd_flag,
     location_lookup_candidates,
 )
-from parse_report import ParseReport, count, decode_lines, read_feed_files
+from trainbudget.fares.parse_report import ParseReport, count, decode_lines, read_feed_files
 
 
 def _count_or_none(value: str) -> int | None:
@@ -78,7 +78,7 @@ def _count_or_none(value: str) -> int | None:
 
 
 if TYPE_CHECKING:
-    from atoc_fares import FaresDb
+    from trainbudget.fares.atoc_fares import FaresDb
 
 
 # The one feed file a caller needs to answer "which stations does this feed
@@ -144,7 +144,7 @@ class FaresLoader:
         # The one name this module cannot import with the record layouts: atoc_fares
         # defines the class after the line that imports this module, so the class
         # exists only once that module has finished. Read where it is used.
-        from atoc_fares import FaresDb
+        from trainbudget.fares.atoc_fares import FaresDb
 
         common = FaresDb()
         common.locations_by_nlc = self.locations_by_nlc
@@ -262,7 +262,7 @@ class FaresLoader:
         """Load the shared metadata half of a persisted fares cache."""
         # See write_fare_indexes: the class is defined below the import that brings
         # this module in, so it is read where it is used.
-        from atoc_fares import FaresDb
+        from trainbudget.fares.atoc_fares import FaresDb
 
         with Path(common_path).open("rb") as handle:
             db = pickle.load(handle)

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from parse_report import ParseReport, count, decode_lines, peek, read_feed_files
+from trainbudget.fares.parse_report import ParseReport, count, decode_lines, peek, read_feed_files
 
 # Onward departures the one-change search will consider at each interchange.
 # 200 is measured, not guessed: it is the smallest cap that lost no journey on

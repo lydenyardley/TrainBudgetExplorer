@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 
-from build_workers import worker_budget
+from trainbudget.build.build_workers import worker_budget
 from tools.release import RELEASE, error, warning
 
 #: Two thirds of the shard step's bound. `tests/test_workflows.py` holds it,
@@ -52,7 +52,13 @@ PLACE_CAP = 600
 
 
 def command(shard: str, day: str, workers: int, base_path: str = "") -> list[str]:
-    build = [sys.executable, "build_demo_page.py", "--feed", "feeds/fares"]
+    build = [
+        sys.executable,
+        "-m",
+        "trainbudget.build.build_demo_page",
+        "--feed",
+        "feeds/fares",
+    ]
     if "timetable" in RELEASE:
         build += ["--timetable", "feeds/nwr-schedule"]
     build += [

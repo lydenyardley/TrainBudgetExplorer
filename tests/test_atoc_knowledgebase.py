@@ -21,8 +21,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import atoc_knowledgebase as kb
-from atoc_knowledgebase import (
+from trainbudget.timetable import atoc_knowledgebase as kb
+from trainbudget.timetable.atoc_knowledgebase import (
     ABSENT,
     CHECKED,
     UNKNOWN,
@@ -33,14 +33,14 @@ from atoc_knowledgebase import (
     check_restrictions,
     load_ticket_restrictions,
 )
-from build_demo_page import (
+from trainbudget.build.build_demo_page import (
     _iso_day,
     describe_restriction_note,
     knowledgebase_dates,
     reference_fingerprint,
     restriction_codes_shown,
 )
-from make_synthetic_feed import build_synthetic_knowledgebase
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_knowledgebase
 
 
 class _Header:
@@ -213,7 +213,7 @@ class ReaderTest(unittest.TestCase):
     def test_a_zip_member_larger_than_the_cap_is_refused_not_read(self) -> None:
         import zipfile
 
-        import atoc_knowledgebase as kbmod
+        from trainbudget.timetable import atoc_knowledgebase as kbmod
 
         with tempfile.TemporaryDirectory() as tmp:
             archive_path = Path(tmp) / "kb" / "ticket-restrictions.zip"
@@ -459,7 +459,7 @@ class ParallelPathTest(unittest.TestCase):
         # The feed is delivered once per process rather than re-read per page,
         # and the answer is worked out inside the worker from the page's own
         # rows -- so the worker needs the feed itself, not a verdict.
-        import build_workers
+        from trainbudget.build import build_workers
 
         source = Path(build_workers.__file__).read_text(encoding="utf-8")
         self.assertIn("reference=_WORKER.get(\"reference\")", source)
@@ -473,8 +473,8 @@ class ParallelPathTest(unittest.TestCase):
         # several processes checked every one of them. Asserted on the source
         # because the failure is a missing call on one of two paths, which is
         # invisible to any test that builds a page one way.
-        import build_pool
-        import build_workers
+        from trainbudget.build import build_pool
+        from trainbudget.build import build_workers
 
         worker_source = Path(build_workers.__file__).read_text(encoding="utf-8")
         # The two paths into a page are the pool initialiser and the in-process
@@ -492,7 +492,7 @@ class ParallelPathTest(unittest.TestCase):
     def test_the_resumable_signature_distinguishes_two_different_answers(self) -> None:
         # Otherwise a resumed build could keep pages built against a reference
         # feed that has since changed, mixing two answers inside one release.
-        import build_state
+        from trainbudget.build import build_state
 
         shared = {
             "max_changes": 1, "note": "", "attribution": None, "price_source": "x",
@@ -521,7 +521,7 @@ class ParallelPathTest(unittest.TestCase):
         # release then quoted the previous download beside freshly parsed data.
         import os
 
-        import build_state
+        from trainbudget.build import build_state
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -582,8 +582,8 @@ class ParallelPathTest(unittest.TestCase):
 
 class FixtureTest(unittest.TestCase):
     def _fixture_codes(self) -> list[str]:
-        from make_synthetic_feed import _restriction_lines
-        from atoc_restrictions import RESTRICTION_OFFSETS
+        from trainbudget.feeds.make_synthetic_feed import _restriction_lines
+        from trainbudget.fares.atoc_restrictions import RESTRICTION_OFFSETS
 
         codes: list[str] = []
         for line in _restriction_lines():

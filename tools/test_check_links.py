@@ -20,7 +20,7 @@ from tools.check_links import (
     classify,
     main,
 )
-from retailer import PROVIDERS
+from trainbudget.fares.retailer import PROVIDERS
 
 
 class ClassifyTest(unittest.TestCase):

@@ -52,9 +52,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from build_assets import STATION_INDEX_MARKER
-from build_payload import decode_payload
-from page_templates import PAYLOAD_MARKER
+from trainbudget.build.build_assets import STATION_INDEX_MARKER
+from trainbudget.build.build_payload import decode_payload
+from trainbudget.build.page_templates import PAYLOAD_MARKER
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "tests" / "known_fares.toml"

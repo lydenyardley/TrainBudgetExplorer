@@ -39,8 +39,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 
-from atoc_fares import NATURE_SITE_STATION_CRS
-from feeds_cli import add_feed_args
+from trainbudget.fares.atoc_fares import NATURE_SITE_STATION_CRS
+from trainbudget.feeds.feeds_cli import add_feed_args
 from tools.regenerate_destination_facets import load_stations
 
 # The hosts this tool will read without being told otherwise: the network's own

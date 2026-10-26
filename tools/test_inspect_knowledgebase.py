@@ -20,7 +20,7 @@ import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from make_synthetic_feed import build_synthetic_knowledgebase
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_knowledgebase
 from tools import inspect_knowledgebase as inspector
 
 

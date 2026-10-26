@@ -40,7 +40,7 @@ import unittest
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-import page_templates
+from trainbudget.build import page_templates
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -375,8 +375,8 @@ def browser(require_site: bool = False) -> Step:
         # --long-list is what gives the driven station page a second page: the
         # table shows twenty rows before it offers a pager, so a fixture whose
         # every origin prices fewer cannot exercise page two or the n/p keys.
-        (["python", "make_synthetic_feed.py", DEMO_FEED, "--unserved-station", "--third-origin", "--return-network", "--long-list", "--knowledgebase", DEMO_KB], "the demo feed"),
-        (["python", "build_demo_page.py", "--feed", DEMO_FEED, "--timetable", DEMO_FEED, "--knowledgebase", DEMO_KB, "--all-origins", "--date", SERVICE_DATE, "--out", f"{DEMO_SITE}/index.html"], "the demo site"),
+        (["python", "-m", "trainbudget.feeds.make_synthetic_feed", DEMO_FEED, "--unserved-station", "--third-origin", "--return-network", "--long-list", "--knowledgebase", DEMO_KB], "the demo feed"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", DEMO_FEED, "--timetable", DEMO_FEED, "--knowledgebase", DEMO_KB, "--all-origins", "--date", SERVICE_DATE, "--out", f"{DEMO_SITE}/index.html"], "the demo site"),
         # --third-origin and --return-network for the same reason the demo feed
         # takes them: without them this feed's secondary origins are priced to
         # one station each, and a page with one row cannot exercise its own
@@ -387,12 +387,12 @@ def browser(require_site: bool = False) -> Step:
         # each origin still fit.
         # --reviewed-origin adds fares from London Kings Cross for the
         # reviewed-name page below, and nothing to the pages built before it.
-        (["python", "make_synthetic_feed.py", SHAPE_FEED, "--unserved-station", "--third-origin", "--return-network", "--reviewed-origin"], "the shape feed"),
+        (["python", "-m", "trainbudget.feeds.make_synthetic_feed", SHAPE_FEED, "--unserved-station", "--third-origin", "--return-network", "--reviewed-origin"], "the shape feed"),
         # No --timetable, so the page prices fares only, and no --date for the
         # same reason: a build with no times has no day to report, and a page
         # carrying a date it cannot report times for would be claiming one.
-        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--origin", "GRN", "--out", f"{SHAPE_SITE}/prices-only/index.html"], "the prices-only page"),
-        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--all-origins", "--date", SERVICE_DATE, "--out", f"{SHAPE_SITE}/one-page/index.html"], "the one-page shape"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_FEED, "--origin", "GRN", "--out", f"{SHAPE_SITE}/prices-only/index.html"], "the prices-only page"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--all-origins", "--date", SERVICE_DATE, "--out", f"{SHAPE_SITE}/one-page/index.html"], "the one-page shape"),
         # Two shapes no other fixture page has, both found by the deploy sweep
         # of run 39818671598 rather than by this suite: an origin whose name
         # is the reviewed "London Kings Cross" rather than the feed's
@@ -401,7 +401,7 @@ def browser(require_site: bool = False) -> Step:
         # ceiling the page opens on (Farnborough (Main)'s railcard note). With
         # the timetable, because a prices-only page skips the times half of
         # the suite and its skips count against the budget for pages like it.
-        (["python", "build_demo_page.py", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--date", SERVICE_DATE, "--origin", "KGX", "--out", f"{SHAPE_SITE}/reviewed-name/index.html"], "the reviewed-name page"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--date", SERVICE_DATE, "--origin", "KGX", "--out", f"{SHAPE_SITE}/reviewed-name/index.html"], "the reviewed-name page"),
     ]
     for command, what in steps:
         if not _run(command, what):

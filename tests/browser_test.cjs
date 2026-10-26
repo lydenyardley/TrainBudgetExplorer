@@ -91,8 +91,8 @@ async function main() {
     } catch (error) {
       if (given === "demo.html") {
         console.error("No page at " + file + ". Build one first:");
-        console.error("  python make_synthetic_feed.py _demo_feed --unserved-station --third-origin");
-        console.error("  python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html");
+        console.error("  python -m trainbudget.feeds.make_synthetic_feed _demo_feed --unserved-station --third-origin");
+        console.error("  python -m trainbudget.build.build_demo_page --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html");
       }
     }
     return { given, file, body };

@@ -29,7 +29,7 @@ import hashlib
 import json
 from pathlib import Path
 
-import dtd_download
+from trainbudget.feeds import dtd_download
 from tools.release import error, output
 
 MANIFEST = Path("feeds/download-manifest.json")

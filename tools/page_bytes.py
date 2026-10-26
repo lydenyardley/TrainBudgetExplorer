@@ -51,7 +51,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
+from trainbudget.build.page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
 
 # The number the network has to fit inside, argued in the module docstring.
 SITE_BUDGET_MB = 800

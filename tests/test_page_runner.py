@@ -23,16 +23,16 @@ import io
 from pathlib import Path
 import argparse
 
-import build_assets
-import build_demo_page
-import build_pool
-import build_release
-import build_state
-import build_workers
+from trainbudget.build import build_assets
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_pool
+from trainbudget.build import build_release
+from trainbudget.build import build_state
+from trainbudget.build import build_workers
 import run
-from atoc_fares import FLOW_T, FaresDb
-from build_workers import ONE_WORKER_FLOOR, PARENT_BYTES, RESERVED_BYTES, WORKER_BYTES, free_memory_bytes, worker_budget
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from trainbudget.fares.atoc_fares import FLOW_T, FaresDb
+from trainbudget.build.build_workers import ONE_WORKER_FLOOR, PARENT_BYTES, RESERVED_BYTES, WORKER_BYTES, free_memory_bytes, worker_budget
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
 from tools.release import manifest as release_manifest
 
 from tests.page_harness import setUpModule, embedded_payload, station_page, tearDownModule
@@ -444,7 +444,10 @@ class AllOriginsCliTest(unittest.TestCase):
         # from the shard manifest -- so a merged release opened at £20 by
         # construction, whatever its shards had been built at. The figure is one
         # constant now, and the merge takes it from the shard's own record.
-        for module in ("build_pool.py", "build_workers.py"):
+        for module in (
+            "trainbudget/build/build_pool.py",
+            "trainbudget/build/build_workers.py",
+        ):
             source = (pathlib.Path(__file__).resolve().parents[1] / module).read_text(
                 encoding="utf-8"
             )
@@ -454,7 +457,7 @@ class AllOriginsCliTest(unittest.TestCase):
                 f"{module} still opens a page at a literal budget rather than the one constant",
             )
         pool = (
-            pathlib.Path(__file__).resolve().parents[1] / "build_pool.py"
+            pathlib.Path(__file__).resolve().parents[1] / "trainbudget/build/build_pool.py"
         ).read_text(encoding="utf-8")
         self.assertIn('budget_pounds=release.get("budget_pounds"', pool)
         self.assertIn('"budget_pounds": OPENING_BUDGET_POUNDS', pool)
@@ -1088,7 +1091,7 @@ class RunnerBuildOrServeTest(unittest.TestCase):
                 for path in sources:
                     os.utime(path, (500, 500))
                 self.assertFalse(run.sources_are_newer())
-        self.assertIn("atoc_knowledgebase.py", build_demo_page.SOURCE_FILES)
+        self.assertIn("trainbudget/timetable/atoc_knowledgebase.py", build_demo_page.SOURCE_FILES)
 
     def test_a_build_the_sources_have_moved_past_is_rebuilt(self) -> None:
         # Nine hours of committed work, a double-clicked runner and a page
@@ -1245,7 +1248,7 @@ class WorkerBudgetTest(unittest.TestCase):
         # `build_pool` is where the builder's phases live since the split
         # (ADR-0071); the command above them is what build_demo_page.py holds.
         tree = ast.parse((pathlib.Path(__file__).resolve().parent.parent
-                          / "build_pool.py").read_text(encoding="utf-8"))
+                          / "trainbudget/build/build_pool.py").read_text(encoding="utf-8"))
         found = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.If)

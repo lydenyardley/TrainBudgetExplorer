@@ -99,7 +99,7 @@ strategy 7 below, in plain words.
 | `run.bat` (double-click) | whole fares feed | **none** (opt-in flag) | every priced station (3,424 on this feed) | tens of minutes; not fully run (see below) |
 | `python run.py --origin GRA` | the origin's fare slice | none | one | **44 s** (measured) |
 | `python run.py --origin GRA --with-timetable` | the origin's fare slice | focused on that origin's destinations | one | **2 m 57 s** cold, **2 m 03 s** warm (measured) |
-| `python build_stations.py GRA NOT` | whole fares feed | the whole timetable parsed, a per-origin slice held per page | two | **20 min 53 s** (measured 8 October 2026; no page at all in 24 minutes on 7 October) |
+| `python -m trainbudget.build.build_stations GRA NOT` | whole fares feed | the whole timetable parsed, a per-origin slice held per page | two | **20 min 53 s** (measured 8 October 2026; no page at all in 24 minutes on 7 October) |
 | The deploy workflow | whole fares feed | whole timetable, unfocused, per worker | whole network | ~81 min per README/ADR-0050, from before ADR-0061 and the service week (see caveat) |
 
 Two facts about the default path are easy to miss and are both in `run.py`:
@@ -197,7 +197,7 @@ row is the only one taken while other programs were using the machine, and it ha
 **less** free memory than either 7 October run, so its figure is not a machine
 that had been tidied up for it.
 
-Reproduction, both idle runs: `python build_stations.py GRA NOT --no-serve --date
+Reproduction, both idle runs: `python -m trainbudget.build.build_stations GRA NOT --no-serve --date
 2026-10-07`, free memory sampled every 15 s alongside it.
 
 The two idle runs give the phase split, because the script names each one:
@@ -1001,7 +1001,7 @@ first paint.
 
 ## The deferred station list, measured: it buys a serialization no reader sees
 
-Measured 18 October 2026 on this machine, by `node measure_station_defer.cjs`,
+Measured 18 October 2026 on this machine, by `node tools/measure_station_defer.cjs`,
 following the plan above. 7 runs per variant per size, alternating within each
 repetition, each in a fresh browser context so no run sees a cached list. All
 figures are milliseconds from navigation start. The row below is one sweep; how
@@ -1054,7 +1054,7 @@ fetched. Whether the picker should fetch the list when it opens instead is a
 separate question, and this is the number that one starts from.
 
 **Reproduce.** The demo build from the plan above, then
-`node measure_station_defer.cjs` in the repository root. It writes the
+`node tools/measure_station_defer.cjs` from the repository root. It writes the
 release-sized list itself, through `build_assets.render_station_asset` over
 `feeds/knowledgebase/stations.xml`, and refuses rather than guessing if the built
 page no longer carries the tag it rewrites.
@@ -1302,7 +1302,7 @@ This is one page's full split, with three more origins measured beside it below.
 on 24 September 2026, service date 2026-10-05.
 
 ```
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
     --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
     --out _real_site/index.html --workers 1
 python -m tools.page_bytes _real_site/from/grantham/index.html
@@ -1470,7 +1470,7 @@ both, on the real feed, and the second one is the answer.
 run 39618401726 (`shard (3)`, 14:44:49 to 17:15:24 on 21 October 2026), against
 a share of the six on 13 October (run 38353105980, job 115152941550).
 The per-page figures come
-from `python build_demo_page.py`'s own `build_payload` on the real feeds at this
+from `python -m trainbudget.build.build_demo_page`'s own `build_payload` on the real feeds at this
 checkout, once with `day=date(2026, 10, 21)` and once with `day=None`, on the same
 loaded databases and the same fare slices, so the only difference is the day.
 
@@ -1549,7 +1549,7 @@ figures below are all from that plan; nothing here was estimated before it was
 measured.
 
 ```
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
     --origin GRA --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
     --out _scratch/before/index.html --workers 1
 python -m tools.page_bytes _scratch/before/from/grantham/index.html
@@ -1616,7 +1616,7 @@ how much of the network it reaches, and one origin would be a socket for the
 network's average.
 
 ```
-python build_demo_page.py --feed feeds/fares --timetable feeds/timetable \
+python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable \
     --all-origins --only-stations LIN,IPS,NOR,CBG,KGX,GRA,OXF,PLY,NOT,SHF,NCL,MAN \
     --date 2026-10-05 --notices nre,rdg,ogl,accuracy \
     --out _scratch/sample2/index.html --workers 2

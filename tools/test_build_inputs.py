@@ -20,16 +20,26 @@ class CoveredModulesTest(unittest.TestCase):
         # build_demo_page.py is where a build starts. Every module it reaches,
         # transitively, has to be inside the fingerprint, or a fix to that
         # module does not rebuild the site.
-        covered = {path.name for path in build_inputs.build_inputs()}
+        covered = {
+            path.relative_to(build_inputs.ROOT).as_posix()
+            for path in build_inputs.build_inputs()
+        }
         seen: set[str] = set()
-        pending = ["build_demo_page.py"]
+        pending = [_module_path(build_inputs.ROOT, "trainbudget.build.build_demo_page")]
         while pending:
-            name = pending.pop()
+            path = pending.pop()
+            if path is None:
+                continue
+            name = path.relative_to(build_inputs.ROOT).as_posix()
             if name in seen:
                 continue
             seen.add(name)
             self.assertIn(name, covered, f"{name} is imported by the build and is not hashed")
-            pending.extend(_imported(build_inputs.ROOT / name))
+            pending.extend(
+                candidate
+                for dotted in _imported(path)
+                if (candidate := _module_path(build_inputs.ROOT, dotted)) is not None
+            )
         self.assertGreater(len(seen), 5, "the build's imports were not followed")
 
     def test_the_page_and_the_reference_data_are_inputs(self) -> None:
@@ -52,6 +62,8 @@ class FingerprintTest(unittest.TestCase):
         (folder / "tests").mkdir()
         (folder / "tools").mkdir()
         (folder / "build_demo_page.py").write_text("DATA = 1\n", encoding="utf-8")
+        (folder / "trainbudget" / "build").mkdir(parents=True)
+        (folder / "trainbudget" / "build" / "build_state.py").write_text("DATA = 1\n", encoding="utf-8")
         (folder / "page" / "station" / "payload.js").write_text("const a = 1;\n", encoding="utf-8")
         (folder / "reference-data" / "destination-facets.json").write_text("{}\n", encoding="utf-8")
         (folder / "tests" / "test_build_demo_page.py").write_text("x = 1\n", encoding="utf-8")
@@ -68,6 +80,19 @@ class FingerprintTest(unittest.TestCase):
             self.assertEqual(before, build_inputs.fingerprint(root), "a test is not a build input")
             (root / "page" / "station" / "payload.js").write_text("const a = 2;\n", encoding="utf-8")
             self.assertNotEqual(before, build_inputs.fingerprint(root), "the page is a build input")
+
+    def test_a_module_inside_the_package_is_an_input(self) -> None:
+        # The package's pattern has to reach below its own folders: a glob of
+        # `trainbudget/*` would hash the directories and none of the modules, and
+        # the build lives in there.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self._tree(root)
+            before = build_inputs.fingerprint(root)
+            (root / "trainbudget" / "build" / "build_state.py").write_text(
+                "DATA = 2\n", encoding="utf-8"
+            )
+            self.assertNotEqual(before, build_inputs.fingerprint(root), "a build module is a build input")
 
     def test_touching_a_file_without_changing_it_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -90,15 +115,30 @@ class FingerprintTest(unittest.TestCase):
             self.assertNotEqual(before, build_inputs.fingerprint(root))
 
 
+def _module_path(root: Path, dotted: str) -> Path | None:
+    """The file a dotted module name lives in, or None for a name that is not ours."""
+    module = root.joinpath(*dotted.split("."))
+    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _imported(path: Path) -> list[str]:
-    """The root-level modules one file imports, by file name."""
+    """Every module name one file could be reaching, as dotted names.
+
+    `from trainbudget.build import build_assets` names a module through its
+    parent, so the parent and every alias under it are offered and the walk keeps
+    whichever one is a file.
+    """
     names: list[str] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
-            names.extend(alias.name.split(".")[0] for alias in node.names)
+            names.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names.append(node.module.split(".")[0])
-    return [name + ".py" for name in names if (build_inputs.ROOT / f"{name}.py").is_file()]
+            names.append(node.module)
+            names.extend(f"{node.module}.{alias.name}" for alias in node.names)
+    return names
 
 
 if __name__ == "__main__":

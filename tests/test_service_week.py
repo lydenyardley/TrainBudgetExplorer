@@ -18,10 +18,10 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-import make_synthetic_feed
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from build_demo_page import SERVICE_WEEK_HORIZON, build_payload
+from trainbudget.feeds import make_synthetic_feed
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_demo_page import SERVICE_WEEK_HORIZON, build_payload
 
 # Sundays and Mondays inside the window the synthetic timetable covers
 # (21 September to 11 December 2026, coded 260921 to 261211).

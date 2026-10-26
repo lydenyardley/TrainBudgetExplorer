@@ -55,11 +55,11 @@ class WorkerMeasurementTest(unittest.TestCase):
     """`measure_worker` must hold what it measures."""
 
     def test_the_initialiser_figure_covers_the_database_it_loaded(self) -> None:
-        from atoc_timetable import TimetableDb
-        from make_synthetic_feed import build_synthetic_timetable
+        from trainbudget.timetable.atoc_timetable import TimetableDb
+        from trainbudget.feeds.make_synthetic_feed import build_synthetic_timetable
 
-        from atoc_fares import FaresDb
-        from make_synthetic_feed import build_synthetic_feed
+        from trainbudget.fares.atoc_fares import FaresDb
+        from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed
         from unittest import mock
 
         with tempfile.TemporaryDirectory() as tmp:

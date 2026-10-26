@@ -23,8 +23,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import Fare, Flow, FaresDb, Location, TicketType
-from atoc_timetable import TimetableDb
+from trainbudget.fares.atoc_fares import Fare, Flow, FaresDb, Location, TicketType
+from trainbudget.timetable.atoc_timetable import TimetableDb
 from tools.feed_change_report import (
     ChangeReport,
     _is_material,
@@ -288,7 +288,7 @@ class RenderTest(unittest.TestCase):
 
 class FreshnessTest(unittest.TestCase):
     def test_the_window_is_the_earliest_and_latest_date_a_schedule_states(self) -> None:
-        from atoc_timetable import Schedule
+        from trainbudget.timetable.atoc_timetable import Schedule
 
         timetable = TimetableDb()
         timetable.schedules = [

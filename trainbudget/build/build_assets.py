@@ -16,7 +16,7 @@ import re
 import time
 from pathlib import Path
 
-from page_templates import CHOOSER_SCRIPT, STATION_SCRIPT, STATION_STYLESHEET
+from trainbudget.build.page_templates import CHOOSER_SCRIPT, STATION_SCRIPT, STATION_STYLESHEET
 
 
 def with_base(base_path: str, path: str) -> str:

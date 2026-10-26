@@ -17,8 +17,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from atoc_fares import LONDON_STATION_CRS, LOCATION, FaresDb, Location
-from make_synthetic_feed import _line
+from trainbudget.fares.atoc_fares import LONDON_STATION_CRS, LOCATION, FaresDb, Location
+from trainbudget.feeds.make_synthetic_feed import _line
 from tools import propose_reviewed_settlements as proposer
 
 

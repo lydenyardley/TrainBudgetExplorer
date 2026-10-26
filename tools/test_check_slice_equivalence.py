@@ -25,8 +25,8 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
-from atoc_timetable import TimetableDb
-from make_synthetic_feed import build_synthetic_timetable
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_timetable
 from tools.check_slice_equivalence import (
     DEFAULT_MAX_LEGS,
     MAX_AUTO_SHARDS,

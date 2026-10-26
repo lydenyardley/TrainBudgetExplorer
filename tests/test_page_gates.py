@@ -14,13 +14,13 @@ import contextlib
 import io
 from pathlib import Path
 
-import atoc_fares
-import build_demo_page
-from atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
-from build_demo_page import build_payload, build_station_index
-from make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates
-from destination_coverage import UnsourcedReport
-from parse_report import ParseReport
+from trainbudget.fares import atoc_fares
+from trainbudget.build import build_demo_page
+from trainbudget.fares.atoc_fares import LOCATION, FLOW_F, FLOW_T, FaresDb
+from trainbudget.build.build_demo_page import build_payload, build_station_index
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_station_coordinates
+from trainbudget.fares.destination_coverage import UnsourcedReport
+from trainbudget.fares.parse_report import ParseReport
 
 from tests.page_harness import setUpModule, station_page, tearDownModule
 

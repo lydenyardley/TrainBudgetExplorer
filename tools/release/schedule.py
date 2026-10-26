@@ -27,7 +27,7 @@ import hashlib
 import os
 from pathlib import Path
 
-import schedule_download
+from trainbudget.feeds import schedule_download
 from tools.release import error
 
 OUT = Path("feeds/nwr-schedule/nwr-schedule.CIF.gz")

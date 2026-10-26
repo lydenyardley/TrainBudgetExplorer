@@ -85,8 +85,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
-from atoc_timetable import TimetableDb
-from build_workers import RESERVED_BYTES, free_memory_bytes
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_workers import RESERVED_BYTES, free_memory_bytes
 
 #: The service week the harness compares unless told otherwise. The build's own
 #: date, so a failure names a day a page was actually assembled for.

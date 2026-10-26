@@ -29,9 +29,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from atoc_fare_declarations import is_pseudo_station
-from atoc_fares import EVERYTHING_PENCE
-from build_assets import (
+from trainbudget.fares.atoc_fare_declarations import is_pseudo_station
+from trainbudget.fares.atoc_fares import EVERYTHING_PENCE
+from trainbudget.build.build_assets import (
     STATION_ASSET_NAME,
     chooser_script_asset_name,
     chooser_script_tag,
@@ -46,7 +46,7 @@ from build_assets import (
     with_base,
     write_page_atomic,
 )
-from build_payload import (
+from trainbudget.build.build_payload import (
     DEPARTURE_LIMIT,
     REVIEWED_STATION_NAMES,
     SERVICE_WEEK_HORIZON,
@@ -58,7 +58,7 @@ from build_payload import (
     explain_unpriced,
     places_in_payload,
 )
-from build_pool import (
+from trainbudget.build.build_pool import (
     BuildContext,
     MAX_ORIGIN_SECONDS,
     _build_all_origins,
@@ -70,7 +70,7 @@ from build_pool import (
     price_one_payload,
     release_gates,
 )
-from build_provenance import (
+from trainbudget.build.build_provenance import (
     STALE_AFTER_DAYS,
     _iso_day,
     cif_date_to_iso,
@@ -85,7 +85,7 @@ from build_provenance import (
     reference_fingerprint,
     restriction_codes_shown,
 )
-from build_release import (
+from trainbudget.build.build_release import (
     DEFAULT_NOTE,
     DEFAULT_PRICE_SOURCE,
     DEFAULT_PRIVACY_CONTACT,
@@ -105,8 +105,8 @@ from build_release import (
     wants_nre_credit,
     write_release_manifest,
 )
-from build_render import render_chooser, render_page, render_privacy
-from build_state import (
+from trainbudget.build.build_render import render_chooser, render_page, render_privacy
+from trainbudget.build.build_state import (
     CACHE_DIR,
     FARE_INDEX_CACHE_VERSION,
     SOURCE_FILES,
@@ -128,8 +128,8 @@ from build_state import (
     write_priced_facts,
     write_service_week,
 )
-from page_templates import CHOOSER_SCRIPT, STATION_SCRIPT
-from retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER
+from trainbudget.build.page_templates import CHOOSER_SCRIPT, STATION_SCRIPT
+from trainbudget.fares.retailer import AFFILIATE_NETWORKS, DEFAULT_PROVIDER
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:

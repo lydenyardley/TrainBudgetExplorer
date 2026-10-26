@@ -10,8 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import LOCATION, FaresDb
-from make_synthetic_feed import _line, build_synthetic_feed
+from trainbudget.fares.atoc_fares import LOCATION, FaresDb
+from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed
 
 
 class RealShapeFareTest(unittest.TestCase):

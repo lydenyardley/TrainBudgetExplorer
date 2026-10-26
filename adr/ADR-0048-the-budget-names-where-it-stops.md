@@ -87,7 +87,7 @@ Read by running:
 
 ```bash
 python -m unittest tests.test_build_demo_page -k ceiling -v
-python build_demo_page.py --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
+python -m trainbudget.build.build_demo_page --feed _demo_feed --timetable _demo_feed --all-origins --out _demo_site/index.html
 npx --yes --package playwright node tests/browser_test.cjs _demo_site/from/grantham/index.html
 ```
 

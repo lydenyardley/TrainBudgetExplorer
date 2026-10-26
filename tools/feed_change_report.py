@@ -52,8 +52,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-from atoc_fares import FaresDb, format_pence
-from atoc_timetable import TimetableDb
+from trainbudget.fares.atoc_fares import FaresDb, format_pence
+from trainbudget.timetable.atoc_timetable import TimetableDb
 
 # A move must clear both bars. The defaults are a starting point an operator can
 # move, not a judgement: 5% and a pound.

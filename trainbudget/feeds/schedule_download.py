@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 from urllib.parse import urlsplit, urlunsplit
 
-from atoc_timetable import CIF_HEADER_OFFSETS, CIF_RECORD_TYPES
+from trainbudget.timetable.atoc_timetable import CIF_HEADER_OFFSETS, CIF_RECORD_TYPES
 
 DEFAULT_OUT = "feeds/timetable-nwr/nwr-schedule.CIF.gz"
 DEFAULT_TIMEOUT = 120.0

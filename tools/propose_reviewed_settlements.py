@@ -43,7 +43,7 @@ import urllib.request
 from pathlib import Path
 
 
-from atoc_fares import (
+from trainbudget.fares.atoc_fares import (
     LONDON_STATION_CRS,
     MAJOR_UK_STATION_FALLBACKS,
     ONS_BUILT_UP_AREAS_FILE_URL,
@@ -51,7 +51,7 @@ from atoc_fares import (
     REVIEWED_SETTLEMENT_FALLBACKS,
     FaresDb,
 )
-from feeds_cli import add_feed_args
+from trainbudget.feeds.feeds_cli import add_feed_args
 from tools.propose_fare_construction_stations import resolve_feed
 
 # A near miss needs a shared prefix long enough to be evidence of the same

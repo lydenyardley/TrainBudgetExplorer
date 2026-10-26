@@ -36,8 +36,8 @@ import json
 import sys
 from pathlib import Path
 
-from build_payload import FARE_LISTS, decode_payload, encode_payload
-from page_templates import PAYLOAD_MARKER
+from trainbudget.build.build_payload import FARE_LISTS, decode_payload, encode_payload
+from trainbudget.build.page_templates import PAYLOAD_MARKER
 
 # The slices the release's own pages are made of, from the twelve-page build in
 # the 23 October 2026 audit: the mean page times the page count the release

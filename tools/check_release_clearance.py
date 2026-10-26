@@ -49,9 +49,9 @@ can clear a product:
 - Nothing here reads the attribution wording as permission. A page can carry
   every required credit and still be a page nobody has cleared.
 
-    python check_release_clearance.py --print
-    python check_release_clearance.py --release fares
-    python check_release_clearance.py --release fares,timetable --record path/to/other.md
+    python -m tools.check_release_clearance --print
+    python -m tools.check_release_clearance --release fares
+    python -m tools.check_release_clearance --release fares,timetable --record path/to/other.md
 
 Exit codes: 0 every published product is cleared, 1 one is not. Unlike a build
 failure this is not a thing to retry: the fix is a decision, made by a person,

@@ -26,8 +26,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from atoc_fares import FaresDb, is_pseudo_station
-from feeds_cli import add_feed_args
+from trainbudget.fares.atoc_fares import FaresDb, is_pseudo_station
+from trainbudget.feeds.feeds_cli import add_feed_args
 
 # The primary class a station keeps when no source names its settlement. The
 # name is the old filter label; the value is what the payload carries.

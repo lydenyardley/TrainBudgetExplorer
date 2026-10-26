@@ -27,8 +27,8 @@ import tempfile
 import time
 from pathlib import Path
 
-from build_assets import internal_hrefs
-from build_release import crawl_internal_links
+from trainbudget.build.build_assets import internal_hrefs
+from trainbudget.build.build_release import crawl_internal_links
 
 RELEASE_PAGES = 2_712
 RELEASE_PAGE_BYTES = 354 * 1024
@@ -109,8 +109,8 @@ def _target(href: str) -> str:
 
 def build_site(root: Path) -> Path:
     """A real three-station site, written by the build's own command."""
-    from build_demo_page import main
-    from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+    from trainbudget.build.build_demo_page import main
+    from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
     feed = build_synthetic_feed(root / "fares", include_restrictions=True)
     timetable = build_synthetic_timetable(root / "timetable")

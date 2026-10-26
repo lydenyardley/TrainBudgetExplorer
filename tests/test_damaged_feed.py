@@ -11,10 +11,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from damage_feed import COSMETIC_DAMAGES, STRUCTURAL_DAMAGES, UnknownDamage, damage
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.damage_feed import COSMETIC_DAMAGES, STRUCTURAL_DAMAGES, UnknownDamage, damage
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
 
 def fare_shape(db: FaresDb, origin: str = "GRN") -> list[tuple[str, int, int, str]]:

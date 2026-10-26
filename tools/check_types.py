@@ -39,24 +39,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: Every Python file at the root or under `tools/` whose own type errors are zero
-#: (measured 15 October 2026, mypy 2.4.0, default settings). A file that is clean
-#: and not here is a file nobody has looked at yet; the list grows, never shrinks.
+#: Every Python file of the package, at the root or under `tools/` whose own
+#: type errors are zero (measured 15 October 2026, mypy 2.4.0, default settings).
+#: A file that is clean and not here is a file nobody has looked at yet; the list
+#: grows, never shrinks.
 CLEAN = (
-    "atoc_fare_declarations.py",
-    "atoc_knowledgebase.py",
-    "build_demo_page.py",
-    "build_release.py",
-    "build_render.py",
-    "build_stations.py",
-    "build_workers.py",
-    "damage_feed.py",
-    "destination_coverage.py",
-    "feeds_cli.py",
-    "fuzz_feed.py",
-    "page_templates.py",
-    "retailer.py",
     "run.py",
+    "trainbudget/build/build_demo_page.py",
+    "trainbudget/build/build_release.py",
+    "trainbudget/build/build_render.py",
+    "trainbudget/build/build_stations.py",
+    "trainbudget/build/build_workers.py",
+    "trainbudget/build/page_templates.py",
+    "trainbudget/fares/atoc_fare_declarations.py",
+    "trainbudget/fares/destination_coverage.py",
+    "trainbudget/fares/retailer.py",
+    "trainbudget/feeds/damage_feed.py",
+    "trainbudget/feeds/feeds_cli.py",
+    "trainbudget/feeds/fuzz_feed.py",
+    "trainbudget/timetable/atoc_knowledgebase.py",
     "tools/build_inputs.py",
     "tools/build_timetable_index.py",
     "tools/check_commit_message.py",
@@ -81,10 +82,19 @@ ERROR = re.compile(r"^(?P<file>[^:]+):\d+: error:")
 
 
 def sources(root: Path) -> list[str]:
-    """Every Python source at the root and under `tools/`, as mypy wants them."""
+    """Every Python source at the root, under `trainbudget/` and under `tools/`.
+
+    All three, because a build is a script at the root and its modules in the
+    package: a sweep that read only one of them would answer about half the
+    code while saying it answered about all of it.
+    """
     return sorted(
         path.relative_to(root).as_posix()
-        for path in (*root.glob("*.py"), *(root / "tools").glob("*.py"))
+        for path in (
+            *root.glob("*.py"),
+            *(root / "trainbudget").rglob("*.py"),
+            *(root / "tools").glob("*.py"),
+        )
         if path.is_file()
     )
 

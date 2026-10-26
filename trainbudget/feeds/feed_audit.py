@@ -16,9 +16,9 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from feeds_cli import add_feed_args
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.feeds_cli import add_feed_args
 
 SAMPLE_LIMIT = 10
 

@@ -22,12 +22,12 @@ import urllib.error
 from datetime import date
 from pathlib import Path
 
-import atoc_fares_loader
-import build_demo_page
-import build_state
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.fares import atoc_fares_loader
+from trainbudget.build import build_demo_page
+from trainbudget.build import build_state
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
 
 from tests.page_harness import embedded_payload, setUpModule, station_page, tearDownModule
 
@@ -128,7 +128,7 @@ class TimetableCachePruneTest(unittest.TestCase):
         # CIF's absent marker, not midnight) changes no byte of the download and
         # changes every calling point the cache holds. A build that kept the
         # old pickle would serve the old timetables and say nothing.
-        self.assertIn("atoc_timetable.py", build_demo_page.SOURCE_FILES)
+        self.assertIn("trainbudget/timetable/atoc_timetable.py", build_demo_page.SOURCE_FILES)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             feed = build_synthetic_timetable(root / "timetable")
@@ -141,7 +141,7 @@ class TimetableCachePruneTest(unittest.TestCase):
             touched = []
             try:
                 for name in build_demo_page.SOURCE_FILES:
-                    source = pathlib.Path(build_demo_page.__file__).parent / name
+                    source = pathlib.Path(__file__).resolve().parents[1] / name
                     original = source.read_bytes()
                     touched.append((source, original))
                     source.write_bytes(original + b"\n")
@@ -162,10 +162,10 @@ class TimetableCachePruneTest(unittest.TestCase):
         # `destination_coverage` are imported by every build and were named by
         # neither, so editing one left a built site looking current. It is read
         # from the imports now, and this fails if a module stops being reached.
-        root = Path(build_demo_page.__file__).parent
+        root = Path(__file__).resolve().parents[1]
         covered = set(build_demo_page.SOURCE_FILES)
         reached: set[str] = set()
-        pending = ["build_demo_page.py"]
+        pending = ["trainbudget/build/build_demo_page.py"]
         while pending:
             name = pending.pop()
             if name in reached:
@@ -174,12 +174,20 @@ class TimetableCachePruneTest(unittest.TestCase):
             self.assertIn(name, covered, f"the build imports {name} and does not hash it")
             for node in ast.walk(ast.parse((root / name).read_text(encoding="utf-8"))):
                 if isinstance(node, ast.Import):
-                    names = [alias.name.split(".")[0] for alias in node.names]
+                    names = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                    names = [node.module.split(".")[0]]
+                    # `from trainbudget.build import build_assets` names a module
+                    # through its parent, so both readings are offered.
+                    names = [node.module] + [
+                        f"{node.module}.{alias.name}" for alias in node.names
+                    ]
                 else:
                     continue
-                pending.extend(f"{module}.py" for module in names if (root / f"{module}.py").is_file())
+                for dotted in names:
+                    module = root.joinpath(*dotted.split("."))
+                    for candidate in (module.with_suffix(".py"), module / "__init__.py"):
+                        if candidate.is_file():
+                            pending.append(candidate.relative_to(root).as_posix())
         self.assertGreater(len(reached), 5, "the build's imports were not followed")
         # The two files a build reads as data rather than importing: the reviewed
         # destination facets, and the brand mark the footer inlines.
@@ -193,14 +201,17 @@ class TimetableCachePruneTest(unittest.TestCase):
         # it -- the standard library, a misspelling -- does not.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "one.py").write_text(
-                "import json\nimport two\nfrom nope import missing\n", encoding="utf-8"
+            (root / "pkg").mkdir()
+            (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "pkg" / "one.py").write_text(
+                "import json\nfrom pkg import two\nfrom nope import missing\n",
+                encoding="utf-8",
             )
-            (root / "two.py").write_text("from three import name\n", encoding="utf-8")
-            (root / "three.py").write_text("name = 1\n", encoding="utf-8")
+            (root / "pkg" / "two.py").write_text("from pkg.three import name\n", encoding="utf-8")
+            (root / "pkg" / "three.py").write_text("name = 1\n", encoding="utf-8")
             self.assertEqual(
-                build_demo_page.module_sources(root, "one.py"),
-                ("one.py", "three.py", "two.py"),
+                build_demo_page.module_sources(root, "pkg.one"),
+                ("pkg/__init__.py", "pkg/one.py", "pkg/three.py", "pkg/two.py"),
             )
 
     def test_a_build_says_whether_it_parsed_or_restored_the_timetable(self) -> None:

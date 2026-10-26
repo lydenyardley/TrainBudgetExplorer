@@ -12,7 +12,7 @@ projection was the picker's station list, which has since moved into
 `stations.js`, so the first question had to be asked again against a build that
 exists rather than an extrapolation.
 
-It was asked against the whole network. `python build_demo_page.py --feed
+It was asked against the whole network. `python -m trainbudget.build.build_demo_page --feed
 feeds/fares --fast-all-origins --notices nre,rdg,ogl,accuracy --out
 _cache/site_measure/index.html` wrote all 2,712 station pages plus the chooser
 and the privacy page in six minutes on eight workers, and

@@ -185,7 +185,7 @@ feeds, not substitutes for DTD fares or timetables.
 Run:
 
 ```bash
-python dtd_audit.py
+python -m trainbudget.feeds.dtd_audit
 ```
 
 The command validates the archives first, then runs the existing
@@ -198,7 +198,7 @@ or an older archive.
 ### How a refresh works
 
 The DTD fares ZIP is republished weekly and the public timetable ZIP daily. A
-refresh is `python dtd_download.py` followed by `python dtd_audit.py` and a page
+refresh is `python -m trainbudget.feeds.dtd_download` followed by `python -m trainbudget.feeds.dtd_audit` and a page
 rebuild: the downloader writes the new archive atomically and records its
 non-secret URL, size, and SHA-256 in `feeds/download-manifest.json`, and the
 build reads whatever ZIP is current. There is no scheduled job or server in the
@@ -557,6 +557,6 @@ this document and update the relevant ADR/checklist.
 
 The immediate implementation can proceed without asking the user to disclose a
 password in chat. Set `NRDP_USERNAME` and `NRDP_PASSWORD` in the local shell or
-an ignored `.env` file, then run `python dtd_download.py`. A missing DTD
+an ignored `.env` file, then run `python -m trainbudget.feeds.dtd_download`. A missing DTD
 subscription is expected to produce an explicit entitlement error, not a false
 empty feed.

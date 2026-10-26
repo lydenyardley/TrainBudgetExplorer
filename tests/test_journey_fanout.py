@@ -14,8 +14,8 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from atoc_timetable import TimetableDb, _rank
-from make_synthetic_feed import build_synthetic_timetable
+from trainbudget.timetable.atoc_timetable import TimetableDb, _rank
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_timetable
 
 
 def _rank_or_none(journey):
@@ -105,7 +105,7 @@ class AStationCalledTwiceTest(unittest.TestCase):
     """
 
     def test_the_fan_out_keeps_the_first_call(self) -> None:
-        import make_synthetic_feed as feed
+        from trainbudget.feeds import make_synthetic_feed as feed
 
         trains = (
             ("T20001", ("GRNT", "0900"), (), ("PETE", "0930"), "1111111", "P"),

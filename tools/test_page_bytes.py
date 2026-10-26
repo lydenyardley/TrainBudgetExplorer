@@ -28,8 +28,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import page_templates
-from page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
+from trainbudget.build import page_templates
+from trainbudget.build.page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
 from tools.page_bytes import (
     PageBytes,
     SITE_BUDGET_MB,

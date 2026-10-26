@@ -9,9 +9,9 @@
  * Contentful Paint, the first results row, DOMContentLoaded, and when each of
  * the page's two scripts actually ran.
  *
- *   python make_synthetic_feed.py _demo_feed --unserved-station \
+ *   python -m trainbudget.feeds.make_synthetic_feed _demo_feed --unserved-station \
  *       --third-origin --return-network --knowledgebase _demo_kb
- *   python build_demo_page.py --feed _demo_feed --timetable _demo_feed \
+ *   python -m trainbudget.build.build_demo_page --feed _demo_feed --timetable _demo_feed \
  *       --knowledgebase _demo_kb --all-origins --date 2026-10-05 \
  *       --out _demo_site/index.html
  *   node measure_station_defer.cjs

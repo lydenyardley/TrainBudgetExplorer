@@ -12,10 +12,10 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
-from sanity_report import (
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.feeds.make_synthetic_feed import build_synthetic_feed, build_synthetic_timetable
+from trainbudget.measure.sanity_report import (
     build_report,
     cheapest_and_dearest,
     count_variants,

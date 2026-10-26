@@ -49,7 +49,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from page_templates import PAYLOAD_MARKER
+from trainbudget.build.page_templates import PAYLOAD_MARKER
 
 #: The station template writes the page's own answer under this name, and it is
 #: the one part of the page that differs per origin. A page carrying it is a

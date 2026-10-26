@@ -33,9 +33,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from atoc_fares import FaresDb
-from atoc_timetable import TimetableDb
-from parse_report import MAX_SKIPPED_EXAMPLES
+from trainbudget.fares.atoc_fares import FaresDb
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.fares.parse_report import MAX_SKIPPED_EXAMPLES
 
 # Names, so a failure can be described rather than dumped.
 MUTATIONS = (

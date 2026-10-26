@@ -17,17 +17,17 @@ from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
-from atoc_fares import EVERYTHING_PENCE
-from atoc_knowledgebase import (
+from trainbudget.fares.atoc_fares import EVERYTHING_PENCE
+from trainbudget.timetable.atoc_knowledgebase import (
     ABSENT,
     Knowledgebase,
     UNKNOWN,
     UNPUBLISHED,
     load_ticket_restrictions,
 )
-from atoc_timetable import TimetableDb
-from build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE
-from build_state import CACHE_DIR, prune_timetable_caches, timetable_cache_path
+from trainbudget.timetable.atoc_timetable import TimetableDb
+from trainbudget.build.build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE
+from trainbudget.build.build_state import CACHE_DIR, prune_timetable_caches, timetable_cache_path
 
 from typing import TYPE_CHECKING
 from typing import TYPE_CHECKING
@@ -35,16 +35,16 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from build_pool import BuildContext
+    from trainbudget.build.build_pool import BuildContext
 
 
 
 if TYPE_CHECKING:
-    from build_pool import BuildContext
+    from trainbudget.build.build_pool import BuildContext
 
 
 if TYPE_CHECKING:
-    from build_pool import BuildContext
+    from trainbudget.build.build_pool import BuildContext
 
 
 # -- feed metadata ----------------------------------------------------------

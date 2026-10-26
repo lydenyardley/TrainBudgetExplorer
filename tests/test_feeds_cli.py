@@ -16,8 +16,8 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-import feeds_cli
-from feeds_cli import add_feed_args, find_origin, load_feeds
+from trainbudget.feeds import feeds_cli
+from trainbudget.feeds.feeds_cli import add_feed_args, find_origin, load_feeds
 
 
 def parse(build) -> argparse.Namespace:

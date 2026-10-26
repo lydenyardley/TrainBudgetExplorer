@@ -51,8 +51,8 @@ from pathlib import Path
 # build that precedes it cannot name the file differently. No path insert: a
 # file at the repository root is importable from a script run and from a test
 # alike, which is the whole of what the insert was for.
-from build_demo_page import NOTICES, RELEASE_MANIFEST_NAME, SOURCE_FILES
-from build_workers import free_memory_bytes, worker_budget
+from trainbudget.build.build_demo_page import NOTICES, RELEASE_MANIFEST_NAME, SOURCE_FILES
+from trainbudget.build.build_workers import free_memory_bytes, worker_budget
 
 ROOT = Path(__file__).parent
 SITE = ROOT / "_site"
@@ -84,14 +84,14 @@ def _is_synthetic(path: Path) -> bool:
 def build(args: argparse.Namespace) -> int:
     """Run the page build into _site/. Returns the exit code."""
     if not _feed_exists(args.feed):
-        print(f"No feed at {args.feed} -- run `python make_synthetic_feed.py _demo_feed` "
-              f"or download the real feeds with `python dtd_download.py`.", file=sys.stderr)
+        print(f"No feed at {args.feed} -- run `python -m trainbudget.feeds.make_synthetic_feed _demo_feed` "
+              f"or download the real feeds with `python -m trainbudget.feeds.dtd_download`.", file=sys.stderr)
         return 1
 
     origin = args.origin
     if origin is None:
         origin = "GRA" if args.feed != ROOT / "_demo_feed" else "GRN"
-    cmd = [sys.executable, "build_demo_page.py",
+    cmd = [sys.executable, "-m", "trainbudget.build.build_demo_page",
            "--feed", str(args.feed),
            "--origin", origin,
            "--out", "_site/index.html"]
