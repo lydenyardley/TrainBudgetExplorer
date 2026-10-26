@@ -8,7 +8,7 @@ usage, and none of it can be measured afterwards if it is not set up now.
 ## 1. Gates, before anything is posted
 
 - [ ] `publish-checklist.md` is ticked top to bottom
-- [ ] `python check_links.py` reports no `no_journeys` and no `http_error`
+- [ ] `python -m tools.check_links` reports no `no_journeys` and no `http_error`
       (`blocked` and `inconclusive` are **not** a pass — they mean a person has not
       looked yet)
 - [ ] The Stage 1 count is in hand. If the honest answer was "Grantham reaches
