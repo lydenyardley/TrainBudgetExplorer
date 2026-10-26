@@ -107,9 +107,9 @@ tables only. The same page then measured what the shape costs:
 the payload 1,333,421 -> 655,677, and a small station (Ashwell & Morden)
 1,301,965 -> 657,135 with 6,056 rows either side. The old encoder run over the new
 page's own decoded payload reproduces the old bytes exactly, and every row reads
-back as the object the build wrote, in order. The full profile, and the two
-decisions the remaining bytes need, are in
-`docs/audits/2026-10-23-page-byte-budget.md`.
+back as the object the build wrote, in order. The full profile is in
+`docs/build-performance-findings.md` under "Twelve release-shaped pages"; the two
+decisions the remaining bytes needed are ADR-0076 and ADR-0077.
 
 **What the amendment does not buy.** The same page gzips from 139,782 to 128,201
 bytes, **8.3%**, because the repetition removed was what deflate was already

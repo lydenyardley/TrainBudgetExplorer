@@ -1,6 +1,7 @@
 # Open work
 
 **Opened:** 1 October 2026. **Pruned and numbered:** 21 October 2026.
+**Re-read against the tree:** 26 October 2026.
 
 **Scope:** every item this project has left open, in one place, so that nothing is
 open only because it lives in a file nobody re-reads. Each item carries its own
@@ -11,9 +12,11 @@ seven of them, some with a hundred lines of measurement narrative -- moved to
 `docs/settled-work.md`, which is where a closure and the check that holds it
 belong. The rejected designs moved there too, because a rejection is a decision
 already made and this file is what is *not* decided. The four audits still open
-were merged into `docs/audits/2026-10-21-audit-asks.md`, which keeps their
-measurements; each item below names the audit ID it came from, so a reader who
-wants the evidence for O7 goes there and reads S5.
+were merged into one list on 21 October 2026, which kept their measurements; that
+file was removed on 26 October 2026 when this file took over its evidence, so each
+item below names the audit ID it came from and carries the figure that matters.
+O7, for instance, is S5 of the 19 October critique and states S5's three
+measurements.
 
 An item leaves this file when it is done, and it leaves by naming the commit and
 the test that hold it, or by naming the ADR where it was a decision rather than a
@@ -27,11 +30,10 @@ and **O18** (the enforcer was designed, prototyped and refused). Their numbers a
 retired rather than reused, because a number is what a commit or a comment cites
 and renumbering would make every one of those citations point at a different item.
 
-## The seventeen items
+## The thirty-five items
 
 | # | Item | Kind | Severity |
 |---|---|---|---|
-| O1 | The release's bytes may be over the budget, and the run that would print them stopped before building | measurement, then a settings decision | P1 for the release |
 | O3 | The shortlist dock has no total (DL3) | decision | P2 |
 | O4 | The dock and the budget rail are pinned at once (OV5) | decision, measured | P2 |
 | O5 | The fare horizon on the budget track (OV1, DL6) | decision | P2 for OV1, P3 for DL6 |
@@ -46,112 +48,47 @@ and renumbering would make every one of those citations point at a different ite
 | O14 | Date-specific schedules are not a product mode (S24) | decision | P2 |
 | O15 | Bank holidays and service exceptions are not inputs (S25) | decision, downstream of O14 | P3 |
 | O16 | The site has no public name (S40) | decision | P3 |
-| O19 | A release costs twelve runners times a 150-minute bound | decision | P2 |
+| O19 | A release costs twelve runners, and 39 minutes at the slowest share | decision, measured | P2 |
 | O20 | The stop rule's own review was due on 21 October 2026 (S43, S44) | person | P1 for the project |
+| O23 | The ticket link says "Tickets" and opens the seller's empty search (critique 2) | decision | P2 |
+| O24 | A row's price does not say return or single, or who it covers (critique 4, 20) | decision | P2 |
+| O25 | A ticket-mode switch lowers the reader's budget without saying so (critique 5) | code | P2 |
+| O26 | A two-ticket row can print "Direct" over its own trains (critique 7) | code | P2 |
+| O27 | The privacy contact is escaped markup (critique 9) | code | P2 |
+| O28 | A reader with JavaScript off gets no rows and, if the script is disabled rather than missing, no note (critique 3) | code | P3 |
+| O29 | An undated timetable build says "No service that day" with no day (critique 1) | code | P3 |
+| O30 | Reader-facing prose still carries build vocabulary (critique 10) | decision | P3 |
+| O31 | The empty state offers up to five doors (critique 8) | code | P3 |
+| O32 | A one-station build's root is a one-row chooser (critique 12) | decision | P3 |
+| O33 | The station picker hides the station it is changing from (critique 13) | code | P3 |
+| O34 | A phone row's numbers stand alone, and the rail's slider is a few dozen pixels (critique 14, 24) | decision | P3 |
+| O35 | The shortlist dock has no fare, no price order and no undo (critique 18) | code | P3 |
+| O36 | The row's copied journey leaves out the price and the times (critique 19) | code | P3 |
+| O37 | The day control names no day and confirms no change (critique 21) | code | P3 |
+| O38 | The theme switch has no visible label (critique 22) | code | P3 |
+| O39 | Table columns move between filters (critique 23) | code | P3 |
+| O40 | Pagination does not say which results the page shows (critique 17) | code | P3 |
+| O41 | Station names are printed in the feed's capitals (critique 16) | decision | P3 |
 
-One wants a run this machine cannot give it (O1). Three are code whose decision
-is already taken, and each changes what a reader sees (O9, O11, O12). Thirteen
-wait on the owner's answer (O3, O4, O5, O6, O7, O8, O10, O13, O14, O15, O16,
-O19, O20), and two of those now wait with their measurement in hand (O4 and O8).
-None of them is blocked on a tool. **O21** (station-cluster `.FSC` fares and
-the 109 destinations they newly price) and **O22** (the twelve destinations
-newly priced by station-group expansion) both left on 23 October 2026 once
-ADR-0075 and `REVIEWED_SETTLEMENT_FALLBACKS` landed (`docs/settled-work.md`).
+Sixteen are code, and two of those have their decision already taken (O11, O12).
+Eighteen wait on the owner's answer (O3 to O8, O10, O13 to O16, O19, O23, O24,
+O30, O32, O34, O41), and one (O20) waits on a person. None is blocked on a tool.
+**Kind** says who acts: `code` is a fix waiting for its turn, `decision` is a
+question only the owner can answer, and `person` is one neither can settle.
 
----
+**O1**, the only item that wanted a run this machine could not give it, closed on
+26 October 2026: the release measured **370 MB of its 800 MB budget** and
+published. **O21** (station-cluster `.FSC` fares and the 109 destinations they
+newly price) and **O22** (the twelve destinations newly priced by station-group
+expansion) both left on 23 October 2026 once ADR-0075 and
+`REVIEWED_SETTLEMENT_FALLBACKS` landed (`docs/settled-work.md`).
 
-## O1 -- The release's bytes may be over the budget, and the run that would print them stopped before building
-
-**Kind:** measurement, then a settings decision. **Raised:** 12 October 2026 as a
-P1 projection and lowered to P2 once ADR-0069's re-encoding made 536 MB look
-comfortable; raised back to **P1 for the release on 21 October 2026**, because the
-four pages measured that day suggest the budget may now be breached. **Route:**
-the release build's own output, `tools/page_bytes.py`'s gate, and this file.
-
-**What the 2.2 GB was, and what replaced it.** The projection came from a
-24-station sample measured 12 October 2026, before ADR-0069 changed the payload's
-encoding: re-encoding shard 1's 458 real pages gave **90.8 MB in place of 429 MB**,
-which is **about 536 MB for 2,707 pages** against the **800 MB** budget. The 2.2 GB
-figure is void and is not quoted here.
-
-**What is still not measured.** 536 MB is an extrapolation from one shard, and it
-predates the 16 October 2026 switch to Network Rail's CIF (ADR-0073), which added
-schedules and therefore possible departures to every row. No whole-network build in
-the release's own shape has run since either change. The gate runs in CI and
-refuses an over-budget site, so a release cannot publish over budget; what no run
-has printed is the number it would print, because the two runs since 19 October
-stopped earlier than that.
-
-**21 October 2026: four real pages, measured, and the bracket they leave.** Four
-station pages were built from the local feeds and measured the same afternoon:
-**Grantham 397 KB, Nottingham 449 KB, Linlithgow 283 KB, Ashwell & Morden
-345 KB** of HTML, each with 41 to 63 KB gzip (the table and the command are in
-`docs/build-performance-findings.md`). They were built from the DTD timetable,
-because the build that reads the release's NWR CIF was killed while loading on
-this machine, so the bracket is close rather than exact. They average **369 KB**, and at that average
-2,707 pages are **975 MB against the 800 MB budget**. The 536 MB projection in the
-paragraph above rests on a **198 KB** average measured on 12 October, before times
-returned to the page on 16 October, and none of these four pages is near it,
-including one from a small station. The budget holds only if the network's
-average page is under **302 KB**, and nothing measured here shows that it is.
-
-A whole-network spread build that would replace the extrapolation was attempted
-the same day and was killed while building its pages, on a machine with **5.8 GB
-free against the 6.4 GB the two feeds want**; it wrote its shared assets and no
-station page. So this is not a curiosity about a number any more: if the average
-is where these four pages are, **the release's own byte gate will refuse it**,
-and the only way to know is the run.
-
-**23 October 2026: the page shape changed, the payload halved, and the site is
-still about twice the limit.** The `.FSC` cluster flows (ADR-0075) price a fare to
-**2,752 destinations from Grantham**, which is nearly every station the feed
-knows, so the page is no longer the 369 KB of the four pages above: it is
-**1,368,721 bytes**, of which the places table alone is 806 KB. Six wire-format
-changes took the same page to **690,977 bytes (49.5% off)** and Ashwell & Morden
-from 1,301,965 to 657,135, with the row count unchanged
-(`docs/audits/2026-10-23-page-byte-budget.md` has the profile and each change).
-The same page's gzip moved only 8.3%, because the repetition the wire carried
-was what deflate was already removing.
-
-**24 October 2026: both product decisions are taken, and the site is still 11%
-over the host's limit.** A page now lists only the places a journey reaches
-(ADR-0076) and carries a station's own facts once, in the shared station list
-(ADR-0069 amendment): Grantham went from 690,977 to **373,396 bytes** with the
-same schedule behind it. Twelve release-shaped pages measured the same day
-average **407,296 bytes** (median 397,812), so 2,930 pages are **1,193 MB**: 11%
-over the host's 1 GiB, 19% over it at 10^9, and 49% over the 800 MB budget. The
-levers the audit measured and did not take -- the three fare lists (36% of a
-page), `departures` (16%), `name` (4%), `legs` (2%) and the service week (15%)
--- are product decisions about what a page carries, and taking any of them is a
-change to what a reader sees rather than to how it is encoded.
-
-**24 October 2026, second reading: the cap is taken at 600 places.** Cutting every
-fare list to the cheapest N places keeps all four ticket-mode filters -- each list
-still holds every fare to a place the page lists -- and at N = 600 the mean page
-falls from 407,289 to 265,946 bytes, so 2,930 pages are **743 MiB of the 800 MiB
-budget** with every fare below the stop unchanged
-(`docs/build-performance-findings.md`, "A cap on the places a page lists").
-ADR-0077 takes it: the release passes `--max-places 600`, every fare list is cut
-to the same places, the payload carries `cappedDestinationCount`, and the coverage
-line says where the page stops. What a reader loses is stated there: 53% of the
-places the twelve pages reach stay off them, and from Manchester Piccadilly the
-page stops at £47.40 where the feed prices £186.30. **What is still open is the
-number.** 700 is the edge of the gate at 808 MiB, and the twelve pages are a
-bracket rather than a draw, so the release run's `tools/page_bytes.py` decides
-whether 600 holds on the whole network and, if it refuses, whether to lower it.
-
-**The earlier stop.** The push run of 19 October 2026 halted on a missing
-`SCHEDULE_URL` repository variable, and the 20 October run's two-byte probe
-answered that the fares feed's credential pair is refused by the CIF endpoint with
-HTTP 401. Both are settings, written out in `docs/github-pages-deployment.md`; the
-CIF subscription's own `SCHEDULE_USERNAME` and `SCHEDULE_PASSWORD` are what the
-endpoint accepts.
-
-**What closes it.** One release run that reaches the assemble job. Its
-`python -m tools.page_bytes --site _site` prints the assembled site's bytes whether
-it passes or refuses, and that figure replaces every projection above. The
-levers in the 23 October audit are what a passing run needs; the run itself is
-still the measurement.
+The last nineteen (O23 to O41) are the 21 October 2026 Critiquito design
+critique, read against the tree on 26 October 2026. Its severity key was applied
+to the pages it captured, so three of its P1s are graded lower here: the release
+is dated, so "No service that day" has a day to mean (O29), and a script that
+fails to arrive now says so (O28). The findings it filed that the page has since
+answered are settled in `docs/settled-work.md`, under the critique's own heading.
 
 ---
 
@@ -400,16 +337,22 @@ presented as a settled brand. Nothing is named in the code until one is chosen.
 
 ---
 
-## O19 -- A release costs twelve runners times a 150-minute bound
+## O19 -- A release costs twelve runners, 39 minutes at the slowest share
 
 **Kind:** decision. **Raised:** A1 of the 20 October 2026 poteto audit, whose
 findings are settled in `docs/settled-work.md`. **Route:** the shard job.
 
-The shard step runs twelve shares of about 226 pages against a 150-minute bound,
-and the 20 October 2026 run spent the whole bound on every share before writing a
-page. If that price is too high, the answer is less work per page rather than a
-longer bound, and the per-share figure every run now prints is what would say which
-part of a share is paying it.
+The shard step runs twelve shares of about 237 pages against a 150-minute bound.
+The figure this item was waiting for arrived on 26 October 2026: the twelve shares
+took **18, 20, 20, 25, 27, 30, 33, 33, 33, 34, 34 and 39 minutes**, mean 28.8,
+against the 100-minute nearing warning and the 150-minute bound
+(`docs/build-performance-findings.md`, "The release's own bytes"). So the price of
+a release is about twelve runners for forty minutes, not twelve runners that each
+spend the bound.
+
+What is left is whether that is too much for a site of 2,838 pages. The answer, if
+it is, is less work per page rather than a longer bound: the per-share figure every
+run prints says which part of a share is paying it.
 
 ---
 
@@ -436,6 +379,282 @@ whether anyone is using the thing**. It is not a request to build anything.
 
 ---
 
+## O23 -- The ticket link says "Tickets" and opens the seller's empty search
+
+**Kind:** decision. **Raised:** task 2 of the 21 October 2026 Critiquito critique,
+its second P1. **Route:** the row's ticket link and the disclosure above the table.
+
+The visible word is "Tickets" beside a price, and the link opens the seller's own
+search page with the journey not filled in. The comment in `row-actions.js` says
+the word is deliberate: it is the one word a price-first column can hold, and the
+accessible name and tooltip carry "opens in a new tab" and what the link does. The
+longer explanation is in the folded "About the ticket link".
+
+**What closes it.** Either the visible label ("Search at seller") or one
+always-visible line above the table saying the links open the seller's search, and
+the choice is what the row's primary action claims at a glance.
+
+## O24 -- A row's price does not say return or single, or who it covers
+
+**Kind:** decision. **Raised:** tasks 4 and 20 of the critique. **Route:** the
+price and fare cells, the count line and the heading.
+
+Two facts a reader needs to budget are not on the price. The fare cell says
+"Regular fare", "Restricted fare", "Advance fare" or "Two tickets", so a plain
+outbound single reads "Regular fare" and its price looks like a return's; the
+helper that would say "Standard outbound single" (`ticketName`) is only used in
+text that leaves the page. And with two adults the heading still reads "Train
+fares up to £20 from GRANTHAM": the party appears in the count line
+("for the two of us, two of the fare each row names"), not in the sentence a
+reader reads first.
+
+**What closes it.** A word in the fare cell (or a "single"/"return" tag beside the
+price) and a heading clause when the party is two. The count line's wording is
+already the party's own, so this is the two other surfaces agreeing with it.
+
+## O25 -- A ticket-mode switch lowers the reader's budget without saying so
+
+**Kind:** code. **Raised:** task 5 of the critique. **Route:** `clampBudget`.
+
+A mode's ceiling is the dearest fare it carries, so choosing Singles on a £20
+budget can lower it to the dearest single without a word. The state is better than
+it was when the critique read it: the budget is remembered per mode and restored on
+the way back (`STATE.budgetByMode`), so the reader's choice is not lost. What is
+missing is the sentence at the moment it happens.
+
+**What closes it.** One line beside the budget naming the new ceiling, the same
+place the reader already reads "£126.00 for one adult". No undo is needed, because
+the mode memory is the undo.
+
+## O26 -- A two-ticket row can print "Direct" over its own trains
+
+**Kind:** code. **Raised:** task 7 of the critique. **Route:** the Changes cell and
+a two-ticket row's departures.
+
+The cell reads the priced journey's change count, and a two-ticket row's panel
+lists the tickets' own departures with their own change counts. On the critique's
+Bulwell row the cell said "Direct" while two of the three listed trains changed,
+and `fareSentence` added "(a through train, so you stay on the train the whole
+way)". A row that contradicts the trains it lists is the one defect here that
+undermines the price rather than the wording.
+
+**What closes it.** The count derived from the trains the row shows ("Direct or 1
+change" where they differ), or the two-ticket row's changes derived from the
+tickets' own legs instead of the through journey's.
+
+## O27 -- The privacy contact is escaped markup
+
+**Kind:** code. **Raised:** task 9 of the critique. **Route:**
+`build_release.DEFAULT_PRIVACY_CONTACT` and `build_render.render_privacy`.
+
+The default contact is a sentence containing an `<a href>` to the issue tracker,
+and the template writes it through `html.escape`, so the privacy page shows the tag
+as text and the only way to reach the operator is not a link. The escaping is
+right for a `PRIVACY_CONTACT` a person supplies; the default is not that. The test
+asserts the URL is in the constant, not that the page renders a link.
+
+**What closes it.** The default becomes plain text plus a URL the template links,
+or the template stops escaping that one reviewed constant and keeps escaping the
+configured one. One line, plus the check that reads the page.
+
+## O28 -- A reader with JavaScript off gets no rows, and if the script is disabled rather than missing, no note
+
+**Kind:** code. **Raised:** task 3 of the critique. **Route:** both routes, and the
+note at `#scriptNote`.
+
+The rows and the chooser's links are built by the script. A script that fails to
+arrive is handled: the tag's `onerror` reveals a note, and the browser suite drives
+that case. A script that never runs because JavaScript is off fires no `onerror`,
+so the page is a heading, a table head and no rows, with no message and controls
+that look usable.
+
+**What closes it.** A `<noscript>` line on both routes. The data is already inline,
+so rendering the first page of rows from the build is the larger version of the
+same answer, and the critique offered both.
+
+## O29 -- An undated timetable build says "No service that day" with no day
+
+**Kind:** code. **Raised:** task 1 of the critique, its first P1. **Route:**
+`JOURNEY_ABSENCE.no_service`.
+
+The cell's brief form is the constant "No service that day", and the full form
+falls back to "no service on the day this build asked about" when the build carried
+no `--date`. The release is dated, so the reader of the published site always has a
+day the words can mean; a hand-built undated timetable page does not, and its note
+says no date was given. The critique read 14 of 17 rows that way on a synthetic
+undated build.
+
+**What closes it.** The brief form says "No service listed" when `DATA.serviceDate`
+is empty, or an undated timetable build is refused and says why.
+
+## O30 -- Reader-facing prose still carries build vocabulary
+
+**Kind:** decision. **Raised:** task 10 of the critique. **Route:** the fare panel,
+the empty state, the venue notes.
+
+"Feed record (technical details)", "(21 in the feed)", "in this download",
+"the feed's own rule", and the chooser's column line, which says "Code" and
+"Destinations", are the build's words in a traveller's sentence. The
+glossary inside the method disclosure now defines ITX, DTD, RR, flow and NRE
+(audit item 44), so the words are explained where the method is; the question is
+which of them belong in the list itself.
+
+**What closes it.** A decision on the handful of phrases a reader meets before
+opening anything ("Technical details", "21 places priced from here"), with the
+method detail left in the disclosure.
+
+## O31 -- The empty state offers up to five doors
+
+**Kind:** code. **Raised:** task 8 of the critique. **Route:** `renderEmpty`.
+
+The block can hold the raise-the-budget door, "Show all destination types", the
+two-adult door, and one door per other ticket mode that survives the type filter.
+The critique pressed a page holding five buttons and found the £20 view offering
+"Raise the budget to £7.00" beside a set whose own floor was £6.40. Two of those
+have since improved: the raise door is now in the cheapest reachable row's own
+price and names the place, and the two-adult door is offered only when it is
+actually cheaper (`renderEmpty`). What remains is how many doors one moment holds.
+
+**What closes it.** One primary door and at most one secondary; the other modes
+are already reachable through the mode control above.
+
+## O32 -- A one-station build's root is a one-row chooser
+
+**Kind:** decision. **Raised:** task 12 of the critique. **Route:**
+`_build_single_origin`.
+
+A single-origin build writes a root chooser offering exactly the station it
+priced, headed with that station's count, so the shape costs a click before its
+only page. The published release is multi-origin and has no such root. The shape
+is `run.py build`'s default and every test page is built through it.
+
+**What closes it.** The root sends the reader straight to the page, or the shape
+keeps the chooser and says why a one-row list is the honest index.
+
+## O33 -- The station picker hides the station it is changing from
+
+**Kind:** code. **Raised:** task 13 of the critique. **Route:** `picker.js`.
+
+Opening the picker hides the heading's control and moves the field into the
+heading, so the current station's name leaves the sentence it was in, and the list
+below has no row marked as the one the reader is on. The critique's other points
+in the same task have landed: the chooser writes its column line only over a list
+that has rows, the no-match note has its own margin, the list is no longer headed
+"EVERY STATION ON THIS SITE", and a page whose station list did not arrive
+replaces the control with a plain name rather than explaining that it is not a
+link.
+
+**What closes it.** The open panel keeps the current station visible and marks it
+in the list.
+
+## O34 -- A phone row's numbers stand alone, and the rail's slider is a few dozen pixels
+
+**Kind:** decision. **Raised:** tasks 14 and 24 of the critique. **Route:** the
+phone row and the budget rail.
+
+Below 44rem the row drops the label track on purpose -- the comment in
+`station.css` argues each value says what it is -- so "45m" and "Unknown" read with
+nothing beside them, which is the half the critique is right about: a duration and
+an absence do not name themselves. The rail is `flex: 1; min-width: 4rem` beside a
+`white-space: nowrap` ceiling note, so at 304px (200% zoom) the note overhangs the
+right edge, which is the defect the 25 October fix found from the other side, and
+the slider is squeezed into what is left.
+
+**What closes it.** A word after the duration and the absence ("45 min", "Changes
+not listed"), and a rail whose slider keeps a usable width at 304px, or a stated
+decision that the phone row needs no labels.
+
+## O35 -- The shortlist dock has no fare, no price order and no undo
+
+**Kind:** code. **Raised:** task 18 of the critique. **Route:** the dock.
+
+A dock row carries the name, price, time, changes and a remove control, so two
+places priced as different kinds of ticket cannot be compared; the order is the
+active list's, which is price-sorted for the three named modes and the cheapest
+list's own order otherwise; and Clear announces the clear and moves focus but
+offers no undo. Share and Copy have since landed properly: Share opens a panel with
+a real link and says what the link carries (audit item 36), and a refused
+clipboard says so.
+
+**What closes it.** The fare's name in the row, a sort by the price on screen, and
+an "Undo" on the clear announcement.
+
+## O36 -- The row's copied journey leaves out the price and the times
+
+**Kind:** code. **Raised:** task 19 of the critique. **Route:** `journeyText`.
+
+The copied text names both stations, the ticket, the date and the passengers, and
+the shortlist's copy adds the price, the time and the changes. The row's does not,
+so the note a reader pastes to a seller has no fare on it. The failure path is
+fixed: a refused clipboard says "Could not copy automatically" and shows the text.
+
+**What closes it.** The price and the day's time in `journeyText`, which is two
+lines and one assertion.
+
+## O37 -- The day control names no day and confirms no change
+
+**Kind:** code. **Raised:** task 21 of the critique. **Route:** the day control and
+the heading.
+
+The control's label is "Times for", its help line explains that interchange
+stations are the build's day only, and the heading is the budget and the station.
+Choosing another day re-renders the table with no sentence saying what changed, and
+the choice does travel: the copied shortlist writes "Times for: <date>", and the
+address carries the day.
+
+**What closes it.** The day in the heading (or on the control's own line) and one
+confirmation after a change.
+
+## O38 -- The theme switch has no visible label
+
+**Kind:** code. **Raised:** task 22 of the critique. **Route:** `THEME_TOGGLE`.
+
+The control is a `role="switch"` with `aria-checked` and an sr-only "Dark theme",
+so a screen reader says what it is; a sighted reader sees a moon or a sun and gets
+no tooltip. The other half of the task has landed: the footer's two links are real
+links with a space between them and 44px targets.
+
+**What closes it.** A visible word or a title on the switch.
+
+## O39 -- Table columns move between filters
+
+**Kind:** code. **Raised:** task 23 of the critique. **Route:** the results table.
+
+No column has a stated width and the table is not `table-layout: fixed`, so the
+Time column's edge follows the longest value in the list and moves when a
+destination type or a ticket mode changes the rows.
+
+**What closes it.** Widths per column, and a check that reads a column's edge
+across two filters.
+
+## O40 -- Pagination does not say which results the page shows
+
+**Kind:** code. **Raised:** task 17 of the critique. **Route:** the pager.
+
+Both unusable controls are now disabled at their ends, and the page line reads
+"2 of 3 pages" while the count line above the table says how many destinations the
+list holds. No surface says where this page starts and ends in that list, so on
+page 2 a reader has to work it out from twenty rows.
+
+**What closes it.** A range ("showing 21 to 40 of 52") in the page line, or a
+decision that the page line and the count line are enough between them.
+
+## O41 -- Station names are printed in the feed's capitals
+
+**Kind:** decision. **Raised:** task 16 of the critique. **Route:** every station
+name: the heading, each row, the chooser, the picker's list, the tab title.
+
+The feed writes station names on a fixed-width card, so "GRANTHAM" and
+"NEWARK CASTLE" arrive in capitals and the page prints them as the feed spells
+them. The critique read a long list as shouting and asked for title case
+("Newark Castle (NCT)"). The page's rule elsewhere is to say what the feed says,
+so this is a decision rather than a defect: a title-cased name is the page's own
+spelling of somebody else's record.
+
+**What closes it.** A title-case rule at the one place a name is rendered, with
+the accessible names and the known-fares table's own comparisons read to see what
+else moves; or a decision that the feed's capitalisation is the honest name.
+
 ## Rejected, with the reason
 
 Moved to `docs/settled-work.md` on 21 October 2026, under "Rejected designs, with
@@ -449,14 +668,17 @@ each removed by the commit named with it, and its findings are either fixed, an
 item above, or a rejection in `docs/settled-work.md`. `git show <commit>` reads one
 back.
 
-The four reviews that were still open on 19 October 2026 were merged into
-`docs/audits/2026-10-21-audit-asks.md` on 21 October 2026: the engineering audit of
-14 October, the critique, delight and overdrive passes of 19 October. The merged
-file keeps their measurements and the coverage table that says, for every finding,
-whether it is settled in `docs/settled-work.md` or open as one of the seventeen
-items above. Removing the four files is the rule this directory keeps -- a review with
-nothing open does not keep a file -- applied one level up: four files had ten open
-asks between them, and the asks now live in one place.
+The four reviews that were still open on 19 October 2026 were merged into one list
+on 21 October 2026: the engineering audit of 14 October, the critique, delight and
+overdrive passes of 19 October. That file was itself removed on 26 October 2026,
+the way a review with nothing open is removed: nine of its ten asks were already
+items above (O3 to O10), the tenth was settled, its measurements moved here or to
+`docs/build-performance-findings.md`, and its coverage table moved to
+`docs/settled-work.md`, which is where a reader checks that no finding fell
+between the two files. The same pass read the 21 October 2026 Critiquito critique
+and the 23 October 2026 page-byte audit, filed what either still asked as items
+above, settled the rest, and removed both. `docs/audits/` is empty, and a new
+review belongs there only while it has an ask this file has not yet numbered.
 
 - `docs/audits/2026-10-17-poteto-audit.md` and `docs/audits/2026-10-17-impeccable-distill.md`
   — removed on 19 October 2026; nineteen findings and the checks that hold them are
@@ -481,4 +703,12 @@ asks between them, and the asks now live in one place.
   `docs/build-performance-findings.md`.
 - `docs/audits/2026-10-14-app-engineering-audit.md`, `docs/audits/2026-10-19-impeccable-critique.md`,
   `docs/audits/2026-10-19-impeccable-delight.md`, `docs/audits/2026-10-19-impeccable-overdrive.md`
-  — removed on 21 October 2026, merged into `docs/audits/2026-10-21-audit-asks.md`.
+  — removed on 21 October 2026, merged into one asks list, itself removed on
+  26 October 2026.
+- `docs/audits/2026-10-21-audit-asks.md`, `docs/audits/2026-10-21-critiquito-design-critique.md`
+  and `docs/audits/2026-10-23-page-byte-budget.md` — removed on 26 October 2026.
+  The first two left their still-open asks as O3 to O10 and O23 to O41; the third
+  left O1, which the release measured and closed the same day. Every settled
+  finding, the merged list's coverage table and the critique's exclusions are in
+  `docs/settled-work.md`, and every figure in
+  `docs/build-performance-findings.md`.

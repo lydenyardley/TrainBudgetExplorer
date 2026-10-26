@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 24 October 2026
-**Relates to:** ADR-0076 (a page lists the places a journey reaches), ADR-0069 (the wire form), ADR-0046 (a row list ships as a table and a pool), `docs/audits/2026-10-23-page-byte-budget.md`
+**Relates to:** ADR-0076 (a page lists the places a journey reaches), ADR-0069 (the wire form), ADR-0046 (a row list ships as a table and a pool), `docs/build-performance-findings.md`
 
 ## Context
 

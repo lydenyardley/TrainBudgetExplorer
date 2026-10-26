@@ -1589,15 +1589,17 @@ fare rows 354,914 -> 235,078, `serviceWeek` 105,169 -> 70,552, page pool
 42,137 -> 50,805, payload 1,333,421 -> 655,677. The largest single item was the
 same `link` object on all 2,752 places, 272,448 bytes, because the page-level pool
 (ADR-0046) only ever saw the row tables; the second was a departure option
-spelled as an object (189,089 bytes). The per-column table and the six changes are
-in `docs/audits/2026-10-23-page-byte-budget.md`.
+spelled as an object (189,089 bytes). The per-column table and the six changes
+were in `docs/audits/2026-10-23-page-byte-budget.md`, removed on 26 October 2026
+once its last question was measured; the two decisions it raised are ADR-0076 and
+ADR-0077, and the figures still in use are the two rows above.
 
 **What it does not settle.** These pages come from the DTD timetable on this
 machine, not from the Network Rail CIF the release reads, and two origins are not
-the network. The assembled site's `python -m tools.page_bytes --site _site` is
-still the figure that decides O1, and 1 GB over 2,930 pages is 366 KB a page
-(341 KB if a gigabyte is 10^9 bytes) against the 674,056 bytes the two measured
-pages average.
+the network. The assembled site's `python -m tools.page_bytes --site _site` was
+the figure that decided O1, and it is the last section of this file; 1 GB over
+2,930 pages was 366 KB a page (341 KB if a gigabyte is 10^9 bytes) against the
+674,056 bytes the two measured pages average.
 
 ## Twelve release-shaped pages, 24 October 2026
 
@@ -1656,7 +1658,8 @@ are bytes a reader was actually being sent.
 **What it does not settle.** These pages come from the DTD timetable on this
 machine, not from the Network Rail CIF the release reads, and twelve stations are
 a spread rather than a random sample. The assembled site's
-`python -m tools.page_bytes --site _site` is still the figure that decides O1.
+`python -m tools.page_bytes --site _site` was the figure that decided O1, and the
+26 October section below is it.
 
 ## A lever measured and refused: the clock times as one list, 24 October 2026
 
@@ -1787,3 +1790,68 @@ card would make cheaper than a listed row stays off the page. And the page stops
 saying the station's range of fares -- it says where it stops, which is the one
 sentence the design owes a reader. The picker still reaches every station, so the
 loss is what this page can discover, not what the network holds.
+
+## The release's own bytes, 26 October 2026
+
+**Why this was taken.** Every figure above is a sample: two origins, twelve
+origins, one shard. O1 asked for one release run that reached the assemble job,
+because the `python -m tools.page_bytes --site _site` step there is the only
+measurement of the site the host serves. The 25 October run reached the browser
+step and failed on one page defect; the 26 October run finished, published, and is
+this section.
+
+**What it printed.** Run 40295899061, head `82fd095`, all sixteen jobs succeeded:
+
+```
+site 370 MB of a 800 MB budget over 2838 page(s)
+the manifest names 2838 route(s) and the folder holds 2838 page(s)
+all 4 known fare(s) agree with the pages
+32 of 32 page(s) checked, 8980/8980 browser checks passed, 156 check(s) not
+  exercised by the pages swept (121 of 8527 with a timetable, 19 of 466 without one)
+  ok  browser suite (274.6s): 32 page(s)
+```
+
+**The figure.** 370 MB is the gate's own unit: 387,973,120 bytes over **2,838
+pages**, so the mean page is **136,705 bytes**. Against the 800 MB budget that is
+**46%**, with 430 MB spare. The twelve-page sample predicted 407,296 bytes a page
+and 1,193 MB for the release; the release is **3.0x smaller** than that per page
+and 3.1x smaller in total (370 MiB against the sample's 1,138). The sample was
+chosen as a spread and included the network's largest stations -- Manchester
+Piccadilly, Sheffield, Newcastle, Nottingham -- and the whole-network mean is
+three times smaller, which is what that sample's own caveat predicted. The release
+also writes 2,838 pages, not the 2,930 every projection assumed.
+
+**Why the third decimal is not quoted.** The gate prints whole MB, so the mean
+carries about 150 bytes of rounding either way. The number that decides the
+budget is 370 of 800, and it is the gate's own.
+
+**The twelve shares.** Each shard prints its wall clock, and the first whole-network
+release to finish spent:
+
+| Share | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Minutes | 34 | 27 | 33 | 20 | 30 | 20 | 39 | 25 | 33 | 18 | 33 | 34 |
+
+Mean **28.8 minutes**, slowest **39**, against the step's **150-minute** bound and
+its **100-minute** nearing warning. 346 runner-minutes for the whole release. The
+20 October audit's A1 owed this figure because the run it measured spent the whole
+bound on every share and wrote no page; the figure replaces that with a bound four
+times the slowest share.
+
+**What it settles.** O1, and with it the 1.94 GB projection, the 1,193 MB sample
+mean and the 366 KB a page arithmetic. The cap at 600 places and the two contents
+changes were enough, and the margin is not close: 430 MB.
+
+**What it leaves unnecessary.** The 23 October audit named the columns still worth
+weighing -- the three fare lists (taken, as the cap), `departures` (measured: 1.24%
+of the raw page for 1.91% *more* gzip, refused), `name` (4%, already in the shared
+list for stations that have a page), `legs` (2%, read by no file) and the service
+week (15%). None is needed for the budget now. Each remains a product question
+about what a page carries rather than a byte lever, and none is worth its trade at
+370 of 800.
+
+**What it does not settle.** One run, one feed, one service date. A page's bytes
+also move with how much of the network its origin reaches, so the mean is this
+network's on that day; a later release that changes the cap or the day will print
+its own. And bytes are not paint: the reader's first row on a throttled connection
+is measured separately, under "A real-feed station page's bytes".

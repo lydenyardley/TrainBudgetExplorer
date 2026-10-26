@@ -13,8 +13,8 @@ the page carries. The other **1,725** were priced and unreachable: they rendered
 as "No service that day" beside a price, on every day a reader could choose.
 
 They were also **34% of the page's bytes** (233,104 of 690,977), and
-`docs/audits/2026-10-23-page-byte-budget.md` measured that the release could not
-reach its 800 MB budget while carrying them. Whether a fare with no journey is
+`docs/build-performance-findings.md` measured that the release could not reach
+its 800 MB budget while carrying them. Whether a fare with no journey is
 an answer for this page is a product question, not an encoding one; it is the
 largest single lever the audit found.
 

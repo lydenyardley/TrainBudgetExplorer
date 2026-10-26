@@ -270,9 +270,9 @@ a 390px row is 111px over two lines rather than 275px over six.
 
 `docs/audits/2026-10-19-impeccable-distill.md` was removed on 19 October 2026,
 when all seven of its suggestions landed. The delight and overdrive audits went on
-21 October 2026, merged into `docs/audits/2026-10-21-audit-asks.md`: DL3 is open
-work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8 (OV5 and OV3
-were both measured on 21 October 2026; their decisions are still open).
+21 October 2026 into the merged asks list, itself removed on 26 October 2026: DL3
+is open work O3, DL6 and OV1 are O5, OV5 is O4, OV7 is O6 and OV3 is O8 (OV5 and
+OV3 were both measured on 21 October 2026; their decisions are still open).
 
 The passes were read on `_demo_site`, built 19 October 2026 for service date
 5 October 2026: 17 destinations, a 23-row page of two ticket types, both
@@ -319,10 +319,10 @@ runs it.
 ### The 19 October 2026 impeccable critique
 
 `docs/audits/2026-10-19-impeccable-critique.md` was removed on 21 October 2026,
-merged into `docs/audits/2026-10-21-audit-asks.md`. It went on one finding, S5, the
-phone's fold budget, which has to be given a stated budget in numbers before it can
-be implemented, and that is an owner's decision rather than an edit; it is open
-work O7. Two more of its observations are O9 (the refinements panel's 160px void)
+its asks merged into one list (itself removed on 26 October 2026). It went on one
+finding, S5, the phone's fold budget, which has to be given a stated budget in
+numbers before it can be implemented, and that is an owner's decision rather than
+an edit; it is open work O7, which now carries S5's three viewports. Two more of its observations are O9 (the refinements panel's 160px void)
 and O10 (the heading's budget field against the 44px promise). Eleven of its twelve
 findings are settled here. S8 is C21 of the 17 October review above and S12 is that
 review's rejected C18, so both already have their rows. S6, S9 and S10 landed on
@@ -594,9 +594,11 @@ undoes it.
 
 ### What the 24 October 2026 page-byte audit closed
 
-`docs/audits/2026-10-23-page-byte-budget.md` is open on the release's total, not
-on these three: each was a change to what a page carries, each is in the ADR it
-was argued in, and the figures are in `docs/build-performance-findings.md`.
+The 23 October 2026 page-byte audit was removed on 26 October 2026, when the
+release's own gate measured 370 MB of the 800 MB budget. It was open on that
+total, not on these three: each was a change to what a page carries, each is in
+the ADR it was argued in, and the figures are in
+`docs/build-performance-findings.md`.
 
 | Item | Closed by | Held by |
 |---|---|---|
@@ -730,6 +732,133 @@ the page reported no failed check at all.
 | Item | Closed by | Held by |
 |---|---|---|
 | the budget rail appeared over the theme control at 304px, because a slider **below** the fold reads as out of view just as a passed one does | `wiring.js` raises the rail only when the observer says the slider is out of view **and** above the viewport, which is the state that means the reader has moved past it | `station-filters.cjs` shortens the window until the slider is off the bottom and reads the rail hidden, inert and not over the theme control; under the old rule that check fails on all four station pages the suite drives |
+
+## What the 26 October 2026 release closed
+
+The first whole-network release to finish since ADR-0076 and ADR-0077. Run
+40295899061, head `82fd095`, all sixteen jobs succeeded, every gate passed and the
+site published: the byte budget, the manifest (2,838 routes, 2,838 pages), the four
+known fares, the source credit and the browser suite (32 pages, 8,980 of 8,980
+checks).
+
+| Item | Closed by | Held by |
+|---|---|---|
+| **O1**, the release's bytes were a projection that no run had printed, and the two runs since 19 October stopped before building | the release's own gate: **`site 370 MB of a 800 MB budget over 2838 page(s)`**, a mean page of **136,705 bytes**, **46%** of the budget with 430 MB spare. The twelve-page sample predicted 407,296 bytes a page; the release is 3.0x smaller per page because it is mostly small stations. The cap at 600 places and the two contents changes were enough | `python -m tools.page_bytes --site _site` in the assemble job; the figures, the run and the twelve shares are in `docs/build-performance-findings.md` under "The release's own bytes, 26 October 2026" |
+| **A1's still-owed figure**, the first twelve-share run's per-share cost | the same run's twelve shares: **18, 20, 20, 25, 27, 30, 33, 33, 33, 34, 34 and 39 minutes**, mean 28.8, against the 100-minute nearing warning and the 150-minute bound -- 346 runner-minutes for the release, where the run A1 measured spent the bound on every share and wrote no page | the shard step's own `share N/12 took M minutes` line; `tests/test_workflows.py`, `BuildBoundTest`, still holds the bound and the share count to the record |
+| The 23 October 2026 audit's remaining byte questions: `departures`, `name`, `legs` and the service week | not needed. At 370 of 800 MB the budget holds with 430 MB spare, so none of them is worth its trade: `departures` was measured and refused on 24 October (**1.24%** of the raw page for **1.91% more** gzip), `name` is already in the shared station list for stations that have a page, `legs` is read by no file under `page/station/`, and the service week is the page's answer to "when does it run". They stay product questions about what a page carries, not levers the budget needs | the measurements in `docs/build-performance-findings.md`; ADR-0069, ADR-0076 and ADR-0077 for what a page carries |
+
+## The 21 October 2026 Critiquito design critique
+
+`docs/audits/2026-10-21-critiquito-design-critique.md` was removed on 26 October
+2026, when its asks had numbers and its settled findings were these rows. The pass
+captured 43 desktop states at 1440px and 19 phone states at 390px of three
+synthetic builds -- the multi-origin chooser, a one-station release, and a dated
+build with a day control -- from `9d9d900`, and graded 24 findings: 3 P1, 11 P2 and
+10 P3. It judged presentation on invented fares and times, filed nothing about the
+synthetic banner, and named what it could not capture: no loading state (the data
+is inline), no 404 page (the host's default), no zero-result chip (the page clears
+the chip and says so), no successful copy (headless Chromium blocks the clipboard),
+and no real-feed page.
+
+Read against the tree on 26 October 2026, eighteen of its findings are open work
+**O23 to O41**. The rest are settled here or answered by a decision already
+recorded, and where only half of a finding landed the table names that half and an
+item carries the other. Of the three P1s it graded, one is now P2 (the ticket link)
+and two are P3, because the release is dated, so "No service that day" has a day to
+mean, and a script that fails to arrive says so.
+
+| Finding | What answered it | Held by |
+|---|---|---|
+| 6 [P2] with a type chosen inside "More types" no chip looks selected, and a type the budget clears is signalled only by a small grey line | the folded refinements summary names the active type in the control's own words ("Destination: National Trust"), and a type the budget takes away is announced where the chips are, with the mode that dropped it: "Cleared National Trust -- Singles has no destination of that type inside your budget." The "More types" count is explained by the rule line above the notice, which says the count is kinds rather than destinations | `filterStateText` and `announceFacetChange` in `page/station/filters.js`; `tests/browser/station-filters.cjs` |
+| 11 [P2] the keyboard hint is shown to a phone | the hint line renders only for a fine pointer, and its paging half only while a pager is on the page (DS3). The rest of the task -- three small notes above the results -- is still true of the page: the freshness line, the undated caveat straight after it and the folded ticket-link disclosure all sit above the count line, so the count is what the reader meets after four short blocks. That is the stack O7 has to buy a phone fold from, so the number of notes is decided there rather than here | the media query in `page/station.css`; `tests/browser/station-filters.cjs`, "the strip that stays on screen names the budget key"; O7 |
+| 13 [P2] a column line is left over an empty list | one column line, written only when the list has rows; an empty list says "No station matches 'zzzz'" in its place | `page_templates.py`'s note above `#picks`; `tests/browser/chooser.cjs` |
+| 15 [P3] the smallest type is about 12px and helper text is smaller still | answered as a decision, not a fix: DS6 of the 19 October 2026 distill pass holds the route to five type sizes -- 12 for labels and records, 14 for secondary prose, 16 for body, 18 for section headings -- and a check counts every rendered size with a row open. Raising the tags to 14 would be the sixth size that pass removed | `tests/browser/station-layout.cjs`, "the page keeps five type sizes below the display heading" |
+| 16 [P3] the chooser's heading says "Destinations this feed prices" | the count is named once by a column line above the list, and no heading speaks for the feed. The title case is O41 and the column line's own words ("Code", "Destinations") are O30 | `tests/test_build_chooser.py`, `test_the_chooser_names_the_three_columns_its_rows_carry` |
+| 17 [P3] Previous and Next look live where they do nothing | both are disabled at their ends, so the unusable control is not a blue link. The range is O40 | `page/station/table.js`, `previousPage.disabled` and `nextPage.disabled` |
+| 22 [P3] the footer's links run together | two real links, separated, each a 44px target. The switch's visible label is O38 | `.footnav` in `page/shared.css` |
+
+Its exclusions are recorded rather than filed, so a later pass does not re-derive
+them: no loading state to check (the payload is inline), no 404 page to judge (the
+host serves its own, and no capture showed what it costs a visitor), no zero-result
+chip (the page clears the chip and says so), no successful-copy state (headless
+Chromium blocks the clipboard, so only the fallback could be seen), and no
+real-feed page (the licensed feed is not on the machine), so the row density and
+real gaps it judged are the fixture's. Two shots were artefacts: the dock drawn
+over rows in a full-page capture, and the privacy pages of the two shapes being
+pixel-identical.
+
+## The four reviews merged on 21 October 2026, and where each finding went
+
+The engineering audit of 14 October 2026 and the critique, delight and overdrive
+passes of 19 October were merged into one asks list on 21 October 2026, and that
+list was removed on 26 October 2026 when its open asks were already items in
+`docs/open-work.md`. This is the coverage table it kept, so a reader can still
+check that no finding fell between the open and settled records. The asks file's
+own measurements are in the items that kept them (O7's three viewports, O8's
+throttled figures, O4's two measurements, O5's mockup) and in
+`docs/build-performance-findings.md`.
+
+| Audit | Finding | Where it is now |
+|---|---|---|
+| 14 October engineering, 1 | split `build_demo_page.py` along its seams | settled, ADR-0071 |
+| 14 October engineering, 2 | write the classification cache before the identity that names it | settled, `build_state.load_page_fares` |
+| 14 October engineering, 3 | de-flake the cache-tidying test | settled, `tests/test_page_caches.FaresCacheTest` |
+| 14 October engineering, 4 | a type checker in CI | settled, ADR-0072 and `tools/check_types.py` |
+| 14 October engineering, 5 | declare the Python the app runs on | settled, `.python-version` and `README.md` |
+| 14 October engineering, 6 | decide whether a 354 KB page is the intended payload | settled 21 October 2026: the real page was measured at 397 KB and the split costed, in `docs/build-performance-findings.md` |
+| 14 October engineering, 7 | kill the tools' path dance | settled, `python -m tools.<name>` everywhere |
+| 14 October engineering, 8 | make the suppression census a check | settled, `tests/test_suppressions.py` |
+| 14 October engineering, 9 | correct the documented runtimes | settled, `AGENTS.md` and the findings file |
+| 14 October engineering, 10 | keep the one-owner rule for build inputs | settled, nothing to do |
+| 19 October critique, S1-S4, S6, S7, S9-S11 | the entry, the £0 recovery, the row's own times, and the three hand-offs | settled, 19 and 20 October 2026 |
+| 19 October critique, S5 | the phone has no fold budget | **O7** |
+| 19 October critique, S8 (C21) | the shortlist's cleared-focus loss | settled, 20 October 2026 |
+| 19 October critique, S12 (C18) | `<title>Privacy</title>` | rejected by the owner, 19 October 2026 |
+| 19 October critique, observation | the refinements panel's 160px void | **O9** |
+| 19 October critique, question 2 | the heading's budget field against the 44px promise | **O10** |
+| 19 October delight, DL1, DL2, DL4, DL5 | the next-place line, the named door, the copy confirmation, the 120ms reveal | settled, 19 October 2026 |
+| 19 October delight, DL3 | the shortlist total | **O3** |
+| 19 October delight, DL6 | one tick at the cheapest fare | **O5** |
+| 19 October overdrive, OV2, OV6, OV8, OV9 | the next-place line, one document, the interaction budget, the fallbacks | settled, 19 October 2026 |
+| 19 October overdrive, OV4 | the budget rail | settled, 20 October 2026 |
+| 19 October overdrive, OV1 | draw the fare horizon on the track | **O5** |
+| 19 October overdrive, OV3 | keep the drag at 60fps on a mid-range phone | measured 21 October 2026; **O8** holds the gate decision |
+| 19 October overdrive, OV5 | the dock under the rail | measured 21 October 2026; **O4** holds the decision |
+| 19 October overdrive, OV7 | morph the chosen station | **O6** |
+
+**What those passes said not to trade away.** Kept because a later pass that does
+not know it was measured will trade it.
+
+- **The budget's two controls and the sentence they sit in.** The field and the
+  slider do the same job and both earn it: one types, one drags. The count line
+  follows a drag in 6-14ms on an 8-to-20-row list, and 7.4ms over 101 destinations.
+- **The row's honesty.** "No service that day" is used instead of a zero, an
+  undescribed restriction says so in the row's own panel and carries its code, and
+  "Two tickets" names the split. A conversion-first page would have hidden all
+  three.
+- **The phone row.** Two lines, 112px at 390, with the shortlist box, the ticket
+  link and the expander each reaching 44px. The desktop header is sticky, and the
+  phone layout keeps a real table for assistive technology.
+- **The accessibility floor is measured, not asserted.** Every visible text node in
+  both palettes cleared 4.5:1 (0 failures), the focus ring is a 2px accent outline
+  on every control, and the phone layout did not scroll sideways at 320, 390 or
+  1366.
+- **The page's authored idea.** The question is the control: the budget is a gap in
+  a sentence, the starting station is a gap in the same sentence, and the answer is
+  a price-ordered list rather than a form. That is not a template, and the heading's
+  scale, weight and wrapping carry it without an illustration, a logo or a webfont.
+
+**What those passes could not establish.** The 19 October critique was a
+**degraded** pass: one thread ran the design read and the browser evidence, and the
+design read was written first, so its design health score (29 of 40) and its
+per-heuristic table described findings that have since landed and are not carried
+forward. The passes drove Chromium at 1366x768, 390x844 and 320x640 in both
+palettes over `_demo_site`, with 0 console errors and 0 page errors on any route,
+and their build was a 17-destination list at £20, 16 returns and 1 single, so the
+paging arithmetic they state is arithmetic rather than a measurement. The detector,
+`impeccable detect --json`, fired once across the three built routes:
+`cramped-padding` on `.origin-slot-wrap`, which is the station slot's dashed
+underline and is recorded as a false positive under "Rejected designs".
 
 ## Rejected designs, with the reason
 

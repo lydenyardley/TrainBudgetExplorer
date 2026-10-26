@@ -5,8 +5,8 @@ and shell inside YAML can only be tested by pushing: 13 of the 23 commits that
 touched it between 8 and 21 October 2026 were `fix(release)`, each one costing a
 push and a run. Every step that does more than call one command now lives here as
 `python -m tools.release.<step>`, with its test in `tools/test_release.py`, and the
-workflow keeps the jobs, the matrices, the secrets and the calls (task 1 of
-docs/audits/2026-10-21-agent-friendly-rearchitecture.md).
+workflow keeps the jobs, the matrices, the secrets and the calls (task 1 of the 21 October 2026
+agent-friendly re-architecture audit, settled in `docs/settled-work.md`).
 """
 
 from __future__ import annotations
