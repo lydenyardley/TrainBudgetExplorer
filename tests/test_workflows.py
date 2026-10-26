@@ -1,5 +1,9 @@
 """A workflow's run block is shell, and a backtick in it is not punctuation.
 
+It also holds every path the workflows name to the tree that holds it, because a
+cached key built on a path that is not there is a key that silently stops telling
+two commits apart.
+
 It also holds the browser's version to the one file that names it. CI pinned
 1.63.0 while a local run took whatever `npx --package playwright` resolved to,
 so a green run on a developer's machine was a different browser from the
@@ -90,6 +94,116 @@ def shell_lines(text: str) -> list[tuple[int, str]]:
                 found.append((index + 1, line))
             index += 1
     return found
+
+
+#: The folders a run writes for itself: build output, the downloaded feeds, the
+#: artifact a share hands to the merge, and the review folder the facet workflow
+#: uploads. A path under one of these need not be in the tree, because the run
+#: that names it is the run that creates it -- and a check that demanded one
+#: would be red on a clean clone.
+GENERATED_DIRS = (
+    "feeds/",
+    "_site/",
+    "_demo_site/",
+    "_demo_feed/",
+    "_demo_kb/",
+    "_shape_site/",
+    "_shape_feed/",
+    "_stations/",
+    "_cache/",
+    ".feed-state/",
+    "facet-review/",
+    "node_modules/",
+)
+
+#: The top-level folders the repository itself supplies. A token that starts with
+#: one of these is a claim about this tree.
+REPO_DIRS = (
+    "trainbudget/",
+    "tests/",
+    "tools/",
+    "page/",
+    "docs/",
+    "adr/",
+    "licences/",
+    "reference-data/",
+    "assets/",
+    ".github/",
+    ".githooks/",
+)
+
+#: The extensions a path in a workflow ends in when it names a file of this tree.
+REPO_SUFFIXES = (
+    "py", "md", "json", "cjs", "js", "css", "svg", "toml", "yml", "yaml", "bat", "txt",
+)
+
+TOKEN = re.compile(r"[A-Za-z0-9_.\-/]+")
+HASHED = re.compile(r"hashFiles\((?P<args>[^)]*)\)", re.S)
+
+
+def _hashed_claims(text: str) -> list[tuple[int, str]]:
+    """Every argument of every `hashFiles` call, which is always a path.
+
+    This is the one place a bare `build_pool.py` is a claim rather than prose: it
+    is what the call hashes, and a path that is not there hashes to the empty
+    string. Read over the whole document rather than line by line, because the
+    arguments may be wrapped and a scan that only read one line would miss the
+    ones that are.
+    """
+    found: list[tuple[int, str]] = []
+    for match in HASHED.finditer(text):
+        line = text.count("\n", 0, match.start()) + 1
+        for raw in match.group("args").split(","):
+            token = raw.strip().strip("`'\"")
+            if not token or "{{" in token or any(character in token for character in "*?$"):
+                continue
+            found.append((line, token))
+    return found
+
+
+def named_paths(text: str) -> list[tuple[int, str]]:
+    """Every repository path a document names, with the line that names it.
+
+    Two readings, because a workflow writes a path in two ways. Inside a
+    `hashFiles` call it is always a path, bare or folded. Everywhere else it is a
+    token with a folder in it -- `tools/verify.py`, `reference-data/` -- and a
+    comment line is prose, which is where the bare `build_pool.py` mentions live.
+
+    What a workflow may not do is name a path the tree does not hold, because
+    `hashFiles` answers an empty string for one that is missing and a cache key
+    built on it stops telling two commits apart without saying anything.
+    """
+    found: list[tuple[int, str]] = _hashed_claims(text)
+    for number, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        for raw in TOKEN.findall(line):
+            token = raw.strip("`'\"(),:;")
+            if "/" not in token or token.startswith(("http", "$", "/", "./", "../", "-")):
+                continue
+            if any(character in token for character in "*?[]=@:{}"):
+                continue
+            if not (token.startswith(REPO_DIRS) or token.rsplit(".", 1)[-1] in REPO_SUFFIXES):
+                continue
+            found.append((number, token))
+    # A path inside `hashFiles` is read twice when it also has a folder in it, and
+    # a defect reported twice reads as two defects.
+    return list(dict.fromkeys(found))
+
+
+def missing_paths(documents: dict[str, str]) -> list[str]:
+    """`<file>:<line>: <the path>` for every path a document names that is not there.
+
+    `documents` maps a name to the document's text rather than a path to its text,
+    so a test can hand the rule a workflow it wrote instead of one on disk.
+    """
+    missing: list[str] = []
+    for name, text in documents.items():
+        for number, token in named_paths(text):
+            if token.startswith(GENERATED_DIRS) or (ROOT / token).exists():
+                continue
+            missing.append(f"{name}:{number}: {token}")
+    return missing
 
 
 def backticks_in(text: str) -> list[str]:
@@ -347,6 +461,75 @@ class ServiceDayTest(unittest.TestCase):
             code = share.main(["--shard", "1/12", "--date", ""])
         self.assertEqual(code, 1)
         build.assert_not_called()
+
+class WorkflowPathTest(unittest.TestCase):
+    """A path a workflow names is a path this tree has to hold.
+
+    Moving the modules into `trainbudget/` left `deploy.yml`'s feed-cache key
+    hashing `build_demo_page.py`, `atoc_fares.py` and `page_templates.py` -- three
+    paths that no longer existed. `hashFiles` answers the empty string for a path
+    that is not there, so the key was still well formed, every commit hashed the
+    same, and nothing said so. A missing script in a `run:` block is at least red
+    on the next push; a missing path in a cache key is silent, which is why this
+    check exists and why it runs in `--fast`.
+    """
+
+    def documents(self) -> dict[str, str]:
+        paths = sorted(
+            [path for pattern in ("*.yml", "*.yaml") for path in WORKFLOWS.glob(pattern)]
+            + [path for pattern in ("*.yml", "*.yaml") for path in ACTIONS.rglob(pattern)]
+        )
+        return {
+            path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+            for path in paths
+        }
+
+    def test_every_path_a_workflow_names_is_there(self) -> None:
+        missing = missing_paths(self.documents())
+        self.assertEqual(
+            missing,
+            [],
+            "these workflows name a path this tree does not hold -- a moved module "
+            "leaves `hashFiles` answering an empty string, so the cache key keeps "
+            "working and stops meaning anything:\n" + "\n".join(missing),
+        )
+
+    def test_the_scan_reads_the_workflows_it_claims_to_read(self) -> None:
+        # A scan that found nothing would pass forever. It has to have read every
+        # workflow and the action, and to have found the paths they all use.
+        documents = self.documents()
+        self.assertGreaterEqual(len(documents), 4, f"only {len(documents)} workflow(s) found")
+        found = {token for text in documents.values() for _, token in named_paths(text)}
+        for path in ("tests/browser/playwright-version", "reference-data/destination-facets.json"):
+            with self.subTest(path=path):
+                self.assertIn(path, found, f"the scan did not find {path}, so it is not reading what it says")
+        # The three paths the feed-cache key hashes: the check's own reason for
+        # existing, named here so a second move fails on the path rather than on
+        # a cache key nobody reads.
+        hashed = {
+            token
+            for _, token in named_paths(documents[".github/workflows/deploy.yml"])
+        }
+        for path in (
+            "trainbudget/build/build_demo_page.py",
+            "trainbudget/fares/atoc_fares.py",
+            "trainbudget/build/page_templates.py",
+        ):
+            with self.subTest(hashed=path):
+                self.assertIn(path, hashed, "the feed-cache key no longer hashes this path")
+
+    def test_a_path_that_is_not_there_is_reported(self) -> None:
+        # The rule, on the shape of the defect it was written for, and on the two
+        # cases it must not fire on: a generated folder, and a glob.
+        missing = missing_paths({
+            "sample.yml": (
+                "      key: cache-${{ hashFiles('trainbudget/build/gone.py') }}\n"
+                "      path: _site/\n"
+                "      run: python -m unittest discover -s tests -p 'test_*.py'\n"
+            )
+        })
+        self.assertEqual(missing, ["sample.yml:1: trainbudget/build/gone.py"])
+
 
 class KnowledgebaseFeedTest(unittest.TestCase):
     """The shards that build pages from the Knowledgebase feeds cannot lack them.
