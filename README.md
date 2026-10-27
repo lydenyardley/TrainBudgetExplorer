@@ -50,8 +50,9 @@ python -m unittest tests.test_build_demo_page    # one module, while you work on
 ```
 
 That builds from the synthetic feed the tests use, so it needs no credentials. A
-real build wants the DTD entitlement the feeds sit behind, and then a run with no
-`--feed` picks the downloaded one up by itself:
+real build wants the DTD entitlement the feeds sit behind (this project's account
+holds it; every CI build downloads and audits both feeds with it), and then a run
+with no `--feed` picks the downloaded one up by itself:
 
 ```bash
 python -m trainbudget.feeds.dtd_download    # credentials from the environment

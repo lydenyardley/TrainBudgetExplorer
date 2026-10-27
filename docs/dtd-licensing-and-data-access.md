@@ -273,6 +273,12 @@ returned their files, so the account holds it. The Knowledgebase feeds, a
 separate entitlement, were downloaded on 28 September 2026 and are **not** the
 evidence for this one.
 
+The entitlement is exercised on every build, not only on 24 September: each
+"build and publish" run downloads both DTD feeds with the repository's portal
+credentials and audits them, and a shard without them stops. As of
+27 October 2026 it is current: [run 40477635371](https://github.com/lydenyardley/TrainBudgetExplorer/actions/runs/40477635371) did so
+and published.
+
 ## The Developer Brand Guidelines, read 28 September 2026
 
 The terms name `nationalrail.co.uk/static/documents/Developer_Guidelines.pdf`,

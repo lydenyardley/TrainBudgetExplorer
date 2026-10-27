@@ -6,11 +6,15 @@ count of Grantham destinations under £20 return per adult. Go/no-go follows.
 
 ## Outcome in one line
 
-The parser is built and verified. The account is now registered, but the
-Knowledgebase URLs supplied for the project are not the DTD fares/timetable
-subscription. The remaining data gate is the account's **Fares, Routeing Guide
-and Timetable data** entitlement; the zero-cost DTD route and its caveats are
-recorded in `docs/dtd-licensing-and-data-access.md`.
+The parser is built and verified. On 21 September the account was registered
+but its DTD fares/timetable selection was not yet confirmed, because the
+Knowledgebase URLs supplied for the project are a different subscription. That
+gate has since closed; see "Data access, confirmed" below. The zero-cost DTD
+route and its caveats are recorded in `docs/dtd-licensing-and-data-access.md`.
+
+> **Status, 27 October 2026:** the account holds the **Fares, Routeing Guide and
+> Timetable data** entitlement, and the Grantham under-£20 count is unblocked.
+> Nothing in this document is waiting on data access.
 
 ## What is reachable without an account
 
@@ -96,13 +100,25 @@ record also begins with an update marker, and it reported sixteen stations when
 five existed. File classification now requires the four spaces that follow a
 station name record type, and a test covers the combined folder.
 
-## The remaining data action
+## Data access, confirmed
 
-The owner has registered on the National Rail Data Portal and has the
-Knowledgebase subscriptions listed in the research document. The next action
-is to confirm that the same account includes **Fares, Routeing Guide and
-Timetable data**. If it does, set `NRDP_USERNAME` and `NRDP_PASSWORD` in the
-local environment and run:
+This section once named the remaining data action: confirm that the account
+holding the Knowledgebase subscriptions also includes **Fares, Routeing Guide
+and Timetable data**. It does, and the evidence is observed rather than
+inferred:
+
+- `feeds/download-manifest.json` records the fares and timetable static feeds
+  downloaded from the DTD endpoints on 24 September 2026, which only that
+  selection serves.
+- Every "build and publish" run downloads both DTD feeds with the repository's
+  `NRDP_USERNAME` and `NRDP_PASSWORD` secrets, in the build job and in every
+  shard, and audits them before anything reads them; a shard without them
+  stops. [Run 40477635371](https://github.com/lydenyardley/TrainBudgetExplorer/actions/runs/40477635371) (commit `1fdd15c`, 27 October 2026)
+  did that, passed the release-clearance check and published, as the runs of
+  25 and 26 October did before it.
+
+The Grantham count needs no further access. With `NRDP_USERNAME` and
+`NRDP_PASSWORD` in the local environment, run:
 
 ```bash
 python -m trainbudget.feeds.dtd_download
@@ -111,5 +127,6 @@ python -m trainbudget.measure.grantham_sweep --feed feeds/fares --origin GRA --b
 ```
 
 The real Grantham code is `GRA`; `GRN` belongs only to the synthetic fixture.
-The count printed by the sweep is the Stage 1 go/no-go input. A Knowledgebase
-download alone cannot produce this count.
+The count printed by the sweep is the Stage 1 go/no-go input. The caveat still
+holds for anyone repeating this on another account: a Knowledgebase download
+alone neither proves the DTD entitlement nor can produce this count.

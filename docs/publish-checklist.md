@@ -127,8 +127,10 @@ the account holder can see the registered purpose.
 
 - [x] Researched the DTD/NRE route and recorded the source links and caveats in
       `docs/dtd-licensing-and-data-access.md`
-- [ ] Confirmed that the account subscription includes **Fares, Routeing Guide and
-      Timetable data**, not only the Knowledgebase feeds
+- [x] Confirmed that the account subscription includes **Fares, Routeing Guide and
+      Timetable data**, not only the Knowledgebase feeds - the 24 September 2026
+      static-feed downloads, and every build since, which downloads and audits
+      both DTD feeds (most recently run 40477635371, 27 October 2026)
 - [x] **The Darwin timetable product schedule is read, and the pages do not show
       times.** The daily build no longer loads the national timetable, so the
       published pages carry prices only and Schedule 1 §5's "internal business
