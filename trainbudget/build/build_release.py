@@ -357,7 +357,7 @@ def nre_attribution() -> str:
     svg = re.sub(r"<svg\b", '<svg aria-hidden="true" focusable="false"', svg, count=1)
     return (
         '<div class="nre-credit">'
-        f'<a href="{NRE_WEBSITE}" rel="external">'
+        f'<a href="{NRE_WEBSITE}" rel="external noreferrer">'
         # The mark is paths, so nothing in it is readable: the name a screen
         # reader gets is the words the guidelines require it to carry.
         '<span class="nre-logo" role="img" aria-label="Powered by National Rail '
@@ -372,14 +372,50 @@ def nre_source_line() -> str:
     portal terms' own words. The link is the enquiries site. The last sentence
     is the terms' own bar on implying that NRE endorses the product, stated
     rather than left for a reader to infer from a logo.
+
+    This is where the acknowledgement is printed, and the only place it is: it
+    is static markup, so it is present in a page whose script never runs, and it
+    sits beside the mark the brand guidelines require. ``attribution_paragraphs``
+    therefore leaves the same sentence out of the page's own notice block, which
+    used to print it a second time four lines later (audit item 2, 28 October
+    2026).
     """
 
     return (
         '<p class="nre-source">Information from '
-        f'<a href="{NRE_ENQUIRIES}" rel="external">National Rail Enquiries</a>. '
+        f'<a href="{NRE_ENQUIRIES}" rel="external noreferrer">National Rail Enquiries</a>. '
         f"{html.escape(NOTICES['nre'])} "
         "National Rail Enquiries does not endorse this site.</p>"
     )
+
+
+def attribution_paragraphs(attribution: str | list[str] | None) -> str | list[str] | None:
+    """The licence wording the page's own attribution block carries.
+
+    The NRE acknowledgement is not one of them. It has a static home in the
+    credit line beside the mark, which is where the brand guidelines place it and
+    where ``tools/check_source_credit.py`` reads it; carrying it here as well
+    printed the same legal sentence twice in the one part of the page making a
+    claim on somebody else's behalf (audit item 2, 28 October 2026). One
+    sentence, one owner.
+
+    The filter is exact rather than fuzzy, and it is the same rule
+    ``wants_nre_credit`` applies: a build asked for the acknowledgement gets the
+    credit line, so the block must not repeat it. Wording of the operator's own
+    that is not that sentence is passed through untouched -- it asked for no
+    credit line, so nothing else is printing it.
+
+    The shape it was given is the shape it returns, because the field is read
+    either as one paragraph of the operator's own or as the list of composed
+    notices. ``None`` rather than an empty list when nothing is left, because the
+    page tests the field's truth before it unhides the block, and an empty array
+    is truthy in JavaScript.
+    """
+
+    if isinstance(attribution, str):
+        return None if attribution == NOTICES["nre"] else attribution
+    remaining = [paragraph for paragraph in (attribution or []) if paragraph != NOTICES["nre"]]
+    return remaining or None
 
 
 def site_features(

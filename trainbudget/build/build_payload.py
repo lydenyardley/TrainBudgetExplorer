@@ -36,7 +36,12 @@ from trainbudget.build.build_assets import (
     with_base,
 )
 from trainbudget.build.build_provenance import STALE_AFTER_DAYS, cif_date_to_iso, restriction_codes_shown
-from trainbudget.build.build_release import DEFAULT_NOTE, DEFAULT_PRICE_SOURCE, service_claim
+from trainbudget.build.build_release import (
+    DEFAULT_NOTE,
+    DEFAULT_PRICE_SOURCE,
+    attribution_paragraphs,
+    service_claim,
+)
 from trainbudget.build.build_state import read_service_week, source_fingerprint, write_service_week
 from trainbudget.fares.destination_coverage import UnsourcedReport, unnameable_from_tally
 from trainbudget.fares.retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
@@ -1434,7 +1439,11 @@ def build_payload(
         "serviceDays": service_days,
         "serviceWeek": service_week,
         "note": note,
-        "attribution": attribution,
+        # Everything the build was asked to state except the acknowledgement
+        # sentence, which the footer's static credit line owns (audit item 2, 28
+        # October 2026). Filtered here rather than at the call sites because the
+        # page's notice list is one field, so the rule belongs beside it.
+        "attribution": attribution_paragraphs(attribution),
         # Where the numbers on this page came from. It sits with the prices,
         # not in the footer, because where a number came from is part of the
         # number; the footer keeps the licence wording, which is a different

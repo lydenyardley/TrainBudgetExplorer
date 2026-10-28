@@ -7,6 +7,8 @@ tests out of the class they all shared, by subject, over the fixture in
 
 from __future__ import annotations
 
+import re
+
 from trainbudget.build.build_demo_page import build_payload, render_page
 from trainbudget.fares.retailer import DISCLOSURE
 from tests.page_harness import page_script, setUpModule, tearDownModule, PageTestCase
@@ -179,9 +181,28 @@ class TicketHandoffTest(PageTestCase):
     def test_every_destination_carries_an_untracked_ticket_link(self) -> None:
         for row in self.payload["destinations"]:
             self.assertTrue(row["link"]["url"].startswith("https://www.nationalrail.co.uk/"))
-            self.assertEqual(row["link"]["rel"], "noopener")
+            # noreferrer as well as noopener: the address holds the search, and
+            # a click must not hand it to the seller as the Referer header
+            # (audit item 9, 28 October 2026).
+            self.assertEqual(row["link"]["rel"], "noopener noreferrer")
         self.assertFalse(self.payload["tracked"])
         self.assertIsNone(self.payload["disclosure"])
+
+    def test_the_credit_links_out_without_the_search(self) -> None:
+        # The licence credit links out of the page as well, and the address it
+        # would have carried in the Referer header is the same search the ticket
+        # links were leaking. Every anchor the page writes itself is held to it
+        # here; the anchors the script builds from the payload are held to the
+        # payload's own rel above, and to the live page in the browser suite.
+        html = render_page(self.payload, budget_pounds=20, nre_credit=True)
+        # The page's own links (the back link, a station's page) carry nothing
+        # off this site, so the rule is stated for the anchors that leave it.
+        anchors = [
+            anchor for anchor in re.findall(r"<a\b[^>]*>", html) if 'href="http' in anchor
+        ]
+        self.assertTrue(anchors)
+        for anchor in anchors:
+            self.assertIn("noreferrer", anchor)
 
     def test_the_deep_link_points_at_the_destination_it_sits_beside(self) -> None:
         # Opt-in, because it depends on a URL that somebody has opened: ADR-0018.
@@ -204,6 +225,6 @@ class TicketHandoffTest(PageTestCase):
         self.assertIn("nofollow", payload["destinations"][0]["link"]["rel"])
         self.assertIn(DISCLOSURE, render_page(payload, budget_pounds=20))
         self.assertTrue(
-            all(x["link"]["rel"] == "noopener" for x in self.payload["destinations"]),
+            all(x["link"]["rel"] == "noopener noreferrer" for x in self.payload["destinations"]),
             "an untracked page must not claim otherwise",
         )

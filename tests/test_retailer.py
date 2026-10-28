@@ -68,7 +68,10 @@ class TicketLinkTest(unittest.TestCase):
     def test_a_plain_link_is_untracked_and_carries_no_disclosure(self) -> None:
         link = ticket_link("GRN", "NOT")
         self.assertFalse(link.tracked)
-        self.assertEqual(link.rel, "noopener")
+        # noreferrer as well as noopener: the page's address holds the reader's
+        # search, and the seller must not be told it by the click (audit item 9,
+        # 28 October 2026).
+        self.assertEqual(link.rel, "noopener noreferrer")
         self.assertIsNone(link.disclosure)
         self.assertTrue(link.url.startswith("https://www.nationalrail.co.uk/"))
 
@@ -99,6 +102,7 @@ class TicketLinkTest(unittest.TestCase):
         self.assertTrue(tracked.tracked)
         self.assertIn("nofollow", tracked.rel)
         self.assertIn("sponsored", tracked.rel)
+        self.assertIn("noreferrer", tracked.rel)
         self.assertEqual(tracked.disclosure, DISCLOSURE)
 
     def test_an_awin_link_uses_the_cread_form(self) -> None:

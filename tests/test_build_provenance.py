@@ -737,6 +737,28 @@ class ProvenanceTest(PageTestCase):
         self.assertIn("does not endorse this site", with_credit)
         self.assertNotIn("nre-source", render_page(self.payload, budget_pounds=20))
 
+    def test_the_acknowledgement_is_printed_once(self) -> None:
+        # The credit line owns the sentence, and the notice block below it used to
+        # print the same sentence four lines later, in the one part of the page
+        # making a claim on somebody else's behalf (audit item 2, 28 October
+        # 2026). The block is filled from the payload by the page's own script,
+        # so both halves are held here: what the payload is given and what the
+        # static markup prints.
+        notices = [NOTICES["nre"], NOTICES["rdg"], NOTICES["ogl"]]
+        payload = build_payload(self.fares, self.timetable, "GRN", attribution=notices)
+        self.assertEqual(payload["attribution"], [NOTICES["rdg"], NOTICES["ogl"]])
+        self.assertEqual(
+            render_page(payload, budget_pounds=20, nre_credit=True).count(NOTICES["nre"]), 1
+        )
+        # A build asked for nothing but the acknowledgement still carries it once:
+        # the credit line is the half that prints it, and an empty block would
+        # otherwise be unhidden over no wording at all.
+        alone = build_payload(self.fares, self.timetable, "GRN", attribution=[NOTICES["nre"]])
+        self.assertIsNone(alone["attribution"])
+        self.assertEqual(
+            render_page(alone, budget_pounds=20, nre_credit=True).count(NOTICES["nre"]), 1
+        )
+
     def test_a_missing_nre_mark_is_a_build_failure_not_a_page_without_one(self) -> None:
         # This is the one thing in the footer the licence names, so a build that
         # cannot find it stops rather than publishing a page with the credit

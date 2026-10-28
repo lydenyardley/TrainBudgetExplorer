@@ -29,8 +29,15 @@ from dataclasses import dataclass, field
 from datetime import date
 from urllib.parse import quote, urlencode
 
-PLAIN_REL = "noopener"
-AFFILIATE_REL = "noopener nofollow sponsored"
+# Every link leaves without the reader's address. `noreferrer` keeps the Referer
+# header off the request entirely, and the address carries the whole search --
+# the budget, the railcard and the shortlisted places (audit item 9, 28 October
+# 2026). A page whose argument is that it collects nothing must not hand a
+# commercial seller the reader's plan as the price of a click. `noopener` was
+# already here and is the other half: the seller's page gets no handle on this
+# one.
+PLAIN_REL = "noopener noreferrer"
+AFFILIATE_REL = "noopener nofollow sponsored noreferrer"
 
 # What a reader is told before they click, when a link earns anything.
 DISCLOSURE = "Links to ticket sellers may earn this site a commission. The price shown is not affected."
