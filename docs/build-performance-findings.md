@@ -8,8 +8,9 @@ Every number here was measured on this repository's own machine, on 7 and
 8 October 2026 against the feeds downloaded 24 September 2026
 (`feeds/fares/dtd-fares.zip`, `feeds/timetable/dtd-timetable.zip`), and on the
 later dates named by the sections that carry them: 12 October 2026 for the
-build-cost audit's figures, 14 October 2026 for the page write, and 15 October
-2026 for the verify suite's own runtime and the type-check census.
+build-cost audit's figures, 14 October 2026 for the page write, 15 October
+2026 for the verify suite's own runtime and the type-check census, and 28 October
+2026 for one render of a real page.
 
 Each figure is labelled measured or
 extrapolated, and the reproduction command is beside it. Where a figure is an
@@ -1855,3 +1856,89 @@ also move with how much of the network its origin reaches, so the mean is this
 network's on that day; a later release that changes the cap or the day will print
 its own. And bytes are not paint: the reader's first row on a throttled connection
 is measured separately, under "A real-feed station page's bytes".
+
+## One render of a real page, 28 October 2026
+
+**Plan, written before the figure.** The 28 October 2026 audit measured one
+`render()` of the real-feed Grantham page at 12.47 ms and 57,996 `priceOf` calls,
+and a ten-step budget drag at 33-54 ms a frame. Before any of that was acted on,
+the plan was to measure the same page twice in one sitting -- as built, and with
+the same payload and markup carrying the changed script -- because a figure
+taken on one machine before a change and on a later machine after it is two
+figures. Report the script's own cost apart from the layout it forces, count what
+a render asks for, count what a drag writes to the polite live region, and quote
+a ratio rather than a millisecond where the machine's own speed moved between
+runs.
+
+**Figure.** `node tools/measure_station_render.cjs <site>`, the real-feed
+Grantham page (425 KB payload, 4,431 fare rows across the three lists, 20 rows
+painted), Chromium 1280x900, this machine, 28 October 2026. Three interleaved
+pairs on a quiet machine:
+
+| | As built | After | Ratio |
+|---|---|---|---|
+| `render()`, script only (median of 18) | 5.7, 5.8, 6.3 ms | 2.3, 2.6, 3.1 ms | **2.2x-2.5x** |
+| `render()` + forced layout (median of 18) | 8.2, 8.6, 9.4 ms | 5.1, 5.4, 6.3 ms | **1.5x-1.6x** |
+| `priceOf` calls per render | 57,996 | 8,261 | **7.0x** |
+| `cheapestDestinations` calls per render | 4 | 4 | composed **once**, not four times |
+| Count-line writes in a 10-step drag | 11, all announced | 1, announced | **one sentence per gesture** |
+| Drag frame span (median of 10) | 16.1-18.5 ms | 15.7-16.8 ms | not separated (see below) |
+
+**Method.** Four facts per run, all read from the page as the build wrote it. The
+render probe calls `render()` and takes a median over 18 runs after 3 discarded
+for warm-up, once with a forced layout read (`summary.getBoundingClientRect()`)
+and once without, because those are the script's cost and a frame's. The call
+counts wrap the page's own `priceOf`, `cheapestDestinations` and `standardPrice`
+-- a classic script's top-level declarations are window properties, so the count
+is of the shipped code rather than a copy of it. The drag dispatches ten `input`
+events on the slider one per animation frame, then `change`, and counts
+`#summary` mutations with a `MutationObserver`, splitting them by whether the
+region was live when the record was delivered.
+
+Two pairs taken while the machine was busy (a background build running) repeat
+the direction and widen the ratio: script 17.6-18.6 ms before against
+3.3-7.5 after, **2.4x-5.6x**. The ratio is not a constant, and the quiet-machine
+row is the one to quote.
+
+**What the 7x on `priceOf` is.** Each destination's displayed price is now
+computed once per (party, card) pair instead of once per question, and the sort
+orders a decorated array rather than calling the comparator's price twice per
+comparison -- on this page about 35,000 of the 57,996 calls were the sort. The
+cheapest list is composed once per price instead of by each of its four callers,
+and each of the fourteen chips counts every type in one walk of the list instead
+of re-reading the list per chip.
+
+**Where the rest of the frame is.** The script is no longer the cost: the profile
+that opened this work shows `cheapestDestinations` as the largest single
+self-time before the change (87 of 292 samples over 40 renders) and no longer in
+the top twelve after it. What is left is the DOM: `render()` rebuilds twenty rows
+of seven cells and `replaceChildren`s the table, and the forced layout that
+follows is 2.3-3.4 ms of the 5.1-6.3. That is the shape ADR-0046 chose, and
+nothing here argues with it.
+
+**Where it is held.** `tools/measure_station_render.cjs` is the command, and it
+takes any built site. The behaviour the numbers are about is held by
+`tests/browser/station-filters.cjs` (the count line moves with a rail drag and
+settles on the budget) and `tests/browser/station-layout.cjs` (the re-render stays
+inside its 50 ms gate).
+
+**What it does not establish.** Three things, and the first is the one to read
+twice.
+
+- **The drag's frame span did not move measurably.** Both builds sit at the
+  display's cadence -- 16.1-18.5 ms before, 15.7-16.8 after -- because a frame
+  that fits is pinned to vsync and this harness has no paint to measure beyond
+  it. So the audit's P1 is answered as *the script inside a frame is 2.2x
+  cheaper*, not as *the drag now runs at 60 fps*, and the phone question O8 holds
+  is untouched: no CPU throttle was applied here.
+- **The count line now holds its last settled sentence for the length of a
+  drag.** That is the deliberate half of the live-region fix: the line is written
+  once, by the render that settles the gesture, which is what makes a polite
+  region speak one sentence instead of eleven stale ones. The per-frame answer a
+  sighted reader watches is `#budgetNext`, which says what the pound under the
+  pointer buys.
+- **One origin, one build shape, one machine, one browser.** The page prices
+  fares only -- no times, no changes, no service week -- and the 4,431 rows are
+  this feed's on 24 September 2026. A timetable build carries more per row, so
+  the millisecond figures move; the ratios belong to the work each removed, which
+  does not.

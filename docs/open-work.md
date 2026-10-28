@@ -207,6 +207,16 @@ desktop budget or a phone one: if it is a phone budget, the page is over it on a
 slowed CPU and the render has to get cheaper; if it is a desktop budget, the
 figure is recorded and the gate says what it always said.
 
+**The single render got cheaper on 28 October 2026**, and the figures above
+predate it: one render's script fell from 12.47 ms to 2.3-3.1 ms and its
+`priceOf` calls from 57,996 to 8,261 (`docs/build-performance-findings.md`,
+"One render of a real page"). The phone figures are therefore a measurement of a
+build that no longer exists, and the question above wants a re-run of `node
+tools/measure_station_phone.cjs _real_site` at 4x and 6x before it is answered.
+What that run has to report is the same three medians against the same gate; the
+desktop frame span did not move measurably in the change, because a frame that
+fits is pinned to the display's cadence.
+
 ---
 
 ## O9 -- The opened refinements panel leaves a 160px void

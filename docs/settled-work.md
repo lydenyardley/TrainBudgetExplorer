@@ -747,6 +747,57 @@ checks).
 | **A1's still-owed figure**, the first twelve-share run's per-share cost | the same run's twelve shares: **18, 20, 20, 25, 27, 30, 33, 33, 33, 34, 34 and 39 minutes**, mean 28.8, against the 100-minute nearing warning and the 150-minute bound -- 346 runner-minutes for the release, where the run A1 measured spent the bound on every share and wrote no page | the shard step's own `share N/12 took M minutes` line; `tests/test_workflows.py`, `BuildBoundTest`, still holds the bound and the share count to the record |
 | The 23 October 2026 audit's remaining byte questions: `departures`, `name`, `legs` and the service week | not needed. At 370 of 800 MB the budget holds with 430 MB spare, so none of them is worth its trade: `departures` was measured and refused on 24 October (**1.24%** of the raw page for **1.91% more** gzip), `name` is already in the shared station list for stations that have a page, `legs` is read by no file under `page/station/`, and the service week is the page's answer to "when does it run". They stay product questions about what a page carries, not levers the budget needs | the measurements in `docs/build-performance-findings.md`; ADR-0069, ADR-0076 and ADR-0077 for what a page carries |
 
+## The 28 October 2026 deep audit
+
+`docs/audits/2026-10-28-deep-audit.md` was removed on 28 October 2026, the same
+day it was filed and acted on. It read the page's modules and the build's Python
+against the real-feed Grantham page and measured that page in Chromium: 15
+findings, 2 P1, 5 P2 and 8 P3, every one closed here. Its companion design pass,
+`docs/audits/2026-10-28-design-critique.md`, is a separate review and still
+stands or falls on its own asks.
+
+The two P1s were one gesture each: a render cost 12.47 ms of script and 58,000
+price lookups, and the count line was rewritten once per frame of a budget drag.
+The figures after the work, and what they do not establish, are in
+`docs/build-performance-findings.md` under "One render of a real page, 28 October
+2026": the script inside a frame is 2.2x-2.5x cheaper and a drag writes the live
+region once instead of eleven times, and the drag's own frame span did **not**
+move measurably, because a frame that fits is pinned to the display's cadence.
+The phone half of that question is still **O8** and no CPU throttle was applied
+here.
+
+| Finding | Closed by | Held by |
+|---|---|---|
+| 1 [P2] the tab title and the heading named a budget the page had already clamped | `renderTitle()` in `page/station/table.js`, called after `clampBudget()` and before either early return, so every path names the figure the field and the address are using | `tests/browser/station-fares.cjs`, "a mode switch that lowers the budget leaves the tab, the heading, the field and the address agreeing", driven through `chooseMode`/`chooseBudget` on a mode whose ceiling is below the figure in hand |
+| 2 [P2] one licence sentence printed twice in the footer | `attribution_paragraphs()` in `trainbudget/build/build_release.py`, applied where the payload's notice field is built, so the credit line beside the NRE mark owns the sentence and the block below it carries only the rest | `test_the_acknowledgement_is_printed_once` in `tests/test_build_provenance.py`, which counts the sentence in a built page and covers a build asked for the acknowledgement alone |
+| 3 [P3] the deferred budget push outlived a Back press, and Back appeared to do nothing | `cancelBudgetPush()` in `page/station/url-state.js`, called by `writeUrl`, by `popstate` before the state is applied, and by `pagehide` | the same browser section, and `tests/browser/station-filters.cjs` for the push that a gesture still makes |
+| 4 [P3] a selector built by interpolation in five places, where a quote in the value was a `SyntaxError` | the values are looked up in a `Map` or an array instead: `chipCountSlots` and `chipLabels` in `page/station/filters.js`, the radio group read once in `page/station/state.js`, the remembered card tested against the keys the build priced in `page/station/railcards.js`, and the dock's row found among the rows in `page/station/shortlist.js` | `test_no_selector_is_built_from_a_value` in `tests/test_page_assets.py`, over every file a route's script is built from |
+| 5 [P3] a comment fused onto the last declaration of `filters.js`, with six continuation lines and a function indented as though a block had been lost | the comment sits above the function it explains | `node --check` and the concatenation step in `tools/verify.py --fast`, which is what a lost block would have broken instead |
+| 6 [P1] a render cost 12.47 ms of script and 57,996 price lookups for 4,431 rows | each displayed price is computed once per party-and-card pair (`priceOf`'s cache in `page/station/railcards.js`), the list is sorted on that one answer rather than by a comparator calling `priceOf` twice per comparison (`render()` in `page/station/table.js`), and the ceiling is a walk rather than a 1,596-argument spread (`budgetCeiling()`) | `python -m tools.measure_station_render.cjs <site>` reproduces it: 2.3-3.1 ms of script and 8,261 calls, interleaved with the build as it was |
+| 7 [P2] the cheapest list was composed four times in one render | `cheapestDestinations()` holds its list on the party and the card, the two facts the answer depends on, and its callers measure or filter it into new arrays | the same measurement (the callers still ask four times; the walk happens once) and `tests/browser/station-fares.cjs` |
+| 8 [P2] the chip counts re-read the whole list once per chip, some 22,000 predicate calls, and rewrote every count whether or not it moved | one walk in `updateChipCounts` counts every type into a `Map`, and a chip's text is written only when the number differs from the one it holds | `tests/browser/station-fares.cjs` (the counts a chip shows against the rows that carry its type) and the same measurement |
+| 9 [P2] a ticket link told the seller the reader's whole search in the Referer header | `PLAIN_REL` and `AFFILIATE_REL` in `trainbudget/fares/retailer.py` carry `noreferrer` as well as `noopener`, and the build's own credit and enquiries anchors do too; the decision is ADR-0078 | `tests/test_retailer.py`, `test_the_credit_links_out_without_the_search` in `tests/test_build_links.py` (every anchor the page writes itself), and "the link is marked untracked" in `tests/browser/station-rows.cjs` |
+| 10 [P3] no Content-Security-Policy, on a page that loads nothing cross-origin | `CSP` and `CSP_META` in `trainbudget/build/page_templates.py`, in all three routes: no frame, no form, no plugin, no `<base>` and no network call of any kind after the page loads. `frame-ancestors` is the host's header, and the comment beside the constant says so rather than implying the page is framed-proof; ADR-0079 | `test_every_page_states_what_it_may_load_and_reach` in `tests/test_page_output.py`, over every page a build writes and over the directives that made the policy worth adding |
+| 11 [P3] `serve()` changed the working directory of the whole process for as long as it served | `run.py` hands the handler its directory (`functools.partial(Quiet, directory=str(site))`) and no longer calls `os.chdir`, so no other thread resolves a relative path inside `_site` | `RunnerBuildOrServeTest` in `tests/test_page_runner.py`, which drives `main()`'s serve path |
+| 12 [P1] the polite count line was rewritten on every frame of a drag -- 9 writes in a ten-step drag, every one announced | `setSummary()` in `page/station/table.js` writes only a changed string and nothing at all while a gesture is open, and `settleBudgetDrag` in `page/station/budget.js` ends the gesture before the render that settles it, which is the one render allowed to speak | `python -m tools.measure_station_render.cjs` counts the writes and whether the region was live (11 to 1), and the template's comment beside the region now describes what the code does |
+| 13 [P3] the copy button's visible "Copied" was not part of its accessible name | `copyJourney`'s `label()` writes the text and the `aria-label` together, in both the copied and the manual path, and each name opens with the words on the button's face | `tests/browser/station-rows.cjs`, "and the words on its face are inside the name it announces" |
+| 14 [P3] chip counts and the More-types count were 10.5px | `.chipcount, .more-types-count` move to `.75rem`, the ramp step the rest of the stylesheet already uses for a secondary line, 12px at the default root size | `tests/browser/station-fares.cjs`, "and its count is not fine print", and `tests/browser/station-layout.cjs`'s five-size count |
+| 15 [P3] the station picker's status region announced on every keystroke | `announcePicks()` in `page/station/picker.js` waits 400 ms after the last keystroke; opening the picker is not typing and is still said at once, and a picker that closes announces nothing | `tests/browser/station-picker.cjs`, "the picker says how many stations are listed once the typing stops", which types a burst and counts the writes |
+
+What the pass checked and found sound is worth keeping because a later reader
+should not have to re-derive it: every feed-supplied string reaching markup is
+escaped and the payload is embedded with `</` broken before it lands in a
+script; every URL value is checked against what the page offers before it is
+applied; `noopener` was already on every outbound link, so item 9 was the
+referrer and not the opener; every `<th>` carries `scope`; body text measures
+14.89:1, the tag text 8.29:1 and the chip counts 7.54:1; the downloader reads
+credentials from the environment only and refuses a URL that carries them; the
+fares loader reads zip members in memory and never extracts to disk; and the
+local server binds to `127.0.0.1`. Its limits were one origin, one build shape
+(no timetable), one viewport, one machine and **no screen reader**: items 12, 13
+and 15 were read from the code path and from counted writes, not from listening
+to NVDA or VoiceOver.
+
 ## The 21 October 2026 Critiquito design critique
 
 `docs/audits/2026-10-21-critiquito-design-critique.md` was removed on 26 October
