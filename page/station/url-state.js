@@ -42,15 +42,26 @@ function stateQuery() {
 // and pushes at once.
 function writeUrl({ budget = false } = {}) {
   if (!budget) {
+    cancelBudgetPush();
     writeUrlNow(true);
     return;
   }
-  if (STATE.budgetUrlTimer) clearTimeout(STATE.budgetUrlTimer);
+  cancelBudgetPush();
   writeUrlNow(false);
   STATE.budgetUrlTimer = setTimeout(() => {
     STATE.budgetUrlTimer = null;
     writeUrlNow(true);
   }, 700);
+}
+// The deferred push belongs to the gesture that scheduled it. Back and a page
+// being left are both the end of that gesture, and a timer that outlived either
+// still fired: the entry Back restored carries no query string of its own, so
+// the push wrote a fresh one and Back appeared to do nothing until it was pressed
+// a second time (audit item 3, 28 October 2026).
+function cancelBudgetPush() {
+  if (!STATE.budgetUrlTimer) return;
+  clearTimeout(STATE.budgetUrlTimer);
+  STATE.budgetUrlTimer = null;
 }
 const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short", "day"];
 function writeUrlNow(push) {
@@ -154,7 +165,13 @@ function pricedHere(code) {
 window.addEventListener("popstate", () => {
   // Back is a decision the reader already made, so it is applied without
   // writing the address again: re-writing it here would make the entry Back
-  // just left unreachable, and the control would never come back.
+  // just left unreachable, and the control would never come back. The drag's
+  // pending push is dropped first, because it is the one write that would.
+  cancelBudgetPush();
   applyState(readState());
   render();
 });
+// Leaving the page is the other way a gesture ends, and a timer must not fire
+// into a document on its way out (a bfcache restore re-renders from the address
+// anyway).
+window.addEventListener("pagehide", cancelBudgetPush);

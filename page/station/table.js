@@ -127,20 +127,50 @@ function unnameableNote() {
     (DATA.unnameableFareCount === 1 ? "it is" : "they are") +
     " not shown here; that is a gap in the feed's names, not a destination with no fare.";
 }
-function render() {
-  // The tab title is the same sentence as the heading, and a reader who
-  // dragged the budget and then looked at the tab list had no way to tell two
-  // searches apart. Before the early returns, because a page with nothing
-  // priced still names its origin and its budget.
-  // The budget is read from the state, not from the field that displays it: a
-  // field the reader is mid-way through editing is not the search the page is
-  // running, and the title is a statement about the search (R4).
+// The tab title and the heading's own name, written from the state.
+//
+// The budget is read from the state, not from the field that displays it: a
+// field the reader is mid-way through editing is not the search the page is
+// running, and the title is a statement about the search (R4). It is written
+// after clampBudget() rather than at the top of render(), because a mode switch
+// lowers the budget -- the control cannot hold a figure above the ceiling of the
+// list on screen -- and a title written first named a figure the field, the count
+// line and the address had all stopped using (audit item 1, 28 October 2026).
+//
+// The heading holds the budget field and the station control, so its own name is
+// the whole sentence rather than the controls' text run together. It is the same
+// sentence as the tab title, so a reader who dragged the budget and then looked
+// at the tab list can tell two searches apart, and the two cannot disagree
+// (audit item 13).
+function renderTitle() {
   document.title = "Train fares up to £" + STATE.budget + " from " + DATA.origin.name;
-  // The heading holds the budget field and the station control, so its own name
-  // is the whole sentence rather than the controls' text run together. It is the
-  // same sentence as the tab title, so the two cannot disagree (audit item 13).
   const heading = document.getElementById("pageHeading");
   if (heading) heading.setAttribute("aria-label", document.title);
+}
+
+// The count line is a polite live region, so writing it is announcing it, and
+// that decides who may write it when. Two rules, both here rather than at each
+// of the places that compose a sentence for it:
+//
+// - a string that has not changed is not written again, because a render that
+//   narrowed nothing has nothing to say;
+// - nothing writes it while a budget gesture is open. The drag re-renders once a
+//   frame, and a polite region queues: writing it per frame handed a screen
+//   reader a run of counts, each stale before it was read (audit item 12, 28
+//   October 2026).
+//
+// The line therefore holds the last settled sentence for the length of the drag
+// and is written once by the render that settles it -- which is the announcement
+// the gesture is worth, and what the template's own comment beside this region
+// already promises ("the count line above already speaks on settle"). The
+// per-frame answer a sighted reader is watching is #budgetNext, which says what
+// the pound under the pointer buys and is deliberately not a live region.
+function setSummary(text) {
+  if (STATE.budgetDragFrom !== null) return;
+  if (summary.textContent !== text) summary.textContent = text;
+}
+
+function render() {
   // The line under the count describes the gesture that just ended. Every other
   // render is not that gesture, so the line goes; the drag's own frame writes it
   // again after this render (queueBudgetFrame). Cleared before the early returns
@@ -161,6 +191,9 @@ function render() {
   // can reach a destination of its type. clampBudget returns the reader's own
   // budget for an empty list, so the two empty states below still keep it.
   const cap = clampBudget(available);
+  // After the clamp, and before either early return, so every path names the
+  // budget the page is actually using.
+  renderTitle();
   // Before the filter is read, not after: a chip the active list cannot support
   // inside this budget must not be part of what the filter is asked to match,
   // and a chip that goes away must not stay checked halfway through the read.
@@ -182,7 +215,7 @@ function render() {
     // reset the reader's budget for every other mode they switch back to.
     rows.replaceChildren();
     resultsTable.hidden = true;
-    summary.textContent = "No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name;
+    setSummary("No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name);
     empty.hidden = false;
     renderEmptyMode();
     more.hidden = true;
@@ -205,9 +238,21 @@ function render() {
   // the price actually displayed, and the count line below says so in words.
   // Sorting the displayed number is the only ordering that cannot contradict
   // the number in the cell beside it.
-  const wanted = available
-    .filter((d) => priceOf(d) <= cap && matchesType(d, wantedTypes))
-    .sort((a, b) => priceOf(a) - priceOf(b));
+  //
+  // Priced once and sorted on that answer: a comparator calling priceOf twice
+  // per comparison asked for the same numbers some 35,000 times to order 1,596
+  // destinations (audit item 6, 28 October 2026). One pass computes what each
+  // reachable destination shows, the filter and the sort both read it, and this
+  // is the array the rest of the render is built from.
+  const priced = [];
+  for (const destination of available) {
+    const pence = priceOf(destination);
+    if (pence <= cap && matchesType(destination, wantedTypes)) {
+      priced.push({ destination: destination, pence: pence });
+    }
+  }
+  priced.sort((a, b) => a.pence - b.pence);
+  const wanted = priced.map((entry) => entry.destination);
   budgetNumber.value = String(STATE.budget);
   sizeBudgetField();
   updateChipCounts(available, cap);
@@ -262,13 +307,13 @@ function render() {
   const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
-  summary.textContent = available.length && wanted.length
+  setSummary(available.length && wanted.length
     ? wanted.length + (wanted.length === 1 ? " destination" : " destinations") + " for up to " + money(cap) + " " + basis + order + mix
     // An empty list names what emptied it, in the one sentence both it and
     // the paragraph below the table use: this line -- the first thing a reader
     // reads after dragging the budget -- said only that there was nothing,
     // while the chip that caused it sat inside the folded refinements.
-    : available.length ? emptyListSentence(cap, basis) : "";
+    : available.length ? emptyListSentence(cap, basis) : "");
   empty.hidden = wanted.length > 0;
   // DS1: no rows, no table. The count line is the one place the empty sentence
   // is said, and the empty block below it is the way out rather than a second

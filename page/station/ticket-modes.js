@@ -24,7 +24,18 @@ const MODE_LISTS = {
 // bytes -- and because which row is cheapest depends on who the price is for,
 // it is composed for the party size and the card on screen rather than once.
 const CHEAPEST_MODE = "cheapest";
+// Composed once per price, not once per caller. A single render used to compose
+// this four times -- the list itself, the ceiling, the coverage line and the
+// empty state each asked -- and every composition walked all three fare lists
+// and built a new Map (audit item 7, 28 October 2026). The list is a pure
+// function of the party and the card, so it is held on that pair and dropped
+// when either moves. Callers read it and never write it: every one of them
+// filters or measures it into a new array.
+let cheapestFor = null;
+let cheapestList = null;
 function cheapestDestinations() {
+  const key = priceKey();
+  if (key === cheapestFor) return cheapestList;
   const cheapest = new Map();
   for (const key of Object.values(MODE_LISTS)) {
     for (const destination of DATA[key] || []) {
@@ -37,7 +48,9 @@ function cheapestDestinations() {
       if (!held || isCheaperThan(destination, held)) cheapest.set(destination.crs, destination);
     }
   }
-  return Array.from(cheapest.values());
+  cheapestFor = key;
+  cheapestList = Array.from(cheapest.values());
+  return cheapestList;
 }
 // Cheaper for this reader, then cheaper to begin with. Both numbers, so the
 // answer does not depend on the order the payload happens to list things in.
@@ -140,8 +153,17 @@ function budgetCeiling() {
   // The railcard is left out on purpose: it makes prices lower, so including it
   // would move the ceiling down the moment the box was ticked, clamping a
   // budget the reader had already chosen.
+  // A walk rather than `Math.max(...list.map(...))`, which allocated a number
+  // per destination and spread 1,596 of them into the argument list on every
+  // render -- the ceiling is read once by the clamp and again by each line that
+  // names the next pound (audit item 6, 28 October 2026).
   const party = unit() === "party";
-  return Math.max(1, Math.ceil(Math.max(0, ...activeDestinations().map((d) => (party ? d.partyPence : d.adultPence))) / 100));
+  let dearest = 0;
+  for (const destination of activeDestinations()) {
+    const pence = party ? destination.partyPence : destination.adultPence;
+    if (pence > dearest) dearest = pence;
+  }
+  return Math.max(1, Math.ceil(dearest / 100));
 }
 function stationInFeedMessage(station) {
   return station.name + " (" + station.crs + ") is in the feed, but this origin has no qualifying " +

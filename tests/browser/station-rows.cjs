@@ -14,7 +14,12 @@ async function checkTheRowActions(world) {
     const link = page.locator("#rows a.buy").first();
     const href = await link.getAttribute("href");
     check("the plain link carries no journey at all", href === "https://www.nationalrail.co.uk/journey-planner/", href);
-    check("the link is marked untracked", (await link.getAttribute("rel")) === "noopener");
+    // Both tokens are load-bearing and both are checked here rather than in the
+    // payload: `noopener` keeps the seller's page off this one, and `noreferrer`
+    // stops the address -- the budget, the card and the shortlist -- travelling
+    // in the Referer header of a click (audit item 9, 28 October 2026).
+    const rel = ((await link.getAttribute("rel")) || "").split(/\s+/);
+    check("the link is marked untracked", rel.includes("noopener") && rel.includes("noreferrer"), rel.join(" "));
     check("the link opens in a new tab", (await link.getAttribute("target")) === "_blank");
     const [popup] = await Promise.all([page.waitForEvent("popup"), link.click()]);
     await popup.waitForLoadState("domcontentloaded");
@@ -193,6 +198,21 @@ async function checkTheRowActions(world) {
       null,
       { timeout: 3000 }
     ).catch(() => {});
+    // Audit item 13, 28 October 2026: the button's visible words are part of the
+    // name it announces (WCAG 2.5.3), and the name is what carries the
+    // destination (C13). The acknowledgement used to change the text alone, so a
+    // button reading "Copied" still announced "Copy journey for ...". Both are
+    // written together now, and this holds whichever path ran -- a granted
+    // clipboard or the manual copy a refused one offers.
+    const relabelled = await copyButton.evaluate((button) => ({
+      text: (button.textContent || "").trim(),
+      name: button.getAttribute("aria-label") || "",
+    }));
+    check(
+      "and the words on its face are inside the name it announces",
+      relabelled.text.length > 0 && relabelled.name.includes(relabelled.text),
+      JSON.stringify(relabelled)
+    );
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
     check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(

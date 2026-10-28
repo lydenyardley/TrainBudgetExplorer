@@ -52,7 +52,12 @@ if (railcardKeys.length) {
   // A remembered card is applied only when this page prices it, so a reader who
   // chose a card on a page that offered it is not silently moved onto a
   // different card where it is absent.
-  if (STATE.rememberedCard && railcardSelect.querySelector('option[value="' + STATE.rememberedCard + '"]')) {
+  // Tested against the keys this build priced rather than through a selector
+  // built from the stored code: a stored value is the one string on this page the
+  // page did not write, and a quote in it was a SyntaxError at load (audit item 4,
+  // 28 October 2026). The control holds one option per key below, so the two are
+  // the same question asked of a list instead of of the DOM.
+  if (STATE.rememberedCard && railcardKeys.includes(STATE.rememberedCard)) {
     // The control and the state say the same thing: the remembered card is
     // what this page prices with until the address says otherwise.
     STATE.railcard = STATE.rememberedCard;
@@ -71,15 +76,37 @@ function cardCoversParty(card) {
 function unit() {
   return STATE.unit;
 }
+// The two facts a displayed price depends on, as one answer that changes when
+// either does. Both caches in this script are keyed on it.
+function priceKey() {
+  return STATE.unit + "|" + STATE.railcard;
+}
+// One render asks the same row for its price a dozen times -- the filter, the
+// sort, the ceiling, the chip counts and the cell -- and inside one render the
+// answer cannot change. On the real Grantham page that was 57,996 asks for 4,431
+// rows (audit item 6, 28 October 2026).
+//
+// Keyed on the party and the card rather than cleared by a render, because a
+// render is not the only caller: the budget's next-pound line, the empty state
+// and the shortlist all ask between renders, and they are asking the same
+// question. A party change or a card is the question changing, so it drops the
+// whole answer rather than the row that moved.
+let pricedFor = null;
+let pricedRows = new Map();
 function priceOf(destination) {
+  const key = priceKey();
+  if (key !== pricedFor) {
+    pricedRows = new Map();
+    pricedFor = key;
+  }
+  const held = pricedRows.get(destination);
+  if (held !== undefined) return held;
   const party = unit() === "party";
   const base = party ? destination.partyPence : destination.adultPence;
   const card = chosenCard(destination);
-  if (card) {
-    const cardTotal = card.pricePence * (party ? 2 : 1);
-    return Math.min(base, cardTotal);
-  }
-  return base;
+  const price = card ? Math.min(base, card.pricePence * (party ? 2 : 1)) : base;
+  pricedRows.set(destination, price);
+  return price;
 }
 // The chosen card's decision for one row, or null when none is chosen, this
 // row cannot price it, or the card does not cover the party on screen. A card

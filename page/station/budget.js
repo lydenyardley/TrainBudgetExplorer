@@ -182,10 +182,16 @@ function settleBudgetDrag() {
     else window.clearTimeout(budgetFrame);
     budgetFrame = 0;
   }
-  render();
-  writeUrl({ budget: true });
+  // The gesture ends before the render that settles it, which is what makes this
+  // render the one that writes the count line: the frames of the drag do not
+  // touch it, so its text is the pre-drag sentence until here and the change is a
+  // real change for a polite region to announce (audit item 12, 28 October 2026).
+  // The origin is read first because the gain line is measured from where the
+  // drag began.
   const from = STATE.budgetDragFrom;
   STATE.budgetDragFrom = null;
+  render();
+  writeUrl({ budget: true });
   const available = activeDestinations();
   const cap = STATE.budget * 100;
   // A list with nothing in it says so in the count line and offers the door

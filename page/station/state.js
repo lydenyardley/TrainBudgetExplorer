@@ -93,12 +93,19 @@ function chooseUnit(name) {
   render();
   writeUrl();
 }
+// The radio group is read once and matched by its value attribute, rather than
+// through a selector built out of the name: every caller checks its value against
+// what the page offers first, so nothing can exploit the interpolation today, but
+// a value holding a quote was a SyntaxError that took the gesture with it (audit
+// item 4, 28 October 2026). `getAttribute` because a mode's value is the build's
+// own, not a state a reader holds -- `.value` here would be the same answer read
+// as though a control could change it.
 function chooseMode(name) {
-  const chosen = document.querySelector('input[name="ticketMode"][value="' + name + '"]');
-  if (!chosen) return;
+  const radios = Array.from(document.querySelectorAll('input[name="ticketMode"]'));
+  if (!radios.some((input) => input.getAttribute("value") === name)) return;
   STATE.mode = name;
-  for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
-    input.checked = input === chosen;
+  for (const input of radios) {
+    input.checked = input.getAttribute("value") === name;
   }
   STATE.page = 1;
   render();
@@ -110,11 +117,11 @@ function chooseMode(name) {
 // renders would show the reader a page the door never promised -- the new set
 // at the old, empty budget -- for one frame.
 function chooseModeAt(mode, pounds) {
-  const chosen = document.querySelector('input[name="ticketMode"][value="' + mode + '"]');
-  if (!chosen) return;
+  const radios = Array.from(document.querySelectorAll('input[name="ticketMode"]'));
+  if (!radios.some((input) => input.getAttribute("value") === mode)) return;
   STATE.mode = mode;
-  for (const input of document.querySelectorAll('input[name="ticketMode"]')) {
-    input.checked = input === chosen;
+  for (const input of radios) {
+    input.checked = input.getAttribute("value") === mode;
   }
   // The figure this mode remembers is the one the door just named. Without it
   // the render's clamp restores whatever the reader last set in that mode -- 0,

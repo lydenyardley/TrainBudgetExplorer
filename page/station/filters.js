@@ -21,25 +21,47 @@ const facetInputs = moreTypesPanel
 const moreFilters = document.getElementById("moreFilters");
 const moreFiltersToggle = document.getElementById("moreFiltersToggle");
 const keyHints = document.getElementById("keyHints");
-const filterState = document.getElementById("filterState");  // The refinements are folded at every width, and the reader is the only thing
-  // that opens them. The control is a button carrying aria-expanded, so the
-  // state is announced without any of this: the markup opens folded and this
-  // only flips that. There used to be a second road in -- a media query and a
-  // resize listener that opened the panel above the phone breakpoint and closed
-  // it below -- which meant the state a reader had chosen could be overwritten
-  // by rotating a device, and meant the fold was a different thing at each
-  // width. Both are gone: one control, one state, one place it changes.
-  function setFiltersOpen(open) {
-    if (!moreFilters) return;
-    moreFilters.dataset.open = open ? "true" : "false";
-    if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
-    // The toggle's name depends on which half of the fold it is showing (DS4),
-    // so opening or closing it re-writes the name as well as the state.
-    renderFilterState();
-  }
-  if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
-    setFiltersOpen(moreFilters.dataset.open !== "true");
-  });
+const filterState = document.getElementById("filterState");
+// A chip's count, and a chip's label, found by the value the chip carries rather
+// than by a selector built out of that value. Those selectors were written as
+// `[data-count-for="<value>"]` and `[value="<value>"]`, and a value holding a
+// quote was a SyntaxError that took the whole render with it (audit item 4, 28
+// October 2026). Neither map changes during a visit, so both are built once.
+//
+// `getAttribute` rather than `.value` throughout: this is what the build said a
+// chip is, not a state a reader can hold, and the two maps are the page's copy of
+// the markup rather than a second record of the search.
+const chipCountSlots = new Map();
+for (const slot of document.querySelectorAll(".chipcount")) {
+  const value = slot.getAttribute("data-count-for");
+  if (value) chipCountSlots.set(value, slot);
+}
+const chipLabels = new Map();
+for (const input of destinationTypeInputs) {
+  const label = input.closest("label");
+  const value = input.getAttribute("value");
+  if (label && value) chipLabels.set(value, label);
+}
+
+// The refinements are folded at every width, and the reader is the only thing
+// that opens them. The control is a button carrying aria-expanded, so the
+// state is announced without any of this: the markup opens folded and this
+// only flips that. There used to be a second road in -- a media query and a
+// resize listener that opened the panel above the phone breakpoint and closed
+// it below -- which meant the state a reader had chosen could be overwritten
+// by rotating a device, and meant the fold was a different thing at each
+// width. Both are gone: one control, one state, one place it changes.
+function setFiltersOpen(open) {
+  if (!moreFilters) return;
+  moreFilters.dataset.open = open ? "true" : "false";
+  if (moreFiltersToggle) moreFiltersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  // The toggle's name depends on which half of the fold it is showing (DS4),
+  // so opening or closing it re-writes the name as well as the state.
+  renderFilterState();
+}
+if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
+  setFiltersOpen(moreFilters.dataset.open !== "true");
+});
 
 // The facets are one press away inside the refinements panel above (#moreFiltersPanel,
 // which the stylesheet leaves display:none until #moreFilters opens it). The
@@ -69,8 +91,8 @@ function filterStateText() {
     ? "0 railcard"
     : "1 railcard (" + railcards[STATE.railcard].label + ")";
   const labelOf = (value) => {
-    const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
-    const span = input && input.parentElement ? input.parentElement.querySelector("span") : null;
+    const chip = chipLabels.get(value);
+    const span = chip ? chip.querySelector("span") : null;
     return span ? span.textContent : value;
   };
   const typeText = types.length ? types.map(labelOf).join(", ") : "All";
@@ -148,15 +170,31 @@ function typeLabel() {
 // chips whose count is zero, and this only writes the numbers, so the two
 // cannot disagree about a chip's own count.
 function updateChipCounts(available, cap) {
+  // One pass counts every type, rather than one pass per chip: fourteen chips
+  // against a 1,596-row list re-read the whole list fourteen times, which is
+  // some 22,000 predicate calls for a number each chip could be told in one walk
+  // (audit item 8, 28 October 2026).
+  const counts = new Map();
+  for (const destination of available) {
+    if (priceOf(destination) > cap) continue;
+    const types = destination.destinationTypes || [destination.destinationType];
+    for (let at = 0; at < types.length; at += 1) {
+      const type = types[at];
+      // A type a row lists twice is still one destination carrying it, which is
+      // what `.includes` said a chip's count meant.
+      if (types.indexOf(type) !== at) continue;
+      counts.set(type, (counts.get(type) || 0) + 1);
+    }
+  }
   for (const input of destinationTypeInputs) {
     if (input.value === "all") continue;
-    const slot = document.querySelector(`.chipcount[data-count-for="${input.value}"]`);
+    const slot = chipCountSlots.get(input.value);
     if (!slot) continue;
-    const count = available.filter(
-      (destination) => priceOf(destination) <= cap &&
-        (destination.destinationTypes || [destination.destinationType]).includes(input.value)
-    ).length;
-    slot.textContent = count === 1 ? "(1)" : "(" + count + ")";
+    const count = counts.get(input.value) || 0;
+    const text = count === 1 ? "(1)" : "(" + count + ")";
+    // A number that has not changed is not a reason to touch the document: a
+    // drag rewrote fourteen counts a frame whether or not the budget moved one.
+    if (slot.textContent !== text) slot.textContent = text;
   }
   const clear = document.getElementById("clearTypes");
   if (clear) clear.hidden = selectedDestinationTypes().size === 0;
@@ -250,8 +288,7 @@ function syncDestinationTypeChips(available, cap) {
   }
 }
 function chipLabel(value) {
-  const input = document.querySelector(`input[name="destinationType"][value="${value}"]`);
-  const chip = input ? input.closest("label") : null;
+  const chip = chipLabels.get(value);
   return chip ? chip.textContent.replace(/\(\d+\)/, "").trim() : value;
 }
 // A filter that changed the result set without saying so is indistinguishable

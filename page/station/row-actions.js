@@ -277,16 +277,28 @@ function showCopyText(host, text, button) {
 async function copyJourney(destination, button, host) {
   const text = journeyText(destination);
   const status = document.getElementById("copyStatus");
+  // WCAG 2.5.3 is about the visible words being inside the control's name, and
+  // this control's name is what carries the destination (C13). Changing the text
+  // alone left a button reading “Copied” whose name still said “Copy journey for
+  // Wakefield Westgate” (audit item 13, 28 October 2026), so both are written
+  // together and each name still opens with the words on the face of the button.
+  const label = (text, name) => {
+    button.textContent = text;
+    button.setAttribute("aria-label", name);
+  };
   const done = () => {
-    button.textContent = "Copied";
+    label("Copied", "Copied. Journey details for " + destination.name + " are on the clipboard.");
     status.textContent = "Journey details copied: " + text.split("\n").join(". ");
-    window.setTimeout(() => { button.textContent = "Copy journey"; }, 2000);
+    window.setTimeout(() => {
+      label("Copy journey", "Copy journey for " + destination.name);
+    }, 2000);
   };
   // Never claim a copy that did not happen. Clipboard access is refused when a
   // page is opened from a file or served without a secure context, so the
   // reader is shown the text instead of being told it is on their clipboard.
   const manual = () => {
-    button.textContent = "Select below";
+    label("Select below", "Select below. Journey details for " + destination.name +
+      " are under this button.");
     status.textContent = "Could not copy automatically. The details are shown under the button.";
     showCopyText(host, text, button);
   };

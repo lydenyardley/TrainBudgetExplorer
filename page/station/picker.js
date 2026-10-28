@@ -28,7 +28,27 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
   // items 10 and 22, 9 October 2026).
   const originCap = document.getElementById("originCap");
 
-  function renderPicks() {
+  // The count is announced once the typing stops. A polite region written on
+  // every keystroke said "412 stations listed", then "38", then "4" while the
+  // reader was still typing a name, and each one was stale before it was read
+  // (audit item 15, 28 October 2026). The list itself keeps narrowing per
+  // keystroke -- that is the page keeping up -- and only the sentence waits.
+  // Opening the picker is not typing, so that one is said at once.
+  let statusTimer = 0;
+  function announcePicks(text, now) {
+    if (statusTimer) window.clearTimeout(statusTimer);
+    statusTimer = 0;
+    if (now) {
+      originStatus.textContent = text;
+      return;
+    }
+    statusTimer = window.setTimeout(() => {
+      statusTimer = 0;
+      originStatus.textContent = text;
+    }, 400);
+  }
+
+  function renderPicks(now) {
     const needle = originSearch.value.trim().toLowerCase();
     const wanted = DATA.stations.filter((station) => stationMatches(station, needle));
     originPicks.replaceChildren();
@@ -63,7 +83,7 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
         : "";
       originCap.hidden = wanted.length <= STATION_LIST_CAP;
     }
-    originStatus.textContent = wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed";
+    announcePicks(wanted.length + " station" + (wanted.length === 1 ? "" : "s") + " listed", now);
   }
 
   // The field is moved into the slot rather than duplicated, so there is one
@@ -75,7 +95,7 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     if (open) {
       if (originSearch.parentElement !== originSlot) originSlot.append(originSearch);
       changeOrigin.hidden = true;
-      renderPicks();
+      renderPicks(true);
       // The field is sized to its placeholder, so it is as wide as the word
       // "station" and no wider until something is typed into it.
       originSearch.focus();
@@ -83,6 +103,9 @@ if (changeOrigin && DATA.stations && DATA.stations.length) {
     } else {
       changeOrigin.hidden = false;
       originSearch.remove();
+      // Nothing is announced into a picker that is closing.
+      if (statusTimer) window.clearTimeout(statusTimer);
+      statusTimer = 0;
       // Escape is a keyboard exit, and focus returns to the control that
       // opened the picker rather than dropping to the top of the page.
       changeOrigin.focus();

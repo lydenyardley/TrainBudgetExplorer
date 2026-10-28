@@ -366,7 +366,14 @@
      shares the rule and not the class: it is the number of kinds behind the
      press, where a chipcount is the number of destinations a chip would show,
      and the two must not be read as the same number. */
-  .chipcount, .more-types-count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .75em;
+  /* em of the chip's own .875rem, which came out at 10.5px: functional text
+     under 11px fails on a high-DPI screen and at a small viewport, and this is
+     the number a reader uses to decide whether a chip is worth pressing (audit
+     item 14, 28 October 2026). .75rem is the ramp step the rest of this file
+     already uses for a secondary line -- .tag, .eyebrow, .site-proof -- and it
+     is 12px at the default root size, so the chip's count and the sentence
+     beside it agree instead of nearly agreeing. */
+  .chipcount, .more-types-count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .75rem;
                margin-left: .35rem; }
   #typeRule { display: block; margin: .35rem 0 0; }
   #clearTypes { margin-top: .35rem; }

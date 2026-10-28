@@ -301,12 +301,23 @@ async function checkTheFareDetails(world) {
           count.getBoundingClientRect().left - name.getBoundingClientRect().right
         ),
         rendered: name.textContent + count.textContent,
+        size: parseFloat(getComputedStyle(count).fontSize),
       };
     });
     check(
       "a destination type and its count are separated on screen",
       chipGap ? chipGap.gap >= 2 : notExercised("this page has no counted destination type"),
       JSON.stringify(chipGap)
+    );
+    // Audit item 14, 28 October 2026: the count is the number a reader uses to
+    // decide whether a chip is worth pressing, so it is functional text rather
+    // than fine print. At 10.5px it failed on a high-DPI screen and at a small
+    // viewport; 11px is the floor the audit used, and the ramp step above it is
+    // `.75rem` with the rest of the file's secondary lines.
+    check(
+      "and its count is not fine print",
+      chipGap ? chipGap.size >= 11 : notExercised("this page has no counted destination type"),
+      chipGap ? chipGap.size + "px" : ""
     );
     // 7a. A resize is not a fold. The refinements used to open and close with
     // the viewport -- a media query and a resize listener, two roads to one
@@ -466,6 +477,69 @@ async function checkTheFareDetails(world) {
         ? notExercised(`this page's budget stops at £${titleCeiling}, so no £3 title can be shown`)
         : /up to £3\b/.test(await page.title()),
       await page.title()
+    );
+    // Audit item 1, 28 October 2026: a mode switch lowers the budget to the new
+    // list's ceiling, and the title and heading used to be written before that
+    // clamp -- so the tab and the heading named a figure the field, the count
+    // line and the address had all stopped using. Driven through the page's own
+    // gestures rather than by setting the state, because the address is written
+    // by the gesture and the disagreement was between all four.
+    const afterClamp = await page.evaluate(() => {
+      const modes = Array.from(document.querySelectorAll('input[name="ticketMode"]'))
+        .map((input) => input.value);
+      const ceiling = () => Number(document.getElementById("budget").max);
+      // Put back afterwards, the way the accessibility matrix's own probe does:
+      // this reads one gesture, and what follows it is about a page a reader
+      // arrives at rather than a page this check left behind.
+      const startedIn = (document.querySelector('input[name="ticketMode"]:checked') || {}).value;
+      const startedAt = STATE.budget;
+      // The widest ceiling this page offers, which is the budget a reader could
+      // be holding when another mode cannot reach it.
+      let widest = null;
+      for (const mode of modes) {
+        chooseMode(mode);
+        if (!widest || ceiling() > widest.ceiling) widest = { mode, ceiling: ceiling() };
+      }
+      chooseMode(widest.mode);
+      chooseBudget(widest.ceiling);
+      const before = STATE.budget;
+      // The first switch onto a mode that cannot reach the figure in hand. This
+      // is the gesture: the clamp happens inside the render the switch causes.
+      let switched = null;
+      for (const mode of modes) {
+        if (mode === widest.mode) continue;
+        chooseMode(mode);
+        if (ceiling() < before) { switched = mode; break; }
+      }
+      if (!switched) return null;
+      const facts = {
+        switched,
+        before,
+        budget: STATE.budget,
+        ceiling: ceiling(),
+        field: Number(document.getElementById("budgetNumber").value),
+        title: document.title,
+        heading: (document.getElementById("pageHeading") || {}).getAttribute("aria-label") || "",
+        address: Number(new URLSearchParams(window.location.search).get("budget")),
+      };
+      chooseMode(startedIn);
+      chooseBudget(startedAt);
+      return facts;
+    });
+    check(
+      "a mode switch that lowers the budget leaves the tab, the heading, the field and the address agreeing",
+      !afterClamp
+        ? notExercised("every ticket mode on this page reaches the same ceiling")
+        // The figure the reader holds is lowered by the switch, and every one of
+        // the four facts names the figure the page settled on -- the field, the
+        // address, the tab and the heading's own name.
+        : afterClamp.budget < afterClamp.before &&
+          afterClamp.budget <= afterClamp.ceiling &&
+          afterClamp.field === afterClamp.budget &&
+          afterClamp.address === afterClamp.budget &&
+          afterClamp.title.includes("£" + afterClamp.budget) &&
+          afterClamp.heading.includes("£" + afterClamp.budget),
+      JSON.stringify(afterClamp)
     );
     // 7c. The party, the fare's conditions, the facets, and what an empty
     // list offers. Every fact is read out of this page's own payload and

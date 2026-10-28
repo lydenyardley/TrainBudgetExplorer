@@ -216,6 +216,36 @@ async function checkTheOriginPicker(world) {
           byFragment.every((row) => row.code.toLowerCase().startsWith(fragment) || row.name.toLowerCase().includes(fragment)),
         `${fragment} -> ${byFragment.map((row) => row.code).join(" ") || "nothing"}`
       );
+      // Audit item 15, 28 October 2026: the status line was rewritten on every
+      // keystroke, so a polite region read "412 stations listed", then "38", then
+      // "4" while the reader was still typing, each stale before it was spoken.
+      // The list still narrows per keystroke -- that is the page keeping up -- and
+      // only the sentence waits, so what is asserted is that a burst of typing
+      // writes it once, after the typing stops.
+      const announcedOnce = await page.evaluate(async () => {
+        const field = document.getElementById("originSearch");
+        const status = document.getElementById("originStatus");
+        if (!field || !status) return null;
+        let writes = 0;
+        const observer = new MutationObserver((records) => { writes += records.length; });
+        observer.observe(status, { childList: true, characterData: true, subtree: true });
+        field.value = "";
+        for (const letter of "abc") {
+          field.value += letter;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        const during = writes;
+        await new Promise((done) => setTimeout(done, 600));
+        observer.disconnect();
+        return { during, after: writes, text: (status.textContent || "").trim() };
+      });
+      check(
+        "the picker says how many stations are listed once the typing stops",
+        announcedOnce
+          ? announcedOnce.during === 0 && announcedOnce.after >= 1 && /stations? listed/.test(announcedOnce.text)
+          : notExercised("this page has no station picker"),
+        JSON.stringify(announcedOnce)
+      );
     // The completion is a word inside the field, and the field is a word inside
     // the heading, so three keys matter: Backspace to take the suggestion back,
     // and Tab or Enter to go to the place it names. The prefix comes from the

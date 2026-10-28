@@ -149,7 +149,9 @@ function padForDock() {
 }
 
 function focusDestinationRow(crs) {
-  const row = document.querySelector('#rows tr[data-crs="' + crs + '"]');
+  // Found among the rows rather than through a selector built from the code, so
+  // no value reaches a selector on this page (audit item 4, 28 October 2026).
+  const row = Array.from(rows.children).find((candidate) => candidate.dataset.crs === crs);
   if (!row) return;
   row.scrollIntoView({ block: "center", behavior: "smooth" });
   const link = row.querySelector(".buy");

@@ -182,6 +182,12 @@ LOCAL_DECLARATION = re.compile(r"\s+(?:const|let|var)\s+(\w+)\s*=")
 TOP_LEVEL_DECLARATION = re.compile(r"^(?:const|let|var|function)\s+(\w+)")
 #: One top-level constant that is only another name for a binding beside it.
 ALIAS = re.compile(r"^const (\w+) = (\w+);$")
+#: A selector argument that is a template with a substitution in it, or a string
+#: concatenated with something beside it: both are a value on its way into a
+#: selector, where a quote in the value is a SyntaxError rather than a lookup.
+INTERPOLATED_SELECTOR = re.compile(
+    r"querySelector(?:All)?\(\s*(?:`[^`]*\$\{|['\"][^'\"]*['\"]\s*\+)"
+)
 
 
 def script_sources() -> dict[str, str]:
@@ -238,6 +244,25 @@ class PageScriptSurfaceTest(unittest.TestCase):
                         f"which {functions[match.group(1)]} defines"
                     )
         self.assertEqual(shadows, [])
+
+    def test_no_selector_is_built_from_a_value(self) -> None:
+        # Audit item 4, 28 October 2026: five places built a selector by
+        # interpolation -- four `[value="<v>"]` lookups and the dock's
+        # `[data-crs="<v>"]`. Every value reaching them had been checked against
+        # what the page offers, so none could be exploited, but a value holding a
+        # quote was a SyntaxError that took the render with it, and the next
+        # caller that forgot to validate would have had no defence. The values are
+        # looked up in arrays and maps now, and this is what keeps it that way: a
+        # selector is a constant, or it is not written.
+        offenders = []
+        for name, source in script_sources().items():
+            for number, line in enumerate(source.splitlines(), 1):
+                # The comment after a `//` is not code, and a selector is never
+                # written inside a URL's `//` on these pages.
+                code = re.split(r"(?:^|\s)//", line)[0]
+                if "querySelector" in code and INTERPOLATED_SELECTOR.search(code):
+                    offenders.append(f"page/{name}:{number}: {line.strip()}")
+        self.assertEqual(offenders, [], "\n".join(offenders))
 
     def test_no_top_level_constant_only_renames_another(self) -> None:
         sources = script_sources()
