@@ -24,7 +24,7 @@ from trainbudget.timetable.atoc_timetable import TimetableDb
 from trainbudget.build.build_demo_page import build_payload, build_station_index, encode_payload, render_page
 from trainbudget.build.build_payload import decode_payload
 from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
-from trainbudget.build.page_templates import CHOOSER_MARKER, PAYLOAD_MARKER
+from trainbudget.build.page_templates import CHOOSER_MARKER, CSP, CSP_META, PAYLOAD_MARKER
 
 from tests.page_harness import embedded_payload, embedded_text, page_script, setUpModule, station_page, tearDownModule
 
@@ -63,6 +63,27 @@ class SharedStationAssetTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.log = buffer.getvalue()
         self.site = self.out.parent
+
+    def test_every_page_states_what_it_may_load_and_reach(self) -> None:
+        # The policy is the build's, so the check is tied to the one constant
+        # rather than to a string copied here (audit item 10, 28 October 2026).
+        # Every route carries it, not just the station page: the chooser and the
+        # privacy notice are the same kind of file with the same inline theme.
+        pages = sorted(self.site.rglob("*.html"))
+        self.assertGreaterEqual(len(pages), 2)
+        for page in pages:
+            self.assertIn(CSP_META, page.read_text(encoding="utf-8"), page)
+        # And the policy still says the things that made it worth adding. A
+        # directive quietly dropped here would leave a page that reports a policy
+        # and permits what the policy was for.
+        for directive in (
+            "default-src 'self'",
+            "connect-src 'none'",
+            "form-action 'none'",
+            "base-uri 'none'",
+            "object-src 'none'",
+        ):
+            self.assertIn(directive, CSP)
 
     def test_the_whole_site_gets_one_station_asset(self) -> None:
         assets = sorted(self.site.rglob("stations.js"))

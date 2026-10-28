@@ -92,11 +92,34 @@ STATION_CSS = _page_file("station.css")
 # exactly what the <style> element used to hold.
 STATION_STYLESHEET = SHARED_CSS + STATION_CSS
 
+# What a route may load and what it may reach (audit item 10, 28 October 2026).
+#
+# Both routes carry their first-paint theme and their payload inline, and the
+# station route fetches one hashed script and one hashed stylesheet of its own,
+# so `'unsafe-inline'` is the price of the inline theme and nothing more hides
+# behind it. What survives that is still worth stating: no frame, no form, no
+# plugin, no <base>, and no network call of any kind -- the page has nothing to
+# fetch after it loads, so a string that got into the markup cannot become a
+# request. `connect-src 'none'` is the line that makes the last part true.
+#
+# A meta tag is enough for every directive above except `frame-ancestors`, which
+# browsers ignore in a meta tag: framing is the host's header to send, and this
+# comment is the record that the page knows it rather than believing it is
+# framed-proof. Inline script is also why this cannot become a nonce without
+# giving up the inline theme (ADR-0033, ADR-0047).
+CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'"
+)
+CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
+
 _PRIVACY_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+""" + CSP_META + """
 __SHARED_THEME__
 <title>Privacy</title>
 <style>
@@ -149,6 +172,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+""" + CSP_META + """
 __SHARED_THEME__
 <title>Train fares up to &pound;__BUDGET__ from __ORIGIN__</title>
 __STATION_STYLE__
@@ -464,6 +488,7 @@ _CHOOSER_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+""" + CSP_META + """
 __SHARED_THEME__
 <title>Train fares up to &pound;__BUDGET__ &middot; __TITLE_SUFFIX_HTML__</title>
 <style>
