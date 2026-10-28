@@ -981,7 +981,9 @@ class RunnerBuildOrServeTest(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(run, "sources_are_newer", lambda: stale)
             )
-            stack.enter_context(mock.patch.object(run.os, "chdir", mock.Mock()))
+            # The handler is handed its directory rather than the process being
+            # moved into it, so there is no working directory to save and
+            # restore here (audit item 11, 28 October 2026).
             out = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
             code = run.main()

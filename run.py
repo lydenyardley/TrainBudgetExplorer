@@ -36,9 +36,9 @@ outside this folder is touched.
 
 import argparse
 from datetime import date
+import functools
 import http.server
 import json
-import os
 import socketserver
 import subprocess
 import sys
@@ -282,20 +282,22 @@ def serve(site: Path, port: int, *, open_browser: bool = True) -> int:
     # Threaded: one reader, but browsers open parallel connections for
     # sub-resources and a second tab must not stall the first (audit B4).
     socketserver.ThreadingTCPServer.allow_reuse_address = True
-    where_we_were = Path.cwd()
-    os.chdir(site)
-    try:
-        with socketserver.ThreadingTCPServer(("127.0.0.1", port), Quiet) as httpd:
-            url = f"http://localhost:{port}/"
-            print(f"Serving {site.name} at {url}  (Ctrl+C to stop)")
-            if open_browser:
-                threading.Timer(0.8, webbrowser.open, args=(url,)).start()
-            try:
-                httpd.serve_forever()
-            except KeyboardInterrupt:
-                print("\nStopped.")
-    finally:
-        os.chdir(where_we_were)
+    # The handler is told which directory to serve rather than the process being
+    # moved into it. `os.chdir` is process-wide and this server is threaded and
+    # holds the working directory for as long as it serves: every other thread
+    # resolved relative paths inside the site for the length of the visit, which
+    # is one concurrent reader -- or one later addition to this script -- away
+    # from a wrong path (audit item 11, 28 October 2026).
+    handler = functools.partial(Quiet, directory=str(site))
+    with socketserver.ThreadingTCPServer(("127.0.0.1", port), handler) as httpd:
+        url = f"http://localhost:{port}/"
+        print(f"Serving {site.name} at {url}  (Ctrl+C to stop)")
+        if open_browser:
+            threading.Timer(0.8, webbrowser.open, args=(url,)).start()
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nStopped.")
     return 0
 
 
