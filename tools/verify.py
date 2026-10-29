@@ -70,6 +70,8 @@ FAST_MODULES = (
     # builds of the synthetic site: with the week, capped, and fares only
     # (measured 25 October 2026).
     "tools.test_check_known_fares",
+    # Hypothesis reads the fixed-width records against RSPS5045 in about a second.
+    "tests.test_fare_parsing_properties",
 )
 
 #: The wall clock `--fast`'s unit step may take before the command fails naming
