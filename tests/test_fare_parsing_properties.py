@@ -11,12 +11,15 @@ import string
 import unittest
 from datetime import date
 
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from trainbudget.fares.atoc_fare_declarations import _parse_dtd_date, format_pence
 from trainbudget.fares.atoc_restrictions import parse_railcard_record
 
+#: Time-based checks fail a loaded runner, not the parser: verify --fast runs
+#: these beside 300 other tests, and on 29 October 2026 that tripped too_slow.
+STEADY = settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 FIELD_TEXT = string.ascii_uppercase + string.digits
 
 #: RSPS5045's RR record, written out here rather than read from the parser, so a
@@ -40,10 +43,12 @@ def _field(width: int) -> st.SearchStrategy[str]:
 
 
 class DtdDateTest(unittest.TestCase):
+    @STEADY
     @given(st.dates(min_value=date(1900, 1, 1), max_value=date(2999, 12, 31)))
     def test_a_written_date_reads_back_as_itself(self, day: date) -> None:
         self.assertEqual(_parse_dtd_date(day.strftime("%d%m%Y")), day)
 
+    @STEADY
     @given(st.text(max_size=12).filter(lambda value: value and not (len(value) == 8 and value.isdigit())))
     def test_anything_else_but_blank_is_refused_as_a_value_error(self, value: str) -> None:
         with self.assertRaises(ValueError):
@@ -51,6 +56,7 @@ class DtdDateTest(unittest.TestCase):
 
 
 class PenceTest(unittest.TestCase):
+    @STEADY
     @given(st.integers(min_value=0, max_value=10_000_000))
     def test_the_shown_price_reads_back_as_the_pence(self, pence: int) -> None:
         pounds, pennies = format_pence(pence)[1:].split(".")
@@ -59,6 +65,7 @@ class PenceTest(unittest.TestCase):
 
 
 class RailcardRecordTest(unittest.TestCase):
+    @STEADY
     @given(
         st.fixed_dictionaries(
             {
