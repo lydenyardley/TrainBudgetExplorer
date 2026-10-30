@@ -33,6 +33,79 @@ const columnCount = () => rows.closest("table").querySelectorAll("thead th").len
 // sentence -- the live region still says what emptied the list, and the block
 // below says where to go instead.
 const resultsTable = rows.closest("table");
+
+// The sortable headings. The buttons are made here rather than in the markup:
+// sorting needs this script, and a page whose script did not arrive keeps plain
+// headings instead of controls that do nothing. Run after the prices-only build
+// has stood Time and Changes down, so only columns on screen get one.
+const SORT_KEYS = { Station: "station", Price: "price", Time: "time", Changes: "changes" };
+const ORDER_WORDS = {
+  price: ["cheapest first", "dearest first"],
+  station: ["A to Z", "Z to A"],
+  time: ["quickest first", "slowest first"],
+  changes: ["fewest changes first", "most changes first"],
+};
+const nameOrder = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+function sortIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 10 14");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.classList.add("sort-icon");
+  for (const [name, d] of [["up", "M5 1 9 6H1z"], ["down", "M5 13 1 8h8z"]]) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    path.classList.add(name);
+    svg.append(path);
+  }
+  return svg;
+}
+const sortButtons = [];
+for (const th of resultsTable.querySelectorAll("thead th")) {
+  const name = th.textContent.trim();
+  const key = SORT_KEYS[name];
+  if (!key) continue;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "sort";
+  button.dataset.sort = key;
+  button.append(name, sortIcon());
+  th.replaceChildren(button);
+  sortButtons.push(button);
+}
+function renderSortHeadings() {
+  for (const button of sortButtons) {
+    const active = button.dataset.sort === STATE.sort.key;
+    if (active) button.parentElement.setAttribute("aria-sort", STATE.sort.dir === "asc" ? "ascending" : "descending");
+    else button.parentElement.removeAttribute("aria-sort");
+    button.dataset.dir = active ? STATE.sort.dir : "";
+  }
+}
+// A row the chosen day has no journey for has no time or change count to
+// order, so it goes last in either direction rather than reading as fastest.
+function journeyValue(entry, key) {
+  const journey = journeyFor(entry.destination);
+  if (!journey.found) return null;
+  return key === "time" ? journey.minutes : journey.changes;
+}
+function compareEntries(a, b) {
+  const { key, dir } = STATE.sort;
+  const sign = dir === "asc" ? 1 : -1;
+  if (key === "station") {
+    const order = nameOrder.compare(a.destination.name, b.destination.name);
+    if (order) return sign * order;
+  } else if (key === "price") {
+    if (a.pence !== b.pence) return sign * (a.pence - b.pence);
+  } else {
+    const x = journeyValue(a, key);
+    const y = journeyValue(b, key);
+    if (x === null || y === null) {
+      if (x !== y) return x === null ? 1 : -1;
+    } else if (x !== y) return sign * (x - y);
+  }
+  return a.pence - b.pence || nameOrder.compare(a.destination.name, b.destination.name);
+}
 function renderCoverage() {
   const coverage = document.getElementById("feedCoverage");
   if (!coverage || DATA.rawFareDestinationCount === undefined) return;
@@ -251,7 +324,8 @@ function render() {
       priced.push({ destination: destination, pence: pence });
     }
   }
-  priced.sort((a, b) => a.pence - b.pence);
+  priced.sort(compareEntries);
+  renderSortHeadings();
   const wanted = priced.map((entry) => entry.destination);
   budgetNumber.value = String(STATE.budget);
   sizeBudgetField();
@@ -303,7 +377,7 @@ function render() {
     : what;
   // ADR-0041: the order belongs to the list, so it is said once, here, rather
   // than by tinting one row the reader is left to interpret.
-  const order = ", cheapest first";
+  const order = ", " + ORDER_WORDS[STATE.sort.key][STATE.sort.dir === "asc" ? 0 : 1];
   const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.

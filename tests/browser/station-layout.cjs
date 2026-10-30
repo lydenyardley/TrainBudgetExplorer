@@ -167,6 +167,54 @@ async function measureTheLayout(world) {
       JSON.stringify(footerFlow)
     );
     await page.setViewportSize({ width: 1280, height: 800 });
+    // The column headings sort the list. Read back from the rows the page
+    // draws, and from aria-sort, which is what a screen reader announces.
+    // At the top of the budget, so the list has rows enough to order.
+    await page.fill("#budgetNumber", "9999");
+    const readOrder = () => page.evaluate(() => {
+      const names = Object.create(null);
+      for (const d of [].concat(DATA.destinations, DATA.singleDestinations, DATA.anytimeDestinations)) names[d.crs] = d.name;
+      const pence = (text) => Math.round(parseFloat(text.replace(/[^\d.]/g, "")) * 100);
+      const rows = Array.from(document.querySelectorAll("#rows > tr[data-crs]"));
+      return {
+        prices: rows.map((row) => pence((row.querySelector("td.num .price") || {}).textContent || "")),
+        names: rows.map((row) => names[row.dataset.crs]),
+        sorted: Array.from(document.querySelectorAll("thead th[aria-sort]")).map((th) => th.textContent.trim() + ":" + th.getAttribute("aria-sort")),
+        buttons: document.querySelectorAll("table:has(#rows) thead th > button.sort").length,
+        summary: document.getElementById("summary").textContent,
+        page: STATE.page,
+      };
+    });
+    const ordered = (list, sign) => list.every((v, i) => i === 0 || sign * (typeof v === "string" ? list[i - 1].localeCompare(v, undefined, { sensitivity: "base", numeric: true }) : list[i - 1] - v) <= 0);
+    const opening = await readOrder();
+    if (opening.prices.length < 2) {
+      check("the column headings sort the list", notExercised("this page shows fewer than two rows"), "");
+    } else {
+      check(
+        "the list opens sorted by price, cheapest first, and says so on its heading",
+        opening.buttons >= 2 && ordered(opening.prices, 1) && opening.sorted.join() === "Price:ascending",
+        JSON.stringify(opening)
+      );
+      await page.click("table:has(#rows) button.sort[data-sort='price']");
+      const dearest = await readOrder();
+      check(
+        "a second press on Price turns the list round and the count line says so",
+        ordered(dearest.prices, -1) && dearest.sorted.join() === "Price:descending" && /dearest first/.test(dearest.summary),
+        JSON.stringify(dearest)
+      );
+      await page.focus("table:has(#rows) button.sort[data-sort='station']");
+      await page.keyboard.press("Enter");
+      const named = await readOrder();
+      check(
+        "Station sorts A to Z from the keyboard, back on the first page",
+        ordered(named.names, 1) && named.sorted.join() === "Station:ascending" && named.page === 1,
+        JSON.stringify(named)
+      );
+      await page.click("table:has(#rows) button.sort[data-sort='price']");
+      const back = await readOrder();
+      check("and Price puts it back cheapest first", ordered(back.prices, 1) && back.sorted.join() === "Price:ascending", JSON.stringify(back.sorted));
+    }
+    await open(facts.affordable);
     // Two controls that make one decision share a row.
     // Opened only if it is shut. The suite has already opened this panel
     // elsewhere, and a second click on an open one closes it, which measures

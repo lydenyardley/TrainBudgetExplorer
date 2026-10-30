@@ -31,6 +31,9 @@ const STATE = {
   // furniture: it decides what the page shows, and the render that rebuilds the
   // rows is the one that has to reopen it.
   openCrs: "",
+  // The column the list is ordered by and which way. Not in the address: a
+  // shared link opens cheapest first, the order the page is built around.
+  sort: { key: "price", dir: "asc" },
 
   // Per-mode memory. A reader's budget and their chip selection belong to the
   // ticket type they set them in, so switching mode and coming back restores
@@ -82,6 +85,16 @@ function chooseBudget(value) {
   STATE.page = 1;
   render();
   writeUrl({ budget: true });
+}
+
+// A second press on the active column turns it round; a new column starts in
+// its natural direction, cheapest, quickest, fewest or A to Z.
+function chooseSort(key) {
+  STATE.sort = key === STATE.sort.key
+    ? { key: key, dir: STATE.sort.dir === "asc" ? "desc" : "asc" }
+    : { key: key, dir: "asc" };
+  STATE.page = 1;
+  render();
 }
 
 function chooseUnit(name) {

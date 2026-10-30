@@ -70,6 +70,7 @@ for (const input of destinationTypeInputs) {
 }
 for (const radio of document.querySelectorAll('input[name="unit"]')) radio.addEventListener("change", () => chooseUnit(radio.value));
 for (const radio of document.querySelectorAll('input[name="ticketMode"]')) radio.addEventListener("change", () => chooseMode(radio.value));
+for (const button of sortButtons) button.addEventListener("click", () => chooseSort(button.dataset.sort));
 previousPage.addEventListener("click", () => { STATE.page -= 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 nextPage.addEventListener("click", () => { STATE.page += 1; render(); writeUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 // Critique item 8: the page's two accelerators. Setting the budget is the

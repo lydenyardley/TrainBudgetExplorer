@@ -192,6 +192,17 @@
      the rows show through the letters. --bg is the page's own canvas, so the
      heading sits on the same surface whichever theme is on. */
   thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+  /* The sort control is the heading: same type, no box, and the up-down mark
+     beside it narrows to one arrow on the column the list is ordered by. */
+  .sort { display: inline-flex; align-items: center; gap: .35rem; position: relative; padding: 0;
+          border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit;
+          text-transform: inherit; cursor: pointer; }
+  .sort::after { content: ""; position: absolute; inset: -14px -6px; }
+  .sort:hover { color: var(--fg); }
+  .sort-icon { width: .6em; height: .85em; fill: currentColor; }
+  .sort-icon path { opacity: .45; }
+  .sort[data-dir="asc"] .up, .sort[data-dir="desc"] .down { opacity: 1; }
+  .sort[data-dir="asc"] .down, .sort[data-dir="desc"] .up { opacity: 0; }
   /* A row brought into view from the shortlist lands under the stuck heading
      unless it reserves the heading's height first. */
   #rows > tr[data-crs] { scroll-margin-top: 3.2rem; }
