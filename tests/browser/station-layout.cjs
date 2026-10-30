@@ -462,6 +462,32 @@ async function measureTheLayout(world) {
       proofRow ? proofRow.height <= 150 : notExercised("this page shows no rows at a phone width"),
       proofRow ? `${proofRow.height}px` : "no row to copy"
     );
+    // The stacked row is a flex box, so a tint painted on its cells leaves the
+    // gaps and the row's padding unpainted. The row itself is the band.
+    const stackedRow = page.locator("#rows tr[data-crs]").first();
+    if (await stackedRow.count()) {
+      await stackedRow.hover();
+      const stackedTint = await stackedRow.evaluate((tr) => {
+        const painted = (value) => !/^$|rgba\(0, 0, 0, 0\)|transparent/.test(value);
+        const cells = Array.from(tr.children).map((cell) => getComputedStyle(cell).backgroundColor);
+        return {
+          row: getComputedStyle(tr).backgroundColor,
+          cells,
+          rowPainted: painted(getComputedStyle(tr).backgroundColor),
+          cellsClear: cells.every((cell) => !painted(cell)),
+        };
+      });
+      check(
+        "at a phone width the pointer tints the whole row rather than its cells",
+        stackedTint.rowPainted && stackedTint.cellsClear,
+        JSON.stringify(stackedTint)
+      );
+    } else {
+      check(
+        "at a phone width the pointer tints the whole row rather than its cells",
+        notExercised("this page shows no rows at a phone width")
+      );
+    }
     // The width the row was measured at, read back rather than assumed: a
     // browser that drew its own scrollbar would take 15px off the content and
     // this module would be measuring a narrower page than a reader's.

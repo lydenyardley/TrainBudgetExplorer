@@ -597,6 +597,15 @@
     #rows > tr[data-crs] { display: flex; flex-wrap: wrap; align-items: baseline;
                            column-gap: .45rem; row-gap: .1rem;
                            padding: .5rem 0; border-bottom: 1px solid var(--line); }
+    /* The hover tint is painted on each cell at every other width, which is one
+       block per cell. Once the row is a flex box those blocks leave the gaps
+       and the row's own padding unpainted, so the highlight reads as a broken
+       stripe. The row is the band the pointer is on here, so the tint moves to
+       it and the cells stay clear. */
+    @media (hover: hover) {
+      #rows > tr[data-crs]:hover > td { background: transparent; }
+      #rows > tr[data-crs]:hover { background: var(--field); border-radius: .3rem; }
+    }
     /* The line break between the place and its facts. A full-width, zero-height
        flex item is how a wrapping row is told where the first line ends. */
     #rows > tr[data-crs]::before { content: ""; order: 4; flex: 0 0 100%; height: 0; }
