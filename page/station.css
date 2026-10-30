@@ -214,8 +214,8 @@
   body[data-rail="on"] thead th { top: 3.5rem; }
   body[data-rail="on"] #rows > tr[data-crs] { scroll-margin-top: 6.7rem; }
   .toggle { border: 1px solid var(--line); background: var(--field); color: var(--accent);
-            border-radius: .3rem; font: inherit; font-size: .875rem; padding: .3rem .55rem;
-            margin-left: .75rem; cursor: pointer; position: relative; }
+            border-radius: .3rem; font: inherit; font-size: .875rem; padding: .5rem 1rem;
+            cursor: pointer; position: relative; }
   /* Hit-slop: the visible mark stays small beside its neighbours, but the
      touch target reaches 44px past it. */
   .toggle::after { content: ""; position: absolute; inset: -6px; }
@@ -484,7 +484,8 @@
   .card-note[data-state=available] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .875rem; }
-  nav#pagination { margin-top: 1.5rem; }
+  nav#pagination { margin-top: 2rem; justify-content: center; display: flex; gap: 2rem; }
+  dl#wordList { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 0; }
   .copybox { width: 100%; font: inherit; font-size: .875rem; color: var(--fg); background: var(--field);
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
   /* The two actions a row keeps beside buying, inside the row's own panel: the
@@ -523,9 +524,9 @@
      one 178-character run. Columns only while open: a shut disclosure holds
      nothing but its summary, and multicol can put that summary in the second
      column, leaving the first empty. */
-  .method[open] { columns: 75ch; column-gap: 2rem; }
+  .method[open] { columns: 50ch; column-gap: 2rem; }
   footer > .method { column-span: all; max-width: none; }
-  footer > .method > * { max-width: 75ch; }
+  footer > .method > * { max-width: 50ch; }
   /* C6 of the 17 October 2026 critique: three disclosures sat in a column of
      muted paragraphs with no mark, no underline and the paragraph's own colour,
      so a reader had no way to know two of them opened. They wear the page's

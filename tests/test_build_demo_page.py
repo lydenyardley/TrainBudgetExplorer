@@ -591,19 +591,19 @@ class DemoPageTest(PageTestCase):
 
         # `columns` is `column-width`: the measure a column wants, so the count
         # follows the page rather than a breakpoint someone has to maintain.
-        self.assertIn("columns: 75ch; column-gap: 2rem; }", SHARED_CSS)
+        self.assertIn("columns: 50ch; column-gap: 2rem; }", SHARED_CSS)
         # column-width is a width a column wants, not one it is held to: with
         # room for one column the box stretches to the page, which is the
         # 178-character line C4 found. Each block keeps the measure itself.
-        self.assertIn("footer > * { max-width: 75ch; }", SHARED_CSS)
+        self.assertIn("footer > * { max-width: 50ch; }", SHARED_CSS)
         self.assertNotIn("font-size: .875rem; max-width: 75ch", SHARED_CSS)
         # The provenance fold is reference material rather than a paragraph in
         # that flow: it spans the columns and begins a block of its own, and
         # open it splits into the same measure, so the feed, date and
         # limitation lines are read side by side.
-        self.assertIn(".method[open] { columns: 75ch; column-gap: 2rem; }", STATION_STYLESHEET)
+        self.assertIn(".method[open] { columns: 50ch; column-gap: 2rem; }", STATION_STYLESHEET)
         self.assertIn("footer > .method { column-span: all; max-width: none; }", STATION_STYLESHEET)
-        self.assertIn("footer > .method > * { max-width: 75ch; }", STATION_STYLESHEET)
+        self.assertIn("footer > .method > * { max-width: 50ch; }", STATION_STYLESHEET)
 
     def test_accessibility_is_a_route_matrix_and_not_one_happy_path(self) -> None:
         # S41: the AA commitment was evidenced from one station page. The

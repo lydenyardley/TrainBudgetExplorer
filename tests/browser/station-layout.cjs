@@ -65,7 +65,7 @@ async function measureTheLayout(world) {
     // C4, C6 and C7 of the 17 October 2026 critique, each measured rather than
     // read off the stylesheet: the footer's columns and their measure, the two
     // disclosures' drawn marks, and which of the row's two actions carries the
-    // border. C4 first held the whole footer to 75ch; it now flows into 75ch
+    // border. C4 first held the whole footer to 75ch; it now flows into 50ch
     // columns and takes the page's width, so what is held is each column.
     const chrome = await page.evaluate(() => {
       const footer = document.querySelector("footer");
@@ -83,9 +83,10 @@ async function measureTheLayout(world) {
         el ? { w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null;
       const method = footer.querySelector(".method");
       // The blocks that flow through the columns. The fold is not one of them:
-      // it spans the columns, and its own measure is the one below.
+      // it spans the columns, and its own measure is the one below. Nor are
+      // the links, which run across the whole footer.
       const blocks = Array.from(footer.children).filter(
-        (el) => getComputedStyle(el).display !== "none" && !el.classList.contains("sr-only") && el !== method
+        (el) => getComputedStyle(el).display !== "none" && !el.classList.contains("sr-only") && el !== method && !el.classList.contains("footnav")
       );
       const buy = document.querySelector("#rows a.buy");
       const expand = document.querySelector("#rows .row-expand");
@@ -95,7 +96,7 @@ async function measureTheLayout(world) {
           document.body.clientWidth - parseFloat(body.paddingLeft) - parseFloat(body.paddingRight)
         ),
         columnWidth: Math.round(parseFloat(style.columnWidth)),
-        measure: Math.ceil(ch * 75) + 1,
+        measure: Math.ceil(ch * 50) + 1,
         widestBlock: blocks.length
           ? Math.round(Math.max(...blocks.map((el) => el.getBoundingClientRect().width)))
           : 0,
@@ -116,12 +117,12 @@ async function measureTheLayout(world) {
     check(
       "the footer uses the page's width in columns a paragraph can read",
       chrome.footerWidth === chrome.contentWidth && chrome.columnWidth <= chrome.measure,
-      `footer ${chrome.footerWidth}px of ${chrome.contentWidth}px, columns ${chrome.columnWidth}px, 75 characters ${chrome.measure}px`
+      `footer ${chrome.footerWidth}px of ${chrome.contentWidth}px, columns ${chrome.columnWidth}px, 50 characters ${chrome.measure}px`
     );
     check(
       "and every footer block keeps that measure inside its column",
       chrome.widestBlock <= chrome.measure,
-      `widest block ${chrome.widestBlock}px, 75 characters ${chrome.measure}px`
+      `widest block ${chrome.widestBlock}px, 50 characters ${chrome.measure}px`
     );
     check(
       "the provenance fold spans the columns and begins a block of its own",
@@ -139,6 +140,33 @@ async function measureTheLayout(world) {
         Boolean(chrome.expand) && chrome.expand.h >= 44 && chrome.expandBorder === "0px",
       JSON.stringify({ buy: chrome.buy, buyBorder: chrome.buyBorder, expand: chrome.expand, expandBorder: chrome.expandBorder })
     );
+    // 75ch columns stayed one column at a 1250px window; 50ch is the measure
+    // that gives two there. The footer's links are a row across the whole
+    // footer rather than a block inside one column.
+    await page.setViewportSize({ width: 1250, height: 800 });
+    const footerFlow = await page.evaluate(() => {
+      const footer = document.querySelector("footer");
+      const flowing = Array.from(footer.children).filter((el) =>
+        !el.matches(".method, .footnav, .sr-only") && el.getClientRects().length);
+      const nav = footer.querySelector(".footnav");
+      return {
+        columns: new Set(flowing.map((el) => Math.round(el.getBoundingClientRect().left))).size,
+        footer: Math.round(footer.getBoundingClientRect().width),
+        nav: nav ? Math.round(nav.getBoundingClientRect().width) : null,
+        navSpan: nav ? getComputedStyle(nav).columnSpan : "",
+      };
+    });
+    check(
+      "at a 1250px window the footer flows into two columns or more",
+      footerFlow.columns >= 2,
+      JSON.stringify(footerFlow)
+    );
+    check(
+      "and its links span the footer rather than one column",
+      footerFlow.nav === null || (footerFlow.navSpan === "all" && footerFlow.nav === footerFlow.footer),
+      JSON.stringify(footerFlow)
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
     // Two controls that make one decision share a row.
     // Opened only if it is shut. The suite has already opened this panel
     // elsewhere, and a second click on an open one closes it, which measures

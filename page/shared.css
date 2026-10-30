@@ -321,7 +321,8 @@
      critique). It was then held to a single 75ch column, which left the right
      half of a wide page empty under a table that used all of it.
 
-     It flows into 75ch columns instead: the same measure per column, as many
+     It flows into 50ch columns instead (75ch fitted only one column at a
+     1250px window): the same measure per column, as many
      columns as the page has room for, and the border above it spans the width
      of what it sits under. `column-width` is the measure a column wants rather
      than the width it gets, so where only one column fits -- every phone, and
@@ -329,11 +330,12 @@
      the 178-character line again. Each block keeps the measure itself, so a
      column that cannot divide keeps the readable line and leaves the rest of
      the width to the rule above it. */
-  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+  footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .875rem;
-           columns: 75ch; column-gap: 2rem; }
-  footer > * { max-width: 75ch; }
-  .footnav { margin-top: 1.5rem; }
+           columns: 50ch; column-gap: 2rem; }
+  footer > * { max-width: 50ch; }
+  .footnav { margin: 1.5rem 0; display: flex; gap: 1rem; justify-content: center; max-width: 100%; }
+  footer > .footnav { column-span: all; max-width: 100%; }
   .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
   .back-link a { color: var(--accent); }
   .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
