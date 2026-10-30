@@ -243,6 +243,34 @@ every shape that publishes anything, and neither of them is what decides whether
 the times may go out: that is the timetable product's own section below, which is
 NWR Schedule's and not Darwin's.
 
+## settlement reference data
+
+Not a gated product: the settlement classes are built from three free datasets
+published under the Open Government Licence v3.0, which permits copying,
+publishing and commercial use on the single condition of the attribution the
+licensor names. No account, filed PDF or fee stands behind them, so there is
+nothing for the gate to clear; this section records what each one asks the
+page to say, and that the page says it (`--notices ... ogl ...`, the `ogl`
+notice in `trainbudget/build/build_release.py`).
+
+- **ONS Census 2021 built-up-area size bands** (the towns-and-cities workbook)
+  and **ONS Built Up Areas (December 2022) boundaries** with the **ONS Regions
+  (December 2022) boundaries**, used only to tell London's built-up areas apart
+  (ADR-0080, ADR-0081). The ONS asks for "Source: Office for National
+  Statistics licensed under the Open Government Licence v3.0" and, because the
+  boundaries contain OS data, "Contains OS data © Crown copyright and database
+  right 2022".
+- **National Records of Scotland Settlements 2020** boundaries and mid-2020
+  populations (ADR-0081). NRS asks for "Copyright National Records of Scotland,
+  contains Ordnance Survey data © Crown copyright and database right" and the
+  year, 2022 for the boundaries read.
+
+The page's OGL notice carries all of it: "Contains public sector information
+licensed under the Open Government Licence v3.0. Settlement sizes: Office for
+National Statistics; contains OS data © Crown copyright and database right
+2022. Scottish settlements: Copyright National Records of Scotland; contains
+Ordnance Survey data © Crown copyright and database right 2022."
+
 ## P-9ca6bc7e-62e1-44d6-b93a-1616f7d2caf8
 
 - state: excluded
