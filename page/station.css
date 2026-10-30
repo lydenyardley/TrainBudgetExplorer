@@ -495,7 +495,7 @@
   .card-note[data-state=available] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   #empty { color: var(--muted); }
   #more { color: var(--muted); font-size: .875rem; }
-  nav#pagination { margin-top: 2rem; justify-content: center; display: flex; gap: 2rem; }
+  nav#pagination { margin-top: 2rem; justify-content: center; align-items: center; display: flex; gap: 2rem; }
   dl#wordList { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 0; }
   .copybox { width: 100%; font: inherit; font-size: .875rem; color: var(--fg); background: var(--field);
              border: 1px solid var(--line); border-radius: .35rem; padding: .5rem; resize: vertical; }
