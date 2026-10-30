@@ -643,6 +643,9 @@ class FaresLoader:
             root.parent,
         )
         if lookup_root.joinpath("download-manifest.json").is_file():
+            # The boundaries live beside the feeds; CI restores this one file
+            # into every shard so only the build job asks the services.
+            self._boundary_cache = lookup_root / ons_boundaries.CACHE_FILE
             try:
                 self._load_ons_location_types()
             except (OSError, ValueError, ET.ParseError, zipfile.BadZipFile) as error:
@@ -1119,12 +1122,10 @@ class FaresLoader:
             # is named as a source. A workbook that matched nothing is not: its
             # label would describe classes it never supplied.
             self._record_location_source(LOCATION_TYPE_SOURCE)
-        try:
-            self._classify_by_position(rows)
-        except (OSError, ValueError) as error:
-            # The name classes above stand on their own; a boundary service
-            # that is down costs only the stations it would have placed.
-            self.report.skip_classification(f"ONS boundary classification unavailable: {error}")
+        # Not caught: a boundary set that cannot be read is BoundaryFeedMissing,
+        # and the build stops rather than publish the stations it would have
+        # placed as unsourced (ADR-0081).
+        self._classify_by_position(rows)
 
     def _classify_by_position(self, rows: list[tuple[str, str, str]]) -> None:
         """Class the stations no name or reviewed entry reached by the area they stand in.
@@ -1144,12 +1145,18 @@ class FaresLoader:
         }
         if not points or not bands:
             return
-        placed = ons_boundaries.locate(points, ons_boundaries.fetch_areas(bands))
+        boundaries = ons_boundaries.load_boundaries(getattr(self, "_boundary_cache", None))
+        banded = ons_boundaries.banded_areas(boundaries, bands)
+        area_bands = {area.code: band for area, band in banded}
+        scottish = {area.code for area in boundaries.scotland}
+        placed = ons_boundaries.locate(points, (area for area, _band in banded))
         for crs, code in placed.items():
-            self.location_types_by_crs[crs] = LOCATION_BAND_TYPES[bands[code]]
+            self.location_types_by_crs[crs] = LOCATION_BAND_TYPES[area_bands[code]]
             self.ons_position_classified_crs.add(crs)
-        if placed:
+        if any(code not in scottish for code in placed.values()):
             self._record_location_source(ons_boundaries.ONS_BUA_BOUNDARIES_SOURCE)
+        if any(code in scottish for code in placed.values()):
+            self._record_location_source(ons_boundaries.NRS_SETTLEMENTS_SOURCE)
 
     def _read_ons_coastal_areas(self, data: bytes) -> set[str]:
         """Read the 568 ONS coastal BUA names from table 1d."""
@@ -1318,6 +1325,8 @@ class FaresLoader:
             # ignored rather than partially reused.
             # 7: the ONS boundaries place the stations no name reached, so a
             # cache written under 6 holds them unclassified (ADR-0080).
+            # 8: London's boroughs, Chester and Scotland's settlements are
+            # placed too, so a cache written under 7 holds them unclassified.
             "schema": LOCATION_CACHE_SCHEMA,
             # Every source the classes came from, in the order they were read,
             # and the joined form beside it for a reader from before the list
@@ -1333,6 +1342,11 @@ class FaresLoader:
                     "name": ons_boundaries.ONS_BUA_BOUNDARIES_SOURCE,
                     "url": ons_boundaries.ONS_BUA_BOUNDARIES_DATASET_URL,
                     "licence": ons_boundaries.ONS_BUA_BOUNDARIES_ATTRIBUTION,
+                },
+                "scotland": {
+                    "name": ons_boundaries.NRS_SETTLEMENTS_SOURCE,
+                    "url": ons_boundaries.NRS_SETTLEMENTS_DATASET_URL,
+                    "licence": ons_boundaries.NRS_SETTLEMENTS_ATTRIBUTION,
                 },
             },
             "facetSources": {

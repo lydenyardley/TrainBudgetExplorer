@@ -90,13 +90,17 @@ NOTICES = {
         "Knowledgebase reference data: \u00a9 Rail Delivery Group, published through "
         "the Rail Data Marketplace."
     ),
-    # The second sentence is the Ordnance Survey statement the ONS asks for
-    # wherever its boundaries are used: the settlement classes are placed by
-    # the ONS built-up-area boundaries, which contain OS data (ADR-0080).
+    # The second and third sentences are the statements ONS and National
+    # Records of Scotland ask for wherever their boundaries are used: the
+    # settlement classes are placed by the ONS built-up-area and region
+    # boundaries and the NRS settlement boundaries, all of which contain OS
+    # data (ADR-0080, ADR-0081).
     "ogl": (
         "Contains public sector information licensed under the Open Government "
         "Licence v3.0. Settlement sizes: Office for National Statistics; contains "
-        "OS data \u00a9 Crown copyright and database right 2022."
+        "OS data \u00a9 Crown copyright and database right 2022. Scottish "
+        "settlements: Copyright National Records of Scotland; contains Ordnance "
+        "Survey data \u00a9 Crown copyright and database right 2022."
     ),
     "accuracy": (
         "The fares and journey times on this page are provided \u2018as is\u2019, with no "

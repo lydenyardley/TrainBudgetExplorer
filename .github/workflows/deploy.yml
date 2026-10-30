@@ -116,6 +116,18 @@ jobs:
           # The gates read no Knowledgebase feed, so a refusal is a warning.
           knowledgebase: tolerant
 
+      # The settlement boundaries (ONS and NRS, OGL) are about 100 MB of
+      # polygons from public map services. This job is the only one that asks
+      # the services: it restores the last copy, fetches only on a miss, and
+      # saves what it fetched; the shards and the merge restore that copy and
+      # stop if it is missing, so thirteen runners never ask at once (ADR-0081).
+      - name: Restore the settlement boundaries
+        id: boundaries
+        uses: actions/cache/restore@v4
+        with:
+          path: feeds/ons-boundaries.json
+          key: ons-boundaries-v1-${{ hashFiles('trainbudget/fares/ons_boundaries.py') }}
+
       - name: Detect whether the feed changed
         id: feed_check
         run: python -m tools.release.feed_state changed --event "${{ github.event_name }}"
@@ -159,6 +171,15 @@ jobs:
         # are added.
         run: python -m trainbudget.fares.destination_coverage --feed feeds/fares --unsourced-ceiling 1544
 
+      - name: Save the settlement boundaries
+        # The gate above classified the stations, so a miss has been fetched by
+        # now; a fetch that failed stopped the gate.
+        if: steps.boundaries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: feeds/ons-boundaries.json
+          key: ons-boundaries-v1-${{ hashFiles('trainbudget/fares/ons_boundaries.py') }}
+
       - name: Gate the published price per minute
         # The band, its measurement and why it has no exception list are in
         # tools/check_fare_rate.py. It reads the OGL CIF the pages are timed
@@ -199,6 +220,13 @@ jobs:
           # The pages are built from them, so a shard without them stops.
           knowledgebase: required
           shard: ${{ matrix.shard }}
+
+      - name: Restore the settlement boundaries the build job saved
+        uses: actions/cache/restore@v4
+        with:
+          path: feeds/ons-boundaries.json
+          key: ons-boundaries-v1-${{ hashFiles('trainbudget/fares/ons_boundaries.py') }}
+          fail-on-cache-miss: true
 
       - name: Refuse a download the gates did not audit
         run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
@@ -249,6 +277,13 @@ jobs:
           schedule-password: ${{ secrets.SCHEDULE_PASSWORD || secrets.NRDP_PASSWORD }}
           # The merge reads the shards' pages, not the Knowledgebase feeds.
           knowledgebase: tolerant
+
+      - name: Restore the settlement boundaries the build job saved
+        uses: actions/cache/restore@v4
+        with:
+          path: feeds/ons-boundaries.json
+          key: ons-boundaries-v1-${{ hashFiles('trainbudget/fares/ons_boundaries.py') }}
+          fail-on-cache-miss: true
 
       - name: Refuse a download the gates did not audit
         run: python -m tools.release.feed_identity --expect "${{ needs.build.outputs.audited }}"
