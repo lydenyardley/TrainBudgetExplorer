@@ -333,7 +333,7 @@
   footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--line);
            color: var(--muted); font-size: .875rem;
            columns: 50ch; column-gap: 2rem; }
-  footer > * { max-width: 50ch; }
+  footer > * { max-width: 50ch; break-inside: avoid; }
   .footnav { margin: 1.5rem 0; display: flex; gap: 1rem; justify-content: center; max-width: 100%; }
   footer > .footnav { column-span: all; max-width: 100%; }
   .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }

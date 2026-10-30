@@ -595,7 +595,9 @@ class DemoPageTest(PageTestCase):
         # column-width is a width a column wants, not one it is held to: with
         # room for one column the box stretches to the page, which is the
         # 178-character line C4 found. Each block keeps the measure itself.
-        self.assertIn("footer > * { max-width: 50ch; }", SHARED_CSS)
+        # A block that broke across columns would measure as wide as the columns
+        # it spans, so each one stays whole in its column.
+        self.assertIn("footer > * { max-width: 50ch; break-inside: avoid; }", SHARED_CSS)
         self.assertNotIn("font-size: .875rem; max-width: 75ch", SHARED_CSS)
         # The provenance fold is reference material rather than a paragraph in
         # that flow: it spans the columns and begins a block of its own, and
