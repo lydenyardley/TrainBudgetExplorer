@@ -318,10 +318,21 @@
   /* The footer is the page's conscience, and it was the only text on the page
      held to no measure: at 1280 its paragraphs ran to 178 characters a line,
      against the 75ch the body copy above them keeps (C4 of the 17 October 2026
-     critique). 75ch of this type is about the measure the paragraphs ask for,
-     and the border above it is shorter for the same reason a column is. */
+     critique). It was then held to a single 75ch column, which left the right
+     half of a wide page empty under a table that used all of it.
+
+     It flows into 75ch columns instead: the same measure per column, as many
+     columns as the page has room for, and the border above it spans the width
+     of what it sits under. `column-width` is the measure a column wants rather
+     than the width it gets, so where only one column fits -- every phone, and
+     a tablet with a wide default font -- it would stretch to the page, which is
+     the 178-character line again. Each block keeps the measure itself, so a
+     column that cannot divide keeps the readable line and leaves the rest of
+     the width to the rule above it. */
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
-           color: var(--muted); font-size: .875rem; max-width: 75ch; }
+           color: var(--muted); font-size: .875rem;
+           columns: 75ch; column-gap: 2rem; }
+  footer > * { max-width: 75ch; }
   .footnav { margin-top: 1.5rem; }
   .footnav a, .back-link a { display: inline-flex; align-items: center; min-height: 44px; color: inherit; }
   .back-link a { color: var(--accent); }

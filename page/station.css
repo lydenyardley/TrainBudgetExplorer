@@ -515,6 +515,17 @@
   .unpriced { margin: 0 0 1.25rem; }
   #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
   .method { margin-top: 1rem; }
+  /* The provenance fold is reference material, not a paragraph in the footer's
+     flow: it begins a block of its own under the credit columns rather than
+     starting wherever a column happened to fill. Its own lines are held to the
+     same measure while it is shut; open, it splits into the footer's columns so
+     the feed, date and limitation lines are read side by side rather than as
+     one 178-character run. Columns only while open: a shut disclosure holds
+     nothing but its summary, and multicol can put that summary in the second
+     column, leaving the first empty. */
+  .method[open] { columns: 75ch; column-gap: 2rem; }
+  footer > .method { column-span: all; max-width: none; }
+  footer > .method > * { max-width: 75ch; }
   /* C6 of the 17 October 2026 critique: three disclosures sat in a column of
      muted paragraphs with no mark, no underline and the paragraph's own colour,
      so a reader had no way to know two of them opened. They wear the page's

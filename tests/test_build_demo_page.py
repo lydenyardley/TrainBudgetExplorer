@@ -582,6 +582,29 @@ class DemoPageTest(PageTestCase):
         self.assertIn(":root { --h1: 2rem; --page-max: 42rem; }", privacy)
         self.assertIn("--page-max: 78rem", SHARED_CSS)
 
+    def test_the_footer_flows_into_columns_and_the_method_fold_starts_its_own(self) -> None:
+        # C4 held the footer to a 75ch measure, and it obeyed by leaving half
+        # of a wide page empty under a table that used all of it. The content
+        # flows into 75ch columns now, so the page's width is used without any
+        # line growing past the measure the paragraphs above it keep.
+        from trainbudget.build.page_templates import SHARED_CSS, STATION_STYLESHEET
+
+        # `columns` is `column-width`: the measure a column wants, so the count
+        # follows the page rather than a breakpoint someone has to maintain.
+        self.assertIn("columns: 75ch; column-gap: 2rem; }", SHARED_CSS)
+        # column-width is a width a column wants, not one it is held to: with
+        # room for one column the box stretches to the page, which is the
+        # 178-character line C4 found. Each block keeps the measure itself.
+        self.assertIn("footer > * { max-width: 75ch; }", SHARED_CSS)
+        self.assertNotIn("font-size: .875rem; max-width: 75ch", SHARED_CSS)
+        # The provenance fold is reference material rather than a paragraph in
+        # that flow: it spans the columns and begins a block of its own, and
+        # open it splits into the same measure, so the feed, date and
+        # limitation lines are read side by side.
+        self.assertIn(".method[open] { columns: 75ch; column-gap: 2rem; }", STATION_STYLESHEET)
+        self.assertIn("footer > .method { column-span: all; max-width: none; }", STATION_STYLESHEET)
+        self.assertIn("footer > .method > * { max-width: 75ch; }", STATION_STYLESHEET)
+
     def test_accessibility_is_a_route_matrix_and_not_one_happy_path(self) -> None:
         # S41: the AA commitment was evidenced from one station page. The
         # browser suite now runs a matrix on every route it is pointed at --

@@ -63,8 +63,10 @@ async function measureTheLayout(world) {
     await page.setViewportSize({ width: 1280, height: 800 });
     await open(facts.affordable);
     // C4, C6 and C7 of the 17 October 2026 critique, each measured rather than
-    // read off the stylesheet: the footer's measure, the two disclosures' drawn
-    // marks, and which of the row's two actions carries the border.
+    // read off the stylesheet: the footer's columns and their measure, the two
+    // disclosures' drawn marks, and which of the row's two actions carries the
+    // border. C4 first held the whole footer to 75ch; it now flows into 75ch
+    // columns and takes the page's width, so what is held is each column.
     const chrome = await page.evaluate(() => {
       const footer = document.querySelector("footer");
       const style = getComputedStyle(footer);
@@ -76,13 +78,29 @@ async function measureTheLayout(world) {
       document.body.append(sample);
       const ch = sample.getBoundingClientRect().width / 20;
       sample.remove();
+      const body = getComputedStyle(document.body);
       const box = (el) =>
         el ? { w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null;
+      const method = footer.querySelector(".method");
+      // The blocks that flow through the columns. The fold is not one of them:
+      // it spans the columns, and its own measure is the one below.
+      const blocks = Array.from(footer.children).filter(
+        (el) => getComputedStyle(el).display !== "none" && !el.classList.contains("sr-only") && el !== method
+      );
       const buy = document.querySelector("#rows a.buy");
       const expand = document.querySelector("#rows .row-expand");
       return {
         footerWidth: Math.round(footer.getBoundingClientRect().width),
-        measure: Math.ceil(ch * 80),
+        contentWidth: Math.round(
+          document.body.clientWidth - parseFloat(body.paddingLeft) - parseFloat(body.paddingRight)
+        ),
+        columnWidth: Math.round(parseFloat(style.columnWidth)),
+        measure: Math.ceil(ch * 75) + 1,
+        widestBlock: blocks.length
+          ? Math.round(Math.max(...blocks.map((el) => el.getBoundingClientRect().width)))
+          : 0,
+        methodSpan: method ? getComputedStyle(method).columnSpan : "",
+        methodWidth: method ? Math.round(method.getBoundingClientRect().width) : 0,
         summaries: [".link-terms", ".method"].map((selector) => {
           const summary = document.querySelector(selector + " summary");
           return summary
@@ -96,9 +114,19 @@ async function measureTheLayout(world) {
       };
     });
     check(
-      "the footer is held to a readable measure rather than the whole page",
-      chrome.footerWidth <= chrome.measure,
-      `footer ${chrome.footerWidth}px, 80 characters ${chrome.measure}px`
+      "the footer uses the page's width in columns a paragraph can read",
+      chrome.footerWidth === chrome.contentWidth && chrome.columnWidth <= chrome.measure,
+      `footer ${chrome.footerWidth}px of ${chrome.contentWidth}px, columns ${chrome.columnWidth}px, 75 characters ${chrome.measure}px`
+    );
+    check(
+      "and every footer block keeps that measure inside its column",
+      chrome.widestBlock <= chrome.measure,
+      `widest block ${chrome.widestBlock}px, 75 characters ${chrome.measure}px`
+    );
+    check(
+      "the provenance fold spans the columns and begins a block of its own",
+      chrome.methodSpan === "all" && chrome.methodWidth === chrome.footerWidth,
+      JSON.stringify({ span: chrome.methodSpan, method: chrome.methodWidth, footer: chrome.footerWidth })
     );
     check(
       "both disclosures wear the page's drawn mark",
