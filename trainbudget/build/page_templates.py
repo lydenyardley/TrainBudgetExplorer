@@ -114,12 +114,22 @@ CSP = (
 )
 CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
 
+# A cross-document navigation needs both documents to opt in, and the browser
+# reads the opt-in before the destination's stylesheet has necessarily arrived.
+# Measured on 30 October 2026: delaying the station route's stylesheet by three
+# seconds made a chooser-to-station navigation skip with "ViewTransition opt-in
+# disabled" and log an uncaught InvalidStateError. The at-rule therefore sits in
+# the document itself, on every route, ahead of the stylesheet the station route
+# fetches. The pseudo-elements that style the cross-fade stay in shared.css,
+# where the motion itself is described.
+VIEW_TRANSITION_OPT_IN = "<style>@view-transition { navigation: auto; }</style>"
+
 _PRIVACY_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-""" + CSP_META + """
+""" + CSP_META + VIEW_TRANSITION_OPT_IN + """
 __SHARED_THEME__
 <title>Privacy</title>
 <style>
@@ -172,7 +182,7 @@ _TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-""" + CSP_META + """
+""" + CSP_META + VIEW_TRANSITION_OPT_IN + """
 __SHARED_THEME__
 <title>Train fares up to &pound;__BUDGET__ from __ORIGIN__</title>
 __STATION_STYLE__
@@ -488,7 +498,7 @@ _CHOOSER_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-""" + CSP_META + """
+""" + CSP_META + VIEW_TRANSITION_OPT_IN + """
 __SHARED_THEME__
 <title>Train fares up to &pound;__BUDGET__ &middot; __TITLE_SUFFIX_HTML__</title>
 <style>

@@ -261,8 +261,13 @@
      second. A browser without the API ignores the block and navigates as it
      always did; a reader who has asked for less motion gets a cut. No element is
      named here (OV7's shared-station morph is not shipped): the root is the whole
-     of this effect. */
-  @view-transition { navigation: auto; }
+     of this effect.
+
+     The opt-in itself is in each document's head, not here: the station route
+     fetches this file, and a navigation whose station stylesheet was slow was
+     skipped with "ViewTransition opt-in disabled" and logged an uncaught
+     InvalidStateError even though the rule below was on its way. What remains
+     here only styles a transition the browser has already begun. */
   ::view-transition-old(root), ::view-transition-new(root) {
     animation-duration: .18s; animation-timing-function: ease-out; }
   @media (prefers-reduced-motion: reduce) {

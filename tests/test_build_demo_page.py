@@ -1000,7 +1000,19 @@ class DemoPageTest(PageTestCase):
         # rather than painting a white frame between them. A browser without
         # the API ignores the at-rule, which is the page as it was before, and
         # a reader who asked for less motion gets the cut.
-        self.assertIn("@view-transition { navigation: auto; }", self.stylesheet)
+        #
+        # The opt-in is in the document, before its stylesheet link: the station
+        # route fetches its CSS, and a navigation to a page whose fetch was slow
+        # was skipped with "ViewTransition opt-in disabled" even though the
+        # stylesheet carried the rule. Measured 30 October 2026.
+        from trainbudget.build.page_templates import VIEW_TRANSITION_OPT_IN
+
+        self.assertIn(VIEW_TRANSITION_OPT_IN, self.html)
+        self.assertLess(
+            self.html.index(VIEW_TRANSITION_OPT_IN),
+            self.html.index('<link rel="stylesheet"'),
+            "the opt-in cannot wait for the stylesheet it is meant to cover",
+        )
         self.assertIn("animation-duration: .18s", self.stylesheet)
         self.assertIn(
             "::view-transition-old(root), ::view-transition-new(root) { animation: none; }",
