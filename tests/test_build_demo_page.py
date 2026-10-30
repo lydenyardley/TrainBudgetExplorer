@@ -960,9 +960,12 @@ class DemoPageTest(PageTestCase):
         self.assertTrue(rail.lstrip().startswith("hidden"))
         self.assertIn('id="railBudget"', rail)
         self.assertIn('for="railBudget"', rail)
-        self.assertIn('aria-describedby="railStop"', rail)
         self.assertRegex(self.html, r'id="railNow">&pound;\d+</span>')
-        self.assertIn('id="railStop"', rail)
+        # The stop sentence belongs under the control the reader sets, not in a
+        # 56px rail after the figure, where it read as a second value.
+        self.assertNotIn('id="railStop"', rail)
+        self.assertNotIn("aria-describedby", rail)
+        self.assertNotIn(".budget-rail .tag", self.stylesheet)
         # Whether it appears when the slider leaves is the browser's fact, held by
         # the four rail checks in `station-filters.cjs`; this test holds the
         # markup a reader is given and the offsets that keep the two surfaces

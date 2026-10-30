@@ -199,9 +199,8 @@ __THEME_TOGGLE__
      that does not need it. -->
 <div class="budget-rail" id="budgetRail" hidden>
   <label class="budget-rail-label" for="railBudget">Fares up to</label>
-  <input id="railBudget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" aria-describedby="railStop">
+  <input id="railBudget" type="range" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__">
   <span class="budget-rail-now" id="railNow">&pound;__BUDGET__</span>
-  <span class="tag" id="railStop">__CEILING_NOTE__</span>
 </div>
 <h1 id="pageHeading" aria-label="Train fares up to &pound;__BUDGET__ from __ORIGIN__">Train fares <span class="heading-slot">up to <span class="heading-field" id="budgetField"><span class="budget-prefix">&pound;</span><input id="budgetNumber" type="number" min="0" max="__MAXPOUNDS__" step="1" value="__BUDGET__" inputmode="numeric" aria-label="Budget in pounds"></span></span><br><span class="heading-lead">from</span> __ORIGIN_CONTROL__</h1>
 <!-- D1 of the 17 October 2026 critique: the paragraph that opened the page was

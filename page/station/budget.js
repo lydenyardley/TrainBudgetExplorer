@@ -44,13 +44,12 @@ function clampBudget(available) {
   const ceiling = budgetCeiling();
   budget.max = String(ceiling);
   budgetNumber.max = String(ceiling);
-  // The rail carries the same stop as the control it stands in for (OV4), so
-  // the sentence is composed once here rather than written out twice.
+  // The control under the heading states where the slider stops; the rail is a
+  // shortcut to the same number and does not repeat the sentence in its 56px.
   const stop = money(ceiling * 100) + " for "
     + (unit() === "party" ? "two adults" : "one adult");
   budgetCeilingNote.textContent = stop;
   if (railBudget) railBudget.max = String(ceiling);
-  if (railStop) railStop.textContent = stop;
   if (remembered !== undefined && Number(remembered) <= ceiling) setBudget(remembered);
   else if (STATE.budget > ceiling) setBudget(ceiling);
   STATE.budgetByMode[mode] = STATE.budget;

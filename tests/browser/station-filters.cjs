@@ -337,7 +337,7 @@ async function driveTheFilters(world) {
         top: Math.round(box.top),
         railValue: document.getElementById("railBudget").value,
         now: document.getElementById("railNow").textContent,
-        stop: document.getElementById("railStop").textContent,
+        stop: document.getElementById("railStop"),
         stated: document.getElementById("budgetHint").textContent,
         inlineVisible: slider.getBoundingClientRect().bottom > 0,
         inert: document.getElementById("railBudget").offsetParent === null,
@@ -402,9 +402,9 @@ async function driveTheFilters(world) {
       JSON.stringify(away)
     );
     check(
-      "and the rail states the same stop as the control it stands in for",
-      away && away.stated.includes(away.stop) && away.stop.length > 0 && away.now === "\u00a3" + budgetBeforeRail,
-      JSON.stringify(away && { stop: away.stop, stated: away.stated, now: away.now })
+      "and the rail keeps the figure without repeating the control's stop sentence",
+      away && away.stop === null && away.now === "\u00a3" + budgetBeforeRail,
+      JSON.stringify(away && { stop: away.stop, now: away.now })
     );
     const beforeRail = await page.evaluate(() => document.getElementById("summary").textContent);
     const railed = await page.evaluate(() => {

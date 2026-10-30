@@ -208,7 +208,6 @@
   .budget-rail-label { font-weight: 700; white-space: nowrap; }
   .budget-rail input[type=range] { flex: 1; min-width: 4rem; accent-color: var(--accent); }
   .budget-rail-now { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .budget-rail .tag { margin: 0; white-space: nowrap; }
   /* The stuck headings and the row margin follow the rail down rather than
      sitting underneath it: the two surfaces would otherwise cover each other at
      the moment the rail arrives. */

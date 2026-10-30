@@ -206,7 +206,6 @@ const budgetNext = document.getElementById("budgetNext");
 const budgetRail = document.getElementById("budgetRail");
 const railBudget = document.getElementById("railBudget");
 const railNow = document.getElementById("railNow");
-const railStop = document.getElementById("railStop");
 const empty = document.getElementById("empty");
 const more = document.getElementById("more");
 const pagination = document.getElementById("pagination");
