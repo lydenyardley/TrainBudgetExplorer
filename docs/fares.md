@@ -131,8 +131,16 @@ The primary settlement classes come from ONS built-up-area population bands,
 not from a general gazetteer: a real village or hamlet can therefore have no
 band. Rather than showing **No settlement band**, the page keeps the `other`
 value in the payload for auditing and covers the places it prices with a
-reviewed list; a station-to-settlement or station-to-LSOA crosswalk is still
-the honest way to close the remaining gap. TfL is not a source for any of this — its data covers Greater
+reviewed list. A station named for a district or a landmark rather than its
+settlement (Ardwick, Kirkstall Forge) is placed by position instead: after the
+names and the reviewed lists, a station still unclassified takes the band of
+the ONS Built Up Areas (December 2022) boundary it stands in, or whose edge is
+within 100 m, joined to the workbook on `BUA22CD` (ADR-0080). The boundaries
+are fetched on each classifying build and not committed. Source: Office for
+National Statistics licensed under the Open Government Licence v3.0. Contains
+OS data © Crown copyright and database right 2022. What that leaves is Scotland,
+which the workbook does not band; London boroughs and a few hamlets the
+workbook lists without a band; and halts outside every built-up area. TfL is not a source for any of this — its data covers Greater
 London only, so it can describe London stations and nothing else in the
 network. A page only offers the types its own destinations carry, because a
 chip that can only ever return nothing reads as a broken control.

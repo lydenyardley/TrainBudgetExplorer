@@ -196,6 +196,9 @@ class FaresDb(FaresLoader):
         # fallbacks can be checked against the rule they exist to serve: each
         # one must be a station no source could name.
         self.ons_classified_crs: set[str] = set()
+        # Stations the ONS boundaries placed, kept apart from the name matches
+        # so the reviewed-entry gate still asks only what the names reached.
+        self.ons_position_classified_crs: set[str] = set()
         # Focus caches are named by the feed and origin, but keep the identity
         # inside the object too so a hand-reused path cannot silently return a
         # different origin's fares.

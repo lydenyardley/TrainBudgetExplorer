@@ -69,6 +69,7 @@ from trainbudget.fares.atoc_fare_declarations import (
     dtd_flag,
     location_lookup_candidates,
 )
+from trainbudget.fares import ons_boundaries
 from trainbudget.fares.parse_report import ParseReport, count, decode_lines, read_feed_files
 
 
@@ -1014,11 +1015,18 @@ class FaresLoader:
         return value
 
     def _read_ons_built_up_areas(self, data: bytes) -> dict[str, dict[str, str]]:
-        """Read ONS table 1c/1d using only the standard library.
+        """Read ONS table 1c/1d, keyed by the settlement name a station carries."""
+        return self._key_settlements(
+            (settlement, band) for _code, settlement, band in self._read_ons_band_rows(data)
+        )
 
-        The workbook's row shape is stable: F is the BUA name and G its size
-        band. Reading only those two cells avoids pinning a spreadsheet library
-        into this otherwise self-contained project.
+    def _read_ons_band_rows(self, data: bytes) -> list[tuple[str, str, str]]:
+        """Read (BUA22CD, name, band) rows from the ONS workbook, standard library only.
+
+        The workbook's row shape is stable: E is the area code, F the BUA name
+        and G its size band. Reading only those cells avoids pinning a
+        spreadsheet library into this otherwise self-contained project. The
+        code is what joins a band to an area's boundary (ADR-0080).
         """
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             shared: list[str] = []
@@ -1030,7 +1038,7 @@ class FaresLoader:
                     if item.tag.endswith("}si")
                 ]
 
-            found: list[tuple[str, str]] = []
+            found: list[tuple[str, str, str]] = []
             for name in archive.namelist():
                 if not re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name):
                     continue
@@ -1047,8 +1055,8 @@ class FaresLoader:
                     band = values.get("G", "").strip().lower()
                     settlement = values.get("F", "").strip()
                     if settlement and band in LOCATION_BAND_TYPES:
-                        found.append((settlement, band))
-            return self._key_settlements(found)
+                        found.append((values.get("E", "").strip(), settlement, band))
+            return found
 
     @classmethod
     def _key_settlements(cls, rows) -> dict[str, dict[str, str]]:
@@ -1087,7 +1095,8 @@ class FaresLoader:
         )
         with urllib.request.urlopen(request, timeout=60) as response:
             workbook = response.read()
-        areas = self._read_ons_built_up_areas(workbook)
+        rows = self._read_ons_band_rows(workbook)
+        areas = self._key_settlements((settlement, band) for _code, settlement, band in rows)
         for crs, location in self.locations_by_crs.items():
             if not crs or not location.name:
                 continue
@@ -1110,6 +1119,37 @@ class FaresLoader:
             # is named as a source. A workbook that matched nothing is not: its
             # label would describe classes it never supplied.
             self._record_location_source(LOCATION_TYPE_SOURCE)
+        try:
+            self._classify_by_position(rows)
+        except (OSError, ValueError) as error:
+            # The name classes above stand on their own; a boundary service
+            # that is down costs only the stations it would have placed.
+            self.report.skip_classification(f"ONS boundary classification unavailable: {error}")
+
+    def _classify_by_position(self, rows: list[tuple[str, str, str]]) -> None:
+        """Class the stations no name or reviewed entry reached by the area they stand in.
+
+        It runs last, so it decides nothing the workbook's own names or a
+        reviewed entry already decided (ADR-0029), and the reviewed-entry gate
+        still asks only whether the *name* matched: a reviewed entry the
+        boundaries would also have reached is not dead (ADR-0080).
+        """
+        bands = {code: band for code, _settlement, band in rows if code}
+        coordinates = self.station_coordinates()
+        points = {
+            crs: coordinates[crs]
+            for crs in self.locations_by_crs
+            if crs in coordinates
+            and self.location_types_by_crs.get(crs) in (None, "other")
+        }
+        if not points or not bands:
+            return
+        placed = ons_boundaries.locate(points, ons_boundaries.fetch_areas(bands))
+        for crs, code in placed.items():
+            self.location_types_by_crs[crs] = LOCATION_BAND_TYPES[bands[code]]
+            self.ons_position_classified_crs.add(crs)
+        if placed:
+            self._record_location_source(ons_boundaries.ONS_BUA_BOUNDARIES_SOURCE)
 
     def _read_ons_coastal_areas(self, data: bytes) -> set[str]:
         """Read the 568 ONS coastal BUA names from table 1d."""
@@ -1276,6 +1316,8 @@ class FaresLoader:
             # 6: hybrid closest-station prune for World Heritage, so a cache
             # written under 5 can still chip Buxton for Bath; those files are
             # ignored rather than partially reused.
+            # 7: the ONS boundaries place the stations no name reached, so a
+            # cache written under 6 holds them unclassified (ADR-0080).
             "schema": LOCATION_CACHE_SCHEMA,
             # Every source the classes came from, in the order they were read,
             # and the joined form beside it for a reader from before the list
@@ -1286,6 +1328,11 @@ class FaresLoader:
                 "primary": {
                     "name": "Office for National Statistics, Census 2021 built-up-area size bands",
                     "url": ONS_BUILT_UP_AREAS_DATASET_URL,
+                },
+                "boundaries": {
+                    "name": ons_boundaries.ONS_BUA_BOUNDARIES_SOURCE,
+                    "url": ons_boundaries.ONS_BUA_BOUNDARIES_DATASET_URL,
+                    "licence": ons_boundaries.ONS_BUA_BOUNDARIES_ATTRIBUTION,
                 },
             },
             "facetSources": {
@@ -1305,7 +1352,8 @@ class FaresLoader:
             "supportedFacets": sorted(SUPPORTED_DESTINATION_FACETS),
             "coverage": (
                 "ONS Census 2021 BUA and coastal-classification matches, then reviewed "
-                "major-station fallbacks for London and UK areas outside the workbooks"
+                "major-station fallbacks for London and UK areas outside the workbooks, "
+                "then the England and Wales BUA boundaries for stations still unclassified"
             ),
             "fallbackSource": LOCATION_FALLBACK_SOURCE,
             "fallbackLondonStations": sorted(LONDON_STATION_CRS),

@@ -1970,7 +1970,9 @@ SUPPORTED_DESTINATION_FACETS = frozenset(facet.key for facet in DESTINATION_FACE
 # correction, and the wrong class would have kept being served from it. A
 # schema bump is the existing mechanism for exactly this: the old primary
 # classes are discarded and re-derived, and the facets are kept.
-LOCATION_CACHE_SCHEMA = 6
+# Bumped to 7 when the ONS boundaries began placing the stations no name
+# reached (ADR-0080): a cache from before holds them unclassified.
+LOCATION_CACHE_SCHEMA = 7
 # The two file names the classification pass may read from beside a feed, and
 # the only ones it trusts. A build writes the bare name beside the feed; a
 # fixture or a download writes the same name behind its own feed's name

@@ -22,6 +22,11 @@ The service needs, for any origin station: (a) which other stations are reachabl
 
 ## Consequences
 
+Settlement classes are a separate, open source: the ONS Census 2021 built-up
+area workbook and, since ADR-0080, the ONS Built Up Areas (December 2022)
+boundaries, both under the Open Government Licence v3.0. The boundaries also
+carry "Contains OS data © Crown copyright and database right 2022".
+
 - Fast prototype is feasible in days, not months.
 - Prices shown are "typical walk-up fares", not the cheapest possible — must be labelled honestly to stay inside the primer's no-misleading rule.
 - Licence verification is a hard gate before launch, before the build if possible.
