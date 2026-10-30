@@ -306,13 +306,28 @@ class CallingPoint:
     public_arrival: int | None
     public_departure: int | None
 
+    # The working time stands in for a public one only at a call that has no
+    # public time at all, which is how a feed without public times is written.
+    # A call with one public time and not the other is the feed saying which
+    # way the call works: a public arrival alone is set down only, a public
+    # departure alone is pick up only. Falling back to the working departure
+    # at a set-down-only call made it boardable, and the late King's Cross to
+    # Leeds put Newark North Gate 0 minutes from Grantham.
+    @property
+    def _has_public_time(self) -> bool:
+        return self.public_arrival is not None or self.public_departure is not None
+
     @property
     def alight(self) -> int | None:
-        return self.public_arrival if self.public_arrival is not None else self.arrival
+        if self.public_arrival is not None:
+            return self.public_arrival
+        return None if self._has_public_time else self.arrival
 
     @property
     def board(self) -> int | None:
-        return self.public_departure if self.public_departure is not None else self.departure
+        if self.public_departure is not None:
+            return self.public_departure
+        return None if self._has_public_time else self.departure
 
 
 def _runs_on_window(day: date, date_from: str, date_to: str, days: str) -> bool:

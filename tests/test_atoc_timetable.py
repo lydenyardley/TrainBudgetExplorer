@@ -766,6 +766,37 @@ class PassingStopTest(unittest.TestCase):
         self.assertIsNotNone(journey, "a train that calls at Grindleford is boardable")
         self.assertEqual(journey.duration, 75, "09:55 at Grindleford to 11:15 at Lincoln")
 
+    def _one_way_call(self, uid: str, public: dict[str, str]) -> str:
+        """NOT to LCN calling at GRN with working times and one public time."""
+        call = {"record_type": "LI", "location": "GRNT   ", "scheduled_arrival": "0955",
+                "scheduled_departure": "1000", "public_arrival": "0000",
+                "public_departure": "0000"}
+        call.update(public)
+        lines = self._schedule(uid, passing=False)
+        lines[2] = _line(call, CIF_INTERMEDIATE)
+        return "\n".join(lines) + "\n"
+
+    def test_a_set_down_only_call_is_not_boardable(self) -> None:
+        # The real feed's late LNER service from King's Cross calls at Grantham
+        # to set down only: a public arrival and no public departure. Boarding
+        # it on the working departure put Newark North Gate 0 minutes from
+        # Grantham, because the arrival there is a public time earlier than
+        # the working one.
+        (self.feed / "setdown.mca").write_text(
+            self._one_way_call("T90005", {"public_arrival": "0955"}), encoding="utf-8"
+        )
+        timetable = TimetableDb().load_feed(self.feed)
+        self.assertIsNone(timetable.best_journey("GRN", "LCN", day=MONDAY))
+        self.assertEqual(timetable.best_journey("NOT", "GRN", day=MONDAY).duration, 55)
+
+    def test_a_pick_up_only_call_is_not_a_destination(self) -> None:
+        (self.feed / "pickup.mca").write_text(
+            self._one_way_call("T90006", {"public_departure": "1000"}), encoding="utf-8"
+        )
+        timetable = TimetableDb().load_feed(self.feed)
+        self.assertIsNone(timetable.best_journey("NOT", "GRN", day=MONDAY))
+        self.assertEqual(timetable.best_journey("GRN", "LCN", day=MONDAY).duration, 75)
+
     def test_no_journey_departs_at_minute_zero(self) -> None:
         # The symptom in one assertion, over both services on the same feed.
         (self.feed / "both.mca").write_text(
