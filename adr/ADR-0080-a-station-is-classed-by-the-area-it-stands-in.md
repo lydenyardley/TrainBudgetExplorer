@@ -1,6 +1,6 @@
 # ADR-0080: A station is classed by the built-up area it stands in
 
-**Status:** Accepted
+**Status:** Accepted; the fetch, London, Scotland and Chester amended by ADR-0081
 **Date:** 30 October 2026
 **Relates to:** ADR-0029 (reviewed fallbacks must be fallbacks), ADR-0001 (data sources)
 

@@ -135,12 +135,18 @@ reviewed list. A station named for a district or a landmark rather than its
 settlement (Ardwick, Kirkstall Forge) is placed by position instead: after the
 names and the reviewed lists, a station still unclassified takes the band of
 the ONS Built Up Areas (December 2022) boundary it stands in, or whose edge is
-within 100 m, joined to the workbook on `BUA22CD` (ADR-0080). The boundaries
-are fetched on each classifying build and not committed. Source: Office for
-National Statistics licensed under the Open Government Licence v3.0. Contains
-OS data © Crown copyright and database right 2022. What that leaves is Scotland,
-which the workbook does not band; London boroughs and a few hamlets the
-workbook lists without a band; and halts outside every built-up area. TfL is not a source for any of this — its data covers Greater
+within 100 m, joined to the workbook on `BUA22CD` (ADR-0080). An area the
+workbook leaves out whose centre is in the ONS London region is a London
+borough, and a city. A Scottish station takes the band its National Records of
+Scotland Settlements 2020 population would have in England (ADR-0081). The
+boundaries are kept in `feeds/ons-boundaries.json`, fetched once when it is
+missing and never committed; a build that needs them and cannot read them
+stops. Source: Office for National Statistics licensed under the Open
+Government Licence v3.0. Contains OS data © Crown copyright and database right
+2022. Copyright National Records of Scotland; contains Ordnance Survey data ©
+Crown copyright and database right 2022. What that leaves is a few industrial
+or empty built-up areas the workbook does not list (Sellafield, Capenhurst) and
+halts outside every built-up area or settlement. TfL is not a source for any of this — its data covers Greater
 London only, so it can describe London stations and nothing else in the
 network. A page only offers the types its own destinations carry, because a
 chip that can only ever return nothing reads as a broken control.
