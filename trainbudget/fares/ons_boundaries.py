@@ -27,6 +27,7 @@ down is a page that silently says less than the last one.
 
 from __future__ import annotations
 
+import http.client
 import json
 import math
 import os
@@ -91,8 +92,10 @@ LONDON_BAND = "major"
 # from actions/cache so twelve shards do not each ask the services (ADR-0081).
 CACHE_FILE = "ons-boundaries.json"
 CACHE_SCHEMA = 1
-# The services return at most this many features a request.
-PAGE_SIZE = 1000
+# Features asked for a request. The services allow 1000, but a page of 1000
+# ONS areas was 13.6 MB, and the server cut one off after 15 KB; a page of 100
+# is about a tenth of that, so a cut-off costs one small request again.
+PAGE_SIZE = 100
 # A station just outside its area's edge is still in the place: the boundary
 # is drawn on a 25 m grid, and track and yard land is often left out of it, so
 # Gathurst sits on the Shevington line and Whittlesea 17 m out of Whittlesey.
@@ -100,8 +103,8 @@ PAGE_SIZE = 1000
 # 100 m of one and 16 more within 500 m, where the station is a halt in the
 # fields rather than the edge of the place (ADR-0080).
 EDGE_TOLERANCE_M = 100.0
-# Five tries over about a minute for a timeout, a 5xx or a 429, then the build
-# stops; any other refusal stops it at once.
+# Five tries over about a minute for a timeout, a dropped or cut-off response,
+# a 5xx or a 429, then the build stops; any other refusal stops it at once.
 ATTEMPTS = 5
 FIRST_WAIT_S = 4.0
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -270,6 +273,7 @@ def _features(url: str, fields: dict[str, str], opener, sleep) -> list[tuple[dic
 
 
 def _get_json(url: str, opener, sleep) -> dict:
+    """One page as JSON, asked again on a passing fault; else BoundaryFeedMissing."""
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     wait = FIRST_WAIT_S
     for attempt in range(1, ATTEMPTS + 1):
@@ -277,11 +281,18 @@ def _get_json(url: str, opener, sleep) -> dict:
             with opener(request, timeout=120) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
-            if error.code not in _RETRYABLE_STATUS or attempt == ATTEMPTS:
-                raise
-        except (urllib.error.URLError, TimeoutError):
-            if attempt == ATTEMPTS:
-                raise
+            if error.code not in _RETRYABLE_STATUS:
+                raise BoundaryFeedMissing(f"settlement boundaries could not be read from {url}: {error}") from error
+            cause: Exception = error
+        # A cut-off body (IncompleteRead), a dropped connection, or JSON that
+        # ends early because the body did is a passing fault like a timeout.
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as error:
+            cause = error
+        if attempt == ATTEMPTS:
+            raise BoundaryFeedMissing(
+                f"settlement boundaries could not be read from {url} after {ATTEMPTS} tries: "
+                f"{type(cause).__name__}: {cause}"
+            ) from cause
         sleep(wait)
         wait *= 2
     raise AssertionError("unreachable")

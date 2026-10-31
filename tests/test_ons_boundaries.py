@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import tempfile
@@ -155,6 +156,35 @@ class LoadBoundariesTest(unittest.TestCase):
 
         load_boundaries(None, opener=flaky, sleep=waits.append)
         self.assertEqual(waits, [4.0, 8.0])
+
+    def test_a_cut_off_page_is_asked_again(self) -> None:
+        opener, seen = _services()
+        cut = [http.client.IncompleteRead(b"x" * 10, 1000)]
+        waits: list[float] = []
+
+        def truncating(request, timeout=0):
+            if cut:
+                raise cut.pop(0)
+            return opener(request, timeout)
+
+        boundaries = load_boundaries(None, opener=truncating, sleep=waits.append)
+        self.assertEqual(waits, [4.0])
+        self.assertEqual([area.code for area in boundaries.ons], ["E1"])
+
+    def test_a_page_that_keeps_being_cut_off_stops_the_build(self) -> None:
+        calls = []
+
+        def truncating(request, timeout=0):
+            calls.append(request.full_url)
+            raise http.client.IncompleteRead(b"x" * 10, 1000)
+
+        with self.assertRaises(BoundaryFeedMissing) as caught:
+            load_boundaries(None, opener=truncating, sleep=lambda _s: None)
+        self.assertEqual(len(calls), ons_boundaries.ATTEMPTS)
+        message = str(caught.exception)
+        self.assertIn(ons_boundaries.ONS_BUA_BOUNDARIES_QUERY_URL, message)
+        self.assertIn(f"after {ons_boundaries.ATTEMPTS} tries", message)
+        self.assertIn("IncompleteRead", message)
 
     def test_a_service_that_stays_down_stops_the_build(self) -> None:
         def down(request, timeout=0):

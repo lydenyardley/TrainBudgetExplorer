@@ -24,7 +24,8 @@ ADR-0080 left four gaps on the Grantham build, 171 unclassified destinations:
 
 - **Required.** `ons_boundaries.load_boundaries` raises `BoundaryFeedMissing`
   when the boundaries cannot be read after five tries over about a minute
-  (timeouts, 5xx and 429 only). It is not an `OSError` or `ValueError`, so no
+  (timeouts, dropped or cut-off responses, 5xx and 429 only; pages of 100
+  features, after a 13.6 MB page of 1000 was cut off in CI). It is not an `OSError` or `ValueError`, so no
   tolerant handler catches it, and the loader no longer wraps the pass. The
   workbook download keeps its old tolerant handling; this ADR does not change it.
 - **Cached once a run.** The three sets are kept in `feeds/ons-boundaries.json`
