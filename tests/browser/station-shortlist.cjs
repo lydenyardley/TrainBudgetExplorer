@@ -275,7 +275,13 @@ async function checkTheShortlist(world) {
         "and every copied place names the fare that price is for",
         copiedPlaces.length === 2 &&
           copiedPlaces.every((line) =>
-            /Standard outbound single|Advance single|Unrestricted Anytime Day Return|Standard return/.test(line)
+            // The five words `ticketName` can print for a price, all of them:
+            // "Two tickets" was missing, so any page whose second-cheapest row
+            // is a journey that needs two tickets failed this on a copy line
+            // that names exactly the ticket the price is for -- LINCOLN's
+            // BULWELL row, driven on 1 November 2026 once a built site's pages
+            // were swept rather than only the pages the demo build names.
+            /Standard outbound single|Advance single|Unrestricted Anytime Day Return|Standard return|Two tickets/.test(line)
           ),
         text
       );
