@@ -26,6 +26,13 @@ is why both want `python -m pip install actionlint-py` (it lints
 `.github/`) and only `--full` wants `mypy`. One module while you work on it:
 `python -m unittest tests.test_build_demo_page`.
 
+`--browser` also drives the site at `_site` when one is on disk, which is what CI
+has just built and what a checkout has not: a page names the sources it was
+built from, so a `_site` from another tree is left out of the drive and the step
+says which file differs, rather than reporting this tree's pages as a
+regression. `--require-site` (the release's own step) fails instead, because a
+site that run did not write cannot certify it.
+
 Once per clone, `git config core.hooksPath .githooks`, so a message the
 commit checker refuses never becomes a commit.
 

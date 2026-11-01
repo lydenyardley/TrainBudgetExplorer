@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from trainbudget.build import build_assets
+from trainbudget.build.build_state import source_fingerprint
 from tools import verify
 
 
@@ -159,3 +161,65 @@ class BrowserVerdictTest(unittest.TestCase):
         verdict = verify.suite_verdict(False, ["TypeError: x is undefined\n"], targets=8)
         self.assertNotIn("failed on", verdict)
         self.assertIn("before it summarised", verdict)
+
+
+class StaleSiteTest(unittest.TestCase):
+    """A site on disk that this tree did not write is named, not driven.
+
+    The pages the step adds from `_site` are the ones CI built minutes ago. In a
+    checkout they are whatever was left there, and on 1 November 2026 a
+    three-day-old build failed page checks this tree's pages pass -- a report
+    that reads as a regression. The site says what it was built from, so the
+    step asks it, and the answer has to come from the page's own bytes: a
+    checkout moves every mtime.
+    """
+
+    def _site(self, tmp: Path, *, script: str | None = None, style: str | None = None, source: str | None = None) -> Path:
+        station = tmp / "from" / "grantham"
+        station.mkdir(parents=True)
+        script = script or build_assets.station_script_asset_name()
+        style = style or build_assets.station_style_asset_name()
+        source = source or source_fingerprint()
+        (tmp / "index.html").write_text(
+            f'<script src="{build_assets.chooser_script_asset_name()}"></script>', encoding="utf-8"
+        )
+        (station / "index.html").write_text(
+            f'<link rel="stylesheet" href="{style}"><script src="{script}"></script>'
+            f'<script>var DATA = {{"sourceFingerprint":"{source}"}};</script>',
+            encoding="utf-8",
+        )
+        return tmp
+
+    def test_a_site_this_tree_wrote_is_not_called_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(verify.site_built_from(self._site(Path(tmp))), "")
+
+    def test_another_station_script_is_named_with_the_one_this_tree_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = self._site(Path(tmp), script="station-0123456789ab.js")
+            answer = verify.site_built_from(site)
+        self.assertIn("station-0123456789ab.js", answer)
+        self.assertIn(build_assets.station_script_asset_name(), answer)
+
+    def test_a_stylesheet_alone_is_enough_to_see_it(self) -> None:
+        # The script's name still matches in this case, so a comparison over
+        # the whole set of names would call the site this tree's.
+        with tempfile.TemporaryDirectory() as tmp:
+            site = self._site(Path(tmp), style="station-0123456789ab.css")
+            answer = verify.site_built_from(site)
+        self.assertIn("station-0123456789ab.css", answer)
+        self.assertIn(build_assets.station_style_asset_name(), answer)
+
+    def test_a_payload_from_another_build_is_named_with_this_tree_s(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = self._site(Path(tmp), source="0000000000000000")
+            answer = verify.site_built_from(site)
+        self.assertIn("0000000000000000", answer)
+        self.assertIn(source_fingerprint(), answer)
+
+    def test_a_page_that_names_nothing_is_driven_rather_than_called_stale(self) -> None:
+        # Silence is not evidence: a site whose pages the check cannot read is
+        # driven, because dropping it would lose coverage for no finding.
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "index.html").write_text("<html>no assets named</html>", encoding="utf-8")
+            self.assertEqual(verify.site_built_from(Path(tmp)), "")

@@ -20,7 +20,10 @@ driving the demo pages alone.
 
 `--browser` drives the pages CI drives, built from the synthetic feed with the
 same commands, and adds the pages a built site already has at `_site` when they
-are there. It needs Playwright's chromium and downloads nothing itself.
+are there -- unless that site says it was built from other sources, in which
+case its patches are left out of the drive and the step names the difference
+rather than reporting this tree's pages as a regression. It needs Playwright's
+chromium and downloads nothing itself.
 
 Exit codes: 0 every step ran and passed, 1 a step ran and failed, 2 a step could
 not run (node, Playwright or actionlint missing, a build that wrote no page).
@@ -40,7 +43,8 @@ import unittest
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from trainbudget.build import page_templates
+from trainbudget.build import build_assets, page_templates
+from trainbudget.build.build_state import source_fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,6 +103,15 @@ JAVASCRIPT = "page/**/*.js"
 #: run here was not the same command as a green run there (A7 of the 20 October
 #: 2026 poteto audit).
 PLAYWRIGHT_VERSION = Path("tests/browser/playwright-version")
+
+#: What a built page says about the sources it was built from, so a site already
+#: on disk can be compared with this tree without trusting a timestamp: a
+#: checkout moves every mtime, and a copy that preserved them would fake a
+#: match. The station route's script and stylesheet are named after a digest of
+#: their own bytes (ADR-0047) and every station payload carries the build's
+#: `sourceFingerprint`, so both halves are content and both are on the page.
+ASSET_NAME = re.compile(r"\b(?:station|chooser)-[0-9a-f]{12}\.(?:js|css)\b")
+SOURCE_FINGERPRINT = re.compile(r'"sourceFingerprint"\s*:\s*"([0-9a-f]{16})"')
 
 
 def playwright_package() -> str:
@@ -358,6 +371,66 @@ def _run_suite(command: list[str]) -> tuple[bool, list[str]]:
     return code == 0, lines
 
 
+def _site_evidence(site: Path) -> list[Path]:
+    """The pages a site can be asked about itself: its chooser, one station page.
+
+    A station payload is where the build writes its own source fingerprint, and
+    a station page is where the route names the stylesheet and script it
+    fetched. The chooser is read for the other route's script, so a site whose
+    only change was in `page/chooser.js` is still caught.
+    """
+    pages = [site / "index.html"]
+    if (site / "from").is_dir():
+        station = sorted((site / "from").glob("*/index.html"))
+        if station:
+            pages.append(station[0])
+    return [page for page in pages if page.is_file() and page.stat().st_size]
+
+
+def site_built_from(site: Path) -> str:
+    """What a built site says it was built from, when it is not this tree.
+
+    `--browser` drives the pages a site already has, which is right in CI, where
+    the run built it minutes ago, and is the one thing that cannot be right in a
+    checkout: on 1 November 2026 a `_site` built three days earlier failed page
+    checks this tree's pages pass, and the report read as a regression rather
+    than as a stale folder. The pages are not asked politely -- a page
+    states the sources it was built from, so the site can be read instead of
+    assumed, and no timestamp is consulted, because a checkout moves every
+    mtime and a restored copy can keep them.
+
+    An empty answer means the site matches this tree, or says nothing this check
+    can read. Silence is not evidence of staleness, so the pages are still
+    driven.
+    """
+    names: set[str] = set()
+    fingerprints: set[str] = set()
+    for page in _site_evidence(site):
+        text = page.read_text(encoding="utf-8", errors="replace")
+        names.update(ASSET_NAME.findall(text))
+        fingerprints.update(SOURCE_FINGERPRINT.findall(text))
+    # One route's file at a time, because a change to the stylesheet alone
+    # leaves the script's name matching and a comparison over the whole set
+    # would call that a match.
+    for wanted in (
+        build_assets.station_style_asset_name(),
+        build_assets.station_script_asset_name(),
+        build_assets.chooser_script_asset_name(),
+    ):
+        stem, kind = wanted.split("-")[0], wanted.rsplit(".", 1)[1]
+        found = sorted(name for name in names if name.startswith(stem + "-") and name.endswith("." + kind))
+        if found and found != [wanted]:
+            # The one that is not this tree's, even if a page names both.
+            other = next(name for name in found if name != wanted)
+            verb = "run" if kind == "js" else "load"
+            return f"its pages {verb} {other} and this tree writes {wanted}"
+    current = source_fingerprint()
+    stale = sorted(fingerprints - {current})
+    if stale:
+        return f"its payload names source {stale[0]} and this tree is {current}"
+    return ""
+
+
 def browser(require_site: bool = False) -> Step:
     """The pages the browser suite drives, built here, then the suite itself."""
     step = Step("browser suite")
@@ -426,15 +499,22 @@ def browser(require_site: bool = False) -> Step:
     # The site the release would publish, when it is on disk: CI drives it, and a
     # local run that has just built one should drive it too.
     sweep: list[str] = []
+    older = ""
     site_pages = [Path(ROOT, SITE, "index.html"), Path(ROOT, SITE, "privacy/index.html")]
     if require_site or site_pages[0].is_file():
         missing = [page for page in site_pages if not page.is_file() or not page.stat().st_size]
         if missing:
             return step.done(False, "the site that ships has no page at " + ", ".join(str(page) for page in missing))
-        pages += site_pages
-        if Path(ROOT, SITE, "from").is_dir():
-            pages.append(Path(ROOT, SITE, "from"))
-            sweep = ["--sweep", "--max", "24"]
+        older = site_built_from(Path(ROOT, SITE))
+        if older and require_site:
+            # The release's own step, run beside the build that wrote this
+            # site: a site this run did not write cannot certify the run.
+            return step.done(False, "the site that ships is not this tree's: " + older)
+        if not older:
+            pages += site_pages
+            if Path(ROOT, SITE, "from").is_dir():
+                pages.append(Path(ROOT, SITE, "from"))
+                sweep = ["--sweep", "--max", "24"]
 
     # `shutil.which` rather than the bare name: on Windows the launcher is
     # npx.cmd, and CreateProcess does not resolve a batch file, so the
@@ -450,7 +530,10 @@ def browser(require_site: bool = False) -> Step:
     command += [str(page.relative_to(ROOT)).replace("\\", "/") for page in pages]
     command += sweep
     ok, lines = _run_suite(command)
-    return step.done(ok, suite_verdict(ok, lines, len(pages)))
+    verdict = suite_verdict(ok, lines, len(pages))
+    if older:
+        verdict += f"; {SITE} was left out of the drive because {older}"
+    return step.done(ok, verdict)
 
 
 def main(argv: list[str] | None = None) -> int:
