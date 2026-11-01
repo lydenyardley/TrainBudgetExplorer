@@ -525,6 +525,11 @@ have since improved: the raise door is now in the cheapest reachable row's own
 price and names the place, and the two-adult door is offered only when it is
 actually cheaper (`renderEmpty`). What remains is how many doors one moment holds.
 
+Item 5 of the 28 October 2026 design critique changed that door's *wording* and
+not its count: its label is the proof ("£6.00 reaches ANCASTER") with the verb in
+its accessible name, and the paragraph that used to repeat the figure above it is
+gone. So the question here is unchanged -- five doors is still five.
+
 **What closes it.** One primary door and at most one secondary; the other modes
 are already reachable through the mode control above.
 
@@ -715,6 +720,17 @@ review belongs there only while it has an ask this file has not yet numbered.
   `docs/audits/2026-10-19-impeccable-delight.md`, `docs/audits/2026-10-19-impeccable-overdrive.md`
   — removed on 21 October 2026, merged into one asks list, itself removed on
   26 October 2026.
+- `docs/audits/2026-10-28-deep-audit.md` — removed on 28 October 2026, the day it
+  was filed and acted on: fifteen findings, all closed, with their rows and the
+  checks that hold them in `docs/settled-work.md` and the measured figures in
+  `docs/build-performance-findings.md`. Its phone half left **O8** open rather
+  than claiming it.
+- `docs/audits/2026-10-28-design-critique.md` — removed on the same day, once its
+  four recommendations landed and its fifth was rejected by the owner. Its rows
+  are under "The 28 October 2026 design critique" in `docs/settled-work.md`, and
+  the rejection is **C28-4** under "Rejected designs, with the reason" there.
+  Nothing in it raised an ask this file had not already numbered, which is why it
+  lives in the record rather than here.
 - `docs/audits/2026-10-21-audit-asks.md`, `docs/audits/2026-10-21-critiquito-design-critique.md`
   and `docs/audits/2026-10-23-page-byte-budget.md` — removed on 26 October 2026.
   The first two left their still-open asks as O3 to O10 and O23 to O41; the third

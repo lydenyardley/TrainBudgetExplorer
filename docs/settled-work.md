@@ -752,9 +752,9 @@ checks).
 `docs/audits/2026-10-28-deep-audit.md` was removed on 28 October 2026, the same
 day it was filed and acted on. It read the page's modules and the build's Python
 against the real-feed Grantham page and measured that page in Chromium: 15
-findings, 2 P1, 5 P2 and 8 P3, every one closed here. Its companion design pass,
-`docs/audits/2026-10-28-design-critique.md`, is a separate review and still
-stands or falls on its own asks.
+findings, 2 P1, 5 P2 and 8 P3, every one closed here. Its companion design pass is
+the next section: that review's four recommendations landed and its fifth was
+rejected, and the file went with them.
 
 The two P1s were one gesture each: a render cost 12.47 ms of script and 58,000
 price lookups, and the count line was rewritten once per frame of a budget drag.
@@ -798,6 +798,38 @@ local server binds to `127.0.0.1`. Its limits were one origin, one build shape
 and 15 were read from the code path and from counted writes, not from listening
 to NVDA or VoiceOver.
 
+## The 28 October 2026 design critique
+
+`docs/audits/2026-10-28-design-critique.md` was removed on 28 October 2026, the
+same day it was filed and acted on. It read the real-feed Grantham page as a
+reader with a budget rather than as a programmer -- prices-only, at
+`127.0.0.1:8765`, in Chromium -- scored it 32/40 on the ten heuristics and made
+five recommendations. Four landed here; the fifth was rejected by the owner and
+is under "Rejected designs, with the reason" as **C28-4**.
+
+The verdict it wrote is the reason the pass was worth running, so it is kept: the
+page is authored rather than interchangeable -- the heading is the question, the
+price is the one column the eye is asked to compare, and the count line names the
+mix of fares before a row is read -- and what weakened it was that three of the
+first four text blocks were about the page's own construction. All four changes
+below take something off that stack rather than adding to it.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| 1 [P2] the heading block's second line was "This site covers GRANTHAM only, so the name in the heading is not a link" | dropped, not moved. A one-origin build ships no first-use paragraph at all: `first_use_sentence` returns an empty string for it and `first_use_paragraph` writes the whole element or nothing, so no empty `<p class="sub">` keeps the 48px it costs the fold. A name that is neither underlined nor focusable reads as text. The sentence survives only as the fallback for a build whose station control lost the list it opens, which is the one case with a control to explain the loss of | `tests/test_build_demo_page.py` for the absent element on a one-station build, and `tests/browser/station-picker.cjs`, "and the page says nothing about a control it does not have"; `tests/browser/station-render.cjs` asks for a first-use note only on a page that has the control |
+| 2 [P2] three sentences of feed provenance stood between the filters and the count, the longest block in the first viewport | split in two. The date is a marker above the count -- "Fares from 24 September 2026", gaining "· check before you travel" once the download is past the threshold -- and it is a **control**: it opens the method fold and lands focus on that fold's summary. The age, the threshold, the advice to check and the prices-only sentence are the fold's, beside the timetable window and the undated-schedule caveat | `tests/browser/station-fares.cjs`, "the date the prices are from sits above the count, one press from that fold", "and one press opens it, landing on the summary rather than the top of the page" and "and the age of the prices is in the fold, not in front of the first row"; `tests/test_build_provenance.py` for the four elements and their order in the document |
+| 3 [P2] the closed refinements control stated the panel's own defaults back at a reader who had filtered nothing | `filterStateIsDefault()` in `page/station/filters.js`: the summary is written only when one of the three decisions differs, which is the rule `stateQuery()` already follows for the address, and a railcard remembered from an earlier page counts as a decision. The toggle's name follows the same rule -- the label alone while nothing is narrowed, the label and the state while the panel is open over one | `tests/browser/station-filters.cjs`, "the folded plate says what is narrowed, and nothing while nothing is", and `tests/browser/station-picker.cjs`, "the summary says nothing while nothing is narrowed, and all three facts once one is" |
+| 5 [P3] the £0 empty state stated one figure twice, a line apart, in different words | the proof is the door's label and the verb is in its accessible name: "£6.00 reaches ANCASTER" on the face, "Raise the budget: " spoken. The `.empty-lead` paragraph is gone, so the figure is stated once and the press still says what it does -- the shape DL2 of the 19 October 2026 delight pass asked for, with the duplication the critique found removed | `tests/browser/station-filters.cjs`, "and the door says what it unlocks, in the one place the figure is stated", which reads the visible label and the spoken verb apart |
+
+What it could not judge, and what stays with its numbers: the notices say the two
+assessments ran in sequence in one context rather than as independent reviewers;
+it saw one build shape (prices-only), one viewport and one origin; the served site
+it read was stopped afterwards; and no user-visible detector overlay was produced,
+so its one deterministic finding -- `undersized-ui-text` on the 10.5px counts, now
+12px -- is the CLI scan alone, which is item 14 of the deep audit above. The
+heuristic score is a judgement on one page, not a measurement, and is not quoted
+as one.
+
 ## The 21 October 2026 Critiquito design critique
 
 `docs/audits/2026-10-21-critiquito-design-critique.md` was removed on 26 October
@@ -821,7 +853,7 @@ mean, and a script that fails to arrive says so.
 | Finding | What answered it | Held by |
 |---|---|---|
 | 6 [P2] with a type chosen inside "More types" no chip looks selected, and a type the budget clears is signalled only by a small grey line | the folded refinements summary names the active type in the control's own words ("Destination: National Trust"), and a type the budget takes away is announced where the chips are, with the mode that dropped it: "Cleared National Trust -- Singles has no destination of that type inside your budget." The "More types" count is explained by the rule line above the notice, which says the count is kinds rather than destinations | `filterStateText` and `announceFacetChange` in `page/station/filters.js`; `tests/browser/station-filters.cjs` |
-| 11 [P2] the keyboard hint is shown to a phone | the hint line renders only for a fine pointer, and its paging half only while a pager is on the page (DS3). The rest of the task -- three small notes above the results -- is still true of the page: the freshness line, the undated caveat straight after it and the folded ticket-link disclosure all sit above the count line, so the count is what the reader meets after four short blocks. That is the stack O7 has to buy a phone fold from, so the number of notes is decided there rather than here | the media query in `page/station.css`; `tests/browser/station-filters.cjs`, "the strip that stays on screen names the budget key"; O7 |
+| 11 [P2] the keyboard hint is shown to a phone | the hint line renders only for a fine pointer, and its paging half only while a pager is on the page (DS3). The rest of the task -- three small notes above the results -- is still true of the page: the freshness line, the undated caveat straight after it and the folded ticket-link disclosure all sit above the count line, so the count is what the reader meets after four short blocks. That is the stack O7 has to buy a phone fold from, so the number of notes is decided there rather than here. **Amended 28 October 2026:** the freshness line is one marker above the count that opens the method fold, and the undated caveat joined it there (item 2 of the 28 October 2026 design critique), so the stack O7 is measuring is three blocks shorter than this row says | the media query in `page/station.css`; `tests/browser/station-filters.cjs`, "the strip that stays on screen names the budget key"; O7 |
 | 13 [P2] a column line is left over an empty list | one column line, written only when the list has rows; an empty list says "No station matches 'zzzz'" in its place | `page_templates.py`'s note above `#picks`; `tests/browser/chooser.cjs` |
 | 15 [P3] the smallest type is about 12px and helper text is smaller still | answered as a decision, not a fix: DS6 of the 19 October 2026 distill pass holds the route to five type sizes -- 12 for labels and records, 14 for secondary prose, 16 for body, 18 for section headings -- and a check counts every rendered size with a row open. Raising the tags to 14 would be the sixth size that pass removed | `tests/browser/station-layout.cjs`, "the page keeps five type sizes below the display heading" |
 | 16 [P3] the chooser's heading says "Destinations this feed prices" | the count is named once by a column line above the list, and no heading speaks for the feed. The title case is O41 and the column line's own words ("Code", "Destinations") are O30 | `tests/test_build_chooser.py`, `test_the_chooser_names_the_three_columns_its_rows_carry` |
@@ -925,6 +957,7 @@ re-deriving it.
 | **S09** | Region, town or rail-network grouping once a geography source is chosen | The chooser already ranks all 2,718 priced stations and filters by name or code across them. Grouping adds a second way to browse a list nobody needs a second way to browse, and it needs the same geography source as S08 and C27 for no extra reach. |
 | **S27** | Discovery entry points such as "cities under £20" or "seaside under £20" | It is a curated editorial list dressed as a derived one. The project's rule is that a page says what the feed says and nothing more, and a landing page that decides which towns are worth a click is that page making a claim it has no evidence for. |
 | **S46** | A "Was this shortlist useful?" prompt or an optional feedback route | It is a tracker with a small payload, and it collects exactly the thing the page is careful not to collect. The same question is answered better by the S43 sessions, which are observed rather than recorded. |
+| **C28-4** | Moving the shortlist tick out of the first column -- to the end of the row, or revealing it on hover and focus -- so the place name sits at the left edge where a reader scanning for a town starts (item 4 of the 28 October 2026 design critique) | Rejected by the owner, and the review offered the argument against it in the same breath: the shortlist is a real feature whose column has to stay discoverable. A control revealed only on hover is not offered to a touch reader at all, and moving the tick to the last column puts it after the ticket link -- the action that leaves the page -- so the one per-row control a row keeps beside its price (ADR-0043) would sit behind an outbound handoff. The column stays first, the header names it, and each tick carries the place's own name. |
 
 ### Structural ideas the reviews weighed and refused
 
