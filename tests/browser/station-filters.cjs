@@ -47,7 +47,10 @@ async function driveTheFilters(world) {
         STATE.page = 1;
         render();
       }
-      const lead = document.querySelector("#empty p");
+      // Item 5 of the 28 October 2026 design critique: the £0 block carried a
+      // proof paragraph and a button repeating its figure, so the lead is read
+      // by its own class -- the absence of that element is half the check below.
+      const lead = document.querySelector("#empty .empty-lead");
       const table = document.getElementById("rows").closest("table");
       const head = table.querySelector("thead");
       return {
@@ -58,7 +61,16 @@ async function driveTheFilters(world) {
         tableHidden: table.hidden === true,
         headPainted: Boolean(head && head.getBoundingClientRect().height),
         sentenceCount: (document.body.innerText.match(/No destinations for up to/g) || []).length,
-        doors: Array.from(document.querySelectorAll("#empty button")).map((b) => b.textContent),
+        // The visible label and the spoken verb apart, because a door's name is
+        // read by a screen reader and its label is read by the eye: the raise
+        // door carries the proof in the one and the action in the other.
+        doors: Array.from(document.querySelectorAll("#empty button")).map((b) => {
+          const verb = b.querySelector(".sr-only");
+          return {
+            text: verb ? b.textContent.slice(verb.textContent.length) : b.textContent,
+            verb: verb ? verb.textContent.trim() : "",
+          };
+        }),
       };
     });
     check("an empty budget says so rather than showing nothing", floored.empty, JSON.stringify(floored));
@@ -80,9 +92,19 @@ async function driveTheFilters(world) {
     // DL2 of the 19 October 2026 delight pass: the door says what it unlocks.
     // "£7.00 reaches SLEAFORD" is proof that pressing it shows something; the
     // button keeps its own verb as its name.
+    //
+    // Item 5 of the 28 October 2026 design critique: it keeps nothing else. The
+    // proof was a paragraph with a button under it, and at £0 the two stated one
+    // fact twice a line apart -- the figure in a sentence, then the figure in the
+    // label. The sentence is the door's label now and the verb is in its
+    // accessible name, so the block says the figure once and still says what the
+    // press does.
     check(
-      "and the door names the place the raised budget reaches",
-      /£[0-9.,]+ reaches /.test(floored.lead) && floored.doors.some((door) => /^Raise the budget to £/.test(door)),
+      "and the door says what it unlocks, in the one place the figure is stated",
+      floored.lead === "" &&
+        floored.doors.some(
+          (door) => /£[0-9.,]+ reaches /.test(door.text) && /^Raise the budget:?$/.test(door.verb)
+        ),
       JSON.stringify({ lead: floored.lead, doors: floored.doors })
     );
     // S3 of the 19 October 2026 critique: three of the four doors at £0 changed
@@ -835,6 +857,7 @@ async function driveTheFilters(world) {
         state: (document.getElementById("filterState") || {}).textContent || "",
         stateVisible: !!document.getElementById("filterState") &&
           document.getElementById("filterState").getBoundingClientRect().height > 0,
+        isDefault: filterStateIsDefault(),
       };
     });
     check("the refinements arrive folded and the plate says so", folded.open === false, JSON.stringify(folded));
@@ -846,15 +869,23 @@ async function driveTheFilters(world) {
       return (checked ? checked.closest("label").textContent : "").trim();
     });
     // Labelled, so a reader on a phone who cannot open the panel can still
-    // tell which of the three decisions has been made.
+    // tell which of the three decisions has been made -- and item 3 of the 28
+    // October 2026 design critique: only once one of them has been made. The
+    // arriving page named its own defaults back at a reader who had narrowed
+    // nothing, so the plate is empty until there is something to say. Which of
+    // the two it is comes from the page's own predicate rather than from this
+    // run's history: a railcard remembered from an earlier page is a decision
+    // this visit is priced by, not a default.
     check(
-      "and the folded plate says what is narrowed",
-      /^Ticket: /.test(folded.state) &&
-        folded.state.includes(plateMode) &&
-        plateMode.length > 2 &&
-        /Travellers: .*adult/.test(folded.state) &&
-        /Destination: /.test(folded.state),
-      `${JSON.stringify(folded.state)} in ${plateMode}`
+      "the folded plate says what is narrowed, and nothing while nothing is",
+      folded.isDefault
+        ? folded.state.trim() === ""
+        : /^Ticket: /.test(folded.state) &&
+            folded.state.includes(plateMode) &&
+            plateMode.length > 2 &&
+            /Travellers: .*adult/.test(folded.state) &&
+            /Destination: /.test(folded.state),
+      `${JSON.stringify(folded.state)} in ${plateMode} (default: ${folded.isDefault})`
     );
     check("the budget stays out of the fold", folded.budgetVisible, JSON.stringify(folded));
     check("the results are on screen without opening anything", folded.resultsVisible, JSON.stringify(folded));
@@ -890,8 +921,11 @@ async function driveTheFilters(world) {
       }));
       check(
         "and the open panel does not repeat the state beside the controls that show it",
-        openPlate.visible === false && /^Filter this list\. Ticket: /.test(openPlate.label),
-        JSON.stringify(openPlate)
+        openPlate.visible === false &&
+          (folded.isDefault
+            ? openPlate.label === "Filter this list"
+            : /^Filter this list\. Ticket: /.test(openPlate.label)),
+        JSON.stringify({ ...openPlate, default: folded.isDefault })
       );
       const chipValue = await page.evaluate(() => {
         // A chip is offered only when a destination of its type is inside the

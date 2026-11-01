@@ -204,6 +204,11 @@ async function renderThePage(world) {
       // its columns have to keep.
       promises: /fastest time/i.test(document.body.textContent || ""),
       firstUse: (document.getElementById("firstUse") || {}).textContent || "",
+      // Whether the heading carries a station control at all. A one-origin build
+      // has nowhere to change to, so it has no note to explain (item 1 of the 28
+      // October 2026 design critique), and the first-use half of the check below
+      // is only a claim about a page that offers the control.
+      hasPicker: Boolean(document.getElementById("changeOrigin")),
       heading: (document.getElementById("pageHeading") || {}).getAttribute("aria-label") || "",
       title: document.title,
       hasJourneys: DATA.hasJourneys,
@@ -223,8 +228,9 @@ async function renderThePage(world) {
       // The heading states the budget and the station, the count line states
       // the destinations, and the columns state time and changes. Nothing above
       // the table makes a claim about a journey any more, so there is no
-      // sentence left to go stale on a prices-only build.
-      opening.promises === false && opening.firstUse.length > 0,
+      // sentence left to go stale on a prices-only build -- and the first-use
+      // note exists exactly where there is a control for it to name.
+      opening.promises === false && (!opening.hasPicker || opening.firstUse.length > 0),
       JSON.stringify(opening)
     );
     check(
@@ -312,7 +318,13 @@ async function renderThePage(world) {
         countToFirstRow:
           box(summary) && box(first) ? Math.round(box(first).top - box(summary).top) : null,
         afterCount: summary ? between(summary) : [],
-        afterProvenance: document.getElementById("freshness") ? between(document.getElementById("freshness")) : [],
+        // The marker above the table is what a reader meets before the count;
+        // the freshness sentence it opens now lives in the fold at the foot of
+        // the page (item 2 of the 28 October 2026 design critique), so this
+        // measures from the marker rather than from the sentence.
+        afterProvenance: document.getElementById("freshnessLine")
+          ? between(document.getElementById("freshnessLine"))
+          : [],
         tabular: document.querySelector("#rows td.num")
           ? getComputedStyle(document.querySelector("#rows td.num")).fontVariantNumeric
           : "",
@@ -346,7 +358,7 @@ async function renderThePage(world) {
         ? notExercised("this page shows no count and no first row")
         : measure.countToFirstRow <= 100 &&
           measure.afterProvenance.every((id) =>
-            ["dateNote", "linkTerms", "summary", "budgetNext"].includes(id)
+            ["freshnessLine", "linkTerms", "summary", "budgetNext"].includes(id)
           ),
       `count to first row ${measure.countToFirstRow}px; after the provenance: ${measure.afterProvenance.join(", ") || "nothing"}`
     );

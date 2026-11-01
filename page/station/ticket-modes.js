@@ -281,11 +281,21 @@ function renderEmpty(available, wanted, cap, what) {
   if (wanted.length) return;
   const actions = document.createElement("p");
   actions.className = "empty-actions";
-  const offer = (label, run) => {
+  // A door's name is what pressing it does. A door whose visible text is the
+  // proof of what it unlocks says the verb where only a screen reader hears it,
+  // so the reader sees one sentence and hears an action (item 5 of the 28
+  // October 2026 design critique).
+  const offer = (label, run, spokenVerb) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "toggle";
     button.textContent = label;
+    if (spokenVerb) {
+      const verb = document.createElement("span");
+      verb.className = "sr-only";
+      verb.textContent = spokenVerb;
+      button.prepend(verb);
+    }
     button.addEventListener("click", run);
     actions.append(button);
   };
@@ -300,17 +310,22 @@ function renderEmpty(available, wanted, cap, what) {
     const enough = Math.ceil(cheapest / 100);
     // DL2 of the 19 October 2026 delight pass: the door says what it unlocks
     // before it asks to be pressed. "£7.00 reaches SLEAFORD" is proof; "Raise
-    // the budget to £7.00" was a request to take it on trust. The button keeps
-    // its own explicit verb as its name, so a screen reader still hears what the
-    // action is. A tie is named as a count: two places at one price are not a
-    // recommendation of either.
+    // the budget to £7.00" was a request to take it on trust. A tie is named as
+    // a count: two places at one price are not a recommendation of either.
+    //
+    // Item 5 of the 28 October 2026 design critique: the proof is the door. It
+    // was a paragraph with a button under it, and at £0 the two said one fact
+    // twice, a line apart in different words -- "£6.00 reaches ANCASTER." then
+    // "Raise the budget to £6.00". The sentence is the better half because it
+    // is proof rather than a request, so it is the door's label and the verb
+    // moves into the accessible name above it.
     const atPrice = reachable.filter((destination) => priceOf(destination) === cheapest);
-    const lead = document.createElement("p");
-    lead.className = "empty-lead";
-    lead.textContent = money(enough * 100) + " reaches " +
-      (atPrice.length === 1 ? atPrice[0].name : countWord(atPrice.length) + " places") + ".";
-    empty.append(lead);
-    offer("Raise the budget to " + money(enough * 100), () => chooseBudget(enough));
+    offer(
+      money(enough * 100) + " reaches " +
+        (atPrice.length === 1 ? atPrice[0].name : countWord(atPrice.length) + " places"),
+      () => chooseBudget(enough),
+      "Raise the budget: "
+    );
   }
   if (selectedDestinationTypes().size) {
     offer("Show all destination types", clearDestinationTypes);

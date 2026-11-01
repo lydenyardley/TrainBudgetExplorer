@@ -558,6 +558,17 @@
                         color: var(--muted); cursor: pointer; }
   .link-terms summary:hover, .link-terms summary:focus-visible { color: var(--accent); }
   .link-terms p { margin: .35rem 0 0; }
+  /* The date the prices are from, above the count, as a press rather than a
+     paragraph (item 2 of the 28 October 2026 design critique). It reads as the
+     .tag line it sits in -- small, muted, one fact -- and it is a control
+     because pressing it opens the fold holding the age and the threshold, so it
+     carries the accent colour and an underline rather than looking like the
+     rest of the line. 24px is the page's floor for a target that is text. */
+  .tag-open { min-height: 24px; padding: 0 .1rem; border: 0; background: none;
+              color: var(--accent); font: inherit; font-size: .75rem; cursor: pointer;
+              text-decoration: underline; text-decoration-thickness: 1px;
+              text-underline-offset: .25em; }
+  .tag-open:hover { text-decoration-thickness: 2px; }
   code { font-size: .95em; }
   /* On a phone the table reflows into stacked rows, because a six-column table
      pushes the ticket action off-screen (ADR-0019). The markup stays a real

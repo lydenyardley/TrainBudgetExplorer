@@ -82,7 +82,12 @@ async function checkTheOriginPicker(world) {
       const state = document.getElementById("filterState").textContent;
       const label = (toggle.querySelector(".more-filters-label") || {}).textContent || "";
       if (!wasOpen) document.getElementById("moreFiltersToggle").click();
-      return { closed, state: state.trim(), label: label.trim() };
+      // Whether the page is where it opens. The summary is only a claim about a
+      // narrowed search, so whether it should say anything at all is a fact the
+      // page knows and this check reads rather than assumes: a section earlier
+      // in the run may have left a mode or a card chosen, and a remembered card
+      // is a decision this visit is priced by rather than a default.
+      return { closed, state: state.trim(), label: label.trim(), isDefault: filterStateIsDefault() };
     });
     if (filterBar) {
       // The panel is two columns with the page's own gaps, and it carries no
@@ -105,12 +110,20 @@ async function checkTheOriginPicker(world) {
         /^filter this list$/i.test(filterBar.label),
         JSON.stringify(filterBar.label)
       );
+      // Item 3 of the 28 October 2026 design critique: the closed control read
+      // "Filter this list" and then the panel's own defaults back at the reader
+      // who had not filtered anything. The summary is a claim about a narrowed
+      // search, so it says nothing until there is one -- and once there is, it
+      // still names all three decisions in the panel's own words, counting the
+      // railcard rather than saying whether there is one.
       check(
-        "the summary names what is narrowed, counts the railcard and says All",
-        /^Ticket: Cheapest available \u00b7 Travellers: One adult, 0 railcard \u00b7 Destination: All$/.test(
-          filterBar.state
-        ),
-        JSON.stringify(filterBar.state)
+        "the summary says nothing while nothing is narrowed, and all three facts once one is",
+        filterBar.isDefault
+          ? filterBar.state === ""
+          : /^Ticket: .+ \u00b7 Travellers: .+, \d+ railcard( \(.+\))? \u00b7 Destination: .+$/.test(
+              filterBar.state
+            ),
+        JSON.stringify(filterBar)
       );
     } else {
       check(
@@ -649,13 +662,18 @@ async function checkTheOriginPicker(world) {
         named ? `no control, heading says ${named}` : "no .origin-name in the heading"
       );
       // And the page does not spend its first-use note telling the reader what
-      // a Change control does when there is no Change control. The note was
-      // static text written for a page that has one, so a one-station build
-      // pointed a reader at a button that was not there.
-      const firstUse = (await page.textContent("#firstUse")) || "";
+      // a Change control does when there is no Change control. Item 1 of the 28
+      // October 2026 design critique took the note away on this build rather
+      // than rewording it: it described an absence, in the second line of the
+      // page, about a name the reader can see is not a control. The paragraph
+      // is not there at all -- an empty one would keep the fold its margins.
+      const firstUse = await page.evaluate(() => {
+        const note = document.getElementById("firstUse");
+        return note ? note.textContent.trim() : null;
+      });
       check(
-        "and the page does not tell the reader about a Change control it does not have",
-        !/change/i.test(firstUse),
+        "and the page says nothing about a control it does not have",
+        firstUse === null || !/change|not a link/i.test(firstUse),
         JSON.stringify(firstUse)
       );
     }

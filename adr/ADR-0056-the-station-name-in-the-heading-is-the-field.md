@@ -82,3 +82,21 @@ heading saying "from" and nothing.
 - **Escape is a check, not a nicety.** It is asserted from inside the field,
   because a keydown listener on the wrong element is invisible to every other
   test in the suite.
+
+## Amendment -- 28 October 2026: the one-origin note is gone
+
+Decision 5 said a build with nowhere to change to *says something true* in the
+first-use note, and it did: "This site covers GRANTHAM only, so the name in the
+heading is not a link." Item 1 of the 28 October 2026 design critique found what
+that costs -- it was the second line of the page, on the longest-lived paragraph
+in the first viewport, describing an absence about a name the reader can see is
+not a control -- and the owner took it away rather than moving it to the footer.
+
+Nothing else in this decision changes. The build still refuses to render a
+control that opens nothing, and the heading still states the station; what it no
+longer does is explain the refusal. `first_use_sentence` returns an empty string
+for a one-origin build and `first_use_paragraph` writes the element or nothing at
+all, so the fold gets its 48px back and no empty paragraph is left holding them.
+The constant survives as the fallback for a **multi-origin** build whose shared
+station list did not arrive: that page has a control, so it has a loss to explain,
+and it says the name in the heading is not a link there.

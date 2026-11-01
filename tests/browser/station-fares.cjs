@@ -1782,6 +1782,10 @@ function saysMoreThan(condition, code) {
     // no download to date, so the fares sentence is conditional; the timetable
     // sentence is not, and is what the check below judges.
     const fresh = await page.evaluate(() => {
+      // Item 2 of the 28 October 2026 design critique: the claim is one press
+      // away. The sentence about the feed's age, its threshold and the advice to
+      // check lives in the method fold; the date it is about is the marker above
+      // the count, which the block below drives.
       const line = document.getElementById("freshness");
       // D4 of the 17 October 2026 critique: the window the timetable covers is
       // a source date, so it lives in the method fold with the other dates.
@@ -1826,18 +1830,14 @@ function saysMoreThan(condition, code) {
         coverageInMethod: Boolean(coverage && coverage.closest(".method")),
         coverageShown: Boolean(coverage && !coverage.hidden),
         // On a synthetic feed with a timetable there is no price age to print,
-        // so the line above the table is empty by design rather than missing.
+        // so the fold's sentence is empty by design rather than missing. It is
+        // the prices-only sentence that keeps the line there for a build with no
+        // timetable at all.
         expected: Boolean(DATA.feedDate) || !DATA.timetableFrom,
-        // Finding, 29 September 2026: the count line now sits directly on its
-        // table, so the age of the numbers is stated above the count rather
-        // than below it. The promise is unchanged -- it is beside the numbers
-        // and above the first row, not in the footer -- so what is measured is
-        // the company it keeps.
-        beforeSummary: Boolean(line.compareDocumentPosition(document.getElementById("summary")) &
-          Node.DOCUMENT_POSITION_FOLLOWING),
-        beforeTable: Boolean(line.compareDocumentPosition(document.querySelector("table")) &
-          Node.DOCUMENT_POSITION_FOLLOWING),
-        inFooter: Boolean(line.closest("footer") || line.closest(".method")),
+        // Whether the sentence is where the critique put it: in the fold that
+        // explains the prices, below the results, rather than between the
+        // filters and the count where it was the longest block above the fold.
+        inMethod: Boolean(line.closest("details.method")),
       };
     });
     check(
@@ -1853,6 +1853,104 @@ function saysMoreThan(condition, code) {
       `${JSON.stringify(fresh.window)} (shown ${fresh.coverageShown}, in the method ${fresh.coverageInMethod})`
     );
     check("and judges that window against the reader's today", fresh.verdict, fresh.text);
+    check(
+      "and the age of the prices is in the fold, not in front of the first row",
+      !fresh.shown || fresh.inMethod,
+      `in the method: ${fresh.inMethod}; ${fresh.text}`
+    );
+    // A synthetic feed has no download to date, and no fixture in this tree
+    // carries one, so the marker is driven rather than waited for: the page's
+    // own render is handed a date, asked what it does with it, and put back.
+    // Injecting a fact the build did not ship is the only way to exercise a
+    // sentence that is conditional on it -- and the restore is checked too, so
+    // the rest of the run reads the page the build wrote.
+    const marker = await page.evaluate(() => {
+      const shipped = DATA.feedDate;
+      const markerLine = document.getElementById("freshnessLine");
+      const opener = document.getElementById("freshnessOpen");
+      const fold = document.getElementById("methodFold");
+      const reading = () => ({
+        shown: !markerLine.hidden,
+        text: markerLine.textContent,
+        beforeCount: Boolean(markerLine.compareDocumentPosition(document.getElementById("summary")) &
+          Node.DOCUMENT_POSITION_FOLLOWING),
+        beforeTable: Boolean(markerLine.compareDocumentPosition(document.querySelector("table")) &
+          Node.DOCUMENT_POSITION_FOLLOWING),
+        opensFold: Boolean(opener.getAttribute("aria-controls") === "methodFold"),
+      });
+      const asShipped = reading();
+      DATA.feedDate = "2026-09-24";
+      // renderFreshness() rather than render(): the freshness lines are a fact
+      // about the payload, not about the reader's state, so the page writes them
+      // once at load from provenance() and never on a render. The writer is
+      // idempotent, which is what makes it safe to drive here and to drive back.
+      renderFreshness();
+      const withDate = reading();
+      const withDateFold = document.getElementById("freshness");
+      const foldShown = !withDateFold.hidden;
+      const foldText = withDateFold.textContent;
+      fold.open = false;
+      opener.click();
+      const pressed = { open: fold.open, focused: document.activeElement ? document.activeElement.id : "" };
+      fold.open = false;
+      DATA.feedDate = shipped;
+      renderFreshness();
+      return {
+        asShipped,
+        withDate,
+        pressed,
+        restored: reading(),
+        shipped: shipped || null,
+        foldShown,
+        foldText,
+      };
+    });
+    check(
+      "the date the prices are from sits above the count, one press from that fold",
+      marker.withDate.shown &&
+        /^Fares from 24 September 2026/.test(marker.withDate.text) &&
+        marker.withDate.beforeCount &&
+        marker.withDate.beforeTable &&
+        marker.withDate.opensFold,
+      `${marker.withDate.text} (before the count: ${marker.withDate.beforeCount}, opens: ${marker.withDate.opensFold})`
+    );
+    check(
+      "and the sentence it opens is the age, the threshold and the advice",
+      marker.foldShown && /past the 14-day freshness threshold/.test(marker.foldText),
+      `${marker.foldShown}: ${String(marker.foldText).slice(0, 160)}`
+    );
+    check(
+      "and one press opens it, landing on the summary rather than the top of the page",
+      marker.pressed.open === true && marker.pressed.focused === "methodSummary",
+      JSON.stringify(marker.pressed)
+    );
+    check(
+      "and the marker is exactly what this build's own date says",
+      // The driven date is gone again: a page with a download shows its own
+      // date, and a fixture with none shows no marker rather than a borrowed one.
+      marker.shipped
+        ? marker.restored.shown && marker.restored.text === marker.asShipped.text
+        : !marker.restored.shown,
+      JSON.stringify({ shipped: marker.shipped, restored: marker.restored, before: marker.asShipped })
+    );
+    // And the stale wording, which is the half a reader acts on: a download past
+    // the build's own threshold says so in the marker, not only in the fold.
+    const stale = await page.evaluate(() => {
+      const shipped = DATA.feedDate;
+      const days = new Date(Date.now() - (DATA.staleAfterDays + 1) * 86400000);
+      const iso = days.toISOString().slice(0, 10);
+      DATA.feedDate = iso;
+      renderFreshness();
+      const text = document.getElementById("freshnessLine").textContent;
+      DATA.feedDate = shipped;
+      renderFreshness();
+      return { text, iso, limit: DATA.staleAfterDays };
+    });
+    check(
+      "and a download past the threshold says to check it, in the marker itself",
+      /check before you travel/.test(stale.text),
+      `${stale.text} (${stale.iso}, threshold ${stale.limit} days)`
+    );
     check(
       "and the window sits with the other source dates rather than above the table",
       fresh.window === null || fresh.coverageInMethod,
@@ -2004,15 +2102,6 @@ function saysMoreThan(condition, code) {
         `${reference.text} (unlisted: ${reference.unlisted.join(", ")})`
       );
     }
-    check(
-      "and it sits beside the result count, not in the footer",
-      // A synthetic build with a timetable has no price age to print, so the
-      // line is empty by design rather than misplaced.
-      !fresh.expected
-        ? notExercised("this build has no price age to print above the table")
-        : fresh.beforeSummary && fresh.beforeTable && !fresh.inFooter,
-      `${fresh.text} beforeSummary=${fresh.beforeSummary} beforeTable=${fresh.beforeTable} inFooter=${fresh.inFooter}`
-    );
     if (!fresh.feedDate) {
       // A synthetic feed has no download date, so there is nothing to measure.
       // The sentence that is missing is the honest one: the page does not

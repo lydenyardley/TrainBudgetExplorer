@@ -894,7 +894,14 @@ class DemoPageTest(PageTestCase):
         # name the control the page actually shows. It said "Change" until the
         # Change button became the station's own name with a chevron beside it,
         # which left the sentence pointing at a word that was no longer there.
-        self.assertNotIn("Change", render_page(payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0])
+        #
+        # Item 1 of the 28 October 2026 design critique took the one-station
+        # sentence away rather than rewording it: "This site covers GRANTHAM
+        # only, so the name in the heading is not a link" was the second line of
+        # the page, describing an absence, on a build whose name is plain text a
+        # reader can see is not a control. The paragraph is not printed empty
+        # either -- an empty <p class="sub"> still costs the fold its margins.
+        self.assertNotIn('id="firstUse"', render_page(payload, budget_pounds=20))
         with_control = render_page(self.payload, budget_pounds=20).split('id="firstUse"')[1].split("</p>")[0]
         self.assertIn("<b>station name</b>", with_control)
 

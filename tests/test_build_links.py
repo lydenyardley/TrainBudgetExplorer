@@ -40,7 +40,11 @@ class TicketHandoffTest(PageTestCase):
         # carries neither.
         self.assertIn('id="linkNote" hidden', self.html)
         self.assertIn('id="disclosure" hidden', self.html)
-        _before, after = self.html.split('<details class="method">', 1)
+        # Split on the fold's id rather than on its class: the class alone is the
+        # `<details class="method">` prefix, and the element carries the id the
+        # freshness marker above the table points at (item 2 of the 28 October
+        # 2026 design critique).
+        _before, after = self.html.split('<details class="method" id="methodFold">', 1)
         inside = after.split("</details>", 1)[0]
         for note in ('id="linkNote"', 'id="disclosure"'):
             self.assertIn(note, self.html, f"{note} is not on the page")

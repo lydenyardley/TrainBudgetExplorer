@@ -23,9 +23,56 @@
 // so a page published in March says in June that it is five months old. A
 // build with no timetable says so plainly: that is a choice about what to
 // compute, not a feed that has gone stale.
+//
+// Item 2 of the 28 October 2026 design critique: the claim is one press away and
+// the date is on the page. The three sentences stood between the filters and the
+// count as the longest block in the first viewport, before a single place, on a
+// page whose reader is choosing between two fares. What a reader comparing a
+// price needs is which copy of the feed it came from, which is the marker above
+// the table; the age, the threshold and the advice to check are the same claim
+// in full and sit in the fold that explains where every number came from.
+const freshnessOpen = document.getElementById("freshnessOpen");
+
+// The marker above the table is a control, so its name has to say what pressing
+// it does. The date is the visible half -- which is also the half a reader
+// comparing two prices reads -- and the sentence it opens is the rest, so the
+// name is the label plus the destination rather than the label alone.
+function renderFreshnessMarker(text) {
+  const marker = document.getElementById("freshnessLine");
+  if (!marker) return;
+  marker.hidden = !text;
+  if (!freshnessOpen) return;
+  freshnessOpen.replaceChildren();
+  if (!text) return;
+  const said = document.createElement("span");
+  said.className = "sr-only";
+  said.textContent = ". Where these prices come from";
+  freshnessOpen.append(document.createTextNode(text), said);
+}
+
+// One press opens the fold the marker names, and lands the reader on its
+// summary: a keyboard reader who presses a control that scrolls the page should
+// arrive where the answer is rather than at the top of the document they have
+// already read. Wired once here rather than per render, because there is one
+// marker on the page and it does not change owner.
+if (freshnessOpen) freshnessOpen.addEventListener("click", () => {
+  const fold = document.getElementById("methodFold");
+  if (!fold) return;
+  fold.open = true;
+  const summary = document.getElementById("methodSummary");
+  if (!summary) return;
+  summary.scrollIntoView({ block: "center" });
+  summary.focus();
+});
+
 function renderFreshness() {
   const line = document.getElementById("freshness");
   const parts = [];
+  // What the marker above the table says. The date, and the one thing about it
+  // a reader would otherwise have to open the fold to learn: that it is old
+  // enough to check before buying. A date after today is a clock or download
+  // fault, and is named as one rather than counted as negative days old.
+  let tag = "";
   // Whole calendar days, not elapsed 24-hour periods: a timetable that starts
   // yesterday has not "not started yet" because it started at ten yesterday
   // morning, and a reader reading this at breakfast should get the same answer
@@ -49,7 +96,10 @@ function renderFreshness() {
         : "past the " + limit + "-day freshness threshold, so check the fare before you travel";
     parts.push("Prices are from a fares feed downloaded " + humanDate(DATA.feedDate) + ", " + when +
       (verdict ? " and " + verdict : "") + ".");
+    tag = "Fares from " + humanDate(DATA.feedDate) +
+      (age < 0 ? " · check the date" : age > limit ? " · check before you travel" : "");
   }
+  renderFreshnessMarker(tag);
   if (!DATA.timetableFrom) {
     parts.push("This build prices fares only: no timetable was supplied, so no times or changes are shown.");
   }
@@ -238,8 +288,8 @@ function provenance() {
     available.length + " " + (listed[ticketMode()] || "destinations in the feed"),
   ];
   // The reader's facts only: which origin, what the count is, and which day the
-  // times are for. The no-timetable fact is said once, in the freshness line
-  // above the table (audit item 38), and the destination-type source is a
+  // times are for. The no-timetable fact is said once, in the freshness sentence
+  // in the method fold (audit item 38), and the destination-type source is a
   // source, so it sits in the attribution block (audit item 48). The day is
   // written in the page's own date words, so no ISO date reaches the reader
   // (audit item 49).
@@ -265,17 +315,20 @@ function provenance() {
     linkNote.textContent = DATA.linkNote;
     linkNote.hidden = false;
   }
-  // C04: the undated-schedule caveat is a statement about the times, so it
-  // belongs with the times -- the freshness line, above the table -- and not in
-  // the methodology accordion, which a reader has no reason to open before
-  // trusting a time.
+  // C04: the undated-schedule caveat is a statement about the times, so it joins
+  // the times' own source dates in the method fold, and not the ticket-link
+  // accordion, which a reader has no reason to open before trusting a time. It
+  // sat above the table until item 2 of the 28 October 2026 design critique moved
+  // the freshness claim into that fold: two caveats about the same download, one
+  // of them below the results and one above, is the page explaining itself in two
+  // places.
   if (DATA.dateNote) {
     const note = document.createElement("p");
     note.className = "tag";
     note.id = "dateNote";
     note.textContent = DATA.dateNote;
-    // Straight after the freshness line, whether or not that line has anything
-    // to say: a hidden element still holds its place in the document, so
+    // Straight after the freshness sentence, whether or not that sentence has
+    // anything to say: a hidden element still holds its place in the document, so
     // choosing the anchor by visibility would only move the note around
     // depending on a fact the reader did not ask about.
     document.getElementById("freshness").after(note);

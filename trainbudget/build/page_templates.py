@@ -210,9 +210,11 @@ __THEME_TOGGLE__
      first-time reader cannot guess, which is that the name in the heading can
      be changed. That sentence is now the paragraph, under the word it
      describes, and the 48px it costs the fold is the price of the one fact.
-     The build writes it per build, because a one-origin page has no such
-     control to point at. -->
-<p class="sub" id="firstUse">__FIRST_USE__</p>
+     The build writes the whole paragraph per build, because a one-origin page
+     has no such control to point at and so has no note: item 1 of the 28
+     October 2026 design critique dropped that build's sentence, which described
+     an absence in the second line of the page. -->
+__FIRST_USE_PARA__
 <!-- The list, not the field. The field is moved into the heading by the
      script, into the place the station's own name was, so that clicking the
      name and typing are the same gesture in the same place -- and the list
@@ -332,11 +334,15 @@ __THEME_TOGGLE__
 </div>
 </section>
 
-<!-- The one provenance line that stays above the table: how old the numbers
-     are. Everything else about where they came from is reference material and
-     sits under the table with the rest of it, where a reader goes when they
-     have decided to check rather than before they have decided to read. -->
-<p class="tag" id="freshness" hidden></p>
+<!-- The one provenance line that stays above the table, and it is one line and
+     a press rather than a paragraph: the date the prices are from, which opens
+     the fold at the foot of the page holding how old they are, the threshold,
+     and the advice to check. Three sentences of freshness used to stand here,
+     between the filters and the count, as the longest block in the first
+     viewport (item 2 of the 28 October 2026 design critique). The marker is what
+     a reader comparing a fare needs -- which copy of the feed the number is from
+     -- and the claim itself is still on the page, one press away. -->
+<p class="tag" id="freshnessLine" hidden><button type="button" class="tag-open" id="freshnessOpen" aria-controls="methodFold"></button></p>
   <!-- C03, as ADR-0040 leaves it: what the ticket action costs is still
        stated above the first ticket action, because the line a reader sees is
        the fold's own summary and it names both what the link does and, when
@@ -447,10 +453,16 @@ __THEME_TOGGLE__
        caveat that every schedule in the feed was read. They are not deleted and
        they are not shortened; they are below the results, which is where the
        primary asset is not competing with them for the fold. -->
-  <details class="method">
-    <summary>Where these prices come from, and how they were calculated __CHEVRON__</summary>
+  <!-- The fold the freshness marker above the table opens. It carries an id
+       because that marker is a control and a control points at what it opens. -->
+  <details class="method" id="methodFold">
+    <summary id="methodSummary">Where these prices come from, and how they were calculated __CHEVRON__</summary>
     <p id="pricingBasis"></p>
     <p id="feedCoverage" class="tag"></p>
+    <!-- How old the numbers are, in full: the download, its age against the
+         reader's own clock, the threshold, and what to do about it. The date
+         alone is the marker above the table; this is the claim. -->
+    <p class="tag" id="freshness" hidden></p>
     <!-- D4 of the 17 October 2026 critique: the window the timetable covers is
          a date about a source, like the rest of this fold, and it was a
          sentence of the freshness line above the table -- one of the two

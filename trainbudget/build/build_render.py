@@ -188,11 +188,18 @@ def origin_control(payload: dict) -> str:
     )
 
 
-# The first-use note for a build with nowhere to change to. It is a constant
-# because the page ships it twice: as the text in the document, and as the
-# sentence the script falls back to if the shared picker list did not arrive.
-# The document's own copy names the station; this fallback cannot, because it is
-# also the sentence for a build whose shared list failed to load.
+# The note a page falls back to when its station control has lost the list it
+# opens. It is a constant because the page ships it twice: the script's own copy,
+# and the sentence it writes into the first-use paragraph when the shared list
+# did not arrive. It cannot name the station, because it is also the sentence for
+# a build whose list failed to load.
+#
+# It is no longer the note a one-station build reads: item 1 of the 28 October
+# 2026 design critique found that build spending its second sentence on an
+# absence ("This site covers GRANTHAM only, so the name in the heading is not a
+# link"), which no longer exists once the name is plain text. That build ships no
+# first-use paragraph at all, and this sentence is left to the branch that has a
+# control to explain the loss of.
 ONE_STATION_FIRST_USE = "The station name in the heading is not a link."
 
 
@@ -202,26 +209,36 @@ def first_use_sentence(payload: dict) -> str:
     The one thing a first-time reader cannot guess is what the station slot in
     the heading does, so this sentence spends its first clause on it. It named
     a "Change" button until that button became the station's own name with a
-    chevron beside it, at which point the sentence pointed at a word the page
-    no longer showed; it names what is on the page instead -- the name in the
+    chevron beside it, at which point the sentence pointed at a word the page no
+    longer showed; it names what is on the page instead -- the name in the
     heading, which is also the accessible name's own words, so the sentence and
     the control agree for a reader using either.
 
-    On a one-origin build there is no such control -- the same condition
-    ``origin_control`` writes for -- so the sentence points at nothing and
-    keeps the half that is still true either way: everything below the heading
-    narrows the destinations.
+    A one-origin build has no such control -- the same condition
+    ``origin_control`` writes for -- so there is nothing to explain: the name is
+    plain text, a name that is neither underlined nor focusable reads as text,
+    and a sentence about a link that is not there spends the second line of the
+    page on an absence while the count waits behind it (item 1 of the 28 October
+    2026 design critique). That build ships an empty string, and
+    ``first_use_paragraph`` drops the paragraph rather than printing it empty.
     """
 
     if not picker_has_options(payload):
-        name = (payload.get("origin") or {}).get("name")
-        if name:
-            return (
-                f"This site covers {html.escape(name)} only, so the name in the "
-                "heading is not a link."
-            )
-        return ONE_STATION_FIRST_USE
+        return ""
     return "Click the <b>station name</b> to start from somewhere else."
+
+
+def first_use_paragraph(payload: dict) -> str:
+    """The first-use paragraph, or nothing at all.
+
+    The element itself is written here rather than in the template because a
+    build with no note should not carry an empty paragraph above its count: an
+    empty ``<p class="sub">`` is still a block with margins, so it would keep the
+    48px it costs the fold while saying nothing.
+    """
+
+    note = first_use_sentence(payload)
+    return f'<p class="sub" id="firstUse">{note}</p>' if note else ""
 
 
 # A template's own placeholder, and nothing else: the pattern is narrow enough
@@ -373,7 +390,7 @@ def render_page(
         .replace("__ORIGIN__", html.escape(payload["origin"]["name"]))
         .replace("__STATIONS_SRC__", station_asset_tag(payload.get("stationsSrc")))
         .replace("__ORIGIN_CONTROL__", origin_control(payload))
-        .replace("__FIRST_USE__", first_use_sentence(payload))
+        .replace("__FIRST_USE_PARA__", first_use_paragraph(payload))
         .replace("__FIRST_USE_FALLBACK__", json.dumps(ONE_STATION_FIRST_USE, ensure_ascii=False))
         .replace("__NRE_CREDIT__", nre_attribution() if nre_credit else "")
         .replace("__NRE_SOURCE__", nre_source_line() if nre_credit else "")

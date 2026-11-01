@@ -81,9 +81,21 @@ class ProvenanceTest(PageTestCase):
         self.assertNotIn('"destination types: "', script)
 
     def test_the_page_states_how_old_its_numbers_are(self) -> None:
-        # S33: the age of the prices and the window of the times, beside the
-        # numbers, judged against the reader's clock rather than the build's.
+        # S33: the age of the prices and the window of the times, judged against
+        # the reader's clock rather than the build's. Item 2 of the 28 October
+        # 2026 design critique: the claim is in the method fold and the date it
+        # is about is the marker above the count, which is a control that opens
+        # that fold -- so the two halves are one element each and neither is a
+        # paragraph in front of the first row.
         self.assertIn('id="freshness"', self.html)
+        self.assertIn('id="freshnessLine"', self.html)
+        self.assertIn('id="freshnessOpen" aria-controls="methodFold"', self.html)
+        self.assertIn('id="methodFold"', self.html)
+        assert self.html.index('id="freshnessLine"') < self.html.index('id="summary"')
+        assert self.html.index('id="freshness"') > self.html.index("<table>")
+        # What the marker says is the browser suite's (the freshness checks judge
+        # the date it names against the page's own payload); the element and its
+        # control are what a rendered page can be held to here.
         self.assertEqual(self.payload["staleAfterDays"], build_demo_page.STALE_AFTER_DAYS)
         self.assertEqual(self.payload["timetableFrom"], "2026-09-21")
         self.assertEqual(self.payload["timetableTo"], "2026-12-11")

@@ -76,9 +76,26 @@ if (moreTypes && moreTypesPanel) moreTypes.addEventListener("click", () => {
   moreTypes.setAttribute("aria-expanded", String(!open));
 });
 
+// Whether the three decisions the panel holds are where the page opens them.
+// The summary earns its place the moment one of them is not, and says nothing
+// until then: on arrival the closed control read "Filter this list / Ticket:
+// Cheapest available · Travellers: One adult, 0 railcard · Destination: All",
+// which is the panel's own defaults stated back at a reader who has not
+// filtered anything (item 3 of the 28 October 2026 design critique). The address
+// already follows this rule -- stateQuery() leaves a value out when it equals
+// the build's own -- so the label follows it too, and a railcard remembered from
+// an earlier page is not the default either: it is a decision this visit is
+// priced by.
+function filterStateIsDefault() {
+  return ticketMode() === CHEAPEST_MODE && unit() === "adult" &&
+    (noCard() || !railcards[STATE.railcard]) && selectedDestinationTypes().size === 0;
+}
+
 // What is narrowed, said in the summary, so a reader who has collapsed the
-// refinements on a phone can still see that a filter is on.
+// refinements on a phone can still see that a filter is on. Empty when nothing
+// is narrowed, which leaves the control reading "Filter this list" alone.
 function filterStateText() {
+  if (filterStateIsDefault()) return "";
   // selectedDestinationTypes() is a Set, and the chip's own label is the only
   // wording a reader has seen for it.
   const types = Array.from(selectedDestinationTypes());
@@ -110,7 +127,9 @@ function renderFilterState() {
   // changes the state the toggle names.
   if (moreFiltersToggle) {
     if (moreFilters && moreFilters.dataset.open === "true") {
-      moreFiltersToggle.setAttribute("aria-label", "Filter this list. " + text);
+      // With nothing narrowed there is nothing to carry, so the name stays the
+      // label alone rather than a label and a full stop that introduces nothing.
+      moreFiltersToggle.setAttribute("aria-label", text ? "Filter this list. " + text : "Filter this list");
     } else {
       moreFiltersToggle.removeAttribute("aria-label");
     }

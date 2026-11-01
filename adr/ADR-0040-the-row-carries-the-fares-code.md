@@ -91,6 +91,29 @@ whole point is that a reader meets it before comparing two prices. What folds is
 the material that describes the *build* and the *link* — and the line that stays
 visible names both.
 
+## Amendment -- 28 October 2026: the freshness claim is folded, and a marker takes its place
+
+Decision 4 held the freshness line above the table because it is a statement
+about the numbers. Item 2 of the 28 October 2026 design critique measured what
+that cost: three sentences between the filters and the count, the longest block
+in the first viewport, before a single fare.
+
+The two halves are now separated, which is what decision 4's own test asks for
+rather than against it. **The fact a reader comparing prices needs** -- which copy
+of the feed the number came from -- stays above the table as one marker, "Fares
+from 24 September 2026", which gains "· check before you travel" once the
+download is past the threshold. It is a control, and pressing it opens the method
+fold at the foot of the page and lands focus on that fold's summary. **The claim**
+-- the age in days, the threshold, the advice to check, and the prices-only
+sentence -- is that fold's, beside the timetable window and the undated-schedule
+caveat it already held. Nothing was deleted; the block between the filters and
+the count went from three sentences to one line that opens them.
+
+The price-source line and the reference-feed sentence keep the places decision 3
+gave them -- in the method fold with the other dates, below the results. What
+folds here is still only what describes the build and the link, plus now the claim
+the marker above the table opens onto.
+
 ## Consequences
 
 - **A test could no longer be a reading of the template.** The wrap guard is a
