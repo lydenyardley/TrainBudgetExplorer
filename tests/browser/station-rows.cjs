@@ -251,18 +251,38 @@ async function checkTheTwoTicketRow(world) {
     await open();
     const twoTicketRow = await page.evaluate(() => {
       const row = activeDestinations().find((d) => Array.isArray(d.tickets) && d.tickets.length === 2);
-      return row ? { crs: row.crs, adult: row.adultPence, tickets: row.tickets, changes: row.changes } : null;
+      return row
+        ? { crs: row.crs, adult: row.adultPence, shown: priceOf(row), tickets: row.tickets, changes: row.changes }
+        : null;
     });
     if (twoTicketRow) {
       // The row is visited through the address, budget, page and day, so it
       // is on screen whatever the number of cheaper rows on a real page: a
       // changed day starts the table again at its first page.
-      const budgetPounds = Math.ceil(twoTicketRow.adult / 100);
+      //
+      // The budget is the price on screen rather than the payload's adult fare,
+      // because that is the number the page filters on: a party or a card the
+      // reader left set prices the row differently, and a budget short of it
+      // puts the row outside the list the check then looks for. The assertion
+      // below still holds the price to the sum of the two tickets, so a state
+      // left over fails as a price the reader was shown rather than as a row
+      // that is not there.
+      const budgetPounds = Math.ceil(twoTicketRow.shown / 100);
       await open(budgetPounds);
+      // The row's place in the table is asked of the page's own ordering, not
+      // of a price sort written here: the page breaks a tie by name
+      // (compareEntries), and a price sort alone puts rows in a different order
+      // -- measured on Norwich, 3 November 2026, 198 of 600 rows sat at another
+      // index. Once a row crossed a page boundary that way, the visit asked for
+      // the page it was not on, the row was missing, and the null read took the
+      // whole run with it.
       const position = await page.evaluate((crs) => {
         const cap = Number(document.getElementById("budgetNumber").value) * 100;
-        const wanted = activeDestinations().filter((d) => priceOf(d) <= cap).sort((a, b) => priceOf(a) - priceOf(b));
-        return wanted.findIndex((d) => d.crs === crs);
+        return activeDestinations()
+          .map((destination) => ({ destination: destination, pence: priceOf(destination) }))
+          .filter((entry) => entry.pence <= cap)
+          .sort(compareEntries)
+          .findIndex((entry) => entry.destination.crs === crs);
       }, twoTicketRow.crs);
       const visit = async (day) => {
         const address = new URL(url);
@@ -294,7 +314,11 @@ async function checkTheTwoTicketRow(world) {
       const expectedPrice = "\u00a3" + (sum / 100).toFixed(2);
       const viaName = twoTicketRow.tickets[0].toName;
       const throughPriced = (twoTicketRow.changes || 0) === 0;
-      const splitWording = throughPriced
+      // A row the page did not show is a defect this check reports, not an
+      // exception it dies on: reading `.panel` off a null row stopped the whole
+      // run on Norwich on 2 November 2026, and the report then named a page
+      // that stopped rather than the row that was missing.
+      const splitWording = shown === null ? false : throughPriced
         ? shown.panel.includes("priced via " + viaName) &&
           shown.panel.includes("stay on the train") &&
           !shown.panel.includes("changing at ")
@@ -312,7 +336,9 @@ async function checkTheTwoTicketRow(world) {
           splitWording &&
           shown.panel.includes("two separate purchases") &&
           !shown.split,
-        JSON.stringify({ crs: twoTicketRow.crs, expected: expectedPrice, throughPriced: throughPriced, shown: shown })
+        shown === null
+          ? `${twoTicketRow.crs} is not on the page at ${money(twoTicketRow.shown)}, as two tickets, so the row could not be read`
+          : JSON.stringify({ crs: twoTicketRow.crs, expected: expectedPrice, throughPriced: throughPriced, shown: shown })
       );
       const days = await page.evaluate(() => (DATA.serviceDays || []).length);
       if (days > 1) {
