@@ -90,13 +90,14 @@ async function checkTheOriginPicker(world) {
       return { closed, state: state.trim(), label: label.trim(), isDefault: filterStateIsDefault() };
     });
     if (filterBar) {
-      // The panel is two columns with the page's own gaps, and it carries no
-      // fill and no gap under it: the shape is drawn by the border it shares
-      // with the toggle, so a tint here would say "card" a second time.
+      // The panel is a grid with the page's own gaps, and it carries no fill
+      // and no gap under it: the shape is drawn by the border it shares with
+      // the toggle, so a tint here would say "card" a second time. Its column
+      // count is the layout's answer -- one in the rail beside the list, two
+      // where the bar spans the page -- and both are measured further down.
       check(
-        "the filter panel opens as a two-column grid with no fill of its own",
+        "the filter panel opens as a grid with no fill of its own",
         filterBar.closed.display === "grid" &&
-          filterBar.closed.columns.split(" ").length === 2 &&
           filterBar.closed.columns.split(" ").every((part) => parseFloat(part) > 0) &&
           filterBar.closed.gap === "16px 32px" &&
           filterBar.closed.background === "rgba(0, 0, 0, 0)" &&
@@ -135,6 +136,29 @@ async function checkTheOriginPicker(world) {
     }
     check("the copy action carries a 44px target", layout.copyHit >= 44, layout.copyHit + "px");
     check("the buy link carries a 44px target", layout.buyHit >= 44, layout.buyHit + "px");
+    // One column in the rail, two where the bar spans the page: the same panel,
+    // drawn for the width it is in. A single figure would be right for one of
+    // the two layouts and wrong for the other, which is how a layout rule this
+    // size silently stops being measured.
+    const panelColumnsAt = async (width) => {
+      await page.setViewportSize({ width, height: 800 });
+      await open(facts.affordable);
+      return page.evaluate(() => {
+        const more = document.getElementById("moreFilters");
+        if (more.dataset.open !== "true") document.getElementById("moreFiltersToggle").click();
+        return getComputedStyle(document.getElementById("moreFiltersPanel"))
+          .gridTemplateColumns.split(" ").length;
+      });
+    };
+    const inRail = await panelColumnsAt(1280);
+    const spanning = await panelColumnsAt(1024);
+    check(
+      "the panel is one column in the rail and two where the bar spans the page",
+      inRail === 1 && spanning === 2,
+      `${inRail} column(s) in the rail at 1280px, ${spanning} at 1024px`
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(facts.affordable);
     // The change control exists exactly when the build wrote another station's
     // page, and both halves of that are asserted here. The block below drives
     // it, so a control that is present must work; and a page with nowhere to

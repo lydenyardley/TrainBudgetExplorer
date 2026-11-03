@@ -368,6 +368,12 @@ async function driveTheFilters(world) {
     const settleFrame = () => page.evaluate(() => new Promise((done) =>
       requestAnimationFrame(() => requestAnimationFrame(done))));
     const budgetBeforeRail = await page.evaluate(() => STATE.budget);
+    // Read at the top of the page, which is the state the claim is about: the
+    // panel can be taller than a window, so reaching a control inside it leaves
+    // the page scrolled, and the reader this line describes is the one who has
+    // not scrolled past the slider yet.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleFrame();
     const atTop = await railState();
     check(
       "the budget's rail is not offered while its own slider is on screen",
@@ -459,15 +465,29 @@ async function driveTheFilters(world) {
     );
     const stuckHeadings = await page.evaluate(() => {
       const rail = document.getElementById("budgetRail").getBoundingClientRect();
+      const table = document.getElementById("rows").closest("table").getBoundingClientRect();
       const th = document.getElementById("rows").closest("table").querySelector("thead th");
-      return { railBottom: Math.round(rail.bottom), thTop: Math.round(th.getBoundingClientRect().top) };
+      return {
+        railBottom: Math.round(rail.bottom),
+        thTop: Math.round(th.getBoundingClientRect().top),
+        thHeight: Math.round(th.getBoundingClientRect().height),
+        tableBottom: Math.round(table.bottom),
+      };
     });
+    // The heading is held below the rail only while the table it heads still
+    // runs far enough under that line to hold it: sticky clamps to its own
+    // table's end, so a table whose last rows are at the rail is a header at its
+    // end rather than a header in the wrong place. On 3 November 2026 the rail
+    // made the window long enough for a short page's table to reach that state.
+    const roomBelowRail = stuckHeadings.tableBottom - stuckHeadings.railBottom;
     check(
       "and the column headings sit below the rail rather than under it",
       railRows === 0
         ? notExercised("this page prices no destination, so its table never scrolls past the rail")
-        : stuckHeadings.thTop >= stuckHeadings.railBottom,
-      JSON.stringify(stuckHeadings)
+        : roomBelowRail < stuckHeadings.thHeight
+          ? notExercised("the table has scrolled to its own end, so there is no heading left to hold below the rail")
+          : stuckHeadings.thTop >= stuckHeadings.railBottom,
+      JSON.stringify({ ...stuckHeadings, roomBelowRail })
     );
     await page.fill("#budgetNumber", String(budgetBeforeRail));
     await page.evaluate(() => window.scrollTo(0, 0));

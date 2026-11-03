@@ -575,6 +575,49 @@
      table for desktop and assistive technology; only the display changes, and
      flex wrapping means no cell can sit outside the viewport however long a
      station name or fare code is. */
+  /* The refinements beside the list, on a screen wide enough for both. The
+     rail is the bar that was above the table, and nothing else moves: the
+     budget, the fold, the day and the key line are the same controls in the
+     same order, drawn once by the same template. What changes is where the
+     results start -- level with the controls rather than under them -- and
+     what happens to the rail while the reader scrolls, which is that it stays.
+     68rem rather than the 44rem of the phone breakpoint, because the six-column
+     table needs about 700px before its three row actions stop wrapping (the
+     measurement below), and an 18rem rail plus its gap only leaves that much
+     above 68rem. */
+  .station-layout { display: block; }
+  .station-results { min-width: 0; }
+  @media (min-width: 68rem) {
+    .station-layout {
+      display: grid;
+      grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+      column-gap: 2rem;
+      align-items: start;
+    }
+    /* No margin of its own: the grid's gap is the space, and a margin here
+       would be a second answer to the same question. */
+    .station-layout > .filter-bar {
+      position: sticky;
+      top: 1rem;
+      margin: 0;
+    }
+    /* What scrolls is the panel, not the column. A sticky column that scrolls
+       internally can lose the budget slider inside itself, and the page reads a
+       slider scrolled out of its own column as one the reader has passed: the
+       56px budget rail then arrives while the column is still on screen. The
+       slider stays where it is and the controls that can be longer than a
+       window -- the open panel -- take the scroll, bounded so the day control
+       under it stays reachable. The floor matters: at a 68rem-wide, 300px-tall
+       window the subtraction would otherwise ask for a negative height. */
+    .more-filters[data-open="true"] .more-filters-panel {
+      max-height: max(6rem, calc(100vh - 16rem));
+      overflow-y: auto;
+    }
+    /* One column of controls. Two inside 18rem put every destination name
+       beside the chip's own edge, and the ticket and party decisions are made
+       one after the other, which is the order a rail reads them in. */
+    .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: minmax(0, 1fr); }
+  }
   /* 44rem, not 40: measured, the six-column table needs ~700px before its three
      row actions stop wrapping onto a second line, so the stacked layout keeps
      the band between 640 and 704px that the table cannot hold. */

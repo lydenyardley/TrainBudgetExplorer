@@ -215,16 +215,58 @@ async function measureTheLayout(world) {
       check("and Price puts it back cheapest first", ordered(back.prices, 1) && back.sorted.join() === "Price:ascending", JSON.stringify(back.sorted));
     }
     await open(facts.affordable);
-    // Two controls that make one decision share a row.
+    // Two controls that make one decision share a row -- where the bar spans
+    // the page. Above 68rem that bar is a rail beside the list, and the same two
+    // decisions are made one after the other, so they stack. The arrangement is
+    // read at the width it belongs to rather than at whatever the run happens to
+    // be at, which is what keeps both rules measured instead of one of them
+    // being asserted about the wrong layout.
+    //
     // Opened only if it is shut. The suite has already opened this panel
     // elsewhere, and a second click on an open one closes it, which measures
     // three zero-height rectangles.
-    const openedThePanel = await page.evaluate(() => document.getElementById("moreFilters").dataset.open !== "true");
-    if (openedThePanel) {
-      await page.click("#moreFiltersToggle");
-      await page.waitForTimeout(80);
-    }
+    const openThePanel = async () => {
+      const shut = await page.evaluate(() => document.getElementById("moreFilters").dataset.open !== "true");
+      if (shut) {
+        await page.click("#moreFiltersToggle");
+        await page.waitForTimeout(80);
+      }
+      return shut;
+    };
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await open(facts.affordable);
+    const openedThePanel = await openThePanel();
     const filterRow = await page.evaluate(() => {
+      const ticket = document.querySelector(".ticket-filter").getBoundingClientRect();
+      const party = document.querySelector(".party-filter").getBoundingClientRect();
+      const types = document.querySelector(".destination-filter").getBoundingClientRect();
+      const bar = getComputedStyle(document.querySelector(".filter-bar"));
+      const layout = getComputedStyle(document.querySelector(".station-layout"));
+      return {
+        ticket: Math.round(ticket.top),
+        party: Math.round(party.top),
+        types: Math.round(types.top),
+        beside: party.left > ticket.right - 2,
+        barMargin: bar.marginTop,
+        barGap: bar.rowGap,
+        layout: layout.display,
+      };
+    });
+    check(
+      "the party control sits beside the ticket control on the same row",
+      Math.abs(filterRow.ticket - filterRow.party) < 2 && filterRow.beside && filterRow.types > filterRow.party,
+      JSON.stringify(filterRow)
+    );
+    check(
+      "where the bar spans the page it carries a rem above it and a rem between its rows",
+      filterRow.layout === "block" && filterRow.barMargin === "16px" && filterRow.barGap === "16px",
+      JSON.stringify({ layout: filterRow.layout, margin: filterRow.barMargin, gap: filterRow.barGap })
+    );
+    if (openedThePanel) await page.click("#moreFiltersToggle");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(facts.affordable);
+    const railedPanel = await openThePanel();
+    const railRow = await page.evaluate(() => {
       const ticket = document.querySelector(".ticket-filter").getBoundingClientRect();
       const party = document.querySelector(".party-filter").getBoundingClientRect();
       const types = document.querySelector(".destination-filter").getBoundingClientRect();
@@ -236,9 +278,9 @@ async function measureTheLayout(world) {
       };
     });
     check(
-      "the party control sits beside the ticket control on the same row",
-      Math.abs(filterRow.ticket - filterRow.party) < 2 && filterRow.beside && filterRow.types > filterRow.party,
-      JSON.stringify(filterRow)
+      "in the rail the same two decisions stack, in the order they are made",
+      railRow.types > railRow.party && railRow.party > railRow.ticket && !railRow.beside,
+      JSON.stringify(railRow)
     );
     // The toggle and the panel it opens are one card, not a button with a
     // second card under it: the open toggle keeps the accent border and squares
@@ -264,6 +306,7 @@ async function measureTheLayout(world) {
         quarterRem: parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.45,
         barGap: bar.rowGap,
         barMargin: bar.marginTop,
+        columnGap: getComputedStyle(document.querySelector(".station-layout")).columnGap,
         touching: Math.round(toggle.getBoundingClientRect().bottom - panel.getBoundingClientRect().top),
       };
     });
@@ -278,12 +321,16 @@ async function measureTheLayout(world) {
         Math.abs(joined.touching) <= 1,
       JSON.stringify(joined)
     );
+    // In the rail the bar has no margin of its own -- the column gap is the
+    // space, and a second answer to the same question is how the two drift --
+    // so what is held here is that the gap between its rows and the gap between
+    // the two columns are both the page's own figures.
     check(
-      "the filter bar carries a rem of space above it and a rem between its rows",
-      joined.barGap === "16px" && joined.barMargin === "16px",
-      `gap ${joined.barGap}, margin-top ${joined.barMargin}`
+      "in the rail the bar takes the column's gap instead of a margin of its own",
+      joined.barGap === "16px" && joined.barMargin === "0px" && joined.columnGap === "32px",
+      `row gap ${joined.barGap}, column gap ${joined.columnGap}, margin-top ${joined.barMargin}`
     );
-    if (openedThePanel) await page.click("#moreFiltersToggle");
+    if (railedPanel) await page.click("#moreFiltersToggle");
     // The three layout rules a reader scrolling ninety rows is relying on: the
     // headings stay, the action column does not widen, and the page controls
     // are not welded to the table's last row.

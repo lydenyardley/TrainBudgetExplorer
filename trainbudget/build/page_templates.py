@@ -239,6 +239,17 @@ __FIRST_USE_PARA__
 <p class="sub" id="scriptNote" hidden>The list of destinations needs this page's code, which did not load, so the table below is empty.</p>
 <p id="unpriced" class="unpriced" hidden></p>
 
+<!-- Item 3 of the 3 November 2026 design review: on a wide screen the
+     refinements are a column of their own beside the list rather than a bar
+     above it. The heading, the notes and the address stay the width of the
+     page; the rail and the list share what is left, so the first row a reader
+     sees is one the page's own answer, not a control that was there before it.
+     The wrapper is layout only -- no element, no id and no landmark moves,
+     and below 68rem it is the block it always was. 68 rather than the 44rem of
+     the phone breakpoint because the six-column table needs about 700px before
+     its three row actions stop wrapping (the measurement in station.css), and
+     an 18rem rail plus the gap only leaves that much above 68rem. -->
+<div class="station-layout">
 <section class="filter-bar" aria-label="Journey and destination filters">
   <fieldset class="budget-track">
     <legend class="sr-only">Budget</legend>
@@ -334,6 +345,7 @@ __FIRST_USE_PARA__
 </div>
 </section>
 
+<div class="station-results">
 <!-- The one provenance line that stays above the table, and it is one line and
      a press rather than a paragraph: the date the prices are from, which opens
      the fold at the foot of the page holding how old they are, the threshold,
@@ -394,6 +406,8 @@ __FIRST_USE_PARA__
      row pushes them apart, and two layout checks hold that gap to nothing.
      Position means nothing to a live region; presence and visibility do. -->
 <span id="shortlistStatus" role="status" class="sr-only"></span>
+</div>
+</div>
 
 </main>
 

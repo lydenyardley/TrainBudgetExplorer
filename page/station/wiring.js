@@ -23,8 +23,7 @@ if (railBudget) {
 }
 // OV4 of the 19 October 2026 overdrive pass: the rail is a shortcut to a control
 // the reader has scrolled past, so it appears only while that control is out of
-// view. A page with no IntersectionObserver keeps the rail hidden and loses
-// nothing it had before.
+// view.
 //
 // Out of view is not the same as scrolled past. At a 200% zoom the page is one
 // narrow 304px column and the slider sits below the fold, so "not intersecting"
@@ -33,15 +32,34 @@ if (railBudget) {
 // the click meant for the switch (the accessibility matrix timed out on it for
 // thirty seconds, 25 October 2026). A control below the fold has not been
 // reached yet; only one above it has been passed.
-if (budgetRail && "IntersectionObserver" in window) {
-  new IntersectionObserver((entries) => {
-    const entry = entries[entries.length - 1];
-    const away = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+//
+// The two states are told apart by the control's own box rather than by an
+// IntersectionObserver, because the observer cannot: out of view above and out
+// of view below are both an intersection ratio of zero, so moving between them
+// crosses no threshold and delivers no entry. On 3 November 2026 the rail stayed
+// up after exactly that move -- a page scrolled past its slider, then shortened
+// to a phone window with the slider under the fold -- and the reader was offered
+// a shortcut to a control they had not reached. A scroll and a resize both mean
+// the answer may have changed, and the read is one rect per frame at most.
+if (budgetRail) {
+  let railFrame = 0;
+  const placeBudgetRail = () => {
+    railFrame = 0;
+    const away = budget.getBoundingClientRect().bottom < 0;
     budgetRail.hidden = !away;
     // The sticky column headings and the row scroll margin move down while the
     // rail is up, or the two would cover each other.
     document.body.dataset.rail = away ? "on" : "off";
-  }, { threshold: 0 }).observe(budget);
+  };
+  const queueBudgetRail = () => {
+    if (railFrame) return;
+    railFrame = window.requestAnimationFrame
+      ? window.requestAnimationFrame(placeBudgetRail)
+      : window.setTimeout(placeBudgetRail, 16);
+  };
+  window.addEventListener("scroll", queueBudgetRail, { passive: true });
+  window.addEventListener("resize", queueBudgetRail);
+  placeBudgetRail();
 }
 budgetField.addEventListener("click", (event) => {
   if (event.target === budgetField || event.target.classList.contains("budget-prefix")) {
