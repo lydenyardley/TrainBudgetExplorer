@@ -588,8 +588,9 @@
      appear on a 1366 laptop: there the table would lose 320px, and the longest
      station names on the real feed then paint on two lines (5 of the 32 pages
      the browser suite drives, 3 November 2026). A wrapped name is not a cramped
-     column: the six-column table needs its 1176px, measured on the real school
-     of names, and this rule is what keeps it. */
+     column -- it is a different name, the same defect that once painted a price
+     as "10.1" over "0" -- so the table keeps its 1176px and this rule is what
+     keeps it. */
   .station-layout { display: block; }
   .station-results { min-width: 0; }
   @media (min-width: 98rem) {
