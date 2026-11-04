@@ -673,7 +673,7 @@ else moves; or a decision that the feed's capitalisation is the honest name.
 ## O42 -- The refinements fold instead of popping out on a narrow screen
 
 **Kind:** decision. **Raised:** the 3 November 2026 review, second half.
-**Route:** the station page's filter bar below 68rem.
+**Route:** the station page's filter bar below 98rem.
 
 At 390px the folded bar is 177px and the first destination row begins at 600px,
 so a pop-out drawer would save the bar's height and cost a modal interaction

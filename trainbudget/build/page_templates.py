@@ -243,12 +243,14 @@ __FIRST_USE_PARA__
      refinements are a column of their own beside the list rather than a bar
      above it. The heading, the notes and the address stay the width of the
      page; the rail and the list share what is left, so the first row a reader
-     sees is one the page's own answer, not a control that was there before it.
+     sees is the page's own answer, not a control that was there before it.
      The wrapper is layout only -- no element, no id and no landmark moves,
-     and below 68rem it is the block it always was. 68 rather than the 44rem of
-     the phone breakpoint because the six-column table needs about 700px before
-     its three row actions stop wrapping (the measurement in station.css), and
-     an 18rem rail plus the gap only leaves that much above 68rem. -->
+     and below 98rem it is the block it always was. 98 rather than the 44rem of
+     the phone breakpoint because the rail may only take width the page was not
+     using: the results table needs its 1176px for the real feed's longest
+     station names, so the page grows by the rail and its gap (78 + 18 + 2) and
+     a window narrower than that keeps the bar above the list. The measurement
+     is in station.css and adr/ADR-0082. -->
 <div class="station-layout">
 <section class="filter-bar" aria-label="Journey and destination filters">
   <fieldset class="budget-track">

@@ -581,13 +581,24 @@
      same order, drawn once by the same template. What changes is where the
      results start -- level with the controls rather than under them -- and
      what happens to the rail while the reader scrolls, which is that it stays.
-     68rem rather than the 44rem of the phone breakpoint, because the six-column
-     table needs about 700px before its three row actions stop wrapping (the
-     measurement below), and an 18rem rail plus its gap only leaves that much
-     above 68rem. */
+     The width is the whole rule. The page caps its content at 78rem, so a rail
+     can only be width the page was not using: the table keeps the 1176px it
+     has, and the page grows by the rail and its gap. 98rem is that sum -- 78rem
+     of page, 18rem of rail, a 2rem gap -- and it is also why the rail cannot
+     appear on a 1366 laptop: there the table would lose 320px, and the longest
+     station names on the real feed then paint on two lines (5 of the 32 pages
+     the browser suite drives, 3 November 2026). A wrapped name is not a cramped
+     column: the six-column table needs its 1176px, measured on the real school
+     of names, and this rule is what keeps it. */
   .station-layout { display: block; }
   .station-results { min-width: 0; }
-  @media (min-width: 68rem) {
+  @media (min-width: 98rem) {
+    /* The room is asked for in the shared width's own token rather than by
+       restating a page width here: the column stays 78rem and the page becomes
+       78 + 18 of rail + the 2rem between them, so every measure inside the
+       column -- the heading, the count, the table's 1176px -- is the width it
+       was. */
+    :root { --rail: 20rem; }
     .station-layout {
       display: grid;
       grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
@@ -607,7 +618,7 @@
        56px budget rail then arrives while the column is still on screen. The
        slider stays where it is and the controls that can be longer than a
        window -- the open panel -- take the scroll, bounded so the day control
-       under it stays reachable. The floor matters: at a 68rem-wide, 300px-tall
+       under it stays reachable. The floor matters: at a 98rem-wide, 300px-tall
        window the subtraction would otherwise ask for a negative height. */
     .more-filters[data-open="true"] .more-filters-panel {
       max-height: max(6rem, calc(100vh - 16rem));

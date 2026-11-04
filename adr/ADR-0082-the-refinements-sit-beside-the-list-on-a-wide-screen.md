@@ -10,10 +10,9 @@ The 3 November 2026 review asked for the filters to become a side panel on a
 wide screen and a pop-out on a narrow one, so they are more visible and the
 noise above the results is smaller.
 
-On the synthetic Grantham page at 1366x768 the first destination row began at
-**603px** of the 768px window. The heading, the first-use sentence, the budget
-bar and the folded refinements sat above it, and one whole row was on screen at
-the fold.
+On the synthetic Grantham page the heading, the first-use sentence, the budget
+bar and the folded refinements all sit between the top of the page and the first
+destination row, and what is left of the fold holds one row at 1366x768.
 
 The fold is not noise to be removed on the way. The distil pass of 19 October
 2026 measured it -- four controls a reader had not asked for above the list --
@@ -25,11 +24,11 @@ would overturn a measured decision to save a bar that is already one line at
 
 ## Decision
 
-At **68rem and above** the filter bar and the results are two columns of one
-wrapper. The bar is sticky, the results take the rest, and below 68rem the page
-is the block it was.
+At **98rem and above** the filter bar and the results are two columns of one
+wrapper, and the page's own content width grows by the rail and its gap. Below
+98rem the page is the block it was.
 
-Six rules hold it together:
+Seven rules hold it together:
 
 1. **Layout only.** One wrapper around the bar and the list. No id, landmark or
    control moves, and the template writes one bar for both layouts, so a control
@@ -37,19 +36,29 @@ Six rules hold it together:
 2. **The fold stays.** The rail is the bar, not a second panel: the budget, the
    "Filter this list" control and the day control are in it, and pressing the
    fold opens the panel it always opened.
-3. **68rem, not the 44rem of the phone breakpoint.** The six-column table needs
-   about 700px before its three row actions wrap, and an 18rem rail plus its
-   2rem gap only leaves that much above 68rem.
-4. **What scrolls is the panel, not the column.** A sticky column that scrolls
+3. **The rail takes width the page was not using.** The page caps its content at
+   78rem, so a rail inside that cap would take 320px from the results table, and
+   the table loses the width its longest station names need -- see Evidence. The
+   shared width becomes `calc(--page-max + --rail)`, `--rail` is zero on every
+   route, and the station route sets it to 20rem at 98rem and above: 18rem of
+   bar and the 2rem between them. The column, and the table's 1176px inside it,
+   is the width it was, so the rail cannot wrap a name that fit. The route still
+   states no page width of its own -- the token is the shared stylesheet's, which
+   is what `tests/test_build_demo_page.py` holds it to.
+4. **98rem, not the 44rem of the phone breakpoint, and not 68rem.** The
+   six-column table needs its 1176px, measured on the real feed's longest names.
+   A 1366 laptop cannot hold the page and the rail side by side, so it keeps the
+   bar above the list.
+5. **What scrolls is the panel, not the column.** A sticky column that scrolls
    internally can lose the budget slider inside itself. The page reads a slider
    out of its own column as one the reader has passed, and the 56px budget rail
    then arrives while the column is still on screen.
-5. **The budget rail reads the slider's box.** Out of view above and out of view
+6. **The budget rail reads the slider's box.** Out of view above and out of view
    below are both an intersection ratio of zero, so an IntersectionObserver
    delivers no entry when a reader moves between them, and the rail stayed up
    after a page scrolled past its slider was shrunk to a phone window. A scroll
    or a resize re-reads one rect, at most once a frame.
-6. **A narrow screen keeps the fold.** At 390px the folded bar is 177px and the
+7. **A narrow screen keeps the fold.** At 390px the folded bar is 177px and the
    first row is at 600px, so a pop-out would trade that height for a modal
    interaction over the rows it filters. The narrow half of the request is
    **O42**.
@@ -58,27 +67,42 @@ Six rules hold it together:
 
 Measured 3 November 2026 on the synthetic build
 (`python -m tools.build_demo_page --feed _demo_feed --timetable _demo_feed --all-origins`),
-reading the same markup twice: once as built, and once with the wide rule
-cancelled, so only the layout differs.
+reading the same markup twice at each width: once as built, once with the wide
+rule cancelled, so only the layout differs.
 
-| Window | First row, bar above the list | First row, rail | Table |
+| Window | First row, bar above the list | First row, rail | Rows at the fold |
 |---|---:|---:|---:|
-| 1366x768 | 603px | **458px** | 856px of a 1176px page |
-| 1280x800 | 612px | **467px** | 856px |
-| 390x844 | 600px | 600px, unchanged | 366px |
+| 1366x768 | 688px | 688px -- the rail does not apply | 1 |
+| 1568x900 | 700px | **495px** | 3 -> 6 |
+| 1920x1080 | 747px | **542px** | 5 -> 8 |
 
-- At 1366x768 the fold holds four whole rows where it held one, because the rail
-  no longer stands between the heading and the list.
-- The table keeps 856px at 1280, above the ~700px its row actions need: a row
-  measured 63px in both layouts, so nothing wraps that did not wrap before.
-- No horizontal overflow at any of the three widths.
+- **The table is 1176px in both layouts at all three widths**, so the rail costs
+  the results nothing: a row measured 63px in both, and no price, time, name or
+  heading moves to a second line.
+- The wrap rule is why the width is 98rem and not 68rem. At 1280 the page's
+  content is already its full 1176px, so the first design's 18rem rail took 320px
+  from the table and the real feed's longest names painted on two lines: 5 of the
+  32 pages the browser suite drives failed on it (`abbey-wood`, `glasshoughton`,
+  `pollokshields-w`, `st-helier`, `tattenham-corner`, 3 November 2026).
+- Measured with the real feed's eight longest names in the results, the table at
+  1176px in the rail wraps none of them and overflows neither axis.
+- No horizontal overflow at any of the three widths, at 390px, or at 200% zoom.
 - The panel opens as one column in the rail and two at 1024px, where the bar
   spans the page.
-- `python -m tools.verify --browser` drives six pages, **1395 checks**, 54 not
+- `python -m tools.verify --browser` drives six pages, **1399 checks**, 50 not
   exercised, and both skip budgets inside their limits.
 
 ## Consequences
 
+- **The rail is for screens wider than a laptop.** A 1366 or 1440 window is
+  unchanged. The reader who gains is the one on a 1568px display or larger, where
+  the page was previously drawing a 1248px column with empty space either side.
+- **The page is 1568px wide where it was 1248px, on a screen that wide.** Every
+  element inside the column keeps its own measure -- prose keeps its `ch` caps,
+  the table keeps its 1176px -- so what grows is margin, and the rail fills it.
+  The chooser and the privacy page are unaffected, and the station page and the
+  chooser still share one column: the 20rem beside it is the rail, not a second
+  column for the content.
 - **The rail releases at its column's end.** On a page whose results column is
   shorter than the rail (a three-row demo page), scrolling past the list takes
   the rail with it, and the 56px budget rail covers the reader from there. A

@@ -150,12 +150,12 @@ async function checkTheOriginPicker(world) {
           .gridTemplateColumns.split(" ").length;
       });
     };
-    const inRail = await panelColumnsAt(1280);
+    const inRail = await panelColumnsAt(1600);
     const spanning = await panelColumnsAt(1024);
     check(
       "the panel is one column in the rail and two where the bar spans the page",
       inRail === 1 && spanning === 2,
-      `${inRail} column(s) in the rail at 1280px, ${spanning} at 1024px`
+      `${inRail} column(s) in the rail at 1600px, ${spanning} at 1024px`
     );
     await page.setViewportSize({ width: 1280, height: 800 });
     await open(facts.affordable);

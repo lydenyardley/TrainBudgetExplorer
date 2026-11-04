@@ -216,7 +216,7 @@ async function measureTheLayout(world) {
     }
     await open(facts.affordable);
     // Two controls that make one decision share a row -- where the bar spans
-    // the page. Above 68rem that bar is a rail beside the list, and the same two
+    // the page. Above 98rem that bar is a rail beside the list, and the same two
     // decisions are made one after the other, so they stack. The arrangement is
     // read at the width it belongs to rather than at whatever the run happens to
     // be at, which is what keeps both rules measured instead of one of them
@@ -263,7 +263,9 @@ async function measureTheLayout(world) {
       JSON.stringify({ layout: filterRow.layout, margin: filterRow.barMargin, gap: filterRow.barGap })
     );
     if (openedThePanel) await page.click("#moreFiltersToggle");
-    await page.setViewportSize({ width: 1280, height: 800 });
+    // 1600 is past the 98rem the rail's own rule asks for: 78rem of page, 18rem
+    // of bar and the 2rem between them.
+    await page.setViewportSize({ width: 1600, height: 900 });
     await open(facts.affordable);
     const railedPanel = await openThePanel();
     const railRow = await page.evaluate(() => {
