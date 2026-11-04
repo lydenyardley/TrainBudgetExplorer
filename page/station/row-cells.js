@@ -219,12 +219,15 @@ function fareSentence(destination) {
   }
   if (destination.restrictionCode) {
     // The feed either describes the code or says it cannot. Where it can, the
-    // condition is the paragraph below. Where it cannot, the payload's own
-    // sentence already carries the code and the reason, so it is the whole
-    // explanation and the panel adds nothing after it (D3 of the 17 October
-    // 2026 critique: the two sentences said the same thing twice).
+    // condition is the paragraph under this sentence, in the same column of the
+    // panel (ADR-0084): "the condition is below" was written when the panel was
+    // one column, and it pointed past the list of trains on a phone and beside
+    // it once the panel had two. Where the feed cannot describe the code, the
+    // payload's own sentence already carries the code and the reason, so it is
+    // the whole explanation and the panel adds nothing after it (D3 of the 17
+    // October 2026 critique: the two sentences said the same thing twice).
     return destination.restrictionDescribed
-      ? "Restricted fare — the condition is below."
+      ? "Restricted fare."
       : destination.restrictionDescription;
   }
   if (destination.quality === "outbound single") return "Standard outbound single, with no conditions in the feed.";

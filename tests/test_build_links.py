@@ -1,4 +1,5 @@
-"""What a row hands off: the seller link, its disclosure, and the copy.
+"""What a row hands off: the seller link and its disclosure, and the one copy
+the page still makes -- the shortlist's (ADR-0084 took the row's away).
 
 F6 of the 8 October 2026 agent-efficiency audit moved the page's content
 tests out of the class they all shared, by subject, over the fixture in
@@ -92,12 +93,18 @@ class TicketHandoffTest(PageTestCase):
         self.assertIn(DISCLOSURE, html)
         self.assertLess(html.index('id="disclosure"'), html.index("<table>"))
 
-    def test_the_copied_text_names_the_railcard_only_for_the_party_price(self) -> None:
-        # The card is never sent anywhere; it is named as something to tick, and
-        # only when the price on screen is the one that needs it. Which card is
-        # named is the browser suite's to answer: it copies a row as one adult
-        # and as two and reads the clipboard both times.
-        self.assertNotIn('"Two Together discount is not sent to the seller', page_script(self.html))
+    def test_the_row_offers_no_copy_of_its_own(self) -> None:
+        # ADR-0084: the row's "Copy journey" copied one place while the
+        # shortlist's Copy names every place held with its price, time and fare.
+        # Two controls for one job, and the row's was the weaker of the two, so
+        # the machinery went with the button rather than staying on the page
+        # idle. The shortlist's Copy is the one the page acknowledges, and the
+        # browser suite drives it.
+        script = page_script(self.html)
+        for gone in ("rowActions", "journeyText", "showCopyText", "copyJourney"):
+            self.assertNotIn(gone, script)
+        self.assertNotIn('id="copyStatus"', self.html)
+        self.assertIn('id="shortlistCopy"', self.html)
 
     def test_the_copied_date_is_not_parsed_through_the_date_object(self) -> None:
         # new Date("2026-10-05") is UTC midnight and prints as the 4th for a
@@ -115,16 +122,16 @@ class TicketHandoffTest(PageTestCase):
         self.assertIn("navigator.clipboard", page_script(self.html))
         self.assertIn("Could not copy automatically", page_script(self.html))
         self.assertIn("Select below", page_script(self.html))
-        # Two surfaces acknowledge a copy -- the row's button and the dock's,
-        # which DL4 of the 19 October 2026 delight pass gave the same two-second
-        # word -- and both acknowledgements live on the success path only. A
-        # third occurrence would be a failure path claiming one, or a second
-        # word for one action.
-        self.assertEqual(page_script(self.html).count('"Copied"'), 2)
+        # One surface acknowledges a copy now that ADR-0084 took the row's away,
+        # and the acknowledgement lives on the success path only. A second
+        # occurrence would be a failure path claiming one, or a second word for
+        # one action.
+        self.assertEqual(page_script(self.html).count('"Copied"'), 1)
 
     def test_the_copy_confirmation_is_announced_and_not_only_shown(self) -> None:
-        self.assertIn('id="copyStatus" role="status"', self.html)
+        self.assertIn('id="shortlistStatus" role="status"', self.html)
         self.assertIn("class=\"sr-only\"", self.html)
+        self.assertIn("Shortlist copied.", page_script(self.html))
 
     def test_the_newlines_in_the_copy_are_escaped_for_the_browser(self) -> None:
         # A real newline inside a JavaScript string literal is a SyntaxError that

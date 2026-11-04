@@ -1,13 +1,25 @@
 /**
  * What a row does: the ticket link that goes where it says it goes (4), the
- * handoff text a reader pastes to a seller (5), and the party price a railcard
- * is applied to (6).
+ * panel it opens (5) -- the trains beside the fare, and no copy of its own
+ * since ADR-0084 -- and the party price a railcard is applied to (6).
  *
  * The two-ticket row is here too, because it is the same subject from the
  * other end: a place the feed prices only in two parts is one row and two
  * purchases, and its panel names both tickets, both conditions and the split.
  */
 const { SELLER, money, notExercised } = require("./harness.cjs");
+
+// The page's date words, written here so a check of the panel's lead does not
+// read them back off the page it is checking.
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+function dayWords(iso) {
+  const parts = String(iso || "").split("-").map(Number);
+  if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) return "";
+  return parts[2] + " " + MONTHS[parts[1] - 1] + " " + parts[0];
+}
 async function checkTheRowActions(world) {
   const { page, check, notExercised } = world;
     // 4. A ticket link goes where it says it goes, in a new tab.
@@ -25,53 +37,114 @@ async function checkTheRowActions(world) {
     await popup.waitForLoadState("domcontentloaded");
     check("following the link reaches the seller", SELLER.test(popup.url()), popup.url());
     await popup.close();
-    // 5. A row can hand the reader the four things the seller will ask for.
-    // What the copy must say is read from the payload rather than matched
-    // against a pattern: a real station's name has spaces in it
-    // (LONDON KINGS X, NOTTINGHAM), and a one-word pattern rejected the
-    // correct answer while accepting a wrong one on the demo feed.
-    const rowText = (await page.textContent("#rows tr")).trim();
-    // Copy and the railcard note wait in the row's own panel (finding 4,
-    // 29 September 2026), so the row is opened first: a control a reader
-    // reaches through a disclosure is still a control, and this is where the
-    // suite meets it.
+    // 5. The panel a row opens: the trains the fare pays for, the fare itself,
+    // and no copy of its own (ADR-0084). Every claim here is about what the
+    // panel says for one row, so it is read off the row the reader opens.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
-    const adultButton = page.locator("#rows button[aria-label^='Copy journey']").first();
-    const journey = await page.evaluate((label) => {
-      const name = label.replace("Copy journey for ", "");
-      const destination = TYPES.list().find((d) => d.name === name) || {};
+    const panel = await page.evaluate(() => {
+      const toggle = document.querySelector("#rows tr[data-crs] .toggle[aria-expanded='true']");
+      const row = toggle ? toggle.closest("tr[data-crs]") : null;
+      const detail = row ? row.nextElementSibling : null;
+      const crs = row ? row.dataset.crs : "";
+      const destination = (crs && TYPES.list().find((d) => d.crs === crs)) || null;
+      const trains = detail ? detail.querySelector(".trains") : null;
+      const fare = detail ? detail.querySelector(".fare") : null;
+      const columns = detail ? detail.querySelector(".detail-columns") : null;
+      const lead = detail
+        ? Array.from(detail.querySelectorAll(".trains-lead p")).map((p) => p.textContent.trim())
+        : [];
+      const items = detail
+        ? Array.from(detail.querySelectorAll(".trains > ul > li")).map((li) => li.textContent.trim())
+        : [];
+      const boxes = trains && fare ? [trains.getBoundingClientRect(), fare.getBoundingClientRect()] : [];
       return {
-        origin: DATA.origin.name + " (" + DATA.origin.crs + ")",
-        destination: destination.name + " (" + destination.crs + ")",
+        crs,
+        trains: Boolean(trains),
+        fare: Boolean(fare),
+        lead,
+        items,
+        // Read off the DOM rather than off the template: a button or a box in
+        // here would be the row's copy back, in a new place.
+        controls: detail ? detail.querySelectorAll("button, textarea").length : 0,
+        twoTracks: columns
+          ? getComputedStyle(columns).gridTemplateColumns.trim().split(/\s+/).length > 1
+          : false,
+        // The two columns hold the same top edge and do not overlap, which is
+        // what "beside" means once the stylesheet has laid them out.
+        sideBySide:
+          boxes.length === 2 &&
+          Math.round(boxes[0].top) === Math.round(boxes[1].top) &&
+          boxes[0].right <= boxes[1].left,
+        departures: destination ? destination.departures.length : 0,
+        described: Boolean(destination && destination.restrictionCode && destination.restrictionDescribed),
+        sentence: ((detail && detail.querySelector(".fare-line")) || {}).textContent || "",
+        // The day the list belongs to is the one the page is showing, which is
+        // the payload's own date on a build that named one.
+        day: DATA.serviceDate || "",
       };
-    }, await adultButton.getAttribute("aria-label"));
-    await adultButton.click();
-    await page.waitForFunction(
-      () => /copied/i.test((document.getElementById("copyStatus") || {}).textContent || ""),
-      null,
-      { timeout: 3000 }
-    ).catch(() => {});
-    const adultCopy = await page.evaluate(() => navigator.clipboard.readText());
-    check("the copy names the origin", adultCopy.includes("From: " + journey.origin), adultCopy);
-    check("the copy names the destination", adultCopy.includes("To: " + journey.destination), adultCopy);
-    check("the copy names the party size", /^Passengers: 1 adult$/m.test(adultCopy), adultCopy);
-    const dated = await page.evaluate(() => Boolean(DATA.serviceDate));
+    });
     check(
-      "the copy dates the journey when the build names a day, and not otherwise",
-      dated === /^Date: /m.test(adultCopy),
-      `${dated ? "a day" : "no day"}: ${adultCopy}`
+      "the panel a row opens offers no copy of its own",
+      panel.controls === 0,
+      `${panel.controls} control(s) in the panel`
     );
-    check("one adult's copy does not mention a railcard", !/Railcard/.test(adultCopy), adultCopy);
-    // The copy belongs to the row it was copied from, judged on the whole
-    // station name rather than its first word, which two stations can share.
+    // The duration is the subtraction a reader was doing across an hour
+    // boundary, so it is checked against the two clocks printed beside it
+    // rather than against the payload's own minutes.
+    const clockMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+    const timed = panel.items.map((item) => {
+      const match = /^(\d\d:\d\d) depart, (\d\d:\d\d) arrive \((\d+)h (\d+)m\)|^(\d\d:\d\d) depart, (\d\d:\d\d) arrive \((\d+)m\)/.exec(item);
+      if (!match) return { item, ok: false };
+      const depart = clockMinutes(match[1] || match[5]);
+      const arrive = clockMinutes(match[2] || match[6]);
+      const span = (arrive - depart + 1440) % 1440;
+      const shown = match[1]
+        ? Number(match[3]) * 60 + Number(match[4])
+        : Number(match[7]);
+      return { item, ok: span === shown };
+    });
     check(
-      "the row it copied is the row it sits on",
-      adultCopy.includes("To: " + journey.destination) && rowText.includes(journey.destination),
-      `${rowText} vs ${adultCopy}`
+      "and every train it lists carries the duration between the two clocks it prints",
+      panel.items.length === panel.departures && timed.every((one) => one.ok),
+      `${timed.filter((one) => !one.ok).map((one) => one.item).join(" | ")} (${panel.departures} departure(s))`
+    );
+    // The list was the first five of the day and said nothing about which day;
+    // the lead says it now, from the page's own date (ADR-0084, rule 3).
+    const dayLead = "Next trains" + (panel.day ? " on " + dayWords(panel.day) : "") + ".";
+    check(
+      "and its lead names the day the trains belong to",
+      panel.departures === 0
+        ? notExercised("this page lists no trains, so the panel has no lead to read")
+        : panel.lead.length > 0 && panel.lead[0] === dayLead,
+      JSON.stringify({ lead: panel.lead, want: dayLead })
     );
     check(
-      "and the copy is announced, not just performed",
-      /copied/i.test(await page.textContent("#copyStatus"))
+      "and says whether the condition is on the fare or on one of the trains",
+      panel.described
+        ? panel.lead.some(
+            (line) => line.startsWith("The condition ") && line.includes("is on the fare, not on one of these trains")
+          )
+        : !panel.lead.some((line) => line.includes("is on the fare, not on one of these trains")),
+      JSON.stringify({ described: panel.described, lead: panel.lead })
+    );
+    // The sentence that used to point at the trains pointed past them on a
+    // phone and beside them once the panel had two columns (ADR-0084, rule 5),
+    // so it says only what it knows: the fare is restricted.
+    check(
+      "and a described condition's sentence stands on its own, with no pointer at the trains beside it",
+      panel.described
+        ? panel.sentence === "Restricted fare."
+        : panel.sentence.length > 0 && !/\sbelow\b/.test(panel.sentence),
+      JSON.stringify({ sentence: panel.sentence, described: panel.described })
+    );
+    check(
+      "and the trains and the fare sit beside each other where the panel is two columns",
+      panel.departures === 0
+        ? notExercised("this page lists no trains, so the panel has one column of content")
+        : panel.twoTracks
+          ? panel.sideBySide
+          : notExercised("this window is narrower than the panel's two-column width"),
+      JSON.stringify({ twoTracks: panel.twoTracks, sideBySide: panel.sideBySide })
     );
     // 5b. The panel is a row of the results table, so it has to be as wide as
     // the table. A build that stands a column down -- no timetable, so no time
@@ -172,61 +245,46 @@ async function checkTheRowActions(world) {
     const partyReachable = party.cheapest <= party.ceiling;
     if (partyReachable) {
     await page.fill("#budgetNumber", String(Math.max(1, Math.ceil(party.cheapest / 100))));
-    // Copy and the railcard note wait in the row's own panel (finding 4,
-    // 29 September 2026), so the row is opened first: a control a reader
-    // reaches through a disclosure is still a control, and this is where the
-    // suite meets it.
+    // The railcard note waits in the row's own panel (finding 4, 29 September
+    // 2026), so the row is opened first: a note a reader reaches through a
+    // disclosure is still a note, and this is where the suite meets it. It is
+    // owed only where the feed prices a card on that fare, so whether one should
+    // be there is read off the row the page opened rather than written here.
     await page.locator("#rows tr:not(.detail) .toggle[aria-expanded='false']").first().click();
-    const copyButton = page.locator("#rows button[aria-label^='Copy journey']").first();
-    const copiedName = (await copyButton.getAttribute("aria-label")).replace("Copy journey for ", "");
-    // The railcard note is owed only where the feed prices one, so what the
-    // copy should say is read off the row it is about to copy: a page with no
-    // eligible fare must stay quiet rather than name a discount that is not there.
-    // What the copy should say is read off the chosen card and the row it is
-    // about to copy. A card the feed refused for that fare must stay unmentioned
-    // rather than named as a discount that is not there.
-    const railcardNamed = await page.evaluate((name) => {
-      const row = DATA.destinations.find((d) => d.name === name);
+    const partyNote = await page.evaluate(() => {
+      const toggle = document.querySelector("#rows tr[data-crs] .toggle[aria-expanded='true']");
+      const row = toggle ? toggle.closest("tr[data-crs]") : null;
+      const crs = row ? row.dataset.crs : "";
+      const destination = (crs && TYPES.list().find((d) => d.crs === crs)) || null;
       const select = document.getElementById("railcardSelect");
-      if (!row || !select || !select.value) return false;
-      const card = (row.railcards || {})[select.value];
-      return Boolean(card && card.pricePence !== null);
-    }, copiedName);
-    await copyButton.click();
-    await page.waitForFunction(
-      () => /2 adults/.test((document.getElementById("copyStatus") || {}).textContent || ""),
-      null,
-      { timeout: 3000 }
-    ).catch(() => {});
-    // Audit item 13, 28 October 2026: the button's visible words are part of the
-    // name it announces (WCAG 2.5.3), and the name is what carries the
-    // destination (C13). The acknowledgement used to change the text alone, so a
-    // button reading "Copied" still announced "Copy journey for ...". Both are
-    // written together now, and this holds whichever path ran -- a granted
-    // clipboard or the manual copy a refused one offers.
-    const relabelled = await copyButton.evaluate((button) => ({
-      text: (button.textContent || "").trim(),
-      name: button.getAttribute("aria-label") || "",
-    }));
+      const card = destination && select && select.value ? (destination.railcards || {})[select.value] : null;
+      const line = document.querySelector("#rows tr.detail .card-note");
+      return {
+        crs,
+        // A card the feed refused for this fare is not a card price, so the note
+        // is owed only where the feed gives it one.
+        owed: Boolean(card && card.pricePence !== null),
+        note: line ? line.textContent.trim() : "",
+      };
+    });
     check(
-      "and the words on its face are inside the name it announces",
-      relabelled.text.length > 0 && relabelled.name.includes(relabelled.text),
-      JSON.stringify(relabelled)
+      "the panel under a party price carries the railcard note when the feed prices the card on that fare, and stays quiet when it does not",
+      partyNote.owed ? partyNote.note.length > 0 : partyNote.note === "",
+      JSON.stringify(partyNote)
     );
     const partyCopy = await page.evaluate(() => navigator.clipboard.readText());
-    check("the party copy says two adults", /^Passengers: 2 adults$/m.test(partyCopy), partyCopy);
     check(
-      "and names the railcard when the fare is eligible, and stays quiet when it is not",
-      railcardNamed ? /discount is not sent to the seller/.test(partyCopy) : !/discount is not sent to the seller/.test(partyCopy),
-      `${copiedName} ${railcardNamed ? "is" : "is not"} railcard-eligible: ${partyCopy}`
+      "and the row hands no copied journey to the clipboard",
+      !/^Passengers: /m.test(partyCopy),
+      partyCopy
     );
     } else {
       const reason =
         `with Two adults selected this page's cheapest price is ${money(party.cheapest)} and its ` +
         `budget goes to ${money(party.ceiling)}, so no party row can be shown at any budget it allows`;
       for (const name of [
-        "the party copy says two adults",
-        "and names the railcard when the fare is eligible, and stays quiet when it is not",
+        "the panel under a party price carries the railcard note when the feed prices the card on that fare, and stays quiet when it does not",
+        "and the row hands no copied journey to the clipboard",
       ]) {
         check(name, notExercised(reason));
       }

@@ -510,7 +510,6 @@ __FIRST_USE_PARA__
     <dl id="wordList"></dl>
   </details>
   <nav class="footnav"><a href="__BASE__/">Station list</a> <a href="__BASE__/privacy/">Privacy</a></nav>
-  <p id="copyStatus" role="status" class="sr-only"></p>
 </footer>
 
 __STATIONS_SRC__

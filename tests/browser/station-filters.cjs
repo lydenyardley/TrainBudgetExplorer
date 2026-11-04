@@ -1331,93 +1331,18 @@ async function driveTheFilters(world) {
       JSON.stringify(adultOrder.words)
     );
     await page.check('input[name="unit"][value="adult"]');
-    // C09: the copied journey carries the ticket mode, so a handoff to a
-    // seller cannot silently become a different ticket. Read from the page's
-    // own journeyText() rather than from a clipboard, which the context denies.
-    // The counts come from the payload rather than from the page's modeCount(),
-    // which is not a global: one list per mode is the same fact the page reads.
+    // C09's claim lives in the shortlist now (ADR-0084 took the row's copy off
+    // the page, and the shortlist's Copy is the text a reader pastes). The page
+    // is opened again only so the sections below read a row in the mode the page
+    // opens in: this block used to leave it in a named set.
     await open();
-    const modeHasRows = await page.evaluate(() => ({
-      return: (DATA.destinations || []).length,
-      single: (DATA.singleDestinations || []).length,
-      anytime: (DATA.anytimeDestinations || []).length,
-    }));
-    const copyForMode = async (mode) => {
-      await page.locator(`input[name="ticketMode"][value="${mode}"]`).check({ force: true });
-      return page.evaluate(() => journeyText(TYPES.list()[0] || { name: "X", crs: "XXX" }));
-    };
-    // The default is read off the checked radio rather than written here, so a
-    // change to which mode the page opens in cannot leave this block asserting
-    // against a mode the page never opens in.
+    // What this page offers for the reading: the mode its own radio says it is
+    // in, read rather than written here.
     const defaultMode = await page.evaluate(() => document.querySelector('input[name="ticketMode"]:checked').value);
-    const secondMode = ["return", "single", "anytime"].find((m) => modeHasRows[m] && m !== defaultMode);
-    if (secondMode) {
-      const copied = await copyForMode(secondMode);
-      // The expected name is read off the mode's own visible label, not from
-      // the page's modeLabels() helper: journeyText() builds its line with that
-      // same helper, so comparing the two would pass on any string at all --
-      // including a label of "" or one carrying a row count.
-      const visibleLabel = async (mode) =>
-        (((await page.locator(`input[name="ticketMode"][value="${mode}"]`)
-          .evaluate((el) => el.closest("label")?.textContent || "")) || "").trim());
-      const expected = await visibleLabel(secondMode);
-      const otherLabel = await visibleLabel(defaultMode);
-      const ticketLine = (copied.split("\n").find((line) => line.startsWith("Ticket: ")) || "").trim();
-      check(
-        "the copied journey names the ticket type the reader chose",
-        expected.length > 2 && ticketLine === "Ticket: " + expected && expected !== otherLabel,
-        JSON.stringify({ ticketLine, expected, otherLabel, secondMode })
-      );
-    } else {
-      check("the copied journey names the ticket type the reader chose", notExercised("no second mode on this page has a row"));
-    }
-    // The next section reads the ticket link off the first row, so the page is
-    // handed back in the default state rather than in whatever ticket mode the
-    // C09 check happened to be in.
-    await open();
     await page
       .locator(`input[name="ticketMode"][value="${defaultMode}"]`)
       .check({ force: true })
       .catch(() => {});
-    // Q4: in the cheapest list the reader chose a price rather than a ticket
-    // type, so the handoff text has to name the fare the row is priced as --
-    // "Ticket: Cheapest available" is what they picked, and it is not what a
-    // seller needs to hear. Driven from the page's opening mode, which is the
-    // one this is about: the check above left the page in a named set.
-    const cheapestCopy = await page.evaluate(() => {
-      const rows = Array.from(document.querySelectorAll("#rows tr[data-crs]"));
-      const line = rows[0];
-      if (!line) return null;
-      const crs = line.dataset.crs;
-      const destination = TYPES.list().find((d) => d.crs === crs);
-      if (!destination) return null;
-      const text = journeyText(destination);
-      // The fare name is composed here from the row's own quality phrase, so
-      // the check is not the page's own ticketName() agreeing with itself.
-      const want = destination.isAdvance
-        ? "Advance single"
-        : destination.quality === "unrestricted Anytime Day Return"
-          ? "Unrestricted Anytime Day Return"
-          : destination.quality === "outbound single"
-            ? "Standard outbound single"
-            : "Standard return";
-      return {
-        crs,
-        want,
-        mode: document.querySelector('input[name="ticketMode"]:checked').value,
-        ticketLine: (text.split("\n").find((entry) => entry.startsWith("Ticket: ")) || "").trim(),
-        modeLabel: (document.querySelector('input[name="ticketMode"]:checked').closest("label").textContent || "").trim(),
-      };
-    });
-    check(
-      "and a row in the cheapest list hands over the fare it is priced as",
-      cheapestCopy
-        ? cheapestCopy.mode === "cheapest" &&
-          cheapestCopy.ticketLine === "Ticket: " + cheapestCopy.want &&
-          cheapestCopy.ticketLine !== "Ticket: " + cheapestCopy.modeLabel
-        : notExercised("this page has no row to copy"),
-      JSON.stringify(cheapestCopy)
-    );
     // Critique item 8: the page's accelerators, and the line that says they
     // exist. Both are read against what the page does rather than against the
     // string the page writes: a hint promising a key the page does not honour

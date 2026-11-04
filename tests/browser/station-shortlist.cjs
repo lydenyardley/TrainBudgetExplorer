@@ -193,6 +193,39 @@ async function checkTheShortlist(world) {
           shared.share.includes(shared.origin),
         JSON.stringify(shared).slice(0, 300)
       );
+      // C09, on the page's one copy surface (ADR-0084 took the row's away): the
+      // text a reader hands to a seller has to name the ticket it is for, or a
+      // handoff can silently become a different one. The ticket is composed here
+      // from the row's own quality phrase rather than read from fareName(), so
+      // the check is not the page agreeing with itself; which of the two naming
+      // rules applies -- the row's fare on the cheapest list, the list's kind
+      // otherwise -- is the page's, and both are read below.
+      const named = await page.evaluate(() => {
+        const text = typeof shortlistText === "function" ? shortlistText() : "";
+        const lines = text.split("\n").filter((line) => line.startsWith("- "));
+        const mode = document.querySelector('input[name="ticketMode"]:checked').value;
+        const modeLabel = (
+          (document.querySelector('input[name="ticketMode"]:checked').closest("label") || {}).textContent || ""
+        ).trim();
+        return shortlisted().map((held) => {
+          const crs = held.crs;
+          const ticket = held.isAdvance
+            ? "Advance single"
+            : held.quality === "unrestricted Anytime Day Return"
+              ? "Unrestricted Anytime Day Return"
+              : held.quality === "outbound single"
+                ? "Standard outbound single"
+                : "Standard return";
+          const want = mode === "cheapest" ? ticket : modeLabel;
+          const line = lines.find((entry) => entry.includes("(" + crs + ")")) || "";
+          return { crs, mode, want, names: want !== "" && line.includes(want), line };
+        });
+      });
+      check(
+        "and the copied list names each place's ticket",
+        named.length > 0 && named.every((one) => one.names),
+        JSON.stringify(named).slice(0, 300)
+      );
       // The share line and the address are two renderings of one list, so a
       // place that left the shortlist has to leave the link too. They drifted
       // once: the list held one place and the link still named two, which sent

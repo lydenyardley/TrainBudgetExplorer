@@ -72,7 +72,7 @@ class DemoPageTest(PageTestCase):
         self.assertIsNotNone(warn_hex, "no light --warn token in the shared block")
         tint = re.search(r"--best:\s*rgba\((\d+), (\d+), (\d+), (\.\d+)\)", self.stylesheet)
         self.assertIsNotNone(tint, "no --best tint in the shared block")
-        self.assertIn("tr.detail td { background: var(--best);", self.stylesheet)
+        self.assertIn("tr.detail td { padding: 1rem 2rem; background: var(--best);", self.stylesheet)
         warn = tuple(int(warn_hex.group(1)[i:i + 2], 16) for i in (1, 3, 5))
         alpha = float(tint.group(4))
         panel = tuple(int(part) * alpha + 255 * (1 - alpha) for part in tint.groups()[:3])
@@ -1305,58 +1305,67 @@ class DemoPageTest(PageTestCase):
     def test_a_row_has_one_panel_and_one_control_that_owns_it(self) -> None:
         # C28: the times list and the manual-copy box both insert the row that
         # follows the data row, and each used to remove whatever was there by
-        # reaching for nextElementSibling. The distill pass leaves one panel per
-        # row -- the copy text lands inside it, under the button that asked for
-        # it -- so the state machine is one region with one owner, keyed weakly
-        # so a re-render's detached rows are collectable. The browser suite
-        # drives the panel and the control that owns it.
+        # reaching for nextElementSibling. The distill pass left one panel per
+        # row, and ADR-0084 took the copy out of it, so what is left is one
+        # region with one owner, keyed weakly so a re-render's detached rows are
+        # collectable. The browser suite drives the panel and the control that
+        # owns it.
         script = page_script(self.html)
         self.assertNotIn("nextElementSibling", script.split("function toggleDetail")[1].split("\nfunction ")[0])
-        self.assertNotIn("nextElementSibling", script.split("function showCopyText")[1].split("\nfunction ")[0])
         # The two-region machinery went with the second panel: one region cannot
         # be mis-opened over another, which is the bug C28 was written for.
         for gone in ("closeRegion", "rowRegions", "nextRegionId"):
             self.assertNotIn(gone, script)
-        # C09: the copied journey has to say which ticket it is, or a handoff to
-        # a seller can silently become a different one. A reader in a named set
-        # gets that set's name; a reader in the cheapest list chose a price
-        # rather than a ticket type, so the handoff names the fare the row is
-        # actually priced as (Q4). The rule itself lives in fareName, which the
-        # shortlist and the copied list read as well, so the label is what is
-        # asserted here and which label a reader gets is the browser suite's:
-        # it copies a row in each mode and compares the line against the
-        # mode's own visible label.
-        self.assertIn('"Ticket: "', script)
-        self.assertIn("fareName", script)
+        # And the second region itself is gone with the row's copy (ADR-0084): a
+        # panel a reader opened cannot now have a box appear under it.
+        for gone in ("rowActions", "showCopyText", "copybox"):
+            self.assertNotIn(gone, script)
 
     def test_the_row_keeps_the_action_and_the_panel_holds_the_rest(self) -> None:
         # Finding 4 of the 29 September review: five controls in every row is a
         # hundred targets on page one, and four of them were things a reader
         # wants after deciding rather than while deciding. The row keeps the
-        # ticket link, the expander and the shortlist toggle. The browser suite
-        # drives the row and its panel.
+        # ticket link, the expander and the shortlist toggle, and the panel holds
+        # the fare, its condition and the feed record. The browser suite drives
+        # the row and its panel.
         script = page_script(self.html)
         row_cell = js_function(script, "cellWithLinks")
         self.assertIn("Tickets", row_cell)
         for moved in ("Card details", "Copy journey for "):
             self.assertNotIn(moved, row_cell)
-        # The shortlist is a column of its own rather than a third control in
-        # this one, so it is named by its own heading and not by a word the
-        # cell has to carry.
-        # ... and the panel builds them, in one box, with the copy text landing
-        # in that same box when the clipboard is refused.
-        actions = js_function(script, "rowActions")
-        self.assertNotIn("Card details", actions)
-        self.assertIn("Copy", actions)
-        # The Copy control names its row and says what it copies in the visible
-        # word, and when the clipboard is refused the text is shown in a box the
-        # reader is told about rather than left to guess. That the button is
-        # inside the panel, that it copies that row, and what lands in the box
-        # when the copy fails is driven by the browser suite.
-        self.assertIn("Copy journey for ", script)
-        self.assertIn("Could not copy automatically", script)
-        self.assertIn("Select below", script)
-        self.assertIn("Journey details to copy", script)
+        # The panel's last control left with the row's copy (ADR-0084): what it
+        # holds is the trains, the fare and the record, and the shortlist is
+        # where a reader copies from.
+        panel = js_function(script, "panelColumns")
+        self.assertIn("detail-columns", panel)
+        self.assertNotIn("Copy", panel)
+        self.assertNotIn("Copy journey for ", script)
+
+    def test_the_panel_is_the_trains_beside_the_fare(self) -> None:
+        # ADR-0084. Four of the five claims are geometry and text the browser
+        # suite reads off the page; what a template and its stylesheet can
+        # honestly hold here is the shape: two columns above 60rem, a duration
+        # per train, a lead that says which day and who owns the condition, and
+        # a fare sentence that no longer points past the list it sits beside.
+        import re
+
+        from trainbudget.build.page_templates import STATION_STYLESHEET
+
+        script = page_script(self.html)
+        # Two columns, the trains a measured 26rem and the fare the rest.
+        self.assertIn(".detail-columns { display: grid;", STATION_STYLESHEET)
+        columns = STATION_STYLESHEET.split("@media (min-width: 60rem) {", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);", columns)
+        self.assertIn("tr.detail td { padding: 1rem 2rem;", STATION_STYLESHEET)
+        # The phone keeps the panel's padding without the 2rem sides.
+        phone = STATION_STYLESHEET.split("@media (max-width: 44rem) {", 1)[1]
+        self.assertIn("tr.detail td { display: block; padding: 1rem 0;", phone)
+        # A duration per train, from the two clocks the line prints: the wire
+        # carries no span (build_payload's DEPARTURE_COLUMNS). That the span is
+        # the subtraction of the two clocks a reader can see is the browser
+        # suite's, which reads it off the rendered line.
+        self.assertIn("optionSpan", script)
+        self.assertIn("trainsLead", script)
 
     def test_the_departure_list_is_capped_and_configurable(self) -> None:
         payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)

@@ -18,18 +18,21 @@ async function checkTheOriginPicker(world) {
     // The layout's thesis: the budget leads, and row actions carry real touch
     // targets. Measured, not assumed.
     const layout = await page.evaluate(() => {
-      // The two actions a row keeps beside buying are inside the row's panel, so
-      // a panel is opened for the measurement and closed again: a target this
-      // gate never sees is a promise nobody measured.
-      const copyHitInPanel = (measure) => {
-        const already = document.querySelector("#rows tr.detail button[aria-label^='Copy']");
-        if (already) return measure(already);
-        const expander = document.querySelector("#rows tr:not(.detail) .toggle[aria-expanded='false']");
-        if (!expander) return 0;
-        expander.click();
-        const button = document.querySelector("#rows tr.detail button[aria-label^='Copy']");
-        const size = button ? measure(button) : 0;
-        expander.click();
+      // ADR-0084 took the row's Copy away, so the page's copy target is the
+      // dock's. The dock is drawn only while a place is held, so one is held for
+      // the measurement and released after it: a target this gate never sees is
+      // a promise nobody measured.
+      const copyHitInDock = (measure) => {
+        const button = document.getElementById("shortlistCopy");
+        if (!button) return 0;
+        const box = document.querySelector("#rows input.hold-box");
+        if (box && button.hidden) box.click();
+        // Re-read after the click: the dock's own render replaces the rows and
+        // the button along with them.
+        const live = document.getElementById("shortlistCopy");
+        const size = live && !live.hidden ? measure(live) : 0;
+        const undo = document.querySelector("#rows input.hold-box:checked");
+        if (undo) undo.click();
         return size;
       };
       const toPx = (v) => parseFloat(v);
@@ -52,7 +55,7 @@ async function checkTheOriginPicker(world) {
         secondaryHoldsPartyAndFilter: !!secondary &&
           !!secondary.querySelector('input[name="unit"]') && !!destinationFilter &&
           !!destinationFilter.querySelector('input[name="destinationType"]'),
-        copyHit: copyHitInPanel(hitOf),
+        copyHit: copyHitInDock(hitOf),
         buyHit: hitOf(document.querySelector("#rows a.buy"))
       };
     });

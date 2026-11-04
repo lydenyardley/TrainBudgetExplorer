@@ -261,7 +261,11 @@
          border: 1px solid var(--line); border-radius: .3rem; background: var(--field);
          color: var(--accent); text-decoration: none; white-space: nowrap; }
   .buy:hover, .buy:focus-visible { border-color: var(--accent); }
-  tr.detail td { background: var(--best); border-bottom: 1px solid var(--line); }
+  /* ADR-0084: the panel is the one reading surface on the page that is not a
+     cell, and it was inset like one. 1rem 2rem is the gutter a block of prose
+     wants; the phone layout below keeps its own 1rem 0, because there the
+     page's gutter is the inset and 2rem would be an eighth of the screen. */
+  tr.detail td { padding: 1rem 2rem; background: var(--best); border-bottom: 1px solid var(--line); }
   /* DL5 of the 19 October 2026 delight pass: the two surfaces that appear because
      of something the reader did -- a row's panel and the shortlist dock -- arrive
      in one motion, 120ms of opacity and four pixels, with no height animation: a
@@ -285,6 +289,21 @@
      (finding, 29 September 2026). The condition keeps the muted .restriction
      voice it had in the cell: same sentence, same measured contrast. */
   tr.detail .fare-line { margin: .55rem 0 0; font-weight: 600; }
+  /* ADR-0084: the trains and the fare side by side, so the panel's width is
+     spent on the two facts a reader is joining rather than on one of them. The
+     trains take 26rem -- the clock line is about 34 characters -- and the fare
+     takes whatever is left, which below 60rem is the whole row: the same
+     elements, stacked in reading order, which is what the panel had. */
+  .detail-columns { display: grid; gap: 1.25rem; }
+  @media (min-width: 60rem) {
+    .detail-columns { grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); }
+  }
+  /* The lead says which day the trains belong to and who owns the condition.
+     It is the panel's one explanation, so it is set quieter than the list it
+     introduces and shares its column. */
+  .trains-lead { margin: 0 0 .4rem; color: var(--muted); font-size: .875rem; }
+  .trains-lead p { margin: 0; }
+  .trains-lead .trains-condition { margin-top: .25rem; }
   /* S1 of the 19 October 2026 critique: the sentence a fare set with no times
      says in place of the list. It is the panel's first line where it appears,
      so it carries the same top margin as the fare sentence under it. */
@@ -295,8 +314,6 @@
   /* £10.10 painted as "£10.1" over "0" on 13 of the first 20 rows: a wrapped
      price is not a cramped column, it is a different number, and the reader
      comparing it with the row above has been told something false. */
-  .row-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .6rem; }
-  .row-actions .toggle { margin-left: 0; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* The price the card was taken off, in the same cell as the price: a
      discounted number never stands alone (Q3), and the second number is
@@ -830,6 +847,8 @@
     tr.detail { display: block; padding: 0; border-bottom: 0; }
     /* `border-bottom` is named here and not left to the `th, td` rule above,
        because the base `tr.detail td` rule that this cancels is one selector
-       deeper and wins on specificity whatever order the two are written in. */
-    tr.detail td { display: block; padding: .5rem 0 .55rem; border-bottom: 0; }
+       deeper and wins on specificity whatever order the two are written in.
+       ADR-0084 keeps the panel's padding, less the 2rem sides: the page's
+       gutter is the inset at this width. */
+    tr.detail td { display: block; padding: 1rem 0; border-bottom: 0; }
   }

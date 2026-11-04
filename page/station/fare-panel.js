@@ -155,9 +155,8 @@ function railcardRuleFor(destination) {
 // C28: one panel per row, and one owner for it. It used to be two -- the times
 // list and the manual-copy box each removed whatever sat under the row -- so
 // opening one silently emptied the other and left its control announcing a
-// state that had gone. The copy text now lands inside the panel the button that
-// asked for it is already in, which leaves one region per row and one control
-// whose state is written back when it closes.
+// state that had gone. There is one now: ADR-0084 took the row's copy off the
+// page, and this map is what keeps a panel from outliving its row.
 // Keyed on the row element, not its station code: every render replaces the
 // rows, so a code-keyed map would keep detached rows and their panels alive
 // and let one render's state answer for another's row.
@@ -189,6 +188,58 @@ function reopenOpenRow(items) {
   toggleDetail(row, destination, toggle, false);
 }
 
+// The panel's two columns (ADR-0084): the trains the fare pays for, and the
+// fare itself. The panel spans the whole table -- about 1,400px at a desktop
+// width -- and held one column of a list and one sentence at 40 characters,
+// which left two thirds of it doing nothing. The trains take a measured 26rem
+// and the fare takes the rest, so the two facts a reader is joining sit beside
+// each other rather than one under the other.
+function panelColumns(trains, fare) {
+  const columns = document.createElement("div");
+  columns.className = "detail-columns";
+  // A build with no timetable has no trains to show, and an empty column would
+  // still take its share of the width and paint the gap.
+  if (trains.childNodes.length) columns.append(trains);
+  columns.append(fare);
+  return columns;
+}
+
+// ADR-0084, rule 3: the lead says which day the five trains belong to and who
+// owns the condition. Both were the reader's inference: the list read as the
+// next five trains full stop, and "Restricted fare" under it read as a claim
+// about the trains above. The feed's per-train windows (its TR and TD records)
+// are not in this page's payload, so what is promised is the relationship -- the
+// condition decides which of these trains you may board -- and not a verdict on
+// any one departure.
+function trainsLead(destination) {
+  const lead = document.createElement("div");
+  lead.className = "trains-lead";
+  const day = document.createElement("p");
+  day.className = "trains-day";
+  day.textContent = "Next trains" + (DATA.serviceDate ? " on " + humanDate(DATA.serviceDate) : "") + ".";
+  lead.append(day);
+  // A two-ticket row states each ticket's condition in the list itself, so the
+  // sentence would name a condition the reader is already reading twice.
+  if (!destination.tickets && destination.restrictionCode && destination.restrictionDescribed) {
+    const condition = document.createElement("p");
+    condition.className = "trains-condition";
+    condition.textContent = "The condition " + destination.restrictionDescription +
+      " is on the fare, not on one of these trains: it decides which of them you may board.";
+    lead.append(condition);
+  }
+  return lead;
+}
+
+// The wire sends the two clock times and not the span (build_payload's
+// DEPARTURE_COLUMNS), so the span is the subtraction a reader was doing across
+// an hour boundary. Read from the same two numbers the line prints. A negative
+// span is a train that arrives after midnight as the feed states it, and a day
+// is the only wrap there is.
+function optionSpan(option) {
+  const span = option.arrive - option.depart;
+  return span > 0 ? span : span + 1440;
+}
+
 // `reveal` is whether this panel is appearing because the reader opened it, or
 // because a render put back the one they had open (E9). Only the first is a
 // surface the page just noticed them using (DL5 of the 19 October 2026 delight
@@ -204,15 +255,19 @@ function toggleDetail(row, destination, toggle, reveal) {
   const cell = document.createElement("td");
   cell.colSpan = columnCount();
   const journey = journeyFor(destination);
+  const trains = document.createElement("div");
+  trains.className = "trains";
   if (destination.departures.length) {
+    trains.append(trainsLead(destination));
     const list = document.createElement("ul");
     for (const option of destination.departures) {
       const item = document.createElement("li");
-      item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive, " +
+      item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive (" +
+        duration(optionSpan(option)) + "), " +
         (option.changes ? option.changes + " change(s)" : "no change");
       list.append(item);
     }
-    cell.append(list);
+    trains.append(list);
   } else if (DATA.hasJourneys && journey.found) {
     // S1 of the 19 October 2026 critique: a row with a duration and no times
     // opened a panel holding the condition and the record, and said nothing
@@ -224,13 +279,17 @@ function toggleDetail(row, destination, toggle, reveal) {
     absent.className = "no-departures";
     absent.textContent = "This build has no departure times for this fare; " +
       duration(journey.minutes) + " is the fastest journey.";
-    cell.append(absent);
+    trains.append(absent);
   }
   // The fare in words and its condition, in the panel the row already had. A
   // build with no timetable has no times to list and still has a fare to
-  // explain, which is why the toggle exists on every row. The row's two
-  // secondary actions live at the end of the same panel.
-  cell.append(fareDetails(destination), rowActions(row, destination));
+  // explain, which is why the toggle exists on every row. There is no action at
+  // the end of it: ADR-0084 moved copying to the shortlist, whose Copy names
+  // every place held with its price, time and fare.
+  const fare = document.createElement("div");
+  fare.className = "fare";
+  fare.append(fareDetails(destination));
+  cell.append(panelColumns(trains, fare));
   detail.append(cell);
   detail.id = "detail-times-" + destination.crs + "-" + (STATE.regionSeq += 1);
   row.after(detail);

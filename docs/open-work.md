@@ -670,20 +670,27 @@ spelling of somebody else's record.
 the accessible names and the known-fares table's own comparisons read to see what
 else moves; or a decision that the feed's capitalisation is the honest name.
 
-## O42 -- The refinements fold instead of popping out on a narrow screen
+## O43 -- A row's five trains are the first five of the day, and there is no time control
 
-**Kind:** decision. **Raised:** the 3 November 2026 review, second half.
-**Route:** the station page's filter bar below 98rem.
+**Kind:** decision. **Raised:** the 4 November 2026 design review, second half.
+**Route:** a row's panel; the day control beside the filter bar.
 
-At 390px the folded bar is 177px and the first destination row begins at 600px,
-so a pop-out drawer would save the bar's height and cost a modal interaction
-over the rows it filters. The review asked for the drawer; ADR-0082 shipped the
-wide half only, because the suite drives every station section through
-`openFilters()` and an open drawer would cover the rows those sections read.
+A row lists five departures, and they are the first five of the service day, so
+a row opened at four in the afternoon is showing the morning's trains. The fix a
+reader would expect is a time control beside the day control, with the list
+starting at that time and running forwards.
 
-**What closes it.** A measured drawer that closes on a choice, with the suite's
-own way to reopen it before a check presses a chip; or a decision that one line
-of fold is the right amount of filter for a phone.
+**Why it is not built.** Measured on 4 November 2026 rather than argued about:
+the Grantham page with `--departures 40` is 605,049 bytes against 416,682 at the
+default five, so each extra departure costs about 12.5 bytes and a day of them
+costs +188 KB (+45%) on a page of a release already projected over its 800 MB
+byte budget. 218 of the page's 803 timed places reach the 40 cap, so a full day
+is more than 40 on some routes and the figure is a floor. The measurement is in
+`docs/build-performance-findings.md`.
+
+**What closes it.** A cheaper encoding of the times -- the payload's departures
+are three numbers each, packed to arrays already -- or a decision that eight or
+twelve departures a destination is the compromise the byte budget can carry.
 
 ## Rejected, with the reason
 

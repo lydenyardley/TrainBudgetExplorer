@@ -1,5 +1,7 @@
-// What a row hands the reader: the ticket link, the railcard note that
-// explains the price, and the journey details to copy.
+// What a row hands the reader: the ticket link and the railcard note that
+// explains the price. The journey text left with the row's Copy (ADR-0084): the
+// shortlist's Copy names every place held with its price, time and fare, which
+// is the block a reader actually pastes.
 
 function cellWithLinks(row, destination, wanted) {
   // Two controls on the row and no more: the ticket link, because buying is the
@@ -208,105 +210,3 @@ function cardNote(destination) {
   return note;
 }
 
-// The row's one secondary action, in the panel rather than on the row: the
-// handoff text, which is what a reader pastes to a seller or a friend
-// (ADR-0018). The copy text of a refused clipboard lands in this same panel,
-// under the button that asked for it.
-function rowActions(row, destination) {
-  const tools = document.createElement("div");
-  tools.className = "row-actions";
-  const copy = document.createElement("button");
-  copy.className = "toggle";
-  copy.type = "button";
-  // One sentence, and it is the visible one: "Copy" on its own left the reader
-  // to guess what reached the clipboard, and the answer was in a title no touch
-  // reader sees (audit item 28).
-  copy.textContent = "Copy journey";
-  copy.setAttribute("aria-label", "Copy journey for " + destination.name);
-  copy.addEventListener("click", () => copyJourney(destination, copy, tools));
-  tools.append(copy);
-  return tools;
-}
-// What the reader has to type on the seller's own site, because the ticket link
-// carries nothing (ADR-0018). The railcard is named only when the party price is
-// what is on screen, and it is named as something to tick rather than sent
-// anywhere, because no seller accepts it in a link (ADR-0014).
-function journeyText(destination) {
-  const together = unit() === "party";
-  // C09: the copied text named the stations, the date and the party but not
-  // the ticket type the reader had chosen, while the same Copy button is
-  // offered in every mode. Copied from Singles and pasted to a seller, the
-  // handoff could silently become a different ticket, so the mode travels with
-  // it.
-  const lines = [
-    "From: " + DATA.origin.name + " (" + DATA.origin.crs + ")",
-    "To: " + destination.name + " (" + destination.crs + ")",
-    "Ticket: " + fareName(destination),
-  ];
-  if (DATA.serviceDate) lines.push("Date: " + humanDate(DATA.serviceDate));
-  lines.push("Passengers: " + (together ? DATA.adults + " adults" : "1 adult"));
-  const card = chosenCard(destination);
-  if (together && card) {
-    lines.push(railcards[STATE.railcard].label + " discount is not sent to the seller: confirm the railcard on their site");
-  }
-  return lines.join("\n");
-}
-
-// The manual copy. The text is put where the reader is already looking, inside
-// the panel the button is in, rather than in a panel of its own that would have
-// taken the row's one slot from the details the reader opened to get here.
-function showCopyText(host, text, button) {
-  // A second manual copy replaces the first rather than stacking under it: the
-  // button describes one box, and the panel grows no copy of the same text.
-  for (const stale of host.querySelectorAll("textarea.copybox")) stale.remove();
-  const box = document.createElement("textarea");
-  box.className = "copybox";
-  box.readOnly = true;
-  box.rows = 5;
-  box.value = text;
-  box.id = "copy-text-" + (STATE.regionSeq += 1);
-  box.setAttribute("aria-label", "Journey details to copy");
-  host.append(box);
-  // The copy control is not a disclosure -- it has no collapsed state to speak
-  // of -- so it names the text it filled rather than claiming to control it.
-  if (button) button.setAttribute("aria-describedby", box.id);
-  box.focus();
-  box.select();
-}
-
-async function copyJourney(destination, button, host) {
-  const text = journeyText(destination);
-  const status = document.getElementById("copyStatus");
-  // WCAG 2.5.3 is about the visible words being inside the control's name, and
-  // this control's name is what carries the destination (C13). Changing the text
-  // alone left a button reading “Copied” whose name still said “Copy journey for
-  // Wakefield Westgate” (audit item 13, 28 October 2026), so both are written
-  // together and each name still opens with the words on the face of the button.
-  const label = (text, name) => {
-    button.textContent = text;
-    button.setAttribute("aria-label", name);
-  };
-  const done = () => {
-    label("Copied", "Copied. Journey details for " + destination.name + " are on the clipboard.");
-    status.textContent = "Journey details copied: " + text.split("\n").join(". ");
-    window.setTimeout(() => {
-      label("Copy journey", "Copy journey for " + destination.name);
-    }, 2000);
-  };
-  // Never claim a copy that did not happen. Clipboard access is refused when a
-  // page is opened from a file or served without a secure context, so the
-  // reader is shown the text instead of being told it is on their clipboard.
-  const manual = () => {
-    label("Select below", "Select below. Journey details for " + destination.name +
-      " are under this button.");
-    status.textContent = "Could not copy automatically. The details are shown under the button.";
-    showCopyText(host, text, button);
-  };
-  if (!navigator.clipboard || !navigator.clipboard.writeText) return manual();
-  try {
-    await navigator.clipboard.writeText(text);
-    done();
-  } catch (error) {
-    manual();
-  }
-}

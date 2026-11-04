@@ -30,6 +30,8 @@ because a reader checking a closure wants the ADR and the test.
 | The shortlist is one select and one strip above the table, not a button on every row | ADR-0054 | the browser suite's five shortlist checks, and the select's change listener's tests in `tests/test_build_demo_page.py` |
 | The station name in the heading is the field you type into | ADR-0056 | the heading-picker checks, including Escape pressed in the field rather than in the panel |
 | The licence notices on the routes that show no fare (route audit items [20] and [21]) — whether the chooser and the privacy notice have to carry the NRE credit | recorded rather than assumed: the credit travels with the page that shows a fare, the chooser's station index and the privacy notice show none, and the alternative reading (render it on every route) is named with the reading | the section "Which pages carry the acknowledgement" in `licences/release-clearance.md`, and `tools/check_source_credit.py` — held by `tools/test_check_source_credit.py`, run over the built site by the assemble job |
+| O42 of the 3 November 2026 review — the refinements fold instead of popping out on a narrow screen | ADR-0083: below the 44rem phone breakpoint the whole bar is a sheet over the list, measured at 390x844 as the first row moving from 624px to 441px and the fold holding three whole rows rather than one | the browser suite's five sheet checks in `tests/browser/station-layout.cjs`, "at a phone width the refinements open as a sheet over the list" and the four that follow it, and `foldFilters` in `tests/browser/station.cjs` |
+| The 4 November 2026 review of an opened row -- no duration on a train, no word on what the condition governed, two thirds of the panel's width empty, and a Copy that copied one place while the shortlist's copied every place held | ADR-0084: the panel is two columns above 60rem (`minmax(0, 26rem)` of trains and the rest for the fare), each train carries the span between the two clocks it prints, the lead says which day the list belongs to and that the condition is on the fare rather than on a train, and the row's Copy is gone with `rowActions`, `journeyText`, `showCopyText` and `#copyStatus` | the browser suite's panel checks in `tests/browser/station-rows.cjs` -- no control in the panel, a duration that matches the two clocks, the lead's day and the condition's owner, the two columns' top edges, and the fare sentence standing on its own -- the shortlist's own "and the copied list names each place's fare type", and `tests/test_build_demo_page.py` for the markup and the stylesheet |
 
 ### The 8 October 2026 agent-efficiency audit
 
@@ -949,6 +951,16 @@ Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
 decision already made and that file is what is *not* decided. Kept rather than
 deleted, because a rejected idea with its reason stops the next person from
 re-deriving it.
+
+### A time control beside the day control (O43)
+
+Measured on 4 November 2026 rather than argued about. The Grantham page at
+`--departures 40` is 605,049 bytes against 416,682 at the default five, so a
+departure costs about 12.5 bytes in the form the payload already ships and a day
+of them costs +188 KB (+45%) on a page of a release already projected over its
+800 MB byte budget; 218 of its 803 timed places reach the 40 cap, so that is a
+floor. The figure is in `docs/build-performance-findings.md` and the ask stays
+open as O43, with what would close it.
 
 ### Suggestions the owner rejected
 

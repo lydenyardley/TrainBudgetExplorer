@@ -1942,3 +1942,41 @@ twice.
   this feed's on 24 September 2026. A timetable build carries more per row, so
   the millisecond figures move; the ratios belong to the work each removed, which
   does not.
+
+## What a day of departures would cost a station page, 4 November 2026
+
+**Plan, written before the figure.** The 4 November 2026 review asked for a time
+control beside the day control, so that a row's five trains start from the time
+the reader is travelling rather than from the first five of the service day. The
+question that decides it is the payload's, not the control's: what does one more
+departure per row cost a page, and what does a day of them cost? Plan: build the
+same tree twice against the same feeds with the same flags and the same output
+shape, differing only in `--departures`, and read the written bytes; then count
+how many of the page's timed places reach the higher cap, because a cap that
+bites is a floor rather than a total.
+
+**Figure.** The Grantham page (GRN, 24 September 2026 feeds, `--date 2026-10-05`,
+`--notices nre,rdg,ogl,accuracy`, this machine):
+
+| Build | Page bytes | Cost per departure | Places at the cap |
+|---|---:|---:|---:|
+| `--departures 5` (the default) | 416,682 | -- | 0 |
+| `--departures 40` | 605,049 | **12.5 bytes** | **218 of 803** |
+
+So a row of eight or twelve is tens of kilobytes, and a day of them is
+**+188 KB, +45%** on a page of a release already projected over its 800 MB
+budget. The 12.5 bytes is the packed form the payload already ships: each
+departure is `[depart, arrive, changes]` -- three numbers, in `DEPARTURE_COLUMNS`
+order, with the names sent once per page in `rowCodec` -- so there is no key
+name left to remove.
+
+**What it does not establish.** It is one origin, one feed and one day. It also
+does not say what a *time* control would cost beyond the bytes: the page holds no
+per-train restriction windows (its payload carries no TR or TD record), so a
+control that starts the list at 16:00 can only slice the list it already has,
+which is why the cheaper half of the ask -- a control over the five -- was not
+built either: the five are the first five of the day, and filtering them by time
+would leave a reader with an empty list for most of the afternoon.
+
+**Where it is held.** `docs/open-work.md` O43 records the ask and what would
+close it; ADR-0084 records the decision to measure and refuse rather than argue.
