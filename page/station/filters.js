@@ -62,6 +62,28 @@ function setFiltersOpen(open) {
 if (moreFiltersToggle) moreFiltersToggle.addEventListener("click", () => {
   setFiltersOpen(moreFilters.dataset.open !== "true");
 });
+// O42 of docs/open-work.md: the foot of the sheet. Below the phone breakpoint the
+// open panel is painted over the list (station.css), so the count line is behind
+// it and the plate that names what is narrowed is gone with the fold. This is the
+// one control that closes the sheet, and it says what is behind the sheet rather
+// than asking the reader to take that on trust. It is a close and not a second
+// fold -- the same state the toggle writes, reached from the other end of the
+// panel -- and it is drawn only in that layout.
+const filtersDone = document.getElementById("filtersDone");
+function renderFiltersDone(count) {
+  if (!filtersDone) return;
+  filtersDone.textContent = count
+    ? "Show " + count + (count === 1 ? " destination" : " destinations")
+    : "Show the list";
+}
+if (filtersDone) filtersDone.addEventListener("click", () => {
+  setFiltersOpen(false);
+  // Back to the control that opened it, so a keyboard reader's next Tab is the
+  // bar's rather than the document's first link. preventScroll because focus
+  // moved to the foot of a sheet the reader is already looking at, and closing
+  // it must not also move the page under them.
+  if (moreFiltersToggle) moreFiltersToggle.focus({ preventScroll: true });
+});
 
 // The facets are one press away inside the refinements panel above (#moreFiltersPanel,
 // which the stylesheet leaves display:none until #moreFilters opens it). The

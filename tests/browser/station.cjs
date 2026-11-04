@@ -268,11 +268,37 @@ async function runPage(browser, index, given, file, body, base) {
     // that is off screen waits thirty seconds and stops the run.
     if (!open && (await toggle.isVisible())) await toggle.click();
   };
+  // O42: below the phone breakpoint the open panel is a sheet over the list, and
+  // the page says so by where the bar is painted rather than by a width this file
+  // would have to keep in step with the stylesheet. Read while the panel is open,
+  // which is the only state the question makes sense in.
+  const filtersAreASheet = async () => page.evaluate(() => {
+    const bar = document.querySelector(".filter-bar");
+    return !!bar && getComputedStyle(bar).position === "fixed";
+  });
+  // The sheet's own way out is the foot of it, which is the control a reader has
+  // as well; the toggle above it closes it too, and is the fallback for a page
+  // that drew no foot. Both are pressed on the page rather than toggled through
+  // the state, so what is exercised is the control and not the dataset.
+  const foldFilters = async () => {
+    const open = await page.evaluate(
+      () => (document.getElementById("moreFilters") || {}).dataset.open === "true"
+    );
+    if (!open) return;
+    const foot = page.locator("#filtersDone");
+    if ((await foot.count()) && (await foot.isVisible())) await foot.click();
+    else await page.locator("#moreFiltersToggle").click();
+  };
   const open = async (budget) => {
     await page.goto(url);
     await installReader();
     world.pageSize = await page.evaluate(() => PAGE_SIZE);
     await openFilters();
+    // A section opens a page to read it, and what it reads next is the list: the
+    // sheet is closed again where the page draws one, because it covers the rows
+    // those checks are about. A step that wants a control inside the panel opens
+    // it around that press (`foldFilters` puts it back).
+    if (await filtersAreASheet()) await foldFilters();
     if (budget !== undefined) await page.fill("#budgetNumber", String(budget));
   };
   // What a type means on this page, in the mode and at the budget on screen:
@@ -437,6 +463,9 @@ async function runPage(browser, index, given, file, body, base) {
     rows,
     checkChip,
     revealType,
+    openFilters,
+    foldFilters,
+    filtersAreASheet,
     budgetFor,
     kind,
     lists,

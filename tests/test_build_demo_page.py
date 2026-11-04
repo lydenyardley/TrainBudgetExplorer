@@ -711,6 +711,45 @@ class DemoPageTest(PageTestCase):
         self.assertIn("filterStateText", page_script(self.html))
         self.assertGreaterEqual(page_script(self.html).count("renderFilterState"), 2)
 
+    def test_the_phone_draws_the_bar_as_a_sheet_with_its_own_foot(self) -> None:
+        # O42, closed by ADR-0083: below the 44rem phone breakpoint the whole bar
+        # is a sheet over the list, and the one control that closes it says what
+        # is behind it. What a template can honestly hold is the markup and the
+        # two stylesheet facts that make it a sheet: the foot is in the bar and
+        # after the panel and the day control, it is hidden wherever the bar is
+        # not a sheet, and the sheet is the phone block's rule. The geometry, the
+        # count in the foot and focus coming back are the browser suite's.
+        from trainbudget.build.page_templates import STATION_STYLESHEET
+
+        bar = self.html.split('<section class="filter-bar"', 1)[1].split("</section>", 1)[0]
+        self.assertIn('id="filtersDone"', bar)
+        self.assertIn('<button type="button" class="filters-done" id="filtersDone">', bar)
+        self.assertGreater(bar.index('id="filtersDone"'), bar.index('id="moreFiltersPanel"'))
+        self.assertGreater(bar.index('id="filtersDone"'), bar.index('id="serviceDayBar"'))
+        self.assertIn("Show the list", bar)
+        # Hidden rather than absent at every other width, so the markup is one bar
+        # and a width the stylesheet does not make a sheet has no stop in its tab
+        # order that paints nothing.
+        self.assertIn(".filters-done { display: none; }", STATION_STYLESHEET)
+        phone = STATION_STYLESHEET.split("@media (max-width: 44rem) {", 1)[1]
+        # Guarded by the same `:has` as every sheet rule: a browser that cannot
+        # read the selector keeps the bar it had rather than hiding a control the
+        # sheet it cannot draw would have carried.
+        self.assertIn('.filter-bar:has(.more-filters) .budget-track,', phone)
+        self.assertIn(".filter-bar:has(.more-filters) .service-day { display: none; }", phone)
+        sheet = phone.split('.filter-bar:has(.more-filters[data-open="true"]) {', 1)[1].split("}", 1)[0]
+        self.assertIn("position: fixed;", sheet)
+        self.assertIn("max-height: 88vh;", sheet)
+        self.assertIn("overflow-y: auto;", sheet)
+        self.assertIn('.filter-bar:has(.more-filters[data-open="true"]) .filters-done {', phone)
+        # And the foot is written from the render, not from the markup: the
+        # script defines the writer and calls it on both paths a render can take
+        # -- the list it counted and the list that came back empty. That the two
+        # numbers agree is read off the page by the browser suite.
+        script = page_script(self.html)
+        self.assertIn("renderFiltersDone", script)
+        self.assertGreaterEqual(script.count("renderFiltersDone"), 3)
+
     def test_the_budget_is_inline_in_the_large_heading(self) -> None:
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn("Train fares", heading)

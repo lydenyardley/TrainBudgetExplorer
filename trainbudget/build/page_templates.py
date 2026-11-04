@@ -345,6 +345,15 @@ __FIRST_USE_PARA__
   <select id="serviceDay" aria-describedby="serviceDayHelp"></select>
   <span class="tag" id="serviceDayHelp"></span>
 </div>
+<!-- O42: the way out of the sheet, and its payoff. Below the phone breakpoint
+     the whole bar is a sheet over the list (station.css), so the toggle at its
+     top is no longer beside the rows it filters and the count line is behind
+     the sheet: this is the control that says how many destinations are waiting
+     and puts the reader back on them. It is drawn only in that layout, by the
+     same stylesheet rule that makes the sheet, so the page at every other width
+     is the bar it was. renderFiltersDone() keeps the count true, from the same
+     render that writes the count line. -->
+<button type="button" class="filters-done" id="filtersDone">Show the list</button>
 </section>
 
 <div class="station-results">

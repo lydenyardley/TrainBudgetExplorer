@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 3 November 2026
-**Relates to:** ADR-0077 (a page lists the places it prices most cheaply), ADR-0040 (the count line's gap to the table), `docs/open-work.md` O42
+**Relates to:** ADR-0077 (a page lists the places it prices most cheaply), ADR-0040 (the count line's gap to the table), ADR-0083 (the phone half of the 3 November 2026 request)
 
 ## Context
 
@@ -58,10 +58,13 @@ Seven rules hold it together:
    delivers no entry when a reader moves between them, and the rail stayed up
    after a page scrolled past its slider was shrunk to a phone window. A scroll
    or a resize re-reads one rect, at most once a frame.
-7. **A narrow screen keeps the fold.** At 390px the folded bar is 177px and the
-   first row is at 600px, so a pop-out would trade that height for a modal
-   interaction over the rows it filters. The narrow half of the request is
-   **O42**.
+7. **A narrow screen is a sheet (ADR-0083).** This ADR left the phone's folded
+   bar alone, on the reasoning that a pop-out would trade a bar's height for a
+   modal interaction over the rows it filters. ADR-0083 measured that trade on
+   the build the suite drives, where the bar is 267px and holds the day control
+   too: the first row moves from 624px to 441px and the page gains a foot that
+   names the list behind the sheet. That is the narrow half, and it is closed
+   there rather than here.
 
 ## Evidence
 

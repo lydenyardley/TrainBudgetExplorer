@@ -711,6 +711,100 @@ async function measureTheLayout(world) {
           stacked.headers.every((th) => th.display !== "none"),
       JSON.stringify({ head, headers: stacked.headers.slice(0, 3) })
     );
+    // O42: the phone's refinements are a sheet over the list. What the layout owes
+    // a reader is the fold's height back -- the measurement is in ADR-0083 -- and
+    // a way out of the sheet that names the list it covers. Driven the way a
+    // reader drives it: press the plate, read the foot, press the foot.
+    const sheetPlate = page.locator("#moreFiltersToggle");
+    if ((await sheetPlate.count()) && (await sheetPlate.isVisible())) {
+      await sheetPlate.click();
+      const sheet = await page.evaluate(() => {
+        const bar = document.querySelector(".filter-bar");
+        const box = bar.getBoundingClientRect();
+        const foot = document.getElementById("filtersDone");
+        const summary = document.getElementById("summary").textContent || "";
+        const count = summary.match(/^(\d+) destination/);
+        return {
+          position: getComputedStyle(bar).position,
+          top: Math.round(box.top),
+          bottom: Math.round(box.bottom),
+          viewport: window.innerHeight,
+          budgetInSheet: document.querySelector(".budget-track").getBoundingClientRect().height > 0,
+          foot: foot ? foot.textContent.trim() : "",
+          footHeight: foot ? Math.round(foot.getBoundingClientRect().height) : 0,
+          count: count ? Number(count[1]) : null,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      check(
+        "at a phone width the refinements open as a sheet over the list",
+        sheet.position === "fixed" && sheet.bottom === sheet.viewport && sheet.top > 0 && sheet.budgetInSheet,
+        JSON.stringify(sheet)
+      );
+      check(
+        "and the sheet's foot names what is behind it, the same count the count line does",
+        sheet.footHeight >= 44 &&
+          (sheet.count === null ? sheet.foot === "Show the list" : sheet.foot.includes(String(sheet.count))),
+        JSON.stringify({ foot: sheet.foot, count: sheet.count })
+      );
+      check("and nothing scrolls sideways with the sheet open", sheet.overflow <= 0, `${sheet.overflow}px`);
+      // O42: the day control is not a filter, and below this breakpoint the sheet
+      // is the only place it is drawn, so a page carrying a week must still reach
+      // it from inside the sheet. Read at the sheet's end, which is one scroll
+      // from the foot the reader closes it with: a panel that clipped it instead
+      // of scrolling would leave a phone with no way to change the day at all.
+      const day = await page.evaluate(() => {
+        const dayBar = document.getElementById("serviceDayBar");
+        const select = document.getElementById("serviceDay");
+        if (!dayBar || !select || getComputedStyle(dayBar).display === "none") return null;
+        const bar = document.querySelector(".filter-bar");
+        bar.scrollTop = bar.scrollHeight;
+        const box = bar.getBoundingClientRect();
+        const own = dayBar.getBoundingClientRect();
+        return {
+          inSheet: own.top >= box.top - 1 && own.bottom <= box.bottom + 1,
+          usable: !select.disabled && !select.hidden,
+          label: (document.querySelector('label[for="serviceDay"]') || {}).textContent || "",
+        };
+      });
+      check(
+        "and a page with a week reaches its day control inside the sheet, one scroll from the foot",
+        day === null || (day.inSheet && day.usable),
+        JSON.stringify(day)
+      );
+      await page.click("#filtersDone");
+      const afterFoot = await page.evaluate(() => {
+        const row = document.querySelector("#rows tr[data-crs]");
+        const box = row ? row.getBoundingClientRect() : null;
+        const hit = box
+          ? document.elementFromPoint(Math.round((box.left + box.right) / 2), Math.round((box.top + box.bottom) / 2))
+          : null;
+        return {
+          open: document.getElementById("moreFilters").dataset.open === "true",
+          focused: document.activeElement ? document.activeElement.id : "",
+          rowVisible: !!row && row.getBoundingClientRect().height > 0,
+          rowReachable: Boolean(hit && row.contains(hit)),
+          budgetBackOnTheStrip: document.querySelector(".budget-track").getBoundingClientRect().height === 0,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      check(
+        "and its foot closes the sheet, hands focus back and leaves the rows reachable",
+        !afterFoot.open && afterFoot.focused === "moreFiltersToggle" && afterFoot.rowVisible &&
+          afterFoot.rowReachable && afterFoot.budgetBackOnTheStrip && afterFoot.overflow <= 0,
+        JSON.stringify(afterFoot)
+      );
+    } else {
+      for (const name of [
+        "at a phone width the refinements open as a sheet over the list",
+        "and the sheet's foot names what is behind it, the same count the count line does",
+        "and nothing scrolls sideways with the sheet open",
+        "and a page with a week reaches its day control inside the sheet, one scroll from the foot",
+        "and its foot closes the sheet, hands focus back and leaves the rows reachable",
+      ]) {
+        check(name, notExercised("this page has no refinements bar to open"));
+      }
+    }
     // DL5 and OV9 of the 19 October 2026 passes: the two surfaces that appear in
     // response to a reader -- a row's panel and the shortlist dock -- carry one
     // 120ms reveal, and a reader who asked for less motion gets none of it. The

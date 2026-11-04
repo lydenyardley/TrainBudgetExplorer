@@ -288,6 +288,8 @@ function render() {
     // reset the reader's budget for every other mode they switch back to.
     rows.replaceChildren();
     resultsTable.hidden = true;
+    // Nothing to show, so the sheet's foot promises nothing it cannot deliver.
+    renderFiltersDone(0);
     setSummary("No " + modeLabels()[ticketMode()] + " fares from " + DATA.origin.name);
     empty.hidden = false;
     renderEmptyMode();
@@ -379,6 +381,10 @@ function render() {
   // than by tinting one row the reader is left to interpret.
   const order = ", " + ORDER_WORDS[STATE.sort.key][STATE.sort.dir === "asc" ? 0 : 1];
   const mix = ticketMode() === CHEAPEST_MODE ? mixPhrase(wanted) : "";
+  // The sheet's foot counts the same list the count line does, because the sheet
+  // is drawn over that line: the two are one sentence read from two places, so
+  // they are written from one render.
+  renderFiltersDone(wanted.length);
   // An unpriced origin has no budget conversation to have, so the summary
   // stays empty rather than implying the budget filtered something out.
   setSummary(available.length && wanted.length
