@@ -1958,9 +1958,9 @@ bites is a floor rather than a total.
 **Figure.** The Grantham page (GRN, 24 September 2026 feeds, `--date 2026-10-05`,
 `--notices nre,rdg,ogl,accuracy`, this machine):
 
-| Build | Page bytes | Cost per departure | Places at the cap |
+| Build | Page bytes | Cost per departure | Places at the 40 cap |
 |---|---:|---:|---:|
-| `--departures 5` (the default) | 416,682 | -- | 0 |
+| `--departures 5` (the default) | 416,682 | -- | -- |
 | `--departures 40` | 605,049 | **12.5 bytes** | **218 of 803** |
 
 So a row of eight or twelve is tens of kilobytes, and a day of them is
