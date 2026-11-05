@@ -724,12 +724,20 @@ async function measureTheLayout(world) {
         const foot = document.getElementById("filtersDone");
         const summary = document.getElementById("summary").textContent || "";
         const count = summary.match(/^(\d+) destination/);
+        const heading = document.querySelector("#pageHeading").getBoundingClientRect();
+        // A sheet that begins inside the heading cuts the title in half: the
+        // first line sits above the budget slider and the rest is clipped.
+        // Covered (the sheet starts at or above the heading) or clear (it
+        // starts at or below the heading) are both whole; a start between
+        // the heading's top and bottom is the slice.
+        const titleSliced = heading.top < box.top - 0.5 && heading.bottom > box.top + 0.5;
         return {
           position: getComputedStyle(bar).position,
           top: Math.round(box.top),
           bottom: Math.round(box.bottom),
           viewport: window.innerHeight,
           budgetInSheet: document.querySelector(".budget-track").getBoundingClientRect().height > 0,
+          titleSliced,
           foot: foot ? foot.textContent.trim() : "",
           footHeight: foot ? Math.round(foot.getBoundingClientRect().height) : 0,
           count: count ? Number(count[1]) : null,
@@ -738,7 +746,8 @@ async function measureTheLayout(world) {
       });
       check(
         "at a phone width the refinements open as a sheet over the list",
-        sheet.position === "fixed" && sheet.bottom === sheet.viewport && sheet.top > 0 && sheet.budgetInSheet,
+        sheet.position === "fixed" && sheet.bottom === sheet.viewport && sheet.top === 0 &&
+          sheet.budgetInSheet && sheet.titleSliced === false,
         JSON.stringify(sheet)
       );
       check(

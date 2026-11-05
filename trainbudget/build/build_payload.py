@@ -25,7 +25,7 @@ from trainbudget.fares.atoc_fares import (
     is_pseudo_station,
 )
 from trainbudget.timetable.atoc_knowledgebase import ABSENT, Knowledgebase, RestrictionCheck, check_restrictions
-from trainbudget.timetable.atoc_timetable import SliceIndex, TimetableDb
+from trainbudget.timetable.atoc_timetable import Journey, SliceIndex, TimetableDb
 # The asset names are read through the module: they are digests of the bytes
 # the route fetches, so the payload must name what this release writes, and a
 # test that changes the assets changes them in one place (ADR-0071).
@@ -48,6 +48,37 @@ from trainbudget.fares.retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
 
 
 DEPARTURE_LIMIT = 5
+
+
+def _keep_quoted_journey(options: list[dict], journey: Journey, limit: int) -> None:
+    """Keep the journey the row quotes inside the departure list it opens onto.
+
+    The list is the earliest departures, capped, and the row quotes the shortest
+    journey of the day. Those are different questions. On the published Grantham
+    page Ancaster reads "Direct 18m" — train C21844 — while the five trains the
+    panel lists are all one change, from 59 minutes to several hours, because
+    that direct service leaves after the fifth departure that can reach the
+    station. A reader who opens the row cannot find the train the row just
+    named. The quoted journey takes the last place in a full list, so the cap,
+    and the bytes a departure costs, stay where they were.
+    """
+    quoted = {
+        "depart": journey.departure,
+        "arrive": journey.arrival,
+        "changes": journey.changes,
+    }
+    for option in options:
+        if (
+            option["depart"] == quoted["depart"]
+            and option["arrive"] == quoted["arrive"]
+            and option["changes"] == quoted["changes"]
+        ):
+            return
+    if limit > 0 and len(options) >= limit:
+        options.sort(key=lambda option: option["depart"])
+        options.pop()
+    options.append(quoted)
+    options.sort(key=lambda option: option["depart"])
 
 
 # How far past the build's own day a row with no service is asked before it
@@ -587,6 +618,12 @@ def destination_row(
             if departures_seen is not None:
                 departures_seen[key] = shared
         options = shared
+        # The row's minutes and changes are this timetable's shortest journey.
+        # A list read from a different database is a different service, and
+        # mixing the two would name a train the panel's own timetable does not
+        # run.
+        if journey is not None and journey_source is journey_timetable:
+            _keep_quoted_journey(options, journey, departure_limit)
     # Q2 (ADR-0045): a journey with a change is where a split ticket
     # can undercut the through fare, and the station it would change at is
     # one fact the build already holds. The page names it and claims no

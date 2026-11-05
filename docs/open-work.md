@@ -675,10 +675,13 @@ else moves; or a decision that the feed's capitalisation is the honest name.
 **Kind:** decision. **Raised:** the 4 November 2026 design review, second half.
 **Route:** a row's panel; the day control beside the filter bar.
 
-A row lists five departures, and they are the first five of the service day, so
-a row opened at four in the afternoon is showing the morning's trains. The fix a
-reader would expect is a time control beside the day control, with the list
-starting at that time and running forwards.
+A row lists five departures. Four of them are the first of the service day, and
+the fifth is the journey the row quotes when that journey leaves later than the
+cap — a direct 18 minutes from Grantham to Ancaster was absent from a list of
+five one-change trains, so the row and its panel disagreed. A row opened at four
+in the afternoon is still showing the morning's trains for every place but that
+one. The fix a reader would expect is a time control beside the day control,
+with the list starting at that time and running forwards.
 
 **Why it is not built.** Measured on 4 November 2026 rather than argued about:
 the Grantham page with `--departures 40` is 605,049 bytes against 416,682 at the

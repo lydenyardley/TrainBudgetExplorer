@@ -108,6 +108,55 @@ async function checkTheRowActions(world) {
       panel.items.length === panel.departures && timed.every((one) => one.ok),
       `${timed.filter((one) => !one.ok).map((one) => one.item).join(" | ")} (${panel.departures} departure(s))`
     );
+    // The row quotes the shortest journey and the panel lists departures. Those
+    // used to be different trains: Grantham to Ancaster read "Direct 18m" while
+    // every train in the panel was one change and at least 59 minutes, because
+    // the direct service leaves after the cap. One of the trains has to be the
+    // journey the row just named.
+    const quoted = await page.evaluate(() => {
+      const toggle = document.querySelector("#rows tr[data-crs] .toggle[aria-expanded='true']");
+      const row = toggle ? toggle.closest("tr[data-crs]") : null;
+      if (!row) return null;
+      const time = (row.querySelector('td[data-label="Time"]') || {}).textContent || "";
+      const changes = (row.querySelector(".changes-count") || {}).textContent || "";
+      const items = Array.from(row.parentElement.querySelectorAll(".trains > ul > li")).map((li) => li.textContent);
+      // The panel belongs to this row. A later row's list must not answer it.
+      const detail = row.nextElementSibling;
+      const own = detail && detail.classList.contains("detail")
+        ? Array.from(detail.querySelectorAll(".trains > ul > li")).map((li) => li.textContent)
+        : items;
+      return { time: time.trim(), changes: changes.trim(), trains: own };
+    });
+    const rowMinutes = (text) => {
+      const hours = /^(\d+)h (\d+)m$/.exec(text);
+      if (hours) return Number(hours[1]) * 60 + Number(hours[2]);
+      const minutes = /^(\d+)m$/.exec(text);
+      return minutes ? Number(minutes[1]) : null;
+    };
+    const trainFacts = (item) => {
+      const duration = /\((\d+)h (\d+)m\)|\((\d+)m\)/.exec(item);
+      const minutes = !duration ? null : duration[1] ? Number(duration[1]) * 60 + Number(duration[2]) : Number(duration[3]);
+      const changes = /no change/.test(item) ? 0 : Number((/(\d+) change/.exec(item) || [])[1]);
+      return { minutes, changes };
+    };
+    const wantedMinutes = quoted ? rowMinutes(quoted.time) : null;
+    const changeMatch = quoted ? /^(\d+) changes?$/.exec(quoted.changes) : null;
+    const wantedChanges = !quoted ? null
+      : quoted.changes === "Direct" ? 0
+      : changeMatch ? Number(changeMatch[1]) : null;
+    const agrees = quoted && wantedMinutes !== null && wantedChanges !== null && quoted.trains.some((item) => {
+      const facts = trainFacts(item);
+      return facts.minutes === wantedMinutes && facts.changes === wantedChanges;
+    });
+    check(
+      "and one of those trains is the journey the row quotes",
+      quoted && quoted.trains.length === 0
+        ? notExercised("the opened row lists no trains")
+        : wantedMinutes === null
+          ? notExercised("the opened row has no journey to quote")
+          : Boolean(agrees),
+      JSON.stringify(quoted)
+    );
     // The list was the first five of the day and said nothing about which day;
     // the lead says it now, from the page's own date (ADR-0084, rule 3).
     const dayLead = "Next trains" + (panel.day ? " on " + dayWords(panel.day) : "") + ".";

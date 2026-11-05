@@ -77,7 +77,12 @@
      it, and a tap that should have chosen a destination type chooses the
      palette instead. 44px, because that is the promise the accessibility
      matrix holds every control to. */
-  #themeToggle { display: flex; align-items: center; justify-content: center;
+  /* Above the phone sheet. The open sheet covers the heading, and this control
+     sits in the page above that heading: without a layer of its own the sheet
+     takes the click meant for the palette. Relative, so the layer is this
+     button and not a new containing block for the page. */
+  #themeToggle { position: relative; z-index: 30;
+                 display: flex; align-items: center; justify-content: center;
                  margin: 0 0 .2rem auto; width: 2.75rem; height: 2.75rem; padding: .4rem;
                  border: 0; border-radius: .6rem;
                  background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
@@ -250,13 +255,19 @@
   .under-field { position: fixed; z-index: 5; margin: 0; padding: .3rem 0;
     background: var(--bg); border: 1px solid var(--line); border-radius: .4rem;
     box-shadow: 0 .4rem 1rem rgba(0, 0, 0, .2); max-height: 58vh; overflow-y: auto; }
-  /* One drawn disclosure mark, used by both the refinements control and the
-     station slot. Authored rather than a character: a character has no stroke
-     weight of its own, is styled differently by every font, and the one this
-     replaced was written as a CSS escape inside a Python string -- where
-     Python read it first, so "\25be" shipped as a control character followed
-     by the letters "be" on every station page. */
-  .chevron { width: 1em; height: 1em; flex: none; align-self: center;
+  /* One drawn disclosure mark, used by the refinements control, the station
+     slot and a row's expander. Two borders of a square, turned 45 degrees, so
+     the corner sits at the bottom: a chevron, with no character for a font to
+     substitute and no SVG path for a parser to misread. The shorthand path
+     this replaced ("M4 6.25 8 10.25l4-4") painted on some phones as an angle
+     quote or a quadrant arc, which is one stroke and a round cap where the
+     other half of the chevron should have been. The nudge lifts that corner
+     back to the line it sits on; the open rule is the same turn plus a half
+     turn, so the corner points up and the nudge goes the other way. */
+  .chevron { display: inline-block; width: .7em; height: .7em; flex: none;
+             align-self: center; box-sizing: border-box; border-style: solid;
+             border-color: currentColor; border-width: 0 2px 2px 0;
+             transform: translateY(-.08em) rotate(45deg);
              transition: transform .18s ease-out; }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
   /* OV6 of the 19 October 2026 overdrive pass: one document, not 2,712. Moving
@@ -283,7 +294,7 @@
      its own state to the browser and to a screen reader, so this is the sight
      half only: the same drawn mark the filter bar uses, turned over when the
      thing it names is open. */
-  details[open] > summary .chevron { transform: rotate(180deg); }
+  details[open] > summary .chevron { transform: translateY(.08em) rotate(225deg); }
   /* C29: one main landmark per route, so landmark navigation works. It wraps
      the route's own content only; the back link and the footer stay outside it
      as the navigation landmarks they are. */
