@@ -1547,23 +1547,42 @@ function saysMoreThan(condition, code) {
       const row = document.querySelector("#rows tr:not(.detail)");
       const button = row && row.querySelector(".row-expand");
       if (!button) return null;
-      const mark = button.querySelector("svg.chevron");
-      const filterMark = document.querySelector("#moreFiltersToggle svg.chevron");
+      const mark = button.querySelector(".chevron");
+      const filterMark = document.querySelector("#moreFiltersToggle .chevron");
       const box = button.getBoundingClientRect();
       const open = button.getAttribute("aria-expanded");
+      // Which edges are stroked. The box scales with where the mark sits, so
+      // the pixel width is not the thing the two marks share; the corner is.
+      const corner = (el) => {
+        if (!el) return "";
+        const style = getComputedStyle(el);
+        return ["Top", "Right", "Bottom", "Left"]
+          .map((side) => (parseFloat(style["border" + side + "Width"]) > 0 ? "1" : "0"))
+          .join("");
+      };
+      // A transition still in its first frame reports the closed matrix, so
+      // the turn is read with the motion taken off: the destination, not the
+      // interpolation.
+      if (mark) mark.style.transition = "none";
+      const closed = mark ? getComputedStyle(mark).transform : "none";
       button.click();
+      const openedMark = button.querySelector(".chevron");
+      if (openedMark) openedMark.style.transition = "none";
       const opened = button.getAttribute("aria-expanded");
-      const rotated = getComputedStyle(button.querySelector("svg.chevron")).transform;
+      const turned = openedMark ? getComputedStyle(openedMark).transform : "none";
       const panelShown = Boolean(row.nextElementSibling && row.nextElementSibling.classList.contains("detail"));
       button.click();
       return {
         marked: Boolean(mark),
-        // The same path in both places, which is the point of one CHEVRON.
-        samePath: Boolean(mark && filterMark && mark.innerHTML === filterMark.innerHTML),
+        // A border triangle, the same corner in both places, and no character
+        // a font can substitute: the mark's own text is empty.
+        glyph: mark ? mark.textContent : "missing",
+        sameCorner: Boolean(mark && filterMark && corner(mark) === corner(filterMark)),
+        drawn: corner(mark) === "0110",
         name: button.getAttribute("aria-label") || "",
         w: Math.round(box.width),
         h: Math.round(box.height),
-        rotated: rotated !== "none",
+        turned: turned !== closed && turned !== "none",
         open,
         opened,
         panelShown,
@@ -1574,12 +1593,14 @@ function saysMoreThan(condition, code) {
       "a row expands by a chevron that keeps its words and its target",
       expander
         ? expander.marked &&
-          expander.samePath &&
+          expander.glyph === "" &&
+          expander.sameCorner &&
+          expander.drawn &&
           /details for .+/.test(expander.name) &&
           Math.min(expander.w, expander.h) >= 44 &&
           expander.open === "false" &&
           expander.opened === "true" &&
-          expander.rotated &&
+          expander.turned &&
           expander.panelShown &&
           expander.closedAgain
         : notExercised("this page lists no rows to expand"),

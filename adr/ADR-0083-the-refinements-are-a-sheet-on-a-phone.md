@@ -110,6 +110,16 @@ control the demo feed does not.
   at 768, because below the phone breakpoint the slider has no above-the-fold
   state to be passed: at 304 the check could only report itself not exercised.
 
+## Amendment — 5 November 2026: the open sheet meets the viewport
+
+An 88vh sheet leaves a crack above its top edge. Measured on the published
+Grantham page at 390x844 with the sheet open, the heading runs from 71px to
+144px and the sheet began at 101px, so "Train fares up to £20" sat above the
+budget slider and "from GRANTHAM" was cut off by the sheet. The open sheet now
+meets the viewport (`inset: 0`). It is still not a modal: no scrim, nothing
+behind it is disabled, and the sheet still takes the scroll. The heading, and
+the budget field in it, are there again when the sheet closes.
+
 ## Consequences
 
 - **The phone gains two rows.** The first destination moves from 624px to 441px

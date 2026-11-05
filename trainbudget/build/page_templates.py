@@ -596,15 +596,17 @@ __ANALYTICS__
 # blocked -- and then the reader simply gets the default, which is the point of
 # having a default.
 # The one drawn mark the chrome uses: a chevron that says "there is more behind
-# this". It is authored SVG rather than a character for three reasons, and the
-# third is the one that bit: a character has no stroke weight of its own and is
-# styled differently by every installed font; it is not an element a stylesheet
-# can size against the text it sits beside; and this mark used to be written as
-# a CSS escape inside a Python string, where Python reads it first -- "\\25be"
-# is octal 0o25 followed by the letters "be", so every station page rendered a
-# control character and the word "be" on its refinements control. A drawn path
-# cannot be misread by an interpreter, and it is the same shape on every
-# machine.
+# this". It is an empty element the stylesheet draws with two borders, rotated,
+# rather than a character or an SVG path. A character has no stroke of its own
+# and is a different glyph in every font, and this mark used to be a CSS escape
+# inside a Python string, where Python reads it first -- "\\25be" is octal 0o25
+# followed by the letters "be". The SVG path that replaced that character
+# ("M4 6.25 8 10.25l4-4", a shorthand lineto and a sign with no comma) is read
+# by some phone SVG parsers as a partial stroke, which paints as an angle quote
+# or a quadrant arc. Two borders cannot be misread, and a heading does not
+# announce them: generated content inside a heading is read as text, which is
+# why this is an element and not a `content` rule. The open state turns the
+# same borders through 225 degrees, which is this 45 plus a half turn.
 # The two arrow keys a reader expects of a field that sits over a list, in one
 # place because two routes now ask for them: the chooser's field over the
 # station list, and a station page's picker over the same list. The options stay
@@ -898,12 +900,7 @@ def _shared_script(text: str, what: str) -> str:
     return filled
 
 
-CHEVRON = (
-    '<svg class="chevron" viewBox="0 0 16 16" width="16" height="16"'
-    ' aria-hidden="true" focusable="false">'
-    '<path d="M4 6.25 8 10.25l4-4" fill="none" stroke="currentColor"'
-    ' stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-)
+CHEVRON = '<span class="chevron" aria-hidden="true"></span>'
 
 
 def station_script(parts: tuple[str, ...] = STATION_SCRIPT_PARTS) -> str:

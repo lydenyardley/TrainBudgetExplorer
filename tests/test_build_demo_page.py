@@ -739,7 +739,11 @@ class DemoPageTest(PageTestCase):
         self.assertIn(".filter-bar:has(.more-filters) .service-day { display: none; }", phone)
         sheet = phone.split('.filter-bar:has(.more-filters[data-open="true"]) {', 1)[1].split("}", 1)[0]
         self.assertIn("position: fixed;", sheet)
-        self.assertIn("max-height: 88vh;", sheet)
+        # The open sheet meets the viewport. 88vh left a crack shorter than the
+        # heading, so the title was sliced above the budget slider (ADR-0083,
+        # amended). The browser suite reads the heading against the sheet.
+        self.assertIn("inset: 0;", sheet)
+        self.assertNotIn("max-height: 88vh;", sheet)
         self.assertIn("overflow-y: auto;", sheet)
         self.assertIn('.filter-bar:has(.more-filters[data-open="true"]) .filters-done {', phone)
         # And the foot is written from the render, not from the markup: the
@@ -891,13 +895,13 @@ class DemoPageTest(PageTestCase):
         # accessible name is read from, so the heading announced "from Change
         # starting station" and never said which station. The swap arrow is
         # likewise drawn rather than written into the heading's name: the
-        # chevron is inline SVG and aria-hidden, because the browser reads
+        # chevron is an empty element and aria-hidden, because the browser reads
         # CSS generated content inside a heading as text, so a decoration
         # made that way is announced as a word the page never meant to say.
         heading = self.html.split("<h1", 1)[1].split("</h1>", 1)[0]
         self.assertIn('<span class="sr-only">Change starting station: </span>', heading)
         self.assertIn('class="origin-slot" type="button"', heading)
-        self.assertIn('<svg class="chevron"', heading)
+        self.assertIn('<span class="chevron" aria-hidden="true"></span>', heading)
         self.assertNotIn("origin-swap", self.html)
         self.assertNotIn('aria-label="Change starting station"', self.html)
         # The options are real anchors, not a custom listbox, so what is
@@ -1287,7 +1291,7 @@ class DemoPageTest(PageTestCase):
         script = page_script(self.html)
         # The script holds the mark as a string, quoted by json rather than
         # pasted, so the same CHEVRON constant serves the markup and the rows.
-        self.assertIn('const CHEVRON = "<svg class=', script)
+        self.assertIn('const CHEVRON = "<span class=\\"chevron\\"', script)
         # 2.75rem is the 44px the row's other control is held to, and the
         # rotated state is what distinguishes open from closed.
         from trainbudget.build.page_templates import STATION_STYLESHEET
@@ -1298,7 +1302,7 @@ class DemoPageTest(PageTestCase):
         self.assertIn("width: 2.75rem;", expand_rule)
         self.assertIn("height: 2.75rem;", expand_rule)
         self.assertIn(
-            '.row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }',
+            '.row-expand[aria-expanded=true] .chevron { transform: translateY(.08em) rotate(225deg); }',
             stylesheet,
         )
 
@@ -1371,6 +1375,28 @@ class DemoPageTest(PageTestCase):
         payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)
         rows = {row["crs"]: row for row in payload["destinations"]}
         self.assertEqual(len(rows["NOT"]["departures"]), 2)
+
+    def test_the_row_quotes_a_journey_the_panel_lists(self) -> None:
+        # The row is the shortest journey of the day and the panel is the
+        # earliest departures, capped. On the fixture the shortest Grantham to
+        # Nottingham journey is the 10:00, 45 minutes, direct, and a cap of two
+        # keeps only the 07:00 and the 08:00 -- both longer -- so the panel
+        # used to contradict the row. The quoted journey takes the last place
+        # in a full list. The same shape is what the published Grantham page
+        # does to Ancaster: "Direct 18m" beside five one-change trains.
+        payload = build_payload(self.fares, self.timetable, "GRN", departure_limit=2)
+        row = {item["crs"]: item for item in payload["destinations"]}["NOT"]
+        self.assertEqual(row["minutes"], 45)
+        self.assertEqual(row["changes"], 0)
+        self.assertEqual(len(row["departures"]), 2)
+        self.assertTrue(
+            any(
+                option["arrive"] - option["depart"] == row["minutes"]
+                and option["changes"] == row["changes"]
+                for option in row["departures"]
+            ),
+            row["departures"],
+        )
 
     def test_a_page_without_a_date_warns_that_a_changed_train_appears_twice(self) -> None:
         self.assertIn("has changed appears twice", self.payload["dateNote"])

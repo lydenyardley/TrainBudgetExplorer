@@ -14,7 +14,10 @@
                   font: inherit; font-weight: inherit; letter-spacing: inherit; cursor: pointer; }
   #changeOrigin:hover, #changeOrigin:focus-visible { border-bottom-style: solid; }
   #changeOrigin:hover .chevron, #changeOrigin:focus-visible .chevron { opacity: 1; }
-  #changeOrigin .chevron { width: .8em; height: .8em; opacity: .75; }
+  /* em of the heading, which is a display size: the old box was the SVG's
+     viewport and the stroke sat inside it, so the same .8em here would be a
+     chevron as tall as the word beside it. .4em is the stroke's own size. */
+  #changeOrigin .chevron { width: .4em; height: .4em; opacity: .75; }
   /* One control that is always there and one block that folds away, at every
      width rather than below a breakpoint. Live at 1440px this bar put four
      controls a reader had not asked for -- a budget slider, three ticket
@@ -47,7 +50,7 @@
   .more-filters-toggle .chevron { margin-left: auto; color: var(--accent); }
   .more-filters[data-open="true"] .more-filters-toggle { border-color: var(--accent);
                                                           border-radius: .45rem .45rem 0 0; }
-  .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: rotate(180deg); }
+  .more-filters[data-open="true"] .more-filters-toggle .chevron { transform: translateY(.08em) rotate(225deg); }
   /* DS4 of the 19 October 2026 distill pass: the summary is the folded state's
      own line. While the panel is open its controls state the same thing a
      hundred pixels below, so the line is hidden -- and because a hidden line is
@@ -114,8 +117,8 @@
      refinements toggle gives one row up. */
   button.choice-chip { font-family: inherit; }
   .more-types[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); font-weight: 650; }
-  .more-types .chevron { width: .8em; height: .8em; margin-left: .35rem; }
-  .more-types[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+  .more-types .chevron { width: .65em; height: .65em; margin-left: .35rem; }
+  .more-types[aria-expanded="true"] .chevron { transform: translateY(.08em) rotate(225deg); }
   /* The facets are more of the same chips rather than a group of their own, so
      the row they land in sits one chip-gap under the row that opened it: the
      same rhythm as the chips beside each other, and no second heading a reader
@@ -249,8 +252,8 @@
                 border: 0; border-radius: .35rem; background: transparent;
                 color: var(--muted); }
   .row-expand:hover, .row-expand:focus-visible, .row-expand[aria-expanded=true] { color: var(--accent); }
-  .row-expand .chevron { width: 1.1rem; height: 1.1rem; }
-  .row-expand[aria-expanded=true] .chevron { transform: rotate(180deg); }
+  .row-expand .chevron { width: .85rem; height: .85rem; }
+  .row-expand[aria-expanded=true] .chevron { transform: translateY(.08em) rotate(225deg); }
   /* C7 of the 17 October 2026 critique: the row's two actions had inverted
      weight. Buying was a 48x22 underlined word and the disclosure was a 44x44
      bordered button, so the eye went to the chevron. The ticket link now wears
@@ -566,7 +569,7 @@
      one drawn chevron now, which also says which way they are pointing. */
   .method summary { min-height: 44px; display: flex; align-items: center; gap: .45rem;
                     color: var(--accent); cursor: pointer; }
-  .method summary .chevron, .link-terms summary .chevron { width: .9em; height: .9em; opacity: .75; }
+  .method summary .chevron, .link-terms summary .chevron { width: .65em; height: .65em; opacity: .75; }
   .method summary:hover .chevron, .link-terms summary:hover .chevron,
   .method summary:focus-visible .chevron, .link-terms summary:focus-visible .chevron { opacity: 1; }
   /* What the ticket link does, and how this page was built, are one fold above
@@ -692,17 +695,37 @@
     .filter-bar:has(.more-filters) .budget-track,
     .filter-bar:has(.more-filters) .service-day { display: none; }
     .filter-bar:has(.more-filters[data-open="true"]) {
-      position: fixed; inset: auto 0 0 0; z-index: 20;
+      /* The viewport, not 88vh of it. An 88vh sheet leaves a crack above its
+         top edge, and on a phone that crack is shorter than the heading: at
+         390x844 the heading runs from 71px to 144px and the sheet began at
+         101px, so "Train fares up to £20" sat above the budget slider and
+         "from GRANTHAM" was cut off by it. Meeting the viewport covers the
+         heading instead of slicing it. It is still not a modal -- no scrim,
+         nothing behind it is disabled -- and the sheet still takes the scroll. */
+      position: fixed; inset: 0; z-index: 20;
       display: flex; flex-direction: column; gap: .9rem;
-      max-height: 88vh; overflow-y: auto; overscroll-behavior: contain;
-      margin: 0; padding: .75rem .75rem calc(.75rem + env(safe-area-inset-bottom, 0px));
-      background: var(--bg); border-top: 1px solid var(--line);
-      /* A lift, not a scrim: nothing behind the sheet is disabled, so it must
-         not read as something the reader has to dismiss before anything else. */
-      box-shadow: 0 -1rem 2.5rem rgb(0 0 0 / .22);
+      max-height: none; overflow-y: auto; overscroll-behavior: contain;
+      margin: 0;
+      /* The theme switch stays above this sheet, in the page's own top corner.
+         The padding is that switch's height plus a gap, so the budget slider
+         does not run underneath it. */
+      padding: calc(2.75rem + .6rem + env(safe-area-inset-top, 0px)) .75rem calc(.75rem + env(safe-area-inset-bottom, 0px));
+      background: var(--bg); border-top: 0;
+      box-shadow: none;
     }
     .filter-bar:has(.more-filters[data-open="true"]) .budget-track,
     .filter-bar:has(.more-filters[data-open="true"]) .service-day { display: flex; }
+    /* The palette switch lives in the page, above the heading the sheet now
+       covers. While the sheet is open it is pinned into the band the sheet's
+       own padding leaves clear, so a banner above it in the flow cannot drop
+       the button onto the budget slider, and the click still reaches it. */
+    body:has(#moreFilters[data-open="true"]) #themeToggle {
+      position: fixed;
+      top: calc(.35rem + env(safe-area-inset-top, 0px));
+      right: .75rem;
+      margin: 0;
+      background: var(--bg);
+    }
     /* The toggle is a header in here rather than a plate: it has no box of its
        own to share with the panel under the sheet's own border, and it says the
        one thing the sheet's reader needs from a header -- press to go back. */
