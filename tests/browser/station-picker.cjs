@@ -148,7 +148,8 @@ async function checkTheOriginPicker(world) {
       await open(facts.affordable);
       return page.evaluate(() => {
         const more = document.getElementById("moreFilters");
-        if (more.dataset.open !== "true") document.getElementById("moreFiltersToggle").click();
+        const toggle = document.getElementById("moreFiltersToggle");
+        if (more.dataset.open !== "true" && toggle && toggle.offsetParent !== null) toggle.click();
         return getComputedStyle(document.getElementById("moreFiltersPanel"))
           .gridTemplateColumns.split(" ").length;
       });

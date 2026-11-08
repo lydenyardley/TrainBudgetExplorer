@@ -58,12 +58,6 @@
        tall one the width still sets it. 6rem caps the very wide cases. */
     --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem);
     --h1: clamp(2rem, min(7vw, 9vh), 6rem);
-    /* A route that puts something beside its column rather than above it asks
-       for the room here: the page's width becomes the column plus whatever it
-       borrowed, so the column itself -- and every measure inside it -- is the
-       width it was. Zero on every route that borrows nothing, which is all of
-       them but the station page (ADR-0082). */
-    --rail: 0rem;
   }
   /* The reader's choice, which beats the system preference: the tokens are
      already resolved by light-dark(), so naming the scheme is the whole of it,
@@ -101,7 +95,7 @@
   /* No padding above the content. The heading's own margin is the space
      above the heading, and a gutter above it as well put the first fare
      further below the fold than it needed to be. */
-  body { margin: 0 auto; padding: 0 var(--page-pad); max-width: calc(var(--page-max) + var(--rail));
+  body { margin: 0 auto; padding: 0 var(--page-pad); max-width: var(--page-max);
          background: var(--bg); color: var(--fg);
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   /* 1.2, not the 1.35 a paragraph wants: at six rem the line box is most of a

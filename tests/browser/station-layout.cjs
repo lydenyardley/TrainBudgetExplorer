@@ -216,7 +216,7 @@ async function measureTheLayout(world) {
     }
     await open(facts.affordable);
     // Two controls that make one decision share a row -- where the bar spans
-    // the page. Above 98rem that bar is a rail beside the list, and the same two
+    // the page. In the rail that bar sits beside the list, and the same two
     // decisions are made one after the other, so they stack. The arrangement is
     // read at the width it belongs to rather than at whatever the run happens to
     // be at, which is what keeps both rules measured instead of one of them
@@ -263,16 +263,31 @@ async function measureTheLayout(world) {
       JSON.stringify({ layout: filterRow.layout, margin: filterRow.barMargin, gap: filterRow.barGap })
     );
     if (openedThePanel) await page.click("#moreFiltersToggle");
-    // 1600 is past the 98rem the rail's own rule asks for: 78rem of page, 18rem
-    // of bar and the 2rem between them.
+    // 1600 is past the 95.5rem the rail's own rule asks for (ADR-0085): the
+    // window's width, a 16rem bar and the 1.5rem between them.
     await page.setViewportSize({ width: 1600, height: 900 });
     await open(facts.affordable);
-    const railedPanel = await openThePanel();
     const railRow = await page.evaluate(() => {
       const ticket = document.querySelector(".ticket-filter").getBoundingClientRect();
       const party = document.querySelector(".party-filter").getBoundingClientRect();
       const types = document.querySelector(".destination-filter").getBoundingClientRect();
+      const budget = document.querySelector(".budget-track").getBoundingClientRect();
+      const dayBar = document.getElementById("serviceDayBar");
+      const day = dayBar ? dayBar.getBoundingClientRect() : null;
+      const panel = document.getElementById("moreFiltersPanel").getBoundingClientRect();
+      const toggle = document.getElementById("moreFiltersToggle");
+      const bar = getComputedStyle(document.querySelector(".filter-bar"));
+      const layout = getComputedStyle(document.querySelector(".station-layout"));
       return {
+        budgetTop: Math.round(budget.top),
+        dayTop: day && day.height ? Math.round(day.top) : null,
+        panelTop: Math.round(panel.top),
+        panelHeight: Math.round(panel.height),
+        toggleDrawn: toggle ? toggle.offsetParent !== null : false,
+        barMargin: bar.marginTop,
+        columnGap: layout.columnGap,
+        bodyWidth: Math.round(document.body.getBoundingClientRect().width),
+        viewport: window.innerWidth,
         ticket: Math.round(ticket.top),
         party: Math.round(party.top),
         types: Math.round(types.top),
@@ -284,18 +299,30 @@ async function measureTheLayout(world) {
       railRow.types > railRow.party && railRow.party > railRow.ticket && !railRow.beside,
       JSON.stringify(railRow)
     );
-    // The toggle and the panel it opens are one card, not a button with a
-    // second card under it: the open toggle keeps the accent border and squares
-    // off its bottom corners, and the panel takes the accent border on its
-    // other three sides with the field colour and its own bottom margin taken
-    // away, so the two join into one outlined shape.
+    check(
+      "in the rail the budget leads, the day follows and the refinements are open",
+      railRow.panelHeight > 0 && !railRow.toggleDrawn &&
+        railRow.budgetTop < railRow.panelTop &&
+        (railRow.dayTop === null || (railRow.budgetTop < railRow.dayTop && railRow.dayTop < railRow.panelTop)),
+      JSON.stringify(railRow)
+    );
+    check(
+      "and the rail is the window's width, with the column's gap and no margin of its own",
+      railRow.bodyWidth >= railRow.viewport - 20 && railRow.bodyWidth > 1248 &&
+        railRow.barMargin === "0px" && railRow.columnGap === "20px",
+      JSON.stringify({ body: railRow.bodyWidth, viewport: railRow.viewport, margin: railRow.barMargin, gap: railRow.columnGap })
+    );
+    // The toggle and the panel it opens are one card, measured where the fold
+    // is the bar's own control: in the rail the panel is simply open and there
+    // is no toggle for it to join.
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await open(facts.affordable);
+    const joinedPanel = await openThePanel();
     const joined = await page.evaluate(() => {
       const toggle = document.getElementById("moreFiltersToggle");
       const panel = document.getElementById("moreFiltersPanel");
       const t = getComputedStyle(toggle);
       const p = getComputedStyle(panel);
-      const bar = getComputedStyle(document.querySelector(".filter-bar"));
-      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
       return {
         toggleRadius: t.borderRadius,
         toggleBorder: t.borderTopColor,
@@ -304,11 +331,7 @@ async function measureTheLayout(world) {
         panelRadius: p.borderRadius,
         panelBackground: p.backgroundColor,
         panelMarginBottom: p.marginBottom,
-        accent,
         quarterRem: parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.45,
-        barGap: bar.rowGap,
-        barMargin: bar.marginTop,
-        columnGap: getComputedStyle(document.querySelector(".station-layout")).columnGap,
         touching: Math.round(toggle.getBoundingClientRect().bottom - panel.getBoundingClientRect().top),
       };
     });
@@ -323,16 +346,7 @@ async function measureTheLayout(world) {
         Math.abs(joined.touching) <= 1,
       JSON.stringify(joined)
     );
-    // In the rail the bar has no margin of its own -- the column gap is the
-    // space, and a second answer to the same question is how the two drift --
-    // so what is held here is that the gap between its rows and the gap between
-    // the two columns are both the page's own figures.
-    check(
-      "in the rail the bar takes the column's gap instead of a margin of its own",
-      joined.barGap === "16px" && joined.barMargin === "0px" && joined.columnGap === "32px",
-      `row gap ${joined.barGap}, column gap ${joined.columnGap}, margin-top ${joined.barMargin}`
-    );
-    if (railedPanel) await page.click("#moreFiltersToggle");
+    if (joinedPanel) await page.click("#moreFiltersToggle");
     // The three layout rules a reader scrolling ninety rows is relying on: the
     // headings stay, the action column does not widen, and the page controls
     // are not welded to the table's last row.
@@ -759,15 +773,15 @@ async function measureTheLayout(world) {
       check("and nothing scrolls sideways with the sheet open", sheet.overflow <= 0, `${sheet.overflow}px`);
       // O42: the day control is not a filter, and below this breakpoint the sheet
       // is the only place it is drawn, so a page carrying a week must still reach
-      // it from inside the sheet. Read at the sheet's end, which is one scroll
-      // from the foot the reader closes it with: a panel that clipped it instead
-      // of scrolling would leave a phone with no way to change the day at all.
+      // it from inside the sheet. It leads the panel now (ADR-0085), so it is
+      // read at the sheet's top rather than at the end of a scroll: a panel that
+      // pushed it behind the refinements would hide the one control the reader
+      // changes the day with.
       const day = await page.evaluate(() => {
         const dayBar = document.getElementById("serviceDayBar");
         const select = document.getElementById("serviceDay");
         if (!dayBar || !select || getComputedStyle(dayBar).display === "none") return null;
         const bar = document.querySelector(".filter-bar");
-        bar.scrollTop = bar.scrollHeight;
         const box = bar.getBoundingClientRect();
         const own = dayBar.getBoundingClientRect();
         return {
@@ -777,7 +791,7 @@ async function measureTheLayout(world) {
         };
       });
       check(
-        "and a page with a week reaches its day control inside the sheet, one scroll from the foot",
+        "and a page with a week reaches its day control inside the sheet, above the refinements",
         day === null || (day.inSheet && day.usable),
         JSON.stringify(day)
       );
@@ -808,7 +822,7 @@ async function measureTheLayout(world) {
         "at a phone width the refinements open as a sheet over the list",
         "and the sheet's foot names what is behind it, the same count the count line does",
         "and nothing scrolls sideways with the sheet open",
-        "and a page with a week reaches its day control inside the sheet, one scroll from the foot",
+        "and a page with a week reaches its day control inside the sheet, above the refinements",
         "and its foot closes the sheet, hands focus back and leaves the rows reachable",
       ]) {
         check(name, notExercised("this page has no refinements bar to open"));

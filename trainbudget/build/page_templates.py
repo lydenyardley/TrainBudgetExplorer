@@ -245,12 +245,12 @@ __FIRST_USE_PARA__
      page; the rail and the list share what is left, so the first row a reader
      sees is the page's own answer, not a control that was there before it.
      The wrapper is layout only -- no element, no id and no landmark moves,
-     and below 98rem it is the block it always was. 98 rather than the 44rem of
-     the phone breakpoint because the rail may only take width the page was not
-     using: the results table needs its 1176px for the real feed's longest
-     station names, so the page grows by the rail and its gap (78 + 18 + 2) and
-     a window narrower than that keeps the bar above the list. The measurement
-     is in station.css and adr/ADR-0082. -->
+     and below 95.5rem it is the block it always was. From 95.5rem the page is
+     the width of the window rather than a centred 78rem column, and the rail is
+     15rem plus a 1.25rem gap, so the results hold 1,179px at the breakpoint
+     once the window's own 17px scrollbar is taken out, and 1,187px on a
+     1536px window. The measurement is in station.css and
+     adr/ADR-0085. -->
 <div class="station-layout">
 <section class="filter-bar" aria-label="Journey and destination filters">
   <fieldset class="budget-track">
@@ -264,6 +264,21 @@ __FIRST_USE_PARA__
          are the two facts the budget contract protects. -->
     <span class="tag" id="budgetHint">Drag to set the budget. Stops at <span id="budgetCeiling">__CEILING_NOTE__</span><span id="budgetHintMode"></span>.</span>
   </fieldset>
+<!-- The day the times are for. It is not a filter, so it sits above the fold
+     and before it: the reader sets the budget, then the day the budget is
+     answered on, then the refinements that narrow the answer. That is the
+     rail's reading order too (ADR-0085), and one template draws both.
+     It does not hide rows; it changes what the Time and Changes columns
+     report. Above the count it costs nothing, and it stays out of the panel
+     because it is not a refinement of the list (ADR-0040 measures the gap
+     between the count and its table). Hidden when the build carried no week
+     to pick from, so a page with one day shows no control that could only
+     offer the day already on screen. -->
+<div class="service-day" id="serviceDayBar" hidden>
+  <label for="serviceDay">Times for</label>
+  <select id="serviceDay" aria-describedby="serviceDayHelp"></select>
+  <span class="tag" id="serviceDayHelp"></span>
+</div>
   <div class="more-filters" id="moreFilters" data-open="false">
     <button type="button" class="more-filters-toggle" id="moreFiltersToggle"
             aria-expanded="false" aria-controls="moreFiltersPanel">
@@ -331,20 +346,6 @@ __FIRST_USE_PARA__
      that. Empty and hidden until then, so a page whose script did not arrive
      claims no key it cannot honour. -->
 <p class="tag" id="keyHints" hidden></p>
-<!-- The day the times are for. It is not a filter and is not inside the filter
-     panel: it does not hide rows, it changes what the Time and Changes columns
-     report. It is on the always-visible strip beside the budget rather than
-     between the count and the table, because the count belongs to the table it
-     counts and ADR-0040 measures the gap between them (57px on the real page,
-     against a 100px budget, once a 44px control was added to it). Above the
-     count it costs nothing. Hidden when the build carried no week to pick from,
-     so a page with one day shows no control that could only offer the day
-     already on screen. -->
-<div class="service-day" id="serviceDayBar" hidden>
-  <label for="serviceDay">Times for</label>
-  <select id="serviceDay" aria-describedby="serviceDayHelp"></select>
-  <span class="tag" id="serviceDayHelp"></span>
-</div>
 <!-- O42: the way out of the sheet, and its payoff. Below the phone breakpoint
      the whole bar is a sheet over the list (station.css), so the toggle at its
      top is no longer beside the rows it filters and the count line is behind

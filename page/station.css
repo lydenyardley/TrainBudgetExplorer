@@ -600,35 +600,39 @@
      table for desktop and assistive technology; only the display changes, and
      flex wrapping means no cell can sit outside the viewport however long a
      station name or fare code is. */
-  /* The refinements beside the list, on a screen wide enough for both. The
-     rail is the bar that was above the table, and nothing else moves: the
-     budget, the fold, the day and the key line are the same controls in the
-     same order, drawn once by the same template. What changes is where the
-     results start -- level with the controls rather than under them -- and
-     what happens to the rail while the reader scrolls, which is that it stays.
-     The width is the whole rule. The page caps its content at 78rem, so a rail
-     can only be width the page was not using: the table keeps the 1176px it
-     has, and the page grows by the rail and its gap. 98rem is that sum -- 78rem
-     of page, 18rem of rail, a 2rem gap -- and it is also why the rail cannot
-     appear on a 1366 laptop: there the table would lose 320px, and the longest
-     station names on the real feed then paint on two lines (5 of the 32 pages
-     the browser suite drives, 3 November 2026). A wrapped name is not a cramped
-     column -- it is a different name, the same defect that once painted a price
-     as "10.1" over "0" -- so the table keeps its 1176px and this rule is what
-     keeps it. */
+  /* The refinements beside the list, and the page the width of the window.
+     The rail is the bar that was above the table, and nothing else moves: the
+     budget, the day, the refinements and the key line are the same controls,
+     drawn once by the same template. What changes is where the results start
+     -- level with the controls rather than under them -- and how much room
+     both have: below this width the page is a centred 78rem column, and from
+     it the column is the window, so the results take every pixel the rail
+     does not.
+
+     95.5rem rather than 98: the 3 November 2026 rule asked for the 1,176px the
+     real feed's longest station names need, and a centred column plus an
+     18rem rail plus its gap was 98rem. A reader on a 1920x1200 screen at 125%
+     has 1536 CSS px, 32 short of that, and asked for the rail there. The rail
+     is 15rem and the gap 1.25rem, so at 95.5rem the results hold 1,196px, and
+     1,179px once the window's own 17px scrollbar is taken out. A first cut
+     with a 16rem rail and a 1.5rem gap measured 1,167px in a headed browser:
+     the media query counts the window and the body does not count the
+     scrollbar, so the rule was 9px short of the need it exists for. The narrower rail
+     is what buys the threshold without wrapping a name: at the 1260px the
+     review asked for the results would have 908px, and the five pages that
+     failed on a wrapped name at 856px in November 2026 are the record of what
+     that width does to the longest names. That measurement is in
+     adr/ADR-0085. */
   .station-layout { display: block; }
   .station-results { min-width: 0; }
-  @media (min-width: 98rem) {
-    /* The room is asked for in the shared width's own token rather than by
-       restating a page width here: the column stays 78rem and the page becomes
-       78 + 18 of rail + the 2rem between them, so every measure inside the
-       column -- the heading, the count, the table's 1176px -- is the width it
-       was. */
-    :root { --rail: 20rem; }
+  @media (min-width: 95.5rem) {
+    /* The rail is a column of the window, not room borrowed from a capped
+       measure, so the page stops being a centred column here. */
+    body { max-width: none; }
     .station-layout {
       display: grid;
-      grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
-      column-gap: 2rem;
+      grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+      column-gap: 1.25rem;
       align-items: start;
     }
     /* No margin of its own: the grid's gap is the space, and a margin here
@@ -638,22 +642,26 @@
       top: 1rem;
       margin: 0;
     }
-    /* What scrolls is the panel, not the column. A sticky column that scrolls
-       internally can lose the budget slider inside itself, and the page reads a
-       slider scrolled out of its own column as one the reader has passed: the
-       56px budget rail then arrives while the column is still on screen. The
-       slider stays where it is and the controls that can be longer than a
-       window -- the open panel -- take the scroll, bounded so the day control
-       under it stays reachable. The floor matters: at a 98rem-wide, 300px-tall
-       window the subtraction would otherwise ask for a negative height. */
-    .more-filters[data-open="true"] .more-filters-panel {
-      max-height: max(6rem, calc(100vh - 16rem));
-      overflow-y: auto;
+    /* The rail is the one layout where the refinements are not a fold. A fold
+       in a column of its own hides the panel behind the one control the column
+       exists to show, so the toggle is not drawn and the panel is. The panel
+       keeps no card of its own: the column is the card. These rules come after
+       the open state's and win over it, so a reader who folded the panel at a
+       narrow width and then widened the window sees the panel rather than a
+       button that is not there. */
+    .station-layout .more-filters-toggle { display: none; }
+    .station-layout .more-filters-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+      max-height: none;
+      overflow: visible;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: none;
     }
-    /* One column of controls. Two inside 18rem put every destination name
-       beside the chip's own edge, and the ticket and party decisions are made
-       one after the other, which is the order a rail reads them in. */
-    .more-filters[data-open="true"] .more-filters-panel { grid-template-columns: minmax(0, 1fr); }
   }
   /* 44rem, not 40: measured, the six-column table needs ~700px before its three
      row actions stop wrapping onto a second line, so the stacked layout keeps

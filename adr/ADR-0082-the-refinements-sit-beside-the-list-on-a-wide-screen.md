@@ -1,6 +1,6 @@
 # ADR-0082: The refinements sit beside the list on a wide screen
 
-**Status:** Accepted
+**Status:** Superseded in part by ADR-0085 (the threshold and the width)
 **Date:** 3 November 2026
 **Relates to:** ADR-0077 (a page lists the places it prices most cheaply), ADR-0040 (the count line's gap to the table), ADR-0083 (the phone half of the 3 November 2026 request)
 
@@ -100,6 +100,8 @@ rule cancelled, so only the layout differs.
 - **The rail is for screens wider than a laptop.** A 1366 or 1440 window is
   unchanged. The reader who gains is the one on a 1568px display or larger, where
   the page was previously drawing a 1248px column with empty space either side.
+  ADR-0085 moved the gate to 1,528px, made the page the window's width and opened
+  the refinements in the rail; the width measurement here still stands.
 - **The page is 1568px wide where it was 1248px, on a screen that wide.** Every
   element inside the column keeps its own measure -- prose keeps its `ch` caps,
   the table keeps its 1176px -- so what grows is margin, and the rail fills it.
