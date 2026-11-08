@@ -180,7 +180,7 @@
      .38em in the muted colour, and at six-plus rem a pair of them either side
      of the number the reader came to set said "and also" about a word that was
      already a separate line. The line break is the separator. */
-  .heading-lead { color: var(--muted); margin-right: .15em; }
+  .heading-lead { color: var(--muted); }
   /* The amount and the words around it, in one box that cannot wrap. A break
      opportunity sits at the edge of an inline field whatever follows it, so
      without this the second line can begin with the number and the "from" can
