@@ -157,7 +157,7 @@ if (serviceDaySelect) {
     // which explained why a date control exists and one of which repeated what
     // the label already says. What is left is the limitation, which is the only
     // part a reader cannot see for themselves.
-    serviceDayHelp.textContent = "Interchange stations are shown for the build’s own day only.";
+    serviceDayHelp.textContent = "Interchange names: build day only.";
   } else {
     serviceDayBar.remove();
   }

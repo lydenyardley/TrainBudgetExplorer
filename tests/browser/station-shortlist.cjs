@@ -760,17 +760,26 @@ async function compareTheDockWithTheTable(world) {
       const belowControl = control
         ? note.getBoundingClientRect().top >= control.getBoundingClientRect().bottom
         : false;
+      const checked = document.querySelector('input[name="ticketMode"]:checked');
       return {
         text: (note.textContent || "").trim(),
+        mode: checked ? checked.value : "",
+        hidden: note.hidden,
         inPanel,
         afterTable,
         belowControl,
       };
     });
+    // The default set carries no note, because the count line above the table
+    // already names its mix. A hidden note has no box, so its position is asked
+    // about only when there is a sentence to place.
     check(
-      "what the ticket set contains is said under the options that choose it",
-      notePlacement && notePlacement.text.length > 0 &&
-        notePlacement.inPanel && !notePlacement.afterTable && notePlacement.belowControl,
+      "the ticket set is explained under the options that choose it, when it needs explaining",
+      notePlacement &&
+        notePlacement.inPanel && !notePlacement.afterTable &&
+        (notePlacement.mode === "cheapest"
+          ? notePlacement.text === "" && notePlacement.hidden
+          : notePlacement.text.length > 0 && notePlacement.belowControl),
       JSON.stringify(notePlacement)
     );
     // The first column is a membership mark, and a membership mark reads as

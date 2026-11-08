@@ -195,20 +195,26 @@ const MODE_WHY = {
 // it always was -- a restricted off-peak fare is a real price a reader can buy
 // -- and whichever set is open, a restricted fare is not interchangeable with
 // an unrestricted one, and the page cannot decode the feed's own validity text.
-// C21 of the 17 October 2026 review: one sentence per set, saying what makes it
-// different from the other three rather than describing all four. The note sits
-// under the control that chooses the set, so it can be short; the row's own
-// details carry a restriction's condition, and the count line carries the mix.
+// C21 of the 17 October 2026 review: a sentence for each set that needs one,
+// saying what makes it different from the other three rather than describing
+// all four. The note sits under the control that chooses the set, so it can be
+// short; the row's own details carry a restriction's condition, and the count
+// line carries the mix.
 const MODE_NOTE = {
-  cheapest: "The cheapest single or return for each place, and the row says which it is.",
-  anytime: "Unrestricted Anytime Day Returns: the same fare on any train.",
-  return: "Every standard-class return the feed prices, restricted and advance included.",
-  single: "Outbound singles rather than returns. An advance single needs a chosen train.",
+  // The default set needs no sentence: the option names it, the count line
+  // above the table names the mix, and no row claims to be a single or a return.
+  cheapest: "",
+  anytime: "Valid on any train.",
+  return: "Restricted and advance returns included.",
+  single: "Outbound only. An advance single needs a chosen train.",
 };
 function renderModeNote() {
   const note = document.getElementById("modeNote");
   if (!note) return;
-  note.textContent = MODE_NOTE[ticketMode()] || "";
+  const text = MODE_NOTE[ticketMode()] || "";
+  note.textContent = text;
+  // An empty paragraph would hold its margin open under the options.
+  note.hidden = !text;
   // The budget hint names the ticket mode the ceiling belongs to, because the
   // mode control is inside the folded refinements and "the ticket type you are
   // looking at" named nothing on screen (audit item 12). It is written in the

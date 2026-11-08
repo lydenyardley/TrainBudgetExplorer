@@ -1633,15 +1633,18 @@ function saysMoreThan(condition, code) {
         : facets.every((facet) => facet.shown === `(${facet.count})`),
       JSON.stringify(facets)
     );
-    // Two numbers wear the same dress here, so the line has to say which is
-    // which: a chip's count is destinations, the disclosure's is kinds. Audit
-    // item 18, 14 October 2026 kept the line on the useful half of the old
-    // sentence, and this half is what tells the pair apart.
+    // A chip's count is destinations and the disclosure's is kinds. The noun on
+    // the disclosure's number is what tells the pair apart, so the rule above
+    // only has to name the chip count (audit item 18, 14 October 2026).
     const typeRule = (await page.textContent("#typeRule")) || "";
+    const moreTypesCount = await page.evaluate(() => {
+      const el = document.querySelector("#moreTypes .more-types-count");
+      return el ? el.textContent.trim() : "";
+    });
     check(
       "the chips say what each count beside them is",
-      /inside the budget now/.test(typeRule) && /how many kinds are behind it/.test(typeRule),
-      typeRule
+      /destinations inside your budget/.test(typeRule) && /\d+ kinds?/.test(moreTypesCount),
+      `${typeRule} | ${moreTypesCount}`
     );
     const cleared = await page.evaluate(() => {
       const all = document.querySelector('input[name="destinationType"][value="all"]');

@@ -689,7 +689,7 @@ async function driveTheFilters(world) {
       );
       check(
         "and the facet disclosure says how many it holds",
-        arrangement.count === `(${arrangement.offered})` &&
+        arrangement.count === `(${arrangement.offered} kind${arrangement.offered === 1 ? "" : "s"})` &&
           arrangement.controls === arrangement.panelId,
         JSON.stringify(arrangement)
       );
@@ -738,7 +738,7 @@ async function driveTheFilters(world) {
           // The panel is shut behind the vanished control rather than left open
           // over no chips, and its number is the zero that took it away.
           flooredOut.hidden === true && flooredOut.expanded === "false" &&
-          flooredOut.count === "(0)" &&
+          flooredOut.count === "(0 kinds)" &&
           raisedBack.offered > 0 && raisedBack.toggleHidden === false,
         JSON.stringify({ flooredOut, raisedBack })
       );

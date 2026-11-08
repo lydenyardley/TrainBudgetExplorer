@@ -301,7 +301,7 @@ __FIRST_USE_PARA__
          options it explains, shortened to the difference between them rather
          than to a paragraph about all four; the count line still names the mix
          in the list itself. -->
-    <p id="modeNote"></p>
+    <p id="modeNote" hidden></p>
   </fieldset>
   <fieldset class="party-filter">
     <legend class="eyebrow">The budget covers</legend>
@@ -330,7 +330,7 @@ __FIRST_USE_PARA__
          opens onto nothing is the dead end the chips beside it are already
          refused for. -->
     __DESTINATION_FACET_FILTERS__
-  <span class="tag" id="typeRule">Each count is how many destinations of that type are inside the budget now. The number on More types is how many kinds are behind it.</span>
+  <span class="tag" id="typeRule">Counts are destinations inside your budget.</span>
   <p id="facetNotice" class="tag" role="status" hidden></p>
   <button id="clearTypes" class="toggle" type="button" hidden>Show all destination types</button>
   </fieldset>

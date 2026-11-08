@@ -203,11 +203,9 @@ class FaresPayloadTest(PageTestCase):
         # note under the control that chooses the set, and the line beside the
         # prices, each say which list this is, and half a sentence names nothing.
         # C21 of the 17 October 2026 review shortened the note to the difference
-        # between the sets, so "cheapest single or return" is now what it says.
-        self.assertIn(
-            "The cheapest single or return for each place, and the row says which it is.",
-            page_script(self.html),
-        )
+        # between the sets, and the default set now carries none: the count line
+        # names the mix and no row says single or return.
+        self.assertIn('<p id="modeNote" hidden>', self.html)
         self.assertIn(
             "destinations the feed prices, at any budget, each on its cheapest fare of any ticket type",
             page_script(self.html),
@@ -222,10 +220,7 @@ class FaresPayloadTest(PageTestCase):
         # The composition of the sentence is driven by the browser suite.
         self.assertIn("MIX_WORDS", page_script(self.html))
         self.assertIn('"for the two of us, two of the fare each row names"', page_script(self.html))
-        self.assertIn(
-            "The cheapest single or return for each place, and the row says which it is.",
-            page_script(self.html),
-        )
+        self.assertIn('<p id="modeNote" hidden>', self.html)
         self.assertIn(
             "destinations the feed prices, at any budget, each on its cheapest fare of any ticket type",
             page_script(self.html),
@@ -512,11 +507,8 @@ class FaresPayloadTest(PageTestCase):
         # The counts and the clear are driven by the browser suite.
         self.assertIn('class="chipcount"', self.html)
         self.assertIn('id="clearTypes"', self.html)
-        self.assertIn(
-            "Each count is how many destinations of that type are inside the budget now. "
-            "The number on More types is how many kinds are behind it.",
-            self.html,
-        )
+        self.assertIn("Counts are destinations inside your budget.", self.html)
+        self.assertRegex(self.html, r'<span class="more-types-count">\(\d+ kinds?\)</span>')
 
     def test_a_narrowed_search_returns_to_the_first_page(self) -> None:
         # S22: the cheapest rows are what a narrowed search wants first, and the
@@ -829,7 +821,8 @@ class FaresPayloadTest(PageTestCase):
         self.assertIn(
             '<button type="button" class="choice-chip more-types" id="moreTypes"'
             ' aria-expanded="false" aria-controls="moreTypesPanel">'
-            f'<span>More types</span> <span class="more-types-count">({len(facets)})</span>',
+            f'<span>More types</span> <span class="more-types-count">'
+            f'({len(facets)} {"kind" if len(facets) == 1 else "kinds"})</span>',
             row,
         )
         self.assertIn('id="moreTypesPanel" role="group" aria-label="More destination types" hidden>', head)

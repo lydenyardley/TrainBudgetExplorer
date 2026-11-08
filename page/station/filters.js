@@ -305,12 +305,14 @@ function syncDestinationTypeChips(available, cap) {
   // The disclosure says how many facets are behind it, and stands down when the
   // budget has taken every one of them: a press into an empty row is the dead
   // end this function already refuses a chip for (S20), and the number in the
-  // chip row is read as the count of what it would show -- so it follows the
-  // chips rather than the taxonomy.
+  // chip row counts what it would show, so it follows the chips rather than the
+  // taxonomy.
   if (moreTypes) {
     const offeredFacets = facetInputs.filter((input) => !input.closest("label").hidden).length;
     moreTypes.hidden = offeredFacets === 0;
-    if (moreTypesCount) moreTypesCount.textContent = "(" + offeredFacets + ")";
+    if (moreTypesCount) {
+      moreTypesCount.textContent = "(" + offeredFacets + (offeredFacets === 1 ? " kind)" : " kinds)");
+    }
     // A fold left open over no chips is the dead end the chips themselves are
     // refused for (S20), and the control that would close it is gone with them,
     // so the panel goes back to folded.

@@ -995,7 +995,9 @@ class DemoPageTest(PageTestCase):
         # open mode means, and the footer keeps only the limitations. The
         # browser suite drives the note and the count line.
         self.assertIn("MODE_NOTE", page_script(self.html))
-        self.assertIn("The cheapest single or return for each place", page_script(self.html))
+        # The default set carries no sentence, so the note opens hidden: the
+        # count line names the mix, and no row claims to be a single or a return.
+        self.assertIn('<p id="modeNote" hidden>', self.html)
         self.assertIn("ITX placeholder fares are excluded", self.html)
         # The sentence that repeated the mix is gone, and the standard-class
         # fact it carried is still in the method note where it belongs.
@@ -1016,10 +1018,9 @@ class DemoPageTest(PageTestCase):
         # One sentence per set, saying what makes it different from the others.
         script = page_script(self.html)
         for sentence in (
-            "The cheapest single or return for each place",
-            "Unrestricted Anytime Day Returns: the same fare on any train.",
-            "Every standard-class return the feed prices, restricted and advance included.",
-            "Outbound singles rather than returns.",
+            "Valid on any train.",
+            "Restricted and advance returns included.",
+            "Outbound only. An advance single needs a chosen train.",
         ):
             self.assertIn(sentence, script)
         self.assertIn("#modeNote { margin: .5rem 0 0; color: var(--muted); font-size: .875rem;", self.stylesheet)

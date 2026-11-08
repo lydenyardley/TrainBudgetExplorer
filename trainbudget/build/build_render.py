@@ -359,16 +359,17 @@ def render_page(
     more_types = ""
     fold = ""
     if facets:
-        # "More types (10)" counts the kinds behind it, not the destinations --
-        # which is why the number is not a `.chipcount`: that class is the count
-        # of destinations a chip would show, and it is read as exactly that by
-        # the checks on it. render() keeps it true as the budget narrows what is
-        # offered, because the number sits in the chip row where every other
-        # number beside a chip is the count of destinations now.
+        # "More types (10 kinds)" counts the kinds behind it, not the
+        # destinations, and says so beside the number. That is why it is not a
+        # `.chipcount`: that class is the count of destinations a chip would
+        # show. render() keeps it true as the budget narrows what is offered,
+        # because the number sits in the chip row where every other number
+        # beside a chip is the count of destinations now.
         more_types = (
             '<button type="button" class="choice-chip more-types" id="moreTypes"'
             ' aria-expanded="false" aria-controls="moreTypesPanel">'
-            f'<span>More types</span> <span class="more-types-count">({len(facets)})</span>'
+            f'<span>More types</span> <span class="more-types-count">'
+            f'({len(facets)} {"kind" if len(facets) == 1 else "kinds"})</span>'
             f'{CHEVRON}</button>'
         )
         fold = (
