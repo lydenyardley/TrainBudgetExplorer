@@ -80,6 +80,7 @@ async function checkTheRowActions(world) {
           boxes[0].right <= boxes[1].left,
         departures: destination ? destination.departures.length : 0,
         described: Boolean(destination && destination.restrictionCode && destination.restrictionDescribed),
+        tickets: Boolean(destination && destination.tickets),
         sentence: ((detail && detail.querySelector(".fare-line")) || {}).textContent || "",
         // The day the list belongs to is the one the page is showing, which is
         // the payload's own date on a build that named one.
@@ -175,14 +176,20 @@ async function checkTheRowActions(world) {
         : panel.lead.length > 0 && panel.lead[0] === dayLead,
       JSON.stringify({ lead: panel.lead, want: dayLead })
     );
+    // The page promises the sentence only where it lists trains for one
+    // described fare: a row it lists no trains for has no list to put it above,
+    // and a two-ticket row states each ticket's condition in its own line
+    // instead (ADR-0084, rule 3). Fairfield's first row has no trains, so the
+    // panel is silent and the check read that as a sentence that had gone.
+    const attributed = panel.departures > 0 && panel.described && !panel.tickets;
     check(
       "and says whether the condition is on the fare or on one of the trains",
-      panel.described
+      attributed
         ? panel.lead.some(
             (line) => line.startsWith("The condition ") && line.includes("is on the fare, not on one of these trains")
           )
         : !panel.lead.some((line) => line.includes("is on the fare, not on one of these trains")),
-      JSON.stringify({ described: panel.described, lead: panel.lead })
+      JSON.stringify({ described: panel.described, departures: panel.departures, tickets: panel.tickets, lead: panel.lead })
     );
     // The sentence that used to point at the trains pointed past them on a
     // phone and beside them once the panel had two columns (ADR-0084, rule 5),
