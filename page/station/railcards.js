@@ -260,15 +260,20 @@ function syncRailcardParty() {
     // wants before making it (audit item 16). It says where the choice goes
     // rather than that it goes nowhere, because the card is one of the keys in
     // the address (stateQuery) and the address is read by the host.
-    help.textContent = "Choose the card you hold and the fares it lowers are repriced for it. " +
-      "This browser remembers your choice and, like the rest of your search, it travels in " +
-      "the page's address; until then, every price is a standard fare.";
+    help.textContent = "Pick a card to reprice the fares it lowers. Your choice is remembered " +
+      "and travels in the address.";
     return;
   }
   const chosen = railcards[STATE.railcard];
-  const covers = "The " + chosen.label + " in this feed covers " + chosen.minAdults + " to " +
-    chosen.maxAdults + " adults";
-  help.textContent = covers + ", which matches the party on screen. " + chosen.eligibleCount +
-    " destinations receive a lower price with it; open a row's own details for the minimum " +
-    "fare and the conditions the feed applies.";
+  // The select names the card, so the help carries the bound the feed records
+  // and what the card would save. A card whose bounds are the same pair read
+  // "2 to 2 adults", the feed's pair leaking into prose as a range nobody wrote
+  // on purpose.
+  const bound = chosen.minAdults === chosen.maxAdults
+    ? "Exactly " + chosen.minAdults
+    : chosen.minAdults + " to " + chosen.maxAdults;
+  const noun = chosen.maxAdults === 1 ? " adult" : " adults";
+  const count = chosen.eligibleCount;
+  help.textContent = bound + noun + ". " + count +
+    (count === 1 ? " destination is cheaper with it." : " destinations are cheaper with it.");
 }

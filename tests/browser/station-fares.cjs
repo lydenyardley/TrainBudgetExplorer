@@ -591,9 +591,9 @@ async function checkTheFareDetails(world) {
       `${menu.adults} adult(s): usable ${JSON.stringify(menu.forParty)}; ${JSON.stringify(menu.options)}`
     );
     check(
-      "and no railcard is selected by default, so the prices are standard fares",
+      "and no railcard is selected by default, so the page asks for one",
       cardChoice
-        ? menu.value === "" && /standard fare/.test(menu.help)
+        ? menu.value === "" && /Pick a card to reprice/.test(menu.help)
         : notExercised("this feed prices no reviewed railcard"),
       `value=${menu.value} help=${menu.help}`
     );
@@ -664,17 +664,17 @@ async function checkTheFareDetails(world) {
       }`
     );
     check(
-      "and the help names the chosen card, its bounds and what it would discount",
+      "and the help names the chosen card's bounds and what it would discount",
       cardChoice && pair && duo.first
         ? (() => {
             const card = duo.cards.find((c) => c.key === duo.first);
-            return (
-              card &&
-              new RegExp(String(card.minAdults) + " to " + String(card.maxAdults) + " adults").test(duo.help) &&
-              duo.help.includes(card.label) &&
-              new RegExp(String(card.eligibleCount)).test(duo.help) &&
-              /open a row's own details/.test(duo.help)
-            );
+            if (!card) return false;
+            const noun = card.maxAdults === 1 ? " adult" : " adults";
+            const bound = card.minAdults === card.maxAdults
+              ? "Exactly " + card.minAdults
+              : card.minAdults + " to " + card.maxAdults;
+            return duo.help.includes(bound + noun) &&
+              new RegExp(String(card.eligibleCount)).test(duo.help);
           })()
         : notExercised("this page prices no card that covers two adults"),
       pair ? duo.help : ""

@@ -372,8 +372,9 @@ class FaresPayloadTest(PageTestCase):
         # The help text is written from the card's own bounds, and the browser
         # suite drives the list those bounds take a card out of.
         self.assertIn("No railcard selected, so these are standard fares", self.html)
-        self.assertIn(" in this feed covers ", page_script(self.html))
-        self.assertIn(" destinations receive a lower price with it", page_script(self.html))
+        self.assertIn("Exactly ", page_script(self.html))
+        self.assertIn(" destination is cheaper with it.", page_script(self.html))
+        self.assertIn(" destinations are cheaper with it.", page_script(self.html))
 
     def test_a_missing_journey_is_typed_rather_than_a_dash(self) -> None:
         # S23: three different absences, three different sentences.
