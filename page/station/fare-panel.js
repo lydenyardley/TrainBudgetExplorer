@@ -204,9 +204,9 @@ function panelColumns(trains, fare) {
   return columns;
 }
 
-// ADR-0084, rule 3: the lead says which day the five trains belong to and who
-// owns the condition. Both were the reader's inference: the list read as the
-// next five trains full stop, and "Restricted fare" under it read as a claim
+// ADR-0084, rule 3: the lead says which day the twelve trains belong to and
+// who owns the condition. Both were the reader's inference: the list read as
+// the next twelve trains full stop, and "Restricted fare" under it read as a claim
 // about the trains above. The feed's per-train windows (its TR and TD records)
 // are not in this page's payload, so what is promised is the relationship -- the
 // condition decides which of these trains you may board -- and not a verdict on
@@ -240,6 +240,39 @@ function optionSpan(option) {
   return span > 0 ? span : span + 1440;
 }
 
+// The trains, as a table. A sentence per line put the departure, the
+// arrival, the duration and the change count in a different place on every
+// row, so a reader choosing between the 09:12 and the 09:40 had to find the
+// same word twice rather than read down a column.
+function departureTable(destination) {
+  const table = document.createElement("table");
+  table.className = "trains-table";
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of ["Departs", "Arrives", "Journey", "Changes"]) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.textContent = label;
+    headRow.append(th);
+  }
+  head.append(headRow);
+  const body = document.createElement("tbody");
+  for (const option of destination.departures) {
+    const row = document.createElement("tr");
+    const changes = option.changes
+      ? option.changes + (option.changes === 1 ? " change" : " changes")
+      : "Direct";
+    for (const value of [clock(option.depart), clock(option.arrive), duration(optionSpan(option)), changes]) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    }
+    body.append(row);
+  }
+  table.append(head, body);
+  return table;
+}
+
 // `reveal` is whether this panel is appearing because the reader opened it, or
 // because a render put back the one they had open (E9). Only the first is a
 // surface the page just noticed them using (DL5 of the 19 October 2026 delight
@@ -258,16 +291,7 @@ function toggleDetail(row, destination, toggle, reveal) {
   const trains = document.createElement("div");
   trains.className = "trains";
   if (destination.departures.length) {
-    trains.append(trainsLead(destination));
-    const list = document.createElement("ul");
-    for (const option of destination.departures) {
-      const item = document.createElement("li");
-      item.textContent = clock(option.depart) + " depart, " + clock(option.arrive) + " arrive (" +
-        duration(optionSpan(option)) + "), " +
-        (option.changes ? option.changes + " change(s)" : "no change");
-      list.append(item);
-    }
-    trains.append(list);
+    trains.append(trainsLead(destination), departureTable(destination));
   } else if (DATA.hasJourneys && journey.found) {
     // S1 of the 19 October 2026 critique: a row with a duration and no times
     // opened a panel holding the condition and the record, and said nothing

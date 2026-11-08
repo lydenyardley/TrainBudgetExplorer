@@ -1272,10 +1272,10 @@ function saysMoreThan(condition, code) {
     // fare set that still has none. A two-ticket row's own list is not times, so
     // the count leaves it out.
     const timedPanels = await page.evaluate(() => {
-      const timesIn = (detail) =>
-        detail
-          ? Array.from(detail.querySelectorAll("ul li")).filter((li) => !li.closest(".two-tickets")).length
-          : 0;
+      const timesIn = (detail) => {
+        const table = detail ? detail.querySelector(".trains-table") : null;
+        return table && table.tBodies[0] ? table.tBodies[0].rows.length : 0;
+      };
       // The predicate is the page's own: a row is timed when the day on screen
       // times it, which is what its duration cell reads (service-day.js). The
       // build's `journeyState` is day zero's answer and is not the same claim on
@@ -1350,9 +1350,10 @@ function saysMoreThan(condition, code) {
         sentence: detail
           ? ((detail.querySelector(".no-departures") || {}).textContent || "")
           : "",
-        times: detail
-          ? Array.from(detail.querySelectorAll("ul li")).filter((li) => !li.closest(".two-tickets")).length
-          : 0,
+        times: (() => {
+          const table = detail ? detail.querySelector(".trains-table") : null;
+          return table && table.tBodies[0] ? table.tBodies[0].rows.length : 0;
+        })(),
       };
       wanted.departures = kept;
       setBudget(keptBudget);

@@ -53,8 +53,11 @@ async function checkTheRowActions(world) {
       const lead = detail
         ? Array.from(detail.querySelectorAll(".trains-lead p")).map((p) => p.textContent.trim())
         : [];
-      const items = detail
-        ? Array.from(detail.querySelectorAll(".trains > ul > li")).map((li) => li.textContent.trim())
+      const trainsTable = detail ? detail.querySelector(".trains-table") : null;
+      const items = trainsTable && trainsTable.tBodies[0]
+        ? Array.from(trainsTable.tBodies[0].rows).map((tr) =>
+            Array.from(tr.cells).map((cell) => cell.textContent.trim())
+          )
         : [];
       const boxes = trains && fare ? [trains.getBoundingClientRect(), fare.getBoundingClientRect()] : [];
       return {
@@ -92,16 +95,14 @@ async function checkTheRowActions(world) {
     // boundary, so it is checked against the two clocks printed beside it
     // rather than against the payload's own minutes.
     const clockMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-    const timed = panel.items.map((item) => {
-      const match = /^(\d\d:\d\d) depart, (\d\d:\d\d) arrive \((\d+)h (\d+)m\)|^(\d\d:\d\d) depart, (\d\d:\d\d) arrive \((\d+)m\)/.exec(item);
-      if (!match) return { item, ok: false };
-      const depart = clockMinutes(match[1] || match[5]);
-      const arrive = clockMinutes(match[2] || match[6]);
+    const timed = panel.items.map((cells) => {
+      const depart = clockMinutes(cells[0] || "");
+      const arrive = clockMinutes(cells[1] || "");
       const span = (arrive - depart + 1440) % 1440;
-      const shown = match[1]
-        ? Number(match[3]) * 60 + Number(match[4])
-        : Number(match[7]);
-      return { item, ok: span === shown };
+      const hours = /(\d+)h/.exec(cells[2] || "");
+      const minutes = /(\d+)m/.exec(cells[2] || "");
+      const shown = (hours ? Number(hours[1]) * 60 : 0) + (minutes ? Number(minutes[1]) : 0);
+      return { item: cells.join(" "), ok: span === shown };
     });
     check(
       "and every train it lists carries the duration between the two clocks it prints",
@@ -119,13 +120,16 @@ async function checkTheRowActions(world) {
       if (!row) return null;
       const time = (row.querySelector('td[data-label="Time"]') || {}).textContent || "";
       const changes = (row.querySelector(".changes-count") || {}).textContent || "";
-      const items = Array.from(row.parentElement.querySelectorAll(".trains > ul > li")).map((li) => li.textContent);
-      // The panel belongs to this row. A later row's list must not answer it.
       const detail = row.nextElementSibling;
-      const own = detail && detail.classList.contains("detail")
-        ? Array.from(detail.querySelectorAll(".trains > ul > li")).map((li) => li.textContent)
-        : items;
-      return { time: time.trim(), changes: changes.trim(), trains: own };
+      const table = detail && detail.classList.contains("detail")
+        ? detail.querySelector(".trains-table")
+        : null;
+      const trains = table && table.tBodies[0]
+        ? Array.from(table.tBodies[0].rows).map((tr) =>
+            Array.from(tr.cells).map((cell) => cell.textContent.trim())
+          )
+        : [];
+      return { time: time.trim(), changes: changes.trim(), trains };
     });
     const rowMinutes = (text) => {
       const hours = /^(\d+)h (\d+)m$/.exec(text);
@@ -133,19 +137,23 @@ async function checkTheRowActions(world) {
       const minutes = /^(\d+)m$/.exec(text);
       return minutes ? Number(minutes[1]) : null;
     };
-    const trainFacts = (item) => {
-      const duration = /\((\d+)h (\d+)m\)|\((\d+)m\)/.exec(item);
-      const minutes = !duration ? null : duration[1] ? Number(duration[1]) * 60 + Number(duration[2]) : Number(duration[3]);
-      const changes = /no change/.test(item) ? 0 : Number((/(\d+) change/.exec(item) || [])[1]);
-      return { minutes, changes };
+    const trainFacts = (cells) => {
+      const hours = /(\d+)h/.exec(cells[2] || "");
+      const minutes = /(\d+)m/.exec(cells[2] || "");
+      const changes = /Direct/.test(cells[3] || "") ? 0 : Number((/(\d+) change/.exec(cells[3] || "") || [])[1]);
+      if (!hours && !minutes) return { minutes: null, changes };
+      return {
+        minutes: (hours ? Number(hours[1]) * 60 : 0) + (minutes ? Number(minutes[1]) : 0),
+        changes,
+      };
     };
     const wantedMinutes = quoted ? rowMinutes(quoted.time) : null;
     const changeMatch = quoted ? /^(\d+) changes?$/.exec(quoted.changes) : null;
     const wantedChanges = !quoted ? null
       : quoted.changes === "Direct" ? 0
       : changeMatch ? Number(changeMatch[1]) : null;
-    const agrees = quoted && wantedMinutes !== null && wantedChanges !== null && quoted.trains.some((item) => {
-      const facts = trainFacts(item);
+    const agrees = quoted && wantedMinutes !== null && wantedChanges !== null && quoted.trains.some((cells) => {
+      const facts = trainFacts(cells);
       return facts.minutes === wantedMinutes && facts.changes === wantedChanges;
     });
     check(
@@ -157,7 +165,7 @@ async function checkTheRowActions(world) {
           : Boolean(agrees),
       JSON.stringify(quoted)
     );
-    // The list was the first five of the day and said nothing about which day;
+    // The list was the first twelve of the day and said nothing about which day;
     // the lead says it now, from the page's own date (ADR-0084, rule 3).
     const dayLead = "Next trains" + (panel.day ? " on " + dayWords(panel.day) : "") + ".";
     check(
@@ -204,7 +212,8 @@ async function checkTheRowActions(world) {
     const span = await page.evaluate(() => {
       const panel = document.querySelector("#rows tr.detail");
       const table = panel ? panel.closest("table") : null;
-      const head = table ? table.querySelectorAll("thead th[scope='col']") : [];
+      const headRow = table ? table.querySelector(":scope > thead") : null;
+      const head = headRow ? headRow.querySelectorAll("th[scope='col']") : [];
       return {
         cells: panel ? panel.cells.length : 0,
         columns: head.length,

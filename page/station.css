@@ -307,6 +307,28 @@
   .trains-lead { margin: 0 0 .4rem; color: var(--muted); font-size: .875rem; }
   .trains-lead p { margin: 0; }
   .trains-lead .trains-condition { margin-top: .25rem; }
+  /* One row per train and one column per fact, so two trains are compared
+     down a column instead of re-reading a sentence whose words move. The
+     header is drawn rather than clipped: four short words are cheaper than
+     making a reader infer which number is the arrival. */
+  .trains-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  .trains-table th { padding: .2rem .4rem; border-bottom: 1px solid var(--line);
+                     color: var(--muted); font-size: .75rem; font-weight: 700;
+                     text-align: left; text-transform: uppercase; letter-spacing: .06em;
+                     white-space: nowrap; }
+  .trains-table td { padding: .25rem .4rem; border-bottom: 1px solid var(--line);
+                     font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .trains-table tr:last-child td { border-bottom: 0; }
+  .trains-table th:nth-child(3), .trains-table td:nth-child(3) { text-align: right; }
+  /* A train row is not the results row. `tr.detail td`'s roomy padding is
+     for the panel itself and was reaching every row inside it, doubling the
+     height of a table the reader compares down. */
+  tr.detail .trains-table th, tr.detail .trains-table td { padding: .2rem .4rem; }
+  /* The results table's headings are stuck to the window because the list is
+     long. A four-row table inside one row is not the results table: the global
+     rule left this header stuck with the page's own background, painting a
+     band over the panel as it scrolled, and the rail's offset moved it down. */
+  tr.detail .trains-table thead th { position: static; background: none; width: auto; }
   /* S1 of the 19 October 2026 critique: the sentence a fare set with no times
      says in place of the list. It is the panel's first line where it appears,
      so it carries the same top margin as the fare sentence under it. */
