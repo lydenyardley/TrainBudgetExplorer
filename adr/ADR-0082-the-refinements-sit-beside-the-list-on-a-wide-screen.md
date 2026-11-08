@@ -100,7 +100,7 @@ rule cancelled, so only the layout differs.
 - **The rail is for screens wider than a laptop.** A 1366 or 1440 window is
   unchanged. The reader who gains is the one on a 1568px display or larger, where
   the page was previously drawing a 1248px column with empty space either side.
-  ADR-0085 moved the gate to 1,528px, made the page the window's width and opened
+  ADR-0085 moved the gate to 1,400px, made the page the window's width and opened
   the refinements in the rail; the width measurement here still stands.
 - **The page is 1568px wide where it was 1248px, on a screen that wide.** Every
   element inside the column keeps its own measure -- prose keeps its `ch` caps,

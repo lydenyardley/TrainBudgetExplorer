@@ -20,52 +20,53 @@ the rail showing the budget, then the day, then the refinements already open.
 
 ## Decision
 
-From **95.5rem (1,528 CSS px)** the station route is the width of the window:
+From **87.5rem (1,400 CSS px)** the station route is the width of the window:
 
 1. **The page stops being a centred column.** `body { max-width: none; }` at
    the breakpoint. The shared `--rail` token and its `calc()` go: the station
    route no longer borrows room from a capped measure, it uses the window.
-2. **The rail is 15rem with a 1.25rem gap.** At 95.5rem the results hold
-   `1528 - 72 - 240 - 20 = 1,196px`, and 1,179px once the window's own 17px
-   scrollbar is taken out; at the review's 1,536px window they hold 1,187px
-   with that scrollbar. The narrower rail is what buys the lower threshold
-   without wrapping a name. A first cut used 16rem and 1.5rem and measured
-   1,167px in a headed browser, 9px under the need, because the media query
-   counts the window and the body does not count the scrollbar.
+2. **The rail is 15rem with a 2.25rem gap.** At 1,400 the window has 1,383px
+   once its own 17px scrollbar is out, so the results hold
+   `1383 - 72 - 240 - 36 = 1,035px`, 141px under the 1,176px the longest
+   names were measured to need; at the owner's 1,536px window they hold
+   1,171px, 5px under. The gap widens at the owner's request and the earlier
+   rail is theirs too, so the widths are the price of the reach.
 3. **The rail's controls are budget, then day, then refinements.** The day
    control moves above the fold in the template, so the reading order and the
    tab order agree at every width. In the rail the refinements are not a fold:
    the toggle is not drawn and the panel is, in one column. The panel keeps no
    card of its own; the column is the card.
-4. **The phone sheet is unchanged** (ADR-0083), and below 95.5rem the page is the
+4. **The phone sheet is unchanged** (ADR-0083), and below 87.5rem the page is the
    block it was.
-5. **Not 1260.** The review's 1,260px leaves the results 908px. The recorded
-   failure at 856px wrapped five pages' longest names, and 908 is 52px from
-   it; the measured need is 1,176. The width a reader asked for and the width
-   the table can hold are different numbers, and this ADR takes the one that
-   keeps a name whole while still clearing a 1920x1200 screen at 125%.
+5. **Not 1260, and 141px under the width the table wants.** A 1,260px window leaves
+   the results 908px, 268px under the need. The owner asked for 1,400 on
+   7 November 2026, which leaves 1,035px. The demo page's names do not wrap
+   there (measured), and the real feed's longest are the open risk this ADR
+   accepts rather than hides. This reverses the width-first choice of
+   ADR-0082 on the owner's call.
 
 ## Evidence
 
 - The breakpoint arithmetic is from the stylesheet's own figures: page padding
-  36px a side at this width, rail 256px, gap 24px.
+  36px a side at this width, rail 240px, gap 36px.
 - `python -m tools.verify --fast` passed 318 tests; `python -m tools.verify
   --browser` passed 1,405 checks on 6 pages.
 - Measured in the packaged browser at 1536x1200: body 1,519px, rail 240px,
-  table 1,187px, no wrapped station name, and the budget, day and open filter
-  panel in that order. The same page with a 16rem rail measured a 1,167px
-  table, which is the finding that moved the rail.
+  table 1,171px, no wrapped station name, and the budget, day and open filter
+  panel in that order. At 1,400x1,000 the table is 1,035px and no name on the
+  demo page wraps.
 - The 3 November 2026 record for the 1,176px need and the five wrapped pages
   is ADR-0082 and its commit `14e6189`.
 
 ## Consequences
 
-- **A 1536px window gains the rail and holds 1,187px of table**, 11px more
-  than the 1,176px the longest names need; a 1600px window gains 72px of table.
+- **A 1,400px window gains the rail and holds 1,035px of table**, 141px under
+  the 1,176px the longest names were measured to need; a 1,536px window holds
+  1,171px, and a 1600px window 1,235px.
 - **The rail is 15rem rather than 18.** The destination chips and the party
   choices wrap inside it; the panel is one column in either width.
 - **The day control moves above the fold at every width.** On a phone it is
   the first control under the budget in the sheet, which is the same order.
 - **A page wider than 78rem is now wider than 78rem.** The footer, the heading
-  and the table all use the window from 95.5rem, which is the review's request
+  and the table all use the window from 87.5rem, which is the review's request
   and the end of the centred-column policy for this route only.

@@ -263,7 +263,7 @@ async function measureTheLayout(world) {
       JSON.stringify({ layout: filterRow.layout, margin: filterRow.barMargin, gap: filterRow.barGap })
     );
     if (openedThePanel) await page.click("#moreFiltersToggle");
-    // 1600 is past the 95.5rem the rail's own rule asks for (ADR-0085): the
+    // 1600 is past the 87.5rem the rail's own rule asks for (ADR-0085): the
     // window's width, a 16rem bar and the 1.5rem between them.
     await page.setViewportSize({ width: 1600, height: 900 });
     await open(facts.affordable);
@@ -288,6 +288,7 @@ async function measureTheLayout(world) {
         columnGap: layout.columnGap,
         bodyWidth: Math.round(document.body.getBoundingClientRect().width),
         viewport: window.innerWidth,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         ticket: Math.round(ticket.top),
         party: Math.round(party.top),
         types: Math.round(types.top),
@@ -309,8 +310,8 @@ async function measureTheLayout(world) {
     check(
       "and the rail is the window's width, with the column's gap and no margin of its own",
       railRow.bodyWidth >= railRow.viewport - 20 && railRow.bodyWidth > 1248 &&
-        railRow.barMargin === "0px" && railRow.columnGap === "20px",
-      JSON.stringify({ body: railRow.bodyWidth, viewport: railRow.viewport, margin: railRow.barMargin, gap: railRow.columnGap })
+        railRow.barMargin === "0px" && railRow.columnGap === "36px" && railRow.overflow <= 0,
+      JSON.stringify({ body: railRow.bodyWidth, viewport: railRow.viewport, margin: railRow.barMargin, gap: railRow.columnGap, overflow: railRow.overflow })
     );
     // The toggle and the panel it opens are one card, measured where the fold
     // is the bar's own control: in the rail the panel is simply open and there

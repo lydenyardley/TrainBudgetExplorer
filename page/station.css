@@ -631,15 +631,15 @@
      it the column is the window, so the results take every pixel the rail
      does not.
 
-     95.5rem rather than 98: the 3 November 2026 rule asked for the 1,176px the
-     real feed's longest station names need, and a centred column plus an
-     18rem rail plus its gap was 98rem. A reader on a 1920x1200 screen at 125%
-     has 1536 CSS px, 32 short of that, and asked for the rail there. The rail
-     is 15rem and the gap 1.25rem, so at 95.5rem the results hold 1,196px, and
-     1,179px once the window's own 17px scrollbar is taken out. A first cut
-     with a 16rem rail and a 1.5rem gap measured 1,167px in a headed browser:
-     the media query counts the window and the body does not count the
-     scrollbar, so the rule was 9px short of the need it exists for. The narrower rail
+     87.5rem (1,400px), on the owner's 7 November 2026 request. The 3 November
+     2026 rule asked for the 1,176px the real feed's longest station names
+     need, and this is narrower than that: at 1,400 the window has 1,383px
+     once its own 17px scrollbar is out, so a 15rem rail and a 2.25rem gap
+     leave the results 1,035px, 141px under the need. At the owner's 1,536px
+     window they hold 1,171px, 5px under. The rail is drawn earlier than the
+     width can comfortably pay for; no name on the demo page wraps at 1,400
+     (measured), and the real feed's longest are the open risk. The 98rem
+     gate this replaces was the width-first choice of ADR-0082. The narrower rail
      is what buys the threshold without wrapping a name: at the 1260px the
      review asked for the results would have 908px, and the five pages that
      failed on a wrapped name at 856px in November 2026 are the record of what
@@ -647,14 +647,14 @@
      adr/ADR-0085. */
   .station-layout { display: block; }
   .station-results { min-width: 0; }
-  @media (min-width: 95.5rem) {
+  @media (min-width: 87.5rem) {
     /* The rail is a column of the window, not room borrowed from a capped
        measure, so the page stops being a centred column here. */
     body { max-width: none; }
     .station-layout {
       display: grid;
       grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
-      column-gap: 1.25rem;
+      column-gap: 2.25rem;
       align-items: start;
     }
     /* No margin of its own: the grid's gap is the space, and a margin here

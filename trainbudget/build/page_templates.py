@@ -245,11 +245,10 @@ __FIRST_USE_PARA__
      page; the rail and the list share what is left, so the first row a reader
      sees is the page's own answer, not a control that was there before it.
      The wrapper is layout only -- no element, no id and no landmark moves,
-     and below 95.5rem it is the block it always was. From 95.5rem the page is
+     and below 87.5rem it is the block it always was. From 87.5rem the page is
      the width of the window rather than a centred 78rem column, and the rail is
-     15rem plus a 1.25rem gap, so the results hold 1,179px at the breakpoint
-     once the window's own 17px scrollbar is taken out, and 1,187px on a
-     1536px window. The measurement is in station.css and
+     15rem plus a 2.25rem gap, so the results hold 1,035px at 1,400 once the
+     window's own 17px scrollbar is taken out, and 1,171px on a 1536px window. The measurement is in station.css and
      adr/ADR-0085. -->
 <div class="station-layout">
 <section class="filter-bar" aria-label="Journey and destination filters">
