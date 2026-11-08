@@ -960,7 +960,9 @@ departure costs about 12.5 bytes in the form the payload already ships and a day
 of them costs +188 KB (+45%) on a page of a release already projected over its
 800 MB byte budget; 218 of its 803 timed places reach the 40 cap, so that is a
 floor. The figure is in `docs/build-performance-findings.md` and the ask stays
-open as O43, with what would close it.
+open as O43, with what would close it. The cap rose to twelve on 7 November
+2026 (ADR-0086), measured at +11.9% on a real origin page; the control is still
+refused, because the payload holds no per-train windows for it to slice.
 
 ### Suggestions the owner rejected
 

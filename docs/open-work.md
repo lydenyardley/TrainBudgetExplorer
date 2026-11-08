@@ -670,30 +670,30 @@ spelling of somebody else's record.
 the accessible names and the known-fares table's own comparisons read to see what
 else moves; or a decision that the feed's capitalisation is the honest name.
 
-## O43 -- A row's five trains are the first five of the day, and there is no time control
+## O43 -- A row's twelve trains are the first twelve of the day, and there is no time control
 
 **Kind:** decision. **Raised:** the 4 November 2026 design review, second half.
 **Route:** a row's panel; the day control beside the filter bar.
 
-A row lists five departures. Four of them are the first of the service day, and
-the fifth is the journey the row quotes when that journey leaves later than the
-cap — a direct 18 minutes from Grantham to Ancaster was absent from a list of
-five one-change trains, so the row and its panel disagreed. A row opened at four
-in the afternoon is still showing the morning's trains for every place but that
-one. The fix a reader would expect is a time control beside the day control,
+A row lists twelve departures. Eleven of them are the first of the service day,
+and the twelfth is the journey the row quotes when that journey leaves later than
+the cap, because a direct 18 minutes from Grantham to Ancaster was absent from a
+list of one-change trains, so the row and its panel disagreed. A row opened at
+four in the afternoon is still showing the morning's trains for every place but
+that one. The fix a reader would expect is a time control beside the day control,
 with the list starting at that time and running forwards.
 
-**Why it is not built.** Measured on 4 November 2026 rather than argued about:
-the Grantham page with `--departures 40` is 605,049 bytes against 416,682 at the
-default five, so each extra departure costs about 12.5 bytes and a day of them
-costs +188 KB (+45%) on a page of a release already projected over its 800 MB
-byte budget. 218 of the page's 803 timed places reach the 40 cap, so a full day
-is more than 40 on some routes and the figure is a floor. The measurement is in
-`docs/build-performance-findings.md`.
+**Why there is still no time control.** The cap is twelve departures a row
+since 7 November 2026 (ADR-0086). Measured on the Grindleford page, twelve is
+300,463 bytes against 268,604 at five, +11.9%, which a release of 370 MB of its
+800 MB budget absorbs. A control that starts the list at 16:00 can only slice
+the twelve the payload carries, and the page holds no per-train restriction
+windows (its payload carries no TR or TD record), so an afternoon reader still
+sees the morning's first twelve trains.
 
-**What closes it.** A cheaper encoding of the times -- the payload's departures
-are three numbers each, packed to arrays already -- or a decision that eight or
-twelve departures a destination is the compromise the byte budget can carry.
+**What closes it.** The per-train windows and a payload shape that can slice by
+time, rather than a larger cap. The measurement is in
+`docs/build-performance-findings.md`.
 
 ## Rejected, with the reason
 

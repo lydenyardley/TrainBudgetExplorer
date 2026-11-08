@@ -47,7 +47,10 @@ from trainbudget.fares.destination_coverage import UnsourcedReport, unnameable_f
 from trainbudget.fares.retailer import DEFAULT_PROVIDER, TicketLink, ticket_link
 
 
-DEPARTURE_LIMIT = 5
+# Twelve rather than five since 7 November 2026 (ADR-0086): measured on a real
+# origin page, twelve costs +31,859 bytes (+11.9%) and the release has 430 MB
+# of its 800 MB budget spare.
+DEPARTURE_LIMIT = 12
 
 
 def _keep_quoted_journey(options: list[dict], journey: Journey, limit: int) -> None:

@@ -1964,8 +1964,8 @@ bites is a floor rather than a total.
 | `--departures 40` | 605,049 | **12.5 bytes** | **218 of 803** |
 
 So a row of eight or twelve is tens of kilobytes, and a day of them is
-**+188 KB, +45%** on a page of a release already projected over its 800 MB
-budget. The 12.5 bytes is the packed form the payload already ships: each
+**+188 KB, +45%** on a page of a release that measured 370 MB of its 800 MB
+budget on 26 October 2026. The 12.5 bytes is the packed form the payload already ships: each
 departure is `[depart, arrive, changes]` -- three numbers, in `DEPARTURE_COLUMNS`
 order, with the names sent once per page in `rowCodec` -- so there is no key
 name left to remove.
@@ -1980,3 +1980,38 @@ would leave a reader with an empty list for most of the afternoon.
 
 **Where it is held.** `docs/open-work.md` O43 records the ask and what would
 close it; ADR-0084 records the decision to measure and refuse rather than argue.
+ADR-0086 raised the cap to twelve on 7 November 2026, measured in the section
+below.
+
+## What eight and twelve departures cost a station page, 7 November 2026
+
+**Plan, written before the figure.** The 7 November 2026 request was to cost
+rows of eight and twelve trains and to ship twelve if it was cheap. Plan: build
+the same tree against the same feeds with the same flags, differing only in
+`--departures` (5, 8, 12), and read the written bytes. The synthetic fixture was
+tried first and cannot answer it: its busiest destination stops at eight, so
+five, eight and twelve wrote byte-identical pages. The licensed fares and CIF
+feeds on this machine were used instead.
+
+**Figure.** The Grindleford page (origin GRN, 2026-10-05, `--notices
+nre,rdg,ogl,accuracy`, this machine):
+
+| Build | Page bytes | Delta from five | Cost per added departure |
+|---|---:|---:|---:|
+| `--departures 5` | 268,604 | -- | -- |
+| `--departures 8` | 283,113 | +14,509 (+5.4%) | 4,836 bytes across the page |
+| `--departures 12` | 300,463 | +31,859 (+11.9%) | 4,551 bytes across the page |
+
+**Reading it.** Twelve costs about 12% of a timed page. The release measured
+370 MB of its 800 MB budget over 2,838 pages on 26 October 2026; even if every
+page grew by 12% it would be 414 MB, inside the budget with 386 MB spare. The
+earlier "+45% on a release projected over its budget" was a twelve-page
+sample's projection that the release itself disproved, being 3.0x smaller per
+page. Twelve is cheap enough to ship and is the default from 7 November 2026
+(ADR-0086).
+
+**What it does not establish.** One origin, one feed and one day. The
+percentage moves with how many of a page's destinations have times, so it is a
+shape rather than a constant. The departures were already three packed numbers
+each, so the saving available is in the cap, not in the encoding.
+

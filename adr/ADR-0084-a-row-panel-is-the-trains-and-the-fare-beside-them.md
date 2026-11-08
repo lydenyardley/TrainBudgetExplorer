@@ -1,6 +1,6 @@
 # ADR-0084: A row's panel is the trains and the fare beside them
 
-**Status:** Accepted
+**Status:** Superseded in part by ADR-0086 (the cap is twelve)
 **Date:** 4 November 2026
 **Relates to:** ADR-0061 (a two-ticket row is one row), ADR-0082 and ADR-0083
 (the refinements on a wide screen and a phone), `docs/open-work.md` O36 and O43
@@ -98,13 +98,15 @@ itself.** Seven rules hold it together.
 - **The panel is quieter and taller in one direction only.** It gains a lead
   sentence and a duration per train, and loses the copy button; measured at a
   1280px window it is two columns, and below 60rem the two stack in reading order.
-- **"Next trains" is now a claim.** The list is the first five of the day the
-  day control names, and the lead says so rather than leaving a reader to infer
-  that the page knows about the 14:00.
+- **"Next trains" is now a claim.** The list is the first twelve of the day the
+  day control names (five when this ADR was written; ADR-0086 raised the cap),
+  and the lead says so rather than leaving a reader to infer that the page
+  knows about the 14:00.
 - **The shortlist carries the copying.** A reader who wants text to paste about
   one place shortlists it and copies the list, which is one extra press and the
   block that is actually useful away from the page.
-- **A day of departures stays unaffordable** on this payload shape, and O43
+- **A day of departures stays unaffordable** on this payload shape (twelve is
+  affordable, ADR-0086), and O43
   records what would have to change for the time control to be built: a cheaper
   encoding of the times, or a decision that eight or twelve departures a
   destination is the compromise.
