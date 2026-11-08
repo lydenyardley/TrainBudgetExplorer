@@ -134,7 +134,7 @@ Both lint the workflows with actionlint (`python -m pip install actionlint-py`),
 so a YAML or expression error fails on the desk rather than on a run. `--full`
 also runs the type check, so it wants `mypy` (`python -m pip install mypy`);
 `--fast` does not. A tool that is missing is reported as `not run`, and the run
-exits 2 rather than passing.
+exits 2 rather than passing. A `pip install` without write access to the machine's site-packages lands `actionlint` in the user Scripts directory (`~/.local/bin` on Linux, `%APPDATA%\Python\Python314\Scripts` on Windows), which PATH often does not name, so add it before blaming the install.
 
 ## The annotations and the suppressions are checked
 

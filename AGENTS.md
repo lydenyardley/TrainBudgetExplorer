@@ -23,7 +23,7 @@ figures are dated and reproducible in `docs/build-performance-findings.md`. A st
 that could not run (node missing, mypy missing, actionlint missing, a build that
 wrote no page) reports `not run` and exits 2 rather than passing quietly -- which
 is why both want `python -m pip install actionlint-py` (it lints
-`.github/`) and only `--full` wants `mypy`. One module while you work on it:
+`.github/`) and only `--full` wants `mypy`. A `pip install` that cannot write the machine's site-packages lands `actionlint` in the user Scripts directory (`~/.local/bin` on Linux, `%APPDATA%\Python\Python314\Scripts` here), so that directory has to be on PATH, or the step reports `not run` with the package already installed. One module while you work on it:
 `python -m unittest tests.test_build_demo_page`.
 
 `--browser` also drives the site at `_site` when one is on disk, which is what CI
