@@ -102,9 +102,11 @@ function render() {
     const item = document.createElement("li");
     const link = document.createElement("a");
     link.href = station.href;
-    if (budgetNumber) {
+    if (budgetNumber || venueRef()) {
       const url = new URL(link.href, window.location.href);
-      url.searchParams.set("budget", resolvedBudget());
+      if (budgetNumber) url.searchParams.set("budget", resolvedBudget());
+      const ref = venueRef();
+      if (ref) url.searchParams.set("ref", ref);
       link.href = url.pathname + url.search + url.hash;
     }
     const name = document.createElement("span");
@@ -188,6 +190,8 @@ attachStationField({
   onChoose: (station) => {
     const url = new URL(station.href, window.location.href);
     if (budgetNumber) url.searchParams.set("budget", resolvedBudget());
+    const ref = venueRef();
+    if (ref) url.searchParams.set("ref", ref);
     window.location.href = url.pathname + url.search + url.hash;
   },
 });
@@ -206,6 +210,25 @@ if (originField) {
   });
 }
 wireListKeys(pick, picks);
+// The venue tag is not the budget. Station links above carry it, and so does
+// the privacy link, which this render does not rebuild. The next page's
+// counter reads `ref` from the address it was opened at.
+function venueRef() {
+  return new URLSearchParams(window.location.search).get("ref") || "";
+}
+function stampVenueLinks() {
+  const ref = venueRef();
+  if (!ref) return;
+  for (const link of document.querySelectorAll("a[href]")) {
+    let url;
+    try { url = new URL(link.href, window.location.href); }
+    catch (error) { continue; }
+    if (url.origin !== window.location.origin || url.searchParams.has("ref")) continue;
+    url.searchParams.set("ref", ref);
+    link.href = url.pathname + url.search + url.hash;
+  }
+}
 syncChooserBudget();
 render();
+stampVenueLinks();
 if (pick) pick.focus();

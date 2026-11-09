@@ -78,12 +78,18 @@ class SharedStationAssetTest(unittest.TestCase):
         # and permits what the policy was for.
         for directive in (
             "default-src 'self'",
-            "connect-src 'none'",
+            "script-src 'self' 'unsafe-inline'",
+            "connect-src https://trainbudgetexplorer.goatcounter.com/count",
             "form-action 'none'",
             "base-uri 'none'",
             "object-src 'none'",
         ):
             self.assertIn(directive, CSP)
+        # The count script is vendored, so the policy does not grow a host
+        # that can run someone else's code, and the image fallback stays closed.
+        self.assertNotIn("gc.zgo.at", CSP)
+        self.assertNotIn("connect-src 'none'", CSP)
+        self.assertIn("img-src 'self' data:", CSP)
 
     def test_the_whole_site_gets_one_station_asset(self) -> None:
         assets = sorted(self.site.rglob("stations.js"))

@@ -83,7 +83,9 @@ jobs:
             --workers "$(python -c 'from build_workers import worker_budget; print(worker_budget())')" \
             --out "_origins/index.html" \
             --notices nre,rdg,ogl,accuracy \
-            --require-live-reviewed-codes
+            --require-live-reviewed-codes \
+            --analytics-snippet page/goatcounter.html \
+            --measurement-plan aggregate-referrer-counts
 
       - name: Hand back the pages
         # _origins/ only: the pages and the shared assets beside them.

@@ -31,7 +31,9 @@ import subprocess
 import sys
 import time
 
+from trainbudget.build.build_release import RELEASE_MEASUREMENT_PLAN
 from trainbudget.build.build_workers import worker_budget
+from trainbudget.build.page_templates import GOATCOUNTER_SNIPPET
 from tools.release import RELEASE, error, warning
 
 #: Two thirds of the shard step's bound. `tests/test_workflows.py` holds it,
@@ -71,6 +73,8 @@ def command(shard: str, day: str, workers: int, base_path: str = "") -> list[str
         "--out", OUT,
         "--notices", "nre,rdg,ogl,accuracy",
         "--require-live-reviewed-codes",
+        "--analytics-snippet", GOATCOUNTER_SNIPPET,
+        "--measurement-plan", RELEASE_MEASUREMENT_PLAN,
     ]
     if base_path:
         build += ["--base-path", base_path]

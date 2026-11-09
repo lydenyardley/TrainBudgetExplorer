@@ -185,16 +185,22 @@ python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds
 python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable --origin GRA \
   --link-mode deep                                                  # opt in once a link is verified
 python -m trainbudget.build.build_demo_page --feed feeds/fares --timetable feeds/timetable --origin GRA \
-  --analytics-snippet counter.html \
-  --measurement-plan aggregate-referrer-counts                       # opt in to measurement
+  --analytics-snippet page/goatcounter.html \
+  --measurement-plan aggregate-referrer-counts                       # the release's counter
 ```
 
-A snippet is refused without `--measurement-plan`: the plan names what the
-snippet measures, what it keeps, and for how long, and the privacy page prints
-that sentence. There is one plan today and nothing is measured — turning
-measurement on is a decision, recorded in
-`adr/ADR-0032-measurement-needs-a-written-plan.md`, not a flag somebody reaches
-for.
+The release passes `--analytics-snippet page/goatcounter.html` and
+`--measurement-plan aggregate-referrer-counts` (`tools/release/share.py`, and
+the same two flags on the named-origins workflow). The snippet is GoatCounter's
+`count.js`, vendored at `page/goatcounter-count.js` and copied once to the site
+root, and it counts the page path, the referrer and a `ref` venue tag. The
+budget, railcard and shortlist are not in that request. A snippet is still
+refused without `--measurement-plan`: the plan names what may be measured, and
+the privacy page names GoatCounter when this snippet is the one injected. A
+build that does not pass the snippet, including the synthetic demo, measures
+nothing and the privacy page says so. Turning a different snippet on is a
+decision, recorded in `adr/ADR-0032-measurement-needs-a-written-plan.md`, not a
+flag somebody reaches for.
 
 Neither seller's link is currently known to land on a search. To see that stated
 rather than claimed:

@@ -16,7 +16,13 @@ import re
 import time
 from pathlib import Path
 
-from trainbudget.build.page_templates import CHOOSER_SCRIPT, STATION_SCRIPT, STATION_STYLESHEET
+from trainbudget.build.page_templates import (
+    CHOOSER_SCRIPT,
+    GOATCOUNTER_COUNT_JS,
+    GOATCOUNTER_SCRIPT_NAME,
+    STATION_SCRIPT,
+    STATION_STYLESHEET,
+)
 
 
 def with_base(base_path: str, path: str) -> str:
@@ -167,6 +173,26 @@ def write_station_script(out_dir: Path) -> Path:
     print(
         f"wrote {path} ({len(STATION_SCRIPT.encode('utf-8')):,} bytes) "
         "once for every station page rather than inside every one",
+        flush=True,
+    )
+    return path
+
+
+def write_goatcounter_script(out_dir: Path, analytics: str) -> Path | None:
+    """The vendored counter, once, when a page of this site asks for it.
+
+    The snippet names the file. A build that does not inject the snippet
+    writes nothing, and the link crawl then has no request to satisfy. The
+    merge writes it too: station pages are copied from the shares, and this
+    file is not among the folders the merge copies.
+    """
+    if GOATCOUNTER_SCRIPT_NAME not in analytics:
+        return None
+    path = out_dir / GOATCOUNTER_SCRIPT_NAME
+    write_page_atomic(path, GOATCOUNTER_COUNT_JS)
+    print(
+        f"wrote {path} ({len(GOATCOUNTER_COUNT_JS.encode('utf-8')):,} bytes) "
+        "once for the visit count rather than inside every page",
         flush=True,
     )
     return path

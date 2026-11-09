@@ -166,3 +166,4 @@ if (clearTypes) clearTypes.addEventListener("click", clearDestinationTypes);
 provenance();
 sizeBudgetField();
 render();
+stampVenueLinks();

@@ -27,6 +27,7 @@ from trainbudget.build.build_assets import (
     station_style_tag,
     with_base,
     write_chooser_script,
+    write_goatcounter_script,
     write_page_atomic,
 )
 from trainbudget.build.build_payload import encode_payload, without_station_facts
@@ -37,13 +38,20 @@ from trainbudget.build.build_release import (
     SYNTHETIC_BANNER,
     SYNTHETIC_LABEL,
     crawl_internal_links,
+    MEASUREMENT_PLANS,
     link_crawl_failed,
     manifest_problems,
     nre_attribution,
     nre_source_line,
     write_release_manifest,
 )
-from trainbudget.build.page_templates import CHEVRON, CHOOSER_TEMPLATE, PRIVACY, TEMPLATE
+from trainbudget.build.page_templates import (
+    CHEVRON,
+    CHOOSER_TEMPLATE,
+    GOATCOUNTER_ENDPOINT,
+    PRIVACY,
+    TEMPLATE,
+)
 
 
 def write_release(
@@ -75,6 +83,10 @@ def write_release(
     Returns the manifest path, because the caller reports what it wrote.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Before the pages that name it, and before the crawl that checks they do.
+    # Station pages were written already; the chooser and the privacy page are
+    # written below. All three name this file when the snippet is injected.
+    write_goatcounter_script(out_dir, analytics)
     # The chooser and the one script it fetches, written together: a release
     # whose chooser names a script it did not write is the contract the crawl
     # below refuses. Both build shapes end here, so neither can drift apart.
@@ -103,6 +115,7 @@ def write_release(
             features,
             synthetic,
             built_at=built_at,
+            analytics=analytics,
         ),
     )
     print(f"wrote {privacy}")
@@ -464,6 +477,40 @@ def synthetic_markup(synthetic: bool) -> str:
     )
 
 
+def _counts_with_goatcounter(analytics: str) -> bool:
+    """Whether this snippet is the release's counter, not some other snippet.
+
+    The privacy page names GoatCounter only when the injected text is that
+    counter. A different snippet under the same plan still gets the generic
+    sentence, because the plan is a constraint and the host is a fact about
+    this file.
+    """
+    return GOATCOUNTER_ENDPOINT in analytics
+
+
+def _privacy_intro(analytics: str) -> str:
+    if _counts_with_goatcounter(analytics):
+        return (
+            "The fare search works entirely in your browser. There is no account, "
+            "no sign-in, and nothing you choose is stored on a server by this site. "
+            "A visit count, described below, is sent to GoatCounter."
+        )
+    return (
+        "This page works entirely in your browser. There is no account, no sign-in, "
+        "and nothing you choose is stored on a server by this site."
+    )
+
+
+def _count_note(analytics: str) -> str:
+    if not _counts_with_goatcounter(analytics):
+        return ""
+    return (
+        "<p>The visit count does not include those search parameters. "
+        "<code>ref</code> is kept in the address and is the only part of it the count includes, "
+        "so a link from one venue can be told apart from a link from another.</p>\n"
+    )
+
+
 def render_privacy(
     note: str,
     base_path: str = "",
@@ -471,6 +518,7 @@ def render_privacy(
     features: dict | None = None,
     synthetic: bool = True,
     built_at: str | None = None,
+    analytics: str = "",
 ) -> str:
     if not contact.strip():
         raise ValueError("a privacy contact is required before publishing the privacy page")
@@ -501,15 +549,39 @@ def render_privacy(
             "serving these files sees it in its request logs; what stays in "
             "the address bar, below, explains it in full."
         ),
-        (
+    ]
+    if _counts_with_goatcounter(analytics):
+        # The plan's one sentence is not specific enough to be the page: it
+        # cannot name the host, and it used to claim a retention the hosted
+        # counter does not have. These are the sentences a reader can check
+        # against the request the snippet sends.
+        practices.extend((
+            "Visits are counted by <a href=\"https://www.goatcounter.com/help/privacy\">GoatCounter</a>, "
+            "hosted at trainbudgetexplorer.goatcounter.com. The count sends the page path, "
+            "the referrer, the screen width, and a venue tag when the address contains "
+            "<code>ref</code>. It does not send the budget, the railcard, the shortlist or any "
+            "other search parameter, it sets no cookie, and it keeps no persistent identifier "
+            "on this device.",
+            "GoatCounter sees the IP address and the user-agent on that request and records "
+            "a country, a browser and a system as separate daily totals. A session used to "
+            "tell a return visit from a new one is held in memory for at most eight hours "
+            "and is then dropped. The count writes nothing on this device unless the address ends "
+            "in <code>#toggle-goatcounter</code>, which remembers a preference to skip the count.",
+            "The page works the same if the count is blocked or GoatCounter is offline.",
+        ))
+    elif features.get("analytics"):
+        plan_key = str(features.get("measurement") or "")
+        described = MEASUREMENT_PLANS.get(plan_key, plan_key)
+        practices.append(
             "This build injects an analytics snippet, so visits are measured by "
             "that snippet. The reviewed plan it is allowed under: it "
-            + features.get("measurement", "has none recorded, which should not "
-              "happen -- a build cannot inject a snippet without one (ADR-0032).")
-            if features.get("analytics")
-            else "No analytics run. If analytics are ever added to this site, this page will name them here first."
-        ),
-    ]
+            + (described or "has none recorded, which should not "
+               "happen -- a build cannot inject a snippet without one (ADR-0032).")
+        )
+    else:
+        practices.append(
+            "No analytics run. If analytics are ever added to this site, this page will name them here first."
+        )
     # C17/D12 of the 17 October 2026 critique: the list used to end with "This
     # site does not collect visit data", which was the union of the cookie and
     # analytics sentences already above it and added nothing a reader could act
@@ -545,6 +617,9 @@ def render_privacy(
     )
     privacy = (
         PRIVACY.replace("__BASE__", base_path)
+        .replace("__INTRO__", _privacy_intro(analytics))
+        .replace("__COUNT_NOTE__", _count_note(analytics))
+        .replace("__ANALYTICS__", analytics)
         .replace("__BUILT_LINE__", built_line)
         .replace("__NOTE__", note_markup(note, "muted"))
         # Escaped like every other string on this route: the address is

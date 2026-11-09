@@ -28,6 +28,7 @@ const { checkTheShortlist, compareTheDockWithTheTable } = require("./station-sho
 const { measureTheLayout } = require("./station-layout.cjs");
 const { checkTheOriginPicker } = require("./station-picker.cjs");
 const { checkWithoutTheStylesheet, checkWithoutTheScript } = require("./station-assets.cjs");
+const { checkTheCounter } = require("./counter.cjs");
 async function runPage(browser, index, given, file, body, base) {
   // One context per page. The seller's stub route and the clipboard grant are
   // both context-scoped, and a page that failed a step must not hand the next
@@ -111,6 +112,7 @@ async function runPage(browser, index, given, file, body, base) {
   // Which route is this, decided by what the page carries rather than by where
   // it sits: a single-station build writes the station page to the site root
   // and a full-network build writes a chooser there.
+  await checkTheCounter({ page, context, url, check });
   const kind = await page.evaluate(() => {
     if (typeof DATA !== "undefined" && typeof PAGE_SIZE !== "undefined") return "station";
     if (typeof STATIONS !== "undefined" && document.getElementById("picks")) {

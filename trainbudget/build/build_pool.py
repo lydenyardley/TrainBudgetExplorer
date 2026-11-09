@@ -34,6 +34,7 @@ from trainbudget.build.build_assets import (
     write_station_script,
     write_station_style,
 )
+from trainbudget.build.page_templates import GOATCOUNTER_SCRIPT_NAME
 from trainbudget.build.build_payload import (
     _priced_destinations,
     build_payload,
@@ -426,6 +427,14 @@ def release_gates(ctx: BuildContext) -> int:
         except OSError as error:
             print(f"could not read {args.analytics_snippet!r}: {error}", file=sys.stderr)
             return 2
+    if ctx.analytics:
+        # The snippet is one file for every deploy, including a project site
+        # whose links are prefixed. The token is the script's address, filled
+        # from the same base path the rest of the page uses.
+        src = html.escape(
+            with_base(ctx.base_path, "/" + GOATCOUNTER_SCRIPT_NAME), quote=True
+        )
+        ctx.analytics = ctx.analytics.replace("__COUNT_SRC__", src)
     if ctx.analytics and not args.measurement_plan:
         print(
             "error: an analytics snippet was given without --measurement-plan, so the "

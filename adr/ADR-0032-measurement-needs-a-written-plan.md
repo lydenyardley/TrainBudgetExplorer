@@ -55,6 +55,33 @@ condition that a flag cannot bypass.
   expensive to regret, which is the right asymmetry for a decision about
   somebody else's data.
 
+## 9 November 2026: the release turns the one plan on
+
+The plan above said measurement stays off until a decision names what is
+measured. This is that decision. The release build passes
+`--analytics-snippet page/goatcounter.html` and
+`--measurement-plan aggregate-referrer-counts` (`tools/release/share.py`, every
+share, and the merge reads the snippet back out of the share). The counter is
+GoatCounter's hosted count endpoint. The script is vendored, so the page does
+not fetch it from GoatCounter (ADR-0079).
+
+What the count sends is the page path, the referrer, the screen width, and
+`ref` when the address has one. It does not send the budget, the railcard, the
+shortlist or the rest of the search: GoatCounter's script would, because it
+sends `location.search` and stores the path with the query still on it, and
+the snippet strips both before the count. GoatCounter sees the IP address and
+the user-agent on the request and keeps a country, a browser and a system as
+separate daily totals. It sets no cookie. A session used to tell a return
+visit from a new one is held in memory for at most eight hours. The plan's
+earlier wording, "retains nothing beyond a short rolling window", described a
+constraint the hosted aggregates do not meet, so the sentence now says what is
+true: aggregate counts, no cookie, no persistent identifier on the device. The
+privacy page says the rest, and it says it only when this snippet is the one
+injected.
+
+A build that does not pass the snippet still measures nothing. A second plan,
+or a different snippet under this one, is still a new decision.
+
 ## Alternatives rejected
 
 - **A boolean `--i-have-thought-about-privacy`.** A flag that can be set without

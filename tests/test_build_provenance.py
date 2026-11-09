@@ -18,6 +18,7 @@ from pathlib import Path
 import argparse
 from trainbudget.build import build_demo_page
 from trainbudget.build import build_release
+from trainbudget.build.page_templates import GOATCOUNTER_COUNT_JS
 from trainbudget.build.build_demo_page import DEFAULT_PRICE_SOURCE, NOTICES, notices_or_attribution
 from trainbudget.timetable.atoc_timetable import TimetableDb
 from trainbudget.build.build_demo_page import nre_attribution, wants_nre_credit, build_payload, render_chooser, render_page, render_privacy
@@ -360,7 +361,72 @@ class ProvenanceTest(PageTestCase):
                     ]
                 )
             self.assertEqual(code, 0)
-            self.assertIn("injects an analytics snippet", (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8"))
+            privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("injects an analytics snippet", privacy)
+            # A snippet that is not the release's counter is not described as
+            # one, and it does not cause the counter's file to be written.
+            self.assertNotIn("GoatCounter", privacy)
+            self.assertFalse((root / "site" / "goatcounter-count.js").is_file())
+
+    def test_the_release_counter_is_on_every_page_a_merge_publishes(self) -> None:
+        # The shares inject the snippet, and the merge writes the chooser and
+        # the privacy page from the share's manifest rather than from a second
+        # flag. A page that lost the count, or a merge that forgot the file
+        # the pages request, is a release that does not count.
+        snippet = Path(__file__).resolve().parents[1] / "page" / "goatcounter.html"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = build_synthetic_feed(root / "fares", include_restrictions=True)
+            shards = []
+            for number in (1, 2):
+                out = root / f"shard-{number}" / "index.html"
+                buffer = io.StringIO()
+                with contextlib.redirect_stdout(buffer):
+                    code = build_demo_page.main(
+                        [
+                            "--feed", str(feed),
+                            "--all-origins",
+                            "--shard", f"{number}/2",
+                            "--workers", "1",
+                            "--base-path", "tb",
+                            "--out", str(out),
+                            "--analytics-snippet", str(snippet),
+                            "--measurement-plan", "aggregate-referrer-counts",
+                        ]
+                    )
+                self.assertEqual(code, 0, buffer.getvalue())
+                shards.append(out.parent)
+            merged = root / "site" / "index.html"
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+                code = build_demo_page.main(
+                    ["--merge", *[str(shard) for shard in shards],
+                     "--feed", str(feed), "--out", str(merged)]
+                )
+            self.assertEqual(code, 0, buffer.getvalue())
+            pages = sorted((root / "site").rglob("*.html"))
+            self.assertGreaterEqual(len(pages), 4)
+            for page in pages:
+                html = page.read_text(encoding="utf-8")
+                self.assertIn('data-goatcounter="https://trainbudgetexplorer.goatcounter.com/count"', html, page)
+                self.assertIn('src="/tb/goatcounter-count.js"', html, page)
+                self.assertIn("connect-src https://trainbudgetexplorer.goatcounter.com/count", html, page)
+                self.assertNotIn("gc.zgo.at", html, page)
+                self.assertNotIn("__COUNT_SRC__", html, page)
+                self.assertNotIn("__ANALYTICS__", html, page)
+            script = root / "site" / "goatcounter-count.js"
+            self.assertEqual(
+                script.read_text(encoding="utf-8"),
+                GOATCOUNTER_COUNT_JS,
+            )
+            privacy = (root / "site" / "privacy" / "index.html").read_text(encoding="utf-8")
+            self.assertIn("GoatCounter", privacy)
+            self.assertIn("does not send the budget", privacy)
+            self.assertIn("sets no cookie", privacy)
+            self.assertIn("no persistent identifier", privacy)
+            self.assertIn("works the same if the count is blocked", privacy)
+            self.assertNotIn("No analytics run", privacy)
+            self.assertIn("<code>ref</code>", privacy)
 
     def test_a_real_source_build_is_refused_until_it_carries_a_notice(self) -> None:
         # S37: a build that names a real price source publishes real fares, so

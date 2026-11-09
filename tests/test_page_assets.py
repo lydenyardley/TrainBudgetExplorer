@@ -28,6 +28,10 @@ ASSETS = {
     "chooser.css": "_CHOOSER_TEMPLATE",
     "privacy.css": "_PRIVACY_TEMPLATE",
     "theme.js": "SHARED_THEME",
+    # Copied to the site root and injected, rather than inlined into a template.
+    # The holder is the file, which is what the release serves.
+    "goatcounter-count.js": "GOATCOUNTER_COUNT_JS",
+    "goatcounter.html": "GOATCOUNTER_SNIPPET_HTML",
 }
 STATION_SCRIPT_PARTS = {
     "station/payload.js": "STATION_SCRIPT",
