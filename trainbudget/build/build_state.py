@@ -188,8 +188,11 @@ def resumable_signature(shared: dict, index: list[dict]) -> str:
         # 17 October 2026 audit). Hashed once per build, not once per page.
         "feed": feed_content_digest(shared["feed"]),
         "timetable": feed_content_digest(shared["timetable"]) if shared["timetable"] else None,
+        # The snippet stays in the signature. It used to be left out, which
+        # was harmless while nothing injected one: a resumed page would then
+        # keep counting nothing after the counter was turned on.
         "config": {key: value for key, value in shared.items()
-                   if key not in {"feed", "timetable", "built_at", "analytics"}},
+                   if key not in {"feed", "timetable", "built_at"}},
         "stations": index,
         # page/** is not in SOURCE_FILES, so a script or stylesheet change
         # would otherwise resume past every page and leave them naming the

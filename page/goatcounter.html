@@ -1,0 +1,41 @@
+<script>
+// The vendored script counts on load and would send the whole address,
+// including the budget, the railcard and the shortlist. It is told not to,
+// and the listener below counts once the path and the venue tag are all
+// that remains. If the script never arrives the listener finds nothing to
+// call, which is the page working with the counter blocked.
+window.goatcounter = window.goatcounter || {};
+window.goatcounter.no_onload = true;
+</script>
+<script defer src="__COUNT_SRC__" data-goatcounter="https://trainbudgetexplorer.goatcounter.com/count"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var gc = window.goatcounter;
+  if (!gc || typeof gc.get_data !== "function" || typeof gc.count !== "function") return;
+  var original = gc.get_data;
+  gc.get_data = function (vars) {
+    var data = original(vars);
+    var ref = "";
+    try { ref = new URLSearchParams(location.search).get("ref") || ""; }
+    catch (e) { ref = ""; }
+    // The path GoatCounter stores is pathname plus the query. The query is
+    // the search, so the stored path would be a different page for every
+    // budget. The venue tag travels in `q`, which is the field the counter
+    // reads as a campaign source, and nowhere else.
+    data.p = location.pathname || "/";
+    data.q = ref ? ("?ref=" + encodeURIComponent(ref)) : "";
+    // The title repeats the budget. An empty title is left out of the request.
+    data.t = "";
+    if (data.r) {
+      try {
+        var from = new URL(data.r, location.href);
+        // A same-site referrer is the previous page's address, search and
+        // all. Keep the path and drop the search.
+        if (from.hostname === location.hostname) data.r = from.origin + from.pathname;
+      } catch (e) {}
+    }
+    return data;
+  };
+  gc.count();
+});
+</script>

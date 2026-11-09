@@ -150,8 +150,9 @@ def service_claim(has_journeys: bool) -> str:
 # left implied. Each is a plan a reader can be told about in one sentence, and
 # each is a decision rather than a default: switching analytics on without
 # naming one of these is refused, so a familiar flag cannot quietly turn
-# measurement on. None is in use -- no snippet is configured -- and the gate is
-# here so that turning one on is a recorded act.
+# measurement on. The release turns on the one plan below, with the vendored
+# GoatCounter snippet (ADR-0032, amended 9 November 2026). The gate stays, so
+# a second snippet is still a recorded act rather than a flag.
 # One route for every build, synthetic or real. An email on the page is a
 # published address; the issue tracker is a route that does not print one
 # (ADR-0068). `--privacy-contact` and PRIVACY_CONTACT still override it.
@@ -166,10 +167,13 @@ DEFAULT_PRIVACY_CONTACT = (
 
 MEASUREMENT_PLANS = {
     "aggregate-referrer-counts": (
-        "counts referrers in aggregate, keeps no persistent identifier, sets no "
-        "cookie, and retains nothing beyond a short rolling window"
+        "counts page views and referrers in aggregate, sets no cookie, and "
+        "keeps no persistent identifier on the device"
     ),
 }
+
+#: The plan the release passes. A second plan is a new decision (ADR-0032).
+RELEASE_MEASUREMENT_PLAN = "aggregate-referrer-counts"
 
 
 def crawl_internal_links(out_dir: Path, base_path: str = "") -> list[str]:

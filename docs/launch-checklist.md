@@ -22,6 +22,12 @@ usage, and none of it can be measured afterwards if it is not set up now.
 needed and nothing else is worth the reader's privacy: clicks per venue,
 unique-ish visitors, and return visits.
 
+The release build injects `page/goatcounter.html` under
+`aggregate-referrer-counts`. The count is GoatCounter, hosted, with its script
+vendored so the page does not load it from GoatCounter's host. It sends the
+page path, the referrer, the screen width and a `ref` tag, and not the search.
+The boxes below stay the launch check.
+
 - [ ] A counter was chosen, and injected with
       `--analytics-snippet <file>` so it lives in the build rather than in a
       generated file

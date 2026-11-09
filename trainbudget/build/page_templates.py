@@ -92,25 +92,40 @@ STATION_CSS = _page_file("station.css")
 # exactly what the <style> element used to hold.
 STATION_STYLESHEET = SHARED_CSS + STATION_CSS
 
-# What a route may load and what it may reach (audit item 10, 28 October 2026).
+# What a route may load and what it may reach (audit item 10, 28 October 2026;
+# the count host, ADR-0079 amended 9 November 2026).
 #
 # Both routes carry their first-paint theme and their payload inline, and the
 # station route fetches one hashed script and one hashed stylesheet of its own,
 # so `'unsafe-inline'` is the price of the inline theme and nothing more hides
 # behind it. What survives that is still worth stating: no frame, no form, no
-# plugin, no <base>, and no network call of any kind -- the page has nothing to
-# fetch after it loads, so a string that got into the markup cannot become a
-# request. `connect-src 'none'` is the line that makes the last part true.
+# plugin, no <base>, and no network call except the visit count. The count
+# script is a file this site serves (`page/goatcounter-count.js`, copied to the
+# site root when the release injects the snippet), so `script-src` stays
+# `'self'` and does not gain a host that could run someone else's code.
+# `connect-src` names the one endpoint that count is sent to. The script's
+# image fallback, used when `sendBeacon` fails, stays blocked by `img-src`:
+# a refused count is a lost count, not a second way off the page.
 #
 # A meta tag is enough for every directive above except `frame-ancestors`, which
 # browsers ignore in a meta tag: framing is the host's header to send, and this
 # comment is the record that the page knows it rather than believing it is
 # framed-proof. Inline script is also why this cannot become a nonce without
 # giving up the inline theme (ADR-0033, ADR-0047).
+# The endpoint the release counts on, and the file the snippet asks for. The
+# snippet is `page/goatcounter.html`; a test holds the two to this string so a
+# host can change in one of them only by failing.
+GOATCOUNTER_ENDPOINT = "https://trainbudgetexplorer.goatcounter.com/count"
+GOATCOUNTER_SCRIPT_NAME = "goatcounter-count.js"
+GOATCOUNTER_SNIPPET = "page/goatcounter.html"
+# Read here, like the other page files, so a CRLF checkout cannot rewrite the
+# one copy the site serves.
+GOATCOUNTER_COUNT_JS = _page_file(GOATCOUNTER_SCRIPT_NAME)
+GOATCOUNTER_SNIPPET_HTML = _page_file("goatcounter.html")
 CSP = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; "
     "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-    "connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    f"connect-src {GOATCOUNTER_ENDPOINT}; form-action 'none'; base-uri 'none'; object-src 'none'"
 )
 CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
 
@@ -148,7 +163,7 @@ __THEME_TOGGLE__
 </div>
 <main>
 <h1>Privacy</h1>
-<p>This page works entirely in your browser. There is no account, no sign-in, and nothing you choose is stored on a server by this site.</p>
+<p>__INTRO__</p>
 __BUILT_LINE__
 <h2>What this site does</h2>
 <ul>
@@ -160,6 +175,7 @@ __PRACTICES__</ul>
 <li>if you share or bookmark such an address, the whole search travels with it, so a link you hand to somebody carries your budget, any railcard you chose and the places you shortlisted to whoever opens it.</li>
 </ul>
 <p>Nothing else you type here is transmitted. Clearing the address bar's query parameters and reloading returns a fare page to its default search.</p>
+__COUNT_NOTE__
 <h2>Ticket links</h2>
 <p>Ticket buttons open the seller's own website in a new tab. Once you are there, that seller's privacy policy applies, not this page. This site receives no information back about whether you bought anything; if tracked links are ever switched on, the fare pages will say so in their footer.</p>
 <h2>Hosting</h2>
@@ -171,6 +187,7 @@ __PRACTICES__</ul>
 __NOTE__
 <nav class="footnav"><a href="__BASE__/">Station list</a></nav>
 </footer>
+__ANALYTICS__
 </body>
 </html>
 """

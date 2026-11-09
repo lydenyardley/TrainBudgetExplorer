@@ -33,6 +33,12 @@ function stateQuery() {
   // One repeated short key per place rather than a joined list: URLSearchParams
   // would percent-encode the commas, and a shared link is meant to be readable.
   for (const code of STATE.shortlist) params.append("short", code);
+  // The venue tag is not part of the search. The picker's links are built
+  // from this string, and the next page's counter reads `ref` from the
+  // address it is opened at. Leaving the tag out would count the arrival
+  // and then drop the venue from every page after it.
+  const ref = new URLSearchParams(window.location.search).get("ref");
+  if (ref) params.set("ref", ref);
   return params.toString();
 }
 
@@ -63,7 +69,22 @@ function cancelBudgetPush() {
   clearTimeout(STATE.budgetUrlTimer);
   STATE.budgetUrlTimer = null;
 }
-const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short", "day"];
+const STATE_KEYS = ["budget", "mode", "party", "card", "types", "page", "short", "day", "ref"];
+// Static links (the footer, the privacy page) are not rebuilt from stateQuery,
+// so a venue tag has to be written onto them once. A later render of the
+// picker goes through stateQuery and already carries the tag.
+function stampVenueLinks() {
+  const ref = new URLSearchParams(window.location.search).get("ref");
+  if (!ref) return;
+  for (const link of document.querySelectorAll("a[href]")) {
+    let url;
+    try { url = new URL(link.href, window.location.href); }
+    catch (error) { continue; }
+    if (url.origin !== window.location.origin || url.searchParams.has("ref")) continue;
+    url.searchParams.set("ref", ref);
+    link.href = url.pathname + url.search + url.hash;
+  }
+}
 function writeUrlNow(push) {
   const url = new URL(window.location.href);
   // Only this page's own keys are rewritten. A shared link can carry someone

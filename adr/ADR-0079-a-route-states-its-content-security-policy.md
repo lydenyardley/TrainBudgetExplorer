@@ -76,3 +76,35 @@ Three directives carry the weight:
   must state it here, and `tests/test_page_output.py` fails the moment a route
   ships without the policy. That is the intended friction: the policy is where
   the exception has to be argued rather than discovered in a console.
+
+## 9 November 2026: the visit count opens `connect-src` and nothing else
+
+The release counts visits with GoatCounter, hosted at
+`trainbudgetexplorer.goatcounter.com`. GoatCounter's own CSP note asks for
+`script-src https://gc.zgo.at` and `connect-src` to the count endpoint, because
+the standard snippet loads `count.js` from `gc.zgo.at` and then calls
+`navigator.sendBeacon`.
+
+**`count.js` is vendored** (`page/goatcounter-count.js`, copied once to the
+site root) **and `script-src` is unchanged.** Opening `script-src` to
+`gc.zgo.at` would let that origin run any script on every page. The count is a
+beacon, so the only new capability the page needs is to send it. The policy is
+now:
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';
+img-src 'self' data:; connect-src https://trainbudgetexplorer.goatcounter.com/count;
+form-action 'none'; base-uri 'none'; object-src 'none'
+```
+
+`img-src` stays closed. The vendored script falls back to an image when
+`sendBeacon` returns false, which is how it recovers from a policy that blocks
+the beacon. That fallback stays blocked: a refused count is a lost count. The
+same policy is on every route, including a build that does not inject the
+snippet, because the policy is one constant. An injection can beacon to that
+one host and nowhere else, which is the exception this amendment is willing to
+write down.
+
+The privacy page names the counter only when the injected snippet is this one
+(ADR-0032). `tests/test_page_output.py` holds the directives, including that
+`gc.zgo.at` is not among them.

@@ -248,6 +248,17 @@ class ShareTest(unittest.TestCase):
         # passing it would build pages twice the site's budget again.
         self.assertEqual(share.PLACE_CAP, 600)
         self.assertEqual(built[built.index("--max-places") + 1], "600")
+        # The visit counter. A share that stopped passing it would publish
+        # pages the merge cannot put the count on, because the merge reads
+        # the snippet from the share rather than from a flag of its own.
+        self.assertEqual(
+            built[built.index("--analytics-snippet") + 1],
+            "page/goatcounter.html",
+        )
+        self.assertEqual(
+            built[built.index("--measurement-plan") + 1],
+            "aggregate-referrer-counts",
+        )
 
     def test_a_share_that_nears_the_bound_says_so(self) -> None:
         clock = iter([0.0, share.NEARING_MINUTES * 60.0])

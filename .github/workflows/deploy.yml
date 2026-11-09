@@ -296,7 +296,10 @@ jobs:
 
       - name: Merge the shares into one site
         # --merge refuses shares that overlap, leave a gap, or were built from
-        # another download or another revision of the code.
+        # another download or another revision of the code. The visit counter
+        # is already in each share: the merge copies the station pages and
+        # writes the chooser and the privacy page from the share's manifest,
+        # so this step has no second copy of the snippet flag.
         run: python -m trainbudget.build.build_demo_page --feed feeds/fares --merge _shards/shard-* --out _site/index.html
 
       - name: Hold the site inside the byte budget
