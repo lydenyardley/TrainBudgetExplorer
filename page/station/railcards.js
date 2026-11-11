@@ -254,6 +254,15 @@ function syncRailcardParty() {
   railcardSelect.value = STATE.railcard;
   railcardSelect.disabled = offeredCards.length === 0;
   if (!help) return;
+  if (offeredCards.length === 0) {
+    // A feed can price only cards too small for the party on screen. The
+    // options stay, struck out and each carrying its bound, and the sentence
+    // says why rather than asking for a choice the control has refused.
+    help.textContent = "No card this feed prices covers " +
+      (unit() === "party" ? "two adults" : "one adult") +
+      ", so these are standard fares.";
+    return;
+  }
   if (noCard()) {
     // The action and the memory come first: which card is held changes every
     // price on the page, and what happens to the choice is the fact a reader

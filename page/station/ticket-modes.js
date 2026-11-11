@@ -336,14 +336,6 @@ function renderEmpty(available, wanted, cap, what) {
   if (selectedDestinationTypes().size) {
     offer("Show all destination types", clearDestinationTypes);
   }
-  // A pair's price is a different number, so a party the reader has not chosen
-  // yet is a real way out of an empty list rather than advice.
-  if (unit() === "adult" && railcardKeys.length) {
-    const cheaper = activeDestinations().some((destination) => destination.partyPence <= cap * 100);
-    if (cheaper) {
-      offer("Price it for two adults", () => chooseUnit("party"));
-    }
-  }
   // Another ticket type on this origin, with its own count -- and its own
   // floor (S3 of the 19 October 2026 critique). The door sets the budget to the
   // cheapest fare the reader can actually see in that set, so the label is
