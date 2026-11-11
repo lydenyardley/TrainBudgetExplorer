@@ -30,7 +30,7 @@ and **O18** (the enforcer was designed, prototyped and refused). Their numbers a
 retired rather than reused, because a number is what a commit or a comment cites
 and renumbering would make every one of those citations point at a different item.
 
-## The thirty-five items
+## The thirty-four items
 
 | # | Item | Kind | Severity |
 |---|---|---|---|
@@ -63,7 +63,6 @@ and renumbering would make every one of those citations point at a different ite
 | O33 | The station picker hides the station it is changing from (critique 13) | code | P3 |
 | O34 | A phone row's numbers stand alone, and the rail's slider is a few dozen pixels (critique 14, 24) | decision | P3 |
 | O35 | The shortlist dock has no fare, no price order and no undo (critique 18) | code | P3 |
-| O36 | The row's copied journey leaves out the price and the times (critique 19) | code | P3 |
 | O37 | The day control names no day and confirms no change (critique 21) | code | P3 |
 | O38 | The theme switch has no visible label (critique 22) | code | P3 |
 | O39 | Table columns move between filters (critique 23) | code | P3 |
@@ -83,7 +82,7 @@ newly price) and **O22** (the twelve destinations newly priced by station-group
 expansion) both left on 23 October 2026 once ADR-0075 and
 `REVIEWED_SETTLEMENT_FALLBACKS` landed (`docs/settled-work.md`).
 
-The last nineteen (O23 to O41) are the 21 October 2026 Critiquito design
+The last eighteen (O23 to O41) are the 21 October 2026 Critiquito design
 critique, read against the tree on 26 October 2026. Its severity key was applied
 to the pages it captured, so three of its P1s are graded lower here: the release
 is dated, so "No service that day" has a day to mean (O29), and a script that
@@ -593,18 +592,6 @@ clipboard says so.
 
 **What closes it.** The fare's name in the row, a sort by the price on screen, and
 an "Undo" on the clear announcement.
-
-## O36 -- The row's copied journey leaves out the price and the times
-
-**Kind:** code. **Raised:** task 19 of the critique. **Route:** `journeyText`.
-
-The copied text names both stations, the ticket, the date and the passengers, and
-the shortlist's copy adds the price, the time and the changes. The row's does not,
-so the note a reader pastes to a seller has no fare on it. The failure path is
-fixed: a refused clipboard says "Could not copy automatically" and shows the text.
-
-**What closes it.** The price and the day's time in `journeyText`, which is two
-lines and one assertion.
 
 ## O37 -- The day control names no day and confirms no change
 
