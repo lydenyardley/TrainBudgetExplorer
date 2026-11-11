@@ -137,6 +137,7 @@ DEMO_FEED = "_demo_feed"
 DEMO_KB = "_demo_kb"
 DEMO_SITE = "_demo_site"
 SHAPE_FEED = "_shape_feed"
+SHAPE_ONE_CARD_FEED = "_shape_one_card_feed"
 SHAPE_SITE = "_shape_site"
 SITE = "_site"
 
@@ -477,6 +478,12 @@ def browser(require_site: bool = False) -> Step:
         # the timetable, because a prices-only page skips the times half of
         # the suite and its skips count against the budget for pages like it.
         (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_FEED, "--timetable", SHAPE_FEED, "--date", SERVICE_DATE, "--origin", "KGX", "--out", f"{SHAPE_SITE}/reviewed-name/index.html"], "the reviewed-name page"),
+        # A feed with no card that covers two adults. Every other page prices
+        # Two Together, so its card control is never disabled and the sentence
+        # for that state is never rendered: this page is the only one that can
+        # exercise it.
+        (["python", "-m", "trainbudget.feeds.make_synthetic_feed", SHAPE_ONE_CARD_FEED, "--unserved-station", "--third-origin", "--return-network", "--one-adult-cards", "--single-facet"], "the one-card shape feed"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_ONE_CARD_FEED, "--timetable", SHAPE_ONE_CARD_FEED, "--date", SERVICE_DATE, "--origin", "GRN", "--out", f"{SHAPE_SITE}/one-adult-cards/index.html"], "the one-adult-cards page"),
     ]
     for command, what in steps:
         if not _run(command, what):
@@ -491,6 +498,7 @@ def browser(require_site: bool = False) -> Step:
         *one_page[-1:],
         Path(ROOT, SHAPE_SITE, "prices-only/from/grantham/index.html"),
         Path(ROOT, SHAPE_SITE, "reviewed-name/from/london-kings-x/index.html"),
+        Path(ROOT, SHAPE_SITE, "one-adult-cards/from/grantham/index.html"),
     ]
     missing = [page for page in pages if not page.is_file() or not page.stat().st_size]
     if missing:

@@ -663,9 +663,12 @@ async function checkTheFareDetails(world) {
         duo ? duo.cards.filter((c) => c.minAdults <= 2 && 2 <= c.maxAdults).map((c) => c.key).join(",") : ""
       }`
     );
+    const duoCover = Boolean(
+      duo && duo.cards.some((c) => c.minAdults <= 2 && 2 <= c.maxAdults)
+    );
     check(
       "and the help names the chosen card's bounds and what it would discount",
-      cardChoice && pair && duo.first
+      cardChoice && duoCover && duo.first
         ? (() => {
             const card = duo.cards.find((c) => c.key === duo.first);
             if (!card) return false;
@@ -674,10 +677,43 @@ async function checkTheFareDetails(world) {
               ? "Exactly " + card.minAdults
               : card.minAdults + " to " + card.maxAdults;
             return duo.help.includes(bound + noun) &&
-              new RegExp(String(card.eligibleCount)).test(duo.help);
+              new RegExp("\\b" + card.eligibleCount + " destinations?\\b").test(duo.help);
           })()
         : notExercised("this page prices no card that covers two adults"),
-      pair ? duo.help : ""
+      duoCover ? duo.help : ""
+    );
+    const oneAdultCard = await page.evaluate(() => {
+      const card = (DATA.railcards || []).find((c) => c.minAdults === 1 && c.maxAdults === 1);
+      if (!card) return null;
+      applyState({ unit: "adult", railcard: card.key });
+      render();
+      return { key: card.key, help: document.getElementById("railcardHelp").textContent };
+    });
+    check(
+      "a card's one bound is said once, as one adult",
+      oneAdultCard ? /^Exactly 1 adult\./.test(oneAdultCard.help) : notExercised("this feed prices no card with one bound"),
+      oneAdultCard ? oneAdultCard.help : ""
+    );
+    const noCover = await page.evaluate(() => {
+      const cards = DATA.railcards || [];
+      if (!cards.length || cards.some((c) => c.minAdults <= 2 && 2 <= c.maxAdults)) return null;
+      applyState({ unit: "party" });
+      render();
+      const select = document.getElementById("railcardSelect");
+      return {
+        disabled: select.disabled,
+        offered: Array.from(select.options).filter((option) => !option.disabled && option.value).length,
+        help: document.getElementById("railcardHelp").textContent,
+      };
+    });
+    check(
+      "a card set too small for the party disables the list and says why",
+      noCover
+        ? noCover.disabled && noCover.offered === 0 &&
+          /No card this feed prices covers two adults/.test(noCover.help) &&
+          !/Pick a card/.test(noCover.help)
+        : notExercised("this feed prices a card that covers two adults"),
+      noCover ? `disabled=${noCover.disabled} offered=${noCover.offered} help=${noCover.help}` : ""
     );
     // Q2: the browser remembers the card, which is what makes this a collection
     // rather than a per-page question. Every reading here goes through the
@@ -2141,7 +2177,7 @@ function saysMoreThan(condition, code) {
       // and so does this, and a run straddling midnight is not a defect.
       const expected = daysSince(fresh.feedDate);
       const stated = /downloaded .*?,\s*(\d+) days? old/.exec(fresh.text);
-      const namesTheThreshold = new RegExp(String(fresh.staleAfterDays) + "-day freshness threshold").test(fresh.text);
+      const namesTheThreshold = new RegExp("\\b" + fresh.staleAfterDays + "-day freshness threshold").test(fresh.text);
       check(
         "a feed with a download date says how old its prices are",
         // A download dated after today is a clock or download fault, and the

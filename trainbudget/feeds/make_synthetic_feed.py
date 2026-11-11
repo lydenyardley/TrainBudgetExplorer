@@ -495,6 +495,8 @@ def build_synthetic_feed(
     include_return_network: bool = False,
     include_long_list: bool = False,
     minimum_fares: tuple[tuple[str, ...], ...] | None = None,
+    one_adult_cards: bool = False,
+    single_facet: bool = False,
 ) -> Path:
     """Write the fares feed.
 
@@ -510,7 +512,11 @@ def build_synthetic_feed(
     from. The long list gives Grantham more than a page of them, so the pager
     and its keys have a second page to reach. The restrictions file is off by
     default so existing fixtures keep their five files; tests for the
-    publishable selector turn it on.
+    publishable selector turn it on. The one-adult flag drops the reviewed card
+    that needs two travellers, so a page built from the feed has no card that
+    can price a party and its railcard control has to say why. The single-facet
+    flag keeps one thematic facet per station, so a page built from the feed has
+    a disclosure that says one kind rather than several.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
@@ -556,6 +562,17 @@ def build_synthetic_feed(
             flow_id = f"{number:07d}"
             flows += ((flow_id, origin, destination, "00000"),)
             fares += ((flow_id, "SDR", pence, ""),)
+
+    if single_facet:
+        # One reviewed facet for every station, including the origin: a page
+        # whose destinations each carry a different facet is the plural state,
+        # and the point of this shape is the singular one.
+        only = next((values[0] for values in facets.values() if values), "")
+        facets = {crs: ([only] if only else []) for crs in facets}
+
+    cards = RAILCARDS if not one_adult_cards else tuple(
+        card for card in RAILCARDS if card[3] == "1"
+    )
 
     flow_lines: list[str] = []
     for flow_id, origin, destination, route_code in flows:
@@ -609,7 +626,7 @@ def build_synthetic_feed(
 
     railcard_lines = [
         _line({"railcard_code": code, "description": name, "min_adults": min_adults, "max_adults": max_adults}, RAILCARD)
-        for code, name, min_adults, max_adults in RAILCARDS
+        for code, name, min_adults, max_adults in cards
     ]
 
     minimum_lines = [
@@ -1469,6 +1486,22 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--one-adult-cards",
+        action="store_true",
+        help=(
+            "drop the reviewed card that needs two adults, so a built page has no "
+            "card that can price a party"
+        ),
+    )
+    parser.add_argument(
+        "--single-facet",
+        action="store_true",
+        help=(
+            "keep one thematic facet per station, so a built page has a disclosure "
+            "that says one kind rather than several"
+        ),
+    )
+    parser.add_argument(
         "--knowledgebase",
         metavar="PATH",
         help=(
@@ -1494,6 +1527,8 @@ if __name__ == "__main__":
                 include_reviewed_origin=arguments.reviewed_origin,
                 include_return_network=arguments.return_network,
                 include_long_list=arguments.long_list,
+                one_adult_cards=arguments.one_adult_cards,
+                single_facet=arguments.single_facet,
             )
         )
     if arguments.kind in {"timetable", "both"}:
