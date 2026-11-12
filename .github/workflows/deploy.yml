@@ -328,7 +328,7 @@ jobs:
         # floor, not a target (audit C5): 79%, a point and a half under the
         # measured 81.2% for platform variance. Lowering it needs a reason.
         run: |
-          python -m pip install coverage mypy actionlint-py==1.7.12.25 hypothesis==6.170.13
+          python -m pip install coverage==7.16.1 mypy==2.4.0 actionlint-py==1.7.12.25 hypothesis==6.170.13
           python -m coverage run -m tools.verify --full
           python -m coverage report --fail-under=79 --precision=1
 
