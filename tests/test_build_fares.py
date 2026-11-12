@@ -7,8 +7,10 @@ tests out of the class they all shared, by subject, over the fixture in
 
 from __future__ import annotations
 
+import math
 import re
 import tempfile
+import unittest
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -1047,3 +1049,68 @@ class FaresPayloadTest(PageTestCase):
             r"\.chipcount,[^{}]*\{[^}]*margin-left: [^;}]+;",
             "the count is separated from the type name by a margin",
         )
+
+
+class HeritageTieOrderTest(unittest.TestCase):
+    """A price tie the payload orders by code and the table orders by name.
+
+    Dumfries, 11 November 2026: 127 returns at £6.00, Carlisle 18th by station
+    code and 21st by name. The browser check sliced the payload and asked the
+    first page for a row the table had put on the second. This feed is that
+    shape. The browser suite drives the page, and this holds the order the
+    check has to agree with.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.TemporaryDirectory()
+        feed = build_synthetic_feed(
+            Path(cls.tmp.name) / "feed",
+            include_restrictions=True,
+            include_return_network=True,
+            include_heritage_tie=True,
+        )
+        cls.payload = build_payload(FaresDb().load_feed(feed), None, "NOT")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.tmp.cleanup()
+
+    def test_matlocks_return_is_on_the_payload_page_and_off_the_tables(self) -> None:
+        page_size = int(re.search(
+            r"const PAGE_SIZE = (\d+);",
+            (Path(__file__).resolve().parents[1] / "page/station/filters.js").read_text(encoding="utf-8"),
+        ).group(1))
+        returns = self.payload["destinations"]
+        matlock = next(row for row in returns if row["crs"] == "MAT")
+        self.assertTrue(matlock["heritageSites"], "Matlock carries no UNESCO property")
+        # The check that failed: the first page of the list, at or under the fare.
+        at_or_under = [row for row in returns if row["adultPence"] <= matlock["adultPence"]]
+        self.assertIn("MAT", [row["crs"] for row in at_or_under[:page_size]])
+        # The table: one whole pound, a tie broken by the name on the row.
+        cap = math.ceil(matlock["adultPence"] / 100) * 100
+        by_name = sorted(
+            (row for row in returns if row["adultPence"] <= cap),
+            key=lambda row: (row["adultPence"], row["name"]),
+        )
+        name_at = next(index for index, row in enumerate(by_name) if row["crs"] == "MAT")
+        self.assertGreaterEqual(name_at, page_size)
+        singles = self.payload["singleDestinations"]
+        single = next(row for row in singles if row["crs"] == "MAT")
+        single_cap = math.ceil(single["adultPence"] / 100) * 100
+        single_page = sorted(
+            (row for row in singles if row["adultPence"] <= single_cap),
+            key=lambda row: (row["adultPence"], row["name"]),
+        )
+        self.assertLess(
+            next(index for index, row in enumerate(single_page) if row["crs"] == "MAT"),
+            page_size,
+        )
+
+    def test_the_tie_stations_are_absent_unless_the_flag_is_on(self) -> None:
+        plain = build_synthetic_feed(
+            Path(self.tmp.name) / "plain",
+            include_restrictions=True,
+            include_return_network=True,
+        )
+        self.assertNotIn("NAA", FaresDb().load_feed(plain).locations_by_crs)

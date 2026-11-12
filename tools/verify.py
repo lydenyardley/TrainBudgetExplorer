@@ -138,6 +138,7 @@ DEMO_KB = "_demo_kb"
 DEMO_SITE = "_demo_site"
 SHAPE_FEED = "_shape_feed"
 SHAPE_ONE_CARD_FEED = "_shape_one_card_feed"
+SHAPE_HERITAGE_TIE_FEED = "_shape_heritage_tie_feed"
 SHAPE_SITE = "_shape_site"
 SITE = "_site"
 
@@ -484,6 +485,13 @@ def browser(require_site: bool = False) -> Step:
         # exercise it.
         (["python", "-m", "trainbudget.feeds.make_synthetic_feed", SHAPE_ONE_CARD_FEED, "--unserved-station", "--third-origin", "--return-network", "--one-adult-cards", "--single-facet"], "the one-card shape feed"),
         (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_ONE_CARD_FEED, "--timetable", SHAPE_ONE_CARD_FEED, "--date", SERVICE_DATE, "--origin", "GRN", "--out", f"{SHAPE_SITE}/one-adult-cards/index.html"], "the one-adult-cards page"),
+        # Prices only, so the tie stations are not dropped for having no train
+        # (ADR-0076). Nottingham's returns put Matlock inside the first page by
+        # station code and off it by name; its single puts Matlock on the first
+        # page. The check that sliced the payload fails the first and the
+        # check that sorts as the table does passes on the second.
+        (["python", "-m", "trainbudget.feeds.make_synthetic_feed", SHAPE_HERITAGE_TIE_FEED, "--return-network", "--heritage-tie"], "the heritage-tie feed"),
+        (["python", "-m", "trainbudget.build.build_demo_page", "--feed", SHAPE_HERITAGE_TIE_FEED, "--origin", "NOT", "--out", f"{SHAPE_SITE}/heritage-tie/index.html"], "the heritage-tie page"),
     ]
     for command, what in steps:
         if not _run(command, what):
@@ -499,6 +507,7 @@ def browser(require_site: bool = False) -> Step:
         Path(ROOT, SHAPE_SITE, "prices-only/from/grantham/index.html"),
         Path(ROOT, SHAPE_SITE, "reviewed-name/from/london-kings-x/index.html"),
         Path(ROOT, SHAPE_SITE, "one-adult-cards/from/grantham/index.html"),
+        Path(ROOT, SHAPE_SITE, "heritage-tie/from/nottingham/index.html"),
     ]
     missing = [page for page in pages if not page.is_file() or not page.stat().st_size]
     if missing:

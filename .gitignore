@@ -57,6 +57,7 @@ _site_base/
 # locally, and output of the build like any other site folder.
 _shape_feed/
 _shape_one_card_feed/
+_shape_heritage_tie_feed/
 _shape_site/
 
 # A named subset build's output (build_stations.py). Its own folder rather than

@@ -77,6 +77,7 @@ CLEAN = (
 #: The directories a build or a test run writes. mypy is pointed at source only.
 GENERATED = ("_site", "_demo_site", "_shape_site", "_cache", "_probe_feed", "_zz_feed",
              "_demo_feed", "_demo_kb", "_shape_feed", "_shape_one_card_feed",
+             "_shape_heritage_tie_feed",
              "_stations", "__pycache__")
 
 ERROR = re.compile(r"^(?P<file>[^:]+):\d+: error:")

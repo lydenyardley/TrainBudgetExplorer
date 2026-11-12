@@ -805,22 +805,44 @@ async function driveTheFilters(world) {
     // returns, on the other they are outbound singles, and a check pinned to
     // either mode can only ever be right about one of them. The check goes to
     // the mode that carries one, raises the budget to reach it, and only
-    // accepts a property that the page shows on its first page of results.
+    // accepts a property the table puts on its first page of results.
+    //
+    // The payload lists a price tie by station code. The table breaks that
+    // tie by the name on the row, so the first twenty of the list are not the
+    // first page. Dumfries, 11 November 2026: 127 returns at £6.00, Carlisle
+    // 18th by code and 21st by name, and slicing the list asked page 1 for a
+    // row the table had put on page 2. The link was on the row.
     const heritage = await page.evaluate((limit) => {
+      const onFirstPage = (list, destination) => {
+        const cap = Math.ceil(priceOf(destination) / 100) * 100;
+        const ranked = [];
+        for (const row of list) {
+          const pence = priceOf(row);
+          if (pence <= cap) ranked.push({ destination: row, pence: pence });
+        }
+        ranked.sort(compareEntries);
+        return ranked.slice(0, limit).some((entry) => entry.destination.crs === destination.crs);
+      };
+      let carried = false;
       for (const mode of ["return", "single", "anytime"]) {
         const list = mode === "single" ? DATA.singleDestinations
           : mode === "anytime" ? DATA.anytimeDestinations : DATA.destinations;
-        for (const d of list) {
-          if (!TYPES.types(d).includes("heritage") || !(d.heritageSites || []).length) continue;
-          const shown = list.filter((x) => x.adultPence <= d.adultPence).slice(0, limit);
-          if (shown.some((x) => x.name === d.name)) {
-            return { mode, name: d.name, site: d.heritageSites[0], pounds: Math.ceil(d.adultPence / 100) };
-          }
+        for (const destination of list) {
+          if (!TYPES.types(destination).includes("heritage") || !(destination.heritageSites || []).length) continue;
+          carried = true;
+          if (!onFirstPage(list, destination)) continue;
+          return {
+            mode,
+            crs: destination.crs,
+            name: destination.name,
+            site: destination.heritageSites[0],
+            pounds: Math.ceil(priceOf(destination) / 100),
+          };
         }
       }
-      return null;
+      return carried ? { absent: "no UNESCO property is on the first page of results" } : null;
     }, world.pageSize);
-    if (heritage) {
+    if (heritage && heritage.site) {
       // The reader's own controls, clicked where the reader clicks them: a
       // label click is idempotent, and page.check() on a radio the page already
       // holds throws rather than doing nothing, which turned a setup that the
@@ -833,24 +855,29 @@ async function driveTheFilters(world) {
       // on the page. The station cell's proof span is `.site-proof` since the
       // nature and coastal sublimes joined it (6f1f4ad), and the first proof in
       // `#rows` can belong to a different row than the property under test.
-      const heritageHref = await page.evaluate((name) => {
+      // The row is the one with this station code: a name match would accept a
+      // different place that happens to be spelled the same.
+      const heritageHref = await page.evaluate((crs) => {
         for (const row of document.querySelectorAll("#rows tr")) {
-          const station = row.querySelector(".station-name");
-          if (!station || station.textContent.trim() !== name) continue;
+          if (row.dataset.crs !== crs) continue;
           const link = row.querySelector(".site-proof a");
           return link ? link.getAttribute("href") : null;
         }
         return null;
-      }, heritage.name);
+      }, heritage.crs);
       check(
         "a heritage row links the UNESCO property the payload names",
         heritageText.includes("World heritage: " + heritage.site.name) && heritageHref === heritage.site.url,
-        `${heritage.name} in ${heritage.mode} mode: ${heritage.site.name} ${heritage.site.url}; ${heritageText.slice(0, 160)}`
+        `${heritage.name} (${heritage.crs}) in ${heritage.mode} mode: ${heritage.site.name} ${heritage.site.url}; ${heritageText.slice(0, 160)}`
       );
     } else {
       check(
         "a heritage row links the UNESCO property the payload names",
-        notExercised("no destination on this page carries a UNESCO property")
+        notExercised(
+          heritage && heritage.absent
+            ? heritage.absent
+            : "no destination on this page carries a UNESCO property"
+        )
       );
     }
     // 3d. The refinements fold away on every route and at every width, and

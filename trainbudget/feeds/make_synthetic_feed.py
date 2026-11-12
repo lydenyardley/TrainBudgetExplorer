@@ -259,6 +259,44 @@ LONG_LIST_TYPES = {
     "ELY": "small_town",
     "HUN": "town",
 }
+# Enough same-priced returns that a heritage station sits inside the first
+# page by station code and off it by name.
+#
+# The payload lists a price tie by CRS. The table breaks that tie by the name
+# on the row. Dumfries, 11 November 2026: 127 returns at £6.00, Carlisle 18th
+# by code and 21st by name, and the browser check asked page 1 for a row the
+# table had put on page 2. These stations are the smallest feed that does the
+# same thing. Each name sorts before MATLOCK and each code sorts after MAT, so
+# Matlock's return is in the first twenty of the list and not on the first
+# page. The count has to stay at the table's page of twenty (page/station/
+# filters.js) even when nothing cheaper is in front of it; fewer, and the tie
+# no longer leaves the page.
+HERITAGE_TIE_ORIGIN = "2000"  # Nottingham, which the return network already prices to Matlock
+HERITAGE_TIE_DESTINATION = "8000"  # Matlock, a curated Derwent Valley Mills gateway
+HERITAGE_TIE_COUNT = 20
+# A walk-up single cheaper than the return, so the mode the table does show
+# Matlock in still has the row on its first page. The check that got Dumfries
+# wrong would have stopped at the return and never reached this fare.
+HERITAGE_TIE_SINGLE_PENCE = 500
+
+
+def _heritage_tie_stations() -> tuple[tuple[str, str, str], ...]:
+    """Twenty stations whose names precede Matlock and whose codes follow it."""
+    stations = []
+    for index in range(HERITAGE_TIE_COUNT):
+        # 2101-2120 sit clear of the fixture's other location codes. NAA, NBA,
+        # ... sort after MAT. The names sort before MATLOCK and are long
+        # enough that the Station heading has a column to sit in: a three-
+        # letter name narrowed that heading until it wrapped, which the
+        # prices-only page then failed for. Zero-padded so a numeric
+        # collation and a plain one agree.
+        letter = chr(ord("A") + index)
+        stations.append((f"{2101 + index}", f"N{letter}A", f"A STATION {index + 1:02d}"))
+    return tuple(stations)
+
+
+HERITAGE_TIE_STATIONS = _heritage_tie_stations()
+
 # (origin NLC, destination NLC, fare pence). Every one is a direct Grantham
 # flow, because a row the split rule composes would make the page's length a
 # property of the timetable rather than of the feed.
@@ -494,6 +532,7 @@ def build_synthetic_feed(
     include_reviewed_origin: bool = False,
     include_return_network: bool = False,
     include_long_list: bool = False,
+    include_heritage_tie: bool = False,
     minimum_fares: tuple[tuple[str, ...], ...] | None = None,
     one_adult_cards: bool = False,
     single_facet: bool = False,
@@ -510,7 +549,11 @@ def build_synthetic_feed(
     return network gives the two secondary origins a set of destinations to
     price, so a page the browser suite drives has more than one row to choose
     from. The long list gives Grantham more than a page of them, so the pager
-    and its keys have a second page to reach. The restrictions file is off by
+    and its keys have a second page to reach. The heritage tie gives Nottingham
+    twenty returns at Matlock's price whose names sort before it and whose
+    codes sort after it, plus Matlock's own single, so a check that reads the
+    payload order instead of the table's can be shown the Dumfries failure.
+    The restrictions file is off by
     default so existing fixtures keep their five files; tests for the
     publishable selector turn it on. The one-adult flag drops the reviewed card
     that needs two travellers, so a page built from the feed has no card that
@@ -562,6 +605,26 @@ def build_synthetic_feed(
             flow_id = f"{number:07d}"
             flows += ((flow_id, origin, destination, "00000"),)
             fares += ((flow_id, "SDR", pence, ""),)
+    if include_heritage_tie:
+        if not include_return_network:
+            raise ValueError(
+                "the heritage tie prices Matlock, which the return network names; "
+                "pass include_return_network too"
+            )
+        matlock = next(
+            pence
+            for origin, destination, pence in RETURN_NETWORK_FARES
+            if origin == HERITAGE_TIE_ORIGIN and destination == HERITAGE_TIE_DESTINATION
+        )
+        stations += HERITAGE_TIE_STATIONS
+        # One flow for the single, then one return per tied station. 400 sits
+        # clear of the other optional blocks, which number from 30, 60 and 90.
+        flows += ((f"{400:07d}", HERITAGE_TIE_ORIGIN, HERITAGE_TIE_DESTINATION, "00000"),)
+        fares += ((f"{400:07d}", "SDS", HERITAGE_TIE_SINGLE_PENCE, ""),)
+        for number, (nlc, _crs, _name) in enumerate(HERITAGE_TIE_STATIONS, start=401):
+            flow_id = f"{number:07d}"
+            flows += ((flow_id, HERITAGE_TIE_ORIGIN, nlc, "00000"),)
+            fares += ((flow_id, "SDR", matlock, ""),)
 
     if single_facet:
         # One reviewed facet for every station, including the origin: a page
@@ -1502,6 +1565,15 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--heritage-tie",
+        action="store_true",
+        help=(
+            "price twenty returns at Matlock's fare whose names sort before it "
+            "and whose codes sort after it, so a page can show the Dumfries "
+            "heritage-row tie. Needs --return-network"
+        ),
+    )
+    parser.add_argument(
         "--knowledgebase",
         metavar="PATH",
         help=(
@@ -1527,6 +1599,7 @@ if __name__ == "__main__":
                 include_reviewed_origin=arguments.reviewed_origin,
                 include_return_network=arguments.return_network,
                 include_long_list=arguments.long_list,
+                include_heritage_tie=arguments.heritage_tie,
                 one_adult_cards=arguments.one_adult_cards,
                 single_facet=arguments.single_facet,
             )
