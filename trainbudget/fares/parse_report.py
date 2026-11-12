@@ -12,7 +12,7 @@ import itertools
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Callable, Iterator
+from typing import IO, Callable, Iterator, cast
 
 MAX_SKIPPED_EXAMPLES = 5
 ARCHIVE_SUFFIXES = (".zip",)
@@ -91,7 +91,7 @@ class ParseReport:
         }
 
 
-def decode_lines(handle: BinaryIO, report: ParseReport) -> Iterator[str]:
+def decode_lines(handle: IO[bytes], report: ParseReport) -> Iterator[str]:
     """Yield decoded lines from a binary handle.
 
     Decoding happens per line, so one bad byte costs one line rather than a whole
@@ -200,7 +200,7 @@ def _read_gzip(
 
 
 def _gzip_feed(
-    handle: BinaryIO,
+    handle: IO[bytes],
     name: str,
     report: ParseReport,
     consume: Callable[[str, Iterator[str]], None],
@@ -214,7 +214,7 @@ def _gzip_feed(
     """
     try:
         with gzip.GzipFile(fileobj=handle) as stream:
-            consume(_without_gzip(name), decode_lines(stream, report))
+            consume(_without_gzip(name), decode_lines(cast(IO[bytes], stream), report))
     except (OSError, EOFError) as error:
         raise ValueError(f"{name} is not readable as gzip ({type(error).__name__}: {error})") from error
 

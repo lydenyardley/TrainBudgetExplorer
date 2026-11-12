@@ -482,26 +482,6 @@ class RestrictionIndex:
             marker in described for marker in self.REQUIRES_ANOTHER_TICKET_MARKERS
         )
 
-    def requires_another_ticket(self, code: object) -> bool:
-        """Whether the file says this fare is valid only with another ticket.
-
-        Distinct from a date-and-train binding, which is about when and what
-        you travel rather than what you must already hold. Both are the
-        reader's precondition, so both keep a fare off a page.
-        """
-        text = str(code or "").strip().upper()
-        if not text:
-            return False
-        header = self.headers.get(text)
-        if header is None:
-            return False
-        described = (
-            f"{header.description} {header.outward_text} {header.return_text}"
-        ).upper()
-        return any(
-            marker in described for marker in self.REQUIRES_ANOTHER_TICKET_MARKERS
-        )
-
     def gate_problem(self) -> str | None:
         """Why a fare must not be published, or ``None`` when the file is usable.
 

@@ -52,6 +52,8 @@ CLEAN = (
     "trainbudget/build/build_workers.py",
     "trainbudget/build/page_templates.py",
     "trainbudget/fares/atoc_fare_declarations.py",
+    "trainbudget/fares/atoc_fares.py",
+    "trainbudget/fares/atoc_fares_loader.py",
     "trainbudget/fares/destination_coverage.py",
     "trainbudget/fares/retailer.py",
     "trainbudget/feeds/damage_feed.py",

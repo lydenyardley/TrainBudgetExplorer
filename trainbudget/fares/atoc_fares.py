@@ -17,11 +17,12 @@ from datetime import date
 from fractions import Fraction
 from functools import partial
 import os
-from pathlib import Path
 import pickle
+from pathlib import Path
+from typing import cast
 
 from trainbudget.fares.atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
-from trainbudget.fares.atoc_fares_loader import LOCATION_FILE_SUFFIXES, FaresLoader
+from trainbudget.fares.atoc_fares_loader import FlowEvalCaches, LOCATION_FILE_SUFFIXES, FaresLoader
 from trainbudget.fares.parse_report import ParseReport, read_feed_files
 
 from trainbudget.fares.atoc_fare_declarations import (
@@ -283,12 +284,14 @@ class FaresDb(FaresLoader):
                     pass
 
         if focus_origin is not None:
+            assert origin is not None
             self._focus_origin_nlcs = set()
             self._preload_focus_locations(path, origin)
         self._flow_eval_caches = None
         self._dest_nlc_cache = None
         read_feed_files(path, self.report, self._load_lines)
         if focus_origin is not None:
+            assert origin is not None
             self._load_interchange_fares(path, origin)
         self._load_location_lookup(path)
         if cache_path is not None and focus_origin is not None:
@@ -903,7 +906,7 @@ class FaresDb(FaresLoader):
         families: list[RailcardFamily] = []
         absent: list[str] = []
         for primary, entry in REVIEWED_PUBLIC_RAILCARDS.items():
-            wanted = (primary,) + tuple(entry.get("codes") or ())
+            wanted = (primary,) + tuple(cast(Sequence[str], entry.get("codes") or ()))
             present = tuple(code for code in wanted if code in self.railcards)
             missing = [code for code in wanted if code not in self.railcards]
             if not present:
@@ -928,7 +931,8 @@ class FaresDb(FaresLoader):
 
     def railcard_label(self, code: str) -> str:
         """The label a reviewed railcard is shown by, or an empty string."""
-        return REVIEWED_PUBLIC_RAILCARDS.get(code, {}).get("label", "")
+        label = REVIEWED_PUBLIC_RAILCARDS.get(code, {}).get("label")
+        return label if isinstance(label, str) else ""
 
     def railcard_code(self, name: str) -> str | None:
         needle = name.strip().lower()
@@ -1694,7 +1698,7 @@ class FaresDb(FaresLoader):
             len(getattr(self.report, "files_read", ())),
             getattr(self.restrictions, "parsed_records", 0),
         )
-        caches = getattr(self, "_flow_eval_caches", None)
+        caches: FlowEvalCaches | None = getattr(self, "_flow_eval_caches", None)
         if caches is None or caches[0] != db_key:
             caches = (db_key, {})
             self._flow_eval_caches = caches

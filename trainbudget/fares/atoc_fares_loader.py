@@ -22,6 +22,9 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from trainbudget.fares.atoc_restrictions import RestrictionIndex
+
 from trainbudget.fares.atoc_fare_declarations import (
     UNEXPANDED_FARE_GROUPS,
     DESTINATION_FACET_READERS,
@@ -89,6 +92,15 @@ if TYPE_CHECKING:
 LOCATION_FILE_SUFFIXES = frozenset({"loc"})
 
 
+FlowEvalRow = tuple[
+    tuple[tuple[str, int], ...],
+    tuple[int, ...],
+    tuple[int, str, str, int, int, bool, str] | None,
+]
+FlowEvalTable = dict[str, FlowEvalRow]
+FlowEvalCaches = tuple[tuple[object, ...], dict[tuple[object, ...], FlowEvalTable]]
+
+
 class FaresLoader:
     """The loading half of a fares database, which ``FaresDb`` inherits.
 
@@ -98,6 +110,69 @@ class FaresLoader:
     answers the queries, and ``db._load_flows(line)`` is still where a reader is
     found.
     """
+
+    # The tables this half writes and the query half reads. Declared here so a
+    # reader of either module sees one interface, and so mypy checks a write
+    # against the type the query expects rather than inferring it from whichever
+    # assignment it met first.
+    locations_by_nlc: dict[str, Location]
+    locations_by_crs: dict[str, Location]
+    location_types_by_crs: dict[str, str]
+    location_facets_by_crs: dict[str, set[str]]
+    location_type_sources: list[str]
+    nlcs_by_crs: dict[str, set[str]]
+    station_clusters: dict[str, list[StationClusterMember]]
+    ticket_types: dict[str, TicketType]
+    railcards: dict[str, Railcard]
+    flows: dict[str, Flow]
+    fares_by_flow: dict[str, dict[str, Fare]]
+    flows_touching_nlc: dict[str, list[Flow]]
+    minimum_fares: dict[tuple[str, str], list[MinimumFare]]
+    status_discounts: dict[tuple[str, str], list[StatusDiscount]]
+    restrictions: RestrictionIndex
+    report: ParseReport
+    files_read: list[str]
+    ons_classified_crs: set[str]
+    ons_position_classified_crs: set[str]
+    _focus_origin_nlcs: set[str] | None
+    _cache_origin: str | None
+    feed_stats: dict[str, int] | None
+    _interchange_index_dir: Path | None
+    _pending_interchange_crs: set[str]
+    _pending_cluster_nlcs: set[str]
+    _boundary_cache: Path | None
+    _attraction_crs_cache: dict[str, dict[str, frozenset[str]]]
+    _heritage_crs_cache: tuple[object, dict[int, frozenset[str]]] | None
+    _nature_crs_cache: tuple[object, dict[tuple[str, str], frozenset[str]]] | None
+    _all_clusters_cache: tuple[tuple[object, ...], dict[str, tuple[str, ...]]] | None
+    _cluster_cache: tuple[
+        tuple[object, ...],
+        tuple[dict[str, tuple[str, ...]], dict[str, tuple[Location, ...]]],
+    ] | None
+    _fare_group_cache: tuple[tuple[object, ...], dict[str, tuple[str, ...]]] | None
+    _origin_nlc_dest_nlcs: dict[str, frozenset[str]] | None
+    _has_full_origin_nlc_dest_nlcs: bool
+    _flows_by_origin_dest_nlc: dict[str, dict[str, list[Flow]]] | None
+    _dest_nlc_cache: tuple[
+        tuple[object, ...],
+        dict[str, tuple[tuple[Location, ...], int, frozenset[str], bool, str]],
+    ] | None
+    _flow_eval_caches: FlowEvalCaches | None
+    _two_part_target_crs: frozenset[str] | None
+
+    if TYPE_CHECKING:
+        # The query half supplies these; the loader only calls them. They are
+        # declared inside TYPE_CHECKING so the base class carries no runtime
+        # method that a subclass would override with a different signature.
+        @property
+        def location_type_source(self) -> str | None: ...
+        def interchange_crs(self, origin_crs: str) -> set[str]: ...
+        def _all_fare_nlcs(self, crs: str) -> set[str]: ...
+        def _fare_group_members(self) -> dict[str, tuple[str, ...]]: ...
+        def _facet_attraction_crs(self, facet: DestinationFacet) -> set[str]: ...
+        def station_coordinates(self) -> dict[str, tuple[float, float]]: ...
+        def _pruned_heritage_crs(self, site_id: int, stations: tuple[str, ...]) -> list[str]: ...
+        def stats(self) -> dict[str, int]: ...
 
     def _record_location_source(self, label: object) -> None:
         """Note a source that classified part of this feed, keeping every one."""
@@ -1017,7 +1092,7 @@ class FaresLoader:
             return shared[int(value)]
         return value
 
-    def _read_ons_built_up_areas(self, data: bytes) -> dict[str, dict[str, str]]:
+    def _read_ons_built_up_areas(self, data: bytes) -> dict[str, dict[str, str | None]]:
         """Read ONS table 1c/1d, keyed by the settlement name a station carries."""
         return self._key_settlements(
             (settlement, band) for _code, settlement, band in self._read_ons_band_rows(data)
@@ -1062,7 +1137,7 @@ class FaresLoader:
             return found
 
     @classmethod
-    def _key_settlements(cls, rows) -> dict[str, dict[str, str]]:
+    def _key_settlements(cls, rows) -> dict[str, dict[str, str | None]]:
         """Index workbook settlements by the name a station would carry.
 
         The workbook writes a settlement with its district in brackets
@@ -1075,7 +1150,7 @@ class FaresLoader:
         knowable from the name, so the station stays unclassified rather than
         being given a class that may belong to the other one.
         """
-        bands: dict[str, dict[str, str]] = {}
+        bands: dict[str, dict[str, str | None]] = {}
         for settlement, band in rows:
             for key in cls._settlement_name_candidates(settlement):
                 existing = bands.get(key)
@@ -1490,9 +1565,9 @@ class FaresLoader:
             flow_id = line[t["flow_id"]].strip()
             ticket_code = line[t["ticket_code"]].strip()
             if self._focus_origin_nlcs is not None:
-                flow = self.flows.get(flow_id)
-                if flow is None or self._focus_origin_nlcs.isdisjoint(
-                    self._flow_index_nlcs(flow)
+                existing_flow = self.flows.get(flow_id)
+                if existing_flow is None or self._focus_origin_nlcs.isdisjoint(
+                    self._flow_index_nlcs(existing_flow)
                 ):
                     return
             bucket = self.fares_by_flow.setdefault(flow_id, {})
