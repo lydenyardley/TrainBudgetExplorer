@@ -868,6 +868,11 @@ the release's own assemble job did, two days later. It is on the list now, and
 tests and 54.8 s for the command; 3 s of that is the fare gate's own synthetic
 site, which is the whole price of noticing next time.
 
+**Measured again 12 November 2026, after the pricing properties joined the list.**
+The unit step ran **328 tests in 69.5 s** (74.9 s on an earlier run the same day)
+and the whole command passed its three steps. The six new Hypothesis properties cost 1.8 s on their own, so the rest of
+the rise from 52.7 s is the machine and the fixture, not the new checks.
+
 **Measured 24 and 25 October 2026, at 300 tests**, because the gate now answers
 one more question. What a page leaves out decides what a row's absence means, so
 the module builds its site three ways -- with the timetable, with the place cap

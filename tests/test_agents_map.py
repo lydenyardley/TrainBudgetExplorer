@@ -9,6 +9,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from tools.agents_map import END, START, render_rows
+
 ROOT = Path(__file__).resolve().parents[1]
 MAP = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
@@ -18,6 +20,10 @@ def mapped(path: Path) -> bool:
 
 
 class AgentsMapTest(unittest.TestCase):
+    def test_the_generated_module_rows_are_current(self) -> None:
+        block = MAP.split(START, 1)[1].split(END, 1)[0].strip()
+        self.assertEqual(block, render_rows(), "run python -m tools.agents_map")
+
     def test_every_module_the_site_is_made_of_is_on_the_map(self) -> None:
         # The modules live in `trainbudget/`, so the walk goes below the root: a
         # check that read only the files beside this test would find `run.py` and

@@ -34,6 +34,19 @@ because a reader checking a closure wants the ADR and the test.
 | O36 of the 3 November 2026 review, the row's copied journey left out the price and the times | ADR-0084 removed the row's Copy with `rowActions`, `journeyText`, `showCopyText` and `#copyStatus`; the shortlist's Copy is the only copied journey, and it names each place's ticket, time and price | `tests/test_build_links.py` holds the removed symbols out of the page, and the browser suite's "and the copied list names each place's ticket" holds the surviving copy |
 | The 4 November 2026 review of an opened row -- no duration on a train, no word on what the condition governed, two thirds of the panel's width empty, and a Copy that copied one place while the shortlist's copied every place held | ADR-0084: the panel is two columns above 60rem (`minmax(0, 26rem)` of trains and the rest for the fare), each train carries the span between the two clocks it prints, the lead says which day the list belongs to and that the condition is on the fare rather than on a train, and the row's Copy is gone with `rowActions`, `journeyText`, `showCopyText` and `#copyStatus` | the browser suite's panel checks in `tests/browser/station-rows.cjs` -- no control in the panel, a duration that matches the two clocks, the lead's day and the condition's owner, the two columns' top edges, and the fare sentence standing on its own -- the shortlist's own "and the copied list names each place's fare type", and `tests/test_build_demo_page.py` for the markup and the stylesheet |
 
+### The 11 November 2026 architecture audit
+
+`docs/audits/2026-11-11-architecture-audit.md` was removed on 12 November 2026,
+when its five asks landed. Each is held by the check that now fails without it.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| 1, the loader's mixed-in state had no declared type, so the 323-error census hid every real one | `FaresLoader` declares the tables it writes and the seven host methods it calls; `parse_report.decode_lines` takes `IO[bytes]`; both fares modules joined `CLEAN` | `python -m tools.check_types`, 30 clean files on 12 November 2026; `tools/test_check_types.py` holds the seeded-error verdict |
+| 2, the pricing rules were only fixtures | six Hypothesis properties: 5p rounding, no discount returns the standard and ignores the minimum, a discount never exceeds the standard, the minimum is a floor, a missing DIS record is a third, and a larger budget keeps every destination | `python -m unittest tests.test_fare_parsing_properties`, 10 tests, 1.8 s on 12 November 2026 |
+| 3, the full gate only ran in the release | `.github/workflows/ci.yml` runs `--fast` on a pull request and `--full` on a push to `main`, nightly at 05:17 UTC, and manual dispatch, with a 60-minute bound against the 35-minute figure | `tests/test_workflows.py` holds the workflow's paths and shell; the full job is the release's own `--full` command |
+| 4, a page type check | rejected: the audit's all-panel spike found 87 errors, 77 DOM narrowing and none a real defect; the two-file rerun still had 26, and seeded misspelled `STATE` and `DATA` keys produced no error | the entry under "Rejected designs, with the reason" |
+| 5, every new module needed a hand edit to a 22 KB map | `tools/agents_map.py` writes the six Python-area rows from each module's first docstring line between the markers in `AGENTS.md`, and keeps the four `.cjs` measurements from their leading comments | `tests/test_agents_map.py` compares the checked-in block to the generator, and `python -m tools.agents_map --check` fails when it is stale |
+
 ### The 8 October 2026 agent-efficiency audit
 
 The audit file was removed on 14 October 2026, when its last finding landed. Its
@@ -948,6 +961,7 @@ underline and is recorded as a false positive under "Rejected designs".
 
 ## Rejected designs, with the reason
 
+- **A `tsc --checkJs` gate on the page script** (12 November 2026). The audit's spike found 87 errors over every panel, 77 of them DOM narrowing, 8 injected names and 2 `select` narrowing, and none was a real defect. The two-file rerun, with the injected names declared, still reported 26 errors: 10 `.value` reads on `HTMLElement` or `Element`, 13 names from other panels or the template, 2 redeclarations and 1 `NodeList` iteration. Seeding a misspelled `STATE` key and a wrong `DATA` key produced no error at all, because the names the check would need typed are the ones it reads as untyped. Making the gate usable needs the JSDoc types and ten casts, and it would still not see the payload boundary. Dropped.
 Moved here from `docs/open-work.md` on 21 October 2026, because a rejection is a
 decision already made and that file is what is *not* decided. Kept rather than
 deleted, because a rejected idea with its reason stops the next person from
