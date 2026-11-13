@@ -70,11 +70,11 @@ class VerdictTest(unittest.TestCase):
         self.assertIn("trainbudget/build/build_demo_page.py", said)
 
     def test_an_error_in_a_file_that_is_not_listed_does_not_fail(self) -> None:
-        # build_payload is still in the census and is not on the list: a check
-        # that failed on it would be red before it was written.
-        unlisted = "trainbudget/build/build_payload.py"
-        self.assertNotIn(unlisted, check_types.CLEAN)
-        code, said = self.check(report(f"{unlisted}:371: error: nope  [misc]"))
+        # A path outside the roots the ratchet reads can never be on the clean
+        # list, so this tests the branch without a module joining it later.
+        code, said = self.check(
+            report("docs/not_on_the_clean_list.py:1: error: nope  [misc]")
+        )
         self.assertEqual(code, 0)
         self.assertIn("no type error", said)
 
