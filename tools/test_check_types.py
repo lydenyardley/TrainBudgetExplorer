@@ -70,12 +70,11 @@ class VerdictTest(unittest.TestCase):
         self.assertIn("trainbudget/build/build_demo_page.py", said)
 
     def test_an_error_in_a_file_that_is_not_listed_does_not_fail(self) -> None:
-        # atoc_fares_loader has 108 errors of its own today and is not on the
-        # list: a check that failed on it would be red before it was written.
-        self.assertNotIn("trainbudget/fares/atoc_fares_loader.py", check_types.CLEAN)
-        code, said = self.check(
-            report("trainbudget/fares/atoc_fares_loader.py:84: error: nope  [attr-defined]")
-        )
+        # build_payload is still in the census and is not on the list: a check
+        # that failed on it would be red before it was written.
+        unlisted = "trainbudget/build/build_payload.py"
+        self.assertNotIn(unlisted, check_types.CLEAN)
+        code, said = self.check(report(f"{unlisted}:371: error: nope  [misc]"))
         self.assertEqual(code, 0)
         self.assertIn("no type error", said)
 
