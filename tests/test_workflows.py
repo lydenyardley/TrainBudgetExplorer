@@ -531,6 +531,23 @@ class WorkflowPathTest(unittest.TestCase):
         self.assertEqual(missing, ["sample.yml:1: trainbudget/build/gone.py"])
 
 
+class FullGateFeedTest(unittest.TestCase):
+    """The full gate's real-feed tests skip without the licensed feed download.
+
+    A green full run that compared no real fare is the failure this holds.
+    """
+
+    def test_the_full_gate_downloads_the_feeds_before_it_verifies(self) -> None:
+        ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        full = ci[ci.index("\n  full:"):]
+        self.assertLess(
+            full.index("uses: ./.github/actions/licensed-feeds"),
+            full.index("python -m tools.verify --full"),
+            "the full gate no longer downloads the licensed feeds before its "
+            "suite, so the two real-feed tests skip again",
+        )
+
+
 class KnowledgebaseFeedTest(unittest.TestCase):
     """The shards that build pages from the Knowledgebase feeds cannot lack them.
 
