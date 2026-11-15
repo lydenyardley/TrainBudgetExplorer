@@ -104,3 +104,6 @@ October 2026 plan).
 - Comments say why, not what. A comment that restates the line is noise.
 - Commit messages say why the change is needed and what it costs, and name a
   command whose output a reviewer can reproduce.
+- Before any HTML, CSS or client-side JavaScript change, run
+  `npx modern-web-guidance@latest search "<task>"` and follow the guide it
+  returns.

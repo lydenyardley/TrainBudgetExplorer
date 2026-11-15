@@ -47,6 +47,16 @@ when its five asks landed. Each is held by the check that now fails without it.
 | 4, a page type check | rejected: the audit's all-panel spike found 87 errors, 77 DOM narrowing and none a real defect; the two-file rerun still had 26, and seeded misspelled `STATE` and `DATA` keys produced no error | the entry under "Rejected designs, with the reason" |
 | 5, every new module needed a hand edit to a 22 KB map | `tools/agents_map.py` writes the six Python-area rows from each module's first docstring line between the markers in `AGENTS.md`, and keeps the four `.cjs` measurements from their leading comments | `tests/test_agents_map.py` compares the checked-in block to the generator, and `python -m tools.agents_map --check` fails when it is stale |
 
+### The 15 November 2026 modern-web scan
+
+`docs/audits/2026-11-15-modern-web-scan.md` was removed on 15 November 2026,
+when its two asks landed. Each is held by the check that now fails without it.
+
+| Item | Closed by | Held by |
+|---|---|---|
+| 1, the `color-scheme` meta still said "follow the system" after the script pinned a palette, and the stylesheet comments said the same | `page/theme.js` writes the applied scheme into the meta in the early script and whenever the switch paints; `page/shared.css` says dark is the first visit | the browser suite's "and the color-scheme meta names the palette the page paints", "and the meta follows the reader's choice", and "and the meta is still in step after a reload" |
+| 2, the unpriced-origin link drew its underline with a border rather than the page's text-decoration | `page/station.css` gives `#unpriced a` the same underline as `.tag-open` and drops the border | the browser suite's "the unpriced link wears the page's text underline, not a border" |
+
 ### The 8 October 2026 agent-efficiency audit
 
 The audit file was removed on 14 October 2026, when its last finding landed. Its
