@@ -9,10 +9,11 @@
      browser without light-dark() paints the light page rather than resolving
      an invalid value to nothing, and light-dark() after it, so a browser that
      has it takes both palettes from one declaration and the switcher's only
-     job is to say which one. :root asks for "light dark", so a reader with no
-     stored choice still gets their system preference; the reader's own choice
-     overrides it through the attribute below. The system default is dark --
-     this is a page read at night, on a phone, on a train. */
+     job is to say which one. :root asks for "light dark", so a page whose
+     script does not run can follow the system. The script pins a first visit
+     to dark, and the reader's own choice overrides it through the attribute
+     below. Dark is the first visit -- this is a page read at night, on a
+     phone, on a train. */
   :root {
     color-scheme: light dark;
     --bg: #fff; --bg: light-dark(#fff, #14181d);

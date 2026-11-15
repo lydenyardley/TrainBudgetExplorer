@@ -7,7 +7,10 @@
       var stored = localStorage.getItem("tbe-theme");
       if (stored) dark = stored === "dark";
     } catch (e) { /* storage blocked: the default stands */ }
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    var theme = dark ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    var meta = document.querySelector('meta[name="color-scheme"]');
+    if (meta) meta.setAttribute("content", theme);
   })();
   // The control, wired once the body exists. It ships hidden and is revealed
   // here: a button that cannot do anything without this script is a control
@@ -32,7 +35,10 @@
     if (!toggle) return;
     var glyph = toggle.querySelector(".glyph");
     function paint(dark) {
-      root.dataset.theme = dark ? "dark" : "light";
+      var theme = dark ? "dark" : "light";
+      root.dataset.theme = theme;
+      var meta = document.querySelector('meta[name="color-scheme"]');
+      if (meta) meta.setAttribute("content", theme);
       toggle.setAttribute("aria-checked", String(dark));
       if (glyph) glyph.textContent = dark ? "☾" : "☀";
     }

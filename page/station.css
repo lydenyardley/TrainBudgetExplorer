@@ -572,7 +572,8 @@
   /* The unpriced-origin message replaces the intro, so it is page-size text in
      the normal foreground colour: a finding, not a footnote. */
   .unpriced { margin: 0 0 1.25rem; }
-  #unpriced a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
+  #unpriced a { color: var(--accent); text-decoration: underline;
+                text-decoration-thickness: 1px; text-underline-offset: .25em; }
   .method { margin-top: 1rem; }
   /* The provenance fold is reference material, not a paragraph in the footer's
      flow: it begins a block of its own under the credit columns rather than

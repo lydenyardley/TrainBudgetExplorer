@@ -728,6 +728,7 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       role: toggle.getAttribute("role"),
       checked: toggle.getAttribute("aria-checked"),
       theme: document.documentElement.dataset.theme,
+      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
       name: (toggle.textContent || "").trim(),
       hidden: toggle.hidden,
       box: (() => {
@@ -755,19 +756,69 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
       `first visit painted ${themeControl.theme}`
     );
     check(
+      "and the color-scheme meta names the palette the page paints",
+      themeControl.meta === themeControl.theme,
+      `meta ${themeControl.meta}, page ${themeControl.theme}`
+    );
+    check(
       "and the switch is a pointer target of at least 44px",
       themeControl.box.w >= 44 && themeControl.box.h >= 44,
       `${themeControl.box.w}x${themeControl.box.h}px`
     );
     // The choice has to outlive the visit, or it is not a choice.
     await page.locator("#themeToggle").click();
-    const chosen = await page.evaluate(() => document.documentElement.dataset.theme);
+    const chosen = await page.evaluate(() => ({
+      theme: document.documentElement.dataset.theme,
+      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
+    }));
+    check(
+      "and the meta follows the reader's choice",
+      chosen.meta === chosen.theme,
+      `pressed to ${chosen.theme}, meta ${chosen.meta}`
+    );
     await page.reload();
-    const afterReload = await page.evaluate(() => document.documentElement.dataset.theme);
+    const afterReload = await page.evaluate(() => ({
+      theme: document.documentElement.dataset.theme,
+      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
+    }));
     check(
       "and the reader's choice survives a reload",
-      chosen === "light" && afterReload === "light",
-      `pressed to ${chosen}, reloaded as ${afterReload}`
+      chosen.theme === "light" && afterReload.theme === "light",
+      `pressed to ${chosen.theme}, reloaded as ${afterReload.theme}`
+    );
+    check(
+      "and the meta is still in step after a reload",
+      afterReload.meta === afterReload.theme,
+      `reloaded as ${afterReload.theme}, meta ${afterReload.meta}`
+    );
+  }
+  // The unpriced-origin message's link. The scanner flagged the border-drawn
+  // underline, so this reads the cascade the reader sees rather than the
+  // stylesheet text: the link must wear a real text underline and no border.
+  if (isStation) {
+    const unpriced = await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "unpriced";
+      const link = document.createElement("a");
+      link.setAttribute("href", "#unpriced-probe");
+      link.textContent = "No fares under this budget";
+      host.append(link);
+      document.body.append(host);
+      const style = getComputedStyle(link);
+      const result = {
+        line: style.textDecorationLine,
+        thickness: style.textDecorationThickness,
+        border: `${style.borderBottomStyle} ${style.borderBottomWidth}`,
+      };
+      host.remove();
+      return result;
+    });
+    check(
+      "the unpriced link wears the page's text underline, not a border",
+      unpriced.line === "underline" &&
+        unpriced.thickness === "1px" &&
+        unpriced.border === "none 0px",
+      `line ${unpriced.line}, thickness ${unpriced.thickness}, border ${unpriced.border}`
     );
   }
   // The NRE source credit, on a page that composes the NRE notice and on no
