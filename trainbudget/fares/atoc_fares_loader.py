@@ -16,6 +16,7 @@ import os
 import pickle
 from fractions import Fraction
 import re
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
@@ -195,12 +196,26 @@ class FaresLoader:
     # -- loading ---------------------------------------------------------
 
     def _write_cache(self, cache: Path, value: object) -> None:
-        """Write a cache atomically without assuming a process-local suffix."""
+        """Write a cache atomically, waiting out a moment's sharing lock.
+
+        The suffix is the process id rather than a fixed name, so two writers
+        cannot collide. Windows still refuses the replace while an indexer or
+        scanner holds the destination open; the page writer retries the same
+        condition, and the third build in tools.test_check_known_fares died
+        there with its output captured. The last attempt still raises.
+        """
         cache.parent.mkdir(parents=True, exist_ok=True)
         temporary = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
         with temporary.open("wb") as handle:
             pickle.dump(value, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        temporary.replace(cache)
+        for attempt in range(5):
+            try:
+                temporary.replace(cache)
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.2 * (attempt + 1))
 
     def write_fare_indexes(
         self,

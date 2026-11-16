@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import contextlib
 import io
+import pickle
 import subprocess
 import sys
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
+from trainbudget.fares.atoc_fares import FaresDb
 from tools import check_known_fares
 from tools.check_known_fares import KnownFare, check, read_table
 
@@ -237,6 +240,34 @@ class KnownFaresTest(unittest.TestCase):
                 code = check_known_fares.main(["--site", str(self.site), "--table", str(table), "--today", "2026-10-22"])
         self.assertEqual(code, 1)
         self.assertIn("not one price was compared; add a row for a place the page lists", out.getvalue())
+
+
+class CacheWriteTest(unittest.TestCase):
+    """The gate's setup writes the per-origin fare indexes; that write has to
+    survive a Windows sharing lock. The fares parser's suite is full-only, so
+    the deterministic guard lives here, on the module whose setup failed."""
+
+    def test_a_fare_index_survives_a_moment_s_locked_by_a_reader(self) -> None:
+        # An indexer or scanner can hold NMP.pickle open for milliseconds.
+        # The third build in KnownFaresTest died there with its output
+        # captured, so this holds the retry itself rather than the timing.
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / "NMP.pickle"
+            FaresDb()._write_cache(cache, {"first": True})
+            real_replace = Path.replace
+            calls = {"n": 0}
+
+            def locked(self, target):
+                calls["n"] += 1
+                if calls["n"] < 3:
+                    raise PermissionError(13, "used by another process")
+                return real_replace(self, target)
+
+            with mock.patch.object(Path, "replace", locked):
+                FaresDb()._write_cache(cache, {"second": True})
+            self.assertEqual(calls["n"], 3)
+            with cache.open("rb") as handle:
+                self.assertEqual(pickle.load(handle), {"second": True})
 
 
 class TableTest(unittest.TestCase):
