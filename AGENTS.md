@@ -14,9 +14,9 @@ python -m tools.verify --browser   # the demo and shape builds, then tests/brows
 ```
 
 `--fast` is the page's own modules and the checks that speak for the release --
-**329 tests, 70-182 s** measured 24-25 and 28 October 2026 and re-measured
-11, 12 and 14 November 2026, the spread being the fare gate's three builds and the
-machine -- and it fails when its unit step
+**330 tests, 70-182 s** measured 24-25 and 28 October 2026 and re-measured
+11, 12, 14 and 16 November 2026, the spread being the fare gate's three builds
+and the machine -- and it fails when its unit step
 passes the five-minute ceiling, so a module added to the list is a decision rather than a
 drift. `--full` is every
 module including the feed-scale ones, **35 min** measured 15 October 2026. Both

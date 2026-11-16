@@ -878,6 +878,11 @@ The unit step ran **329 tests in 84.3 s** and the whole command passed its three
 steps. The new test holds the full job to downloading the licensed feeds before
 its suite, so the two real-feed tests run instead of skipping.
 
+**Measured 16 November 2026, after the cache-lock test joined the list.** The
+unit step ran **330 tests in 160.2 s** and the whole command passed its three
+steps. The new test holds the fare-index cache writer to retrying a Windows
+sharing lock, the failure the `KnownFaresTest` setup met intermittently.
+
 **Measured 24 and 25 October 2026, at 300 tests**, because the gate now answers
 one more question. What a page leaves out decides what a row's absence means, so
 the module builds its site three ways -- with the timetable, with the place cap
