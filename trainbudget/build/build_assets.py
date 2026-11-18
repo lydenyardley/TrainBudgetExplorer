@@ -13,9 +13,9 @@ import hashlib
 import html
 import json
 import re
-import time
 from pathlib import Path
 
+from trainbudget.atomic import replace_with_retry
 from trainbudget.build.page_templates import (
     CHOOSER_SCRIPT,
     GOATCOUNTER_COUNT_JS,
@@ -447,17 +447,10 @@ def replace_published(temporary: Path, path: Path, attempts: int = 5) -> None:
     to see how far the build has got. The build that measured the network
     died that way at page 77 of 2,712, holding 76 finished pages, and a whole
     measurement to start again, for a lock that is released in milliseconds.
-    So the replace is retried, and the last attempt still raises: a lock that
-    persists is something an operator has to see.
+    So the replace is retried by the shared helper, and the last attempt
+    still raises: a lock that persists is something an operator has to see.
     """
-    for attempt in range(attempts):
-        try:
-            temporary.replace(path)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(0.2 * (attempt + 1))
+    replace_with_retry(temporary, path, attempts)
 
 
 # -- the route manifest (S01, S04) ------------------------------------------

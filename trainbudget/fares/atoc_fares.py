@@ -21,6 +21,7 @@ import pickle
 from pathlib import Path
 from typing import cast
 
+from trainbudget.atomic import replace_with_retry
 from trainbudget.fares.atoc_restrictions import RailcardRestrictionRow, RestrictionIndex
 from trainbudget.fares.atoc_fares_loader import FlowEvalCaches, LOCATION_FILE_SUFFIXES, FaresLoader
 from trainbudget.fares.parse_report import ParseReport, read_feed_files
@@ -303,7 +304,7 @@ class FaresDb(FaresLoader):
             )
             with temporary.open("wb") as handle:
                 pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            temporary.replace(cache)
+            replace_with_retry(temporary, cache)
         return self
 
     def interchange_crs(self, origin_crs: str) -> set[str]:

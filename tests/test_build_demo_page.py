@@ -27,6 +27,7 @@ from trainbudget.timetable.atoc_timetable import TimetableDb
 from trainbudget.build.build_demo_page import build_payload, explain_unpriced, render_page
 from trainbudget.build.build_release import SERVICE_CLAIM, SERVICE_CLAIM_WITHOUT_TIMES
 from trainbudget.feeds.make_synthetic_feed import _line, build_synthetic_feed, build_synthetic_timetable
+from tests.lock_fixture import replace_fails
 from tests.page_harness import browser_suite_text, embedded_payload, embedded_text, js_function, page_markup, page_script, serialised_callback_lines, setUpModule, station_page, tearDownModule, PageTestCase
 
 
@@ -208,18 +209,9 @@ class DemoPageTest(PageTestCase):
             self.assertEqual(page.read_text(encoding="utf-8"), "<p>first</p>")
             # What a lock looks like from inside: the replace raises twice,
             # then succeeds, and the page is published.
-            real_replace = Path.replace
-            calls = {"n": 0}
-
-            def locked(self, target):
-                calls["n"] += 1
-                if calls["n"] < 3:
-                    raise PermissionError(13, "used by another process")
-                return real_replace(self, target)
-
-            with mock.patch.object(Path, "replace", locked):
+            with replace_fails({page: 2}) as refused:
                 build_demo_page.write_page_atomic(page, "<p>second</p>")
-            self.assertEqual(calls["n"], 3)
+            self.assertEqual(refused[page], 2)
             self.assertEqual(page.read_text(encoding="utf-8"), "<p>second</p>")
             # A lock that never clears is still an error an operator has to
             # see, rather than a page silently left unwritten.

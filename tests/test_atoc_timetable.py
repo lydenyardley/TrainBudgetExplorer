@@ -32,6 +32,8 @@ from trainbudget.feeds.make_synthetic_feed import (
     build_synthetic_whole_cif,
 )
 
+from tests.lock_fixture import replace_fails
+
 SUNDAY = date(2026, 9, 27)
 TUESDAY = date(2026, 9, 29)
 # The synthetic feed is written in the CIF line ending, and these tests add
@@ -77,6 +79,23 @@ class TimetableParserTest(unittest.TestCase):
         )
         self.assertEqual(cached.stats(), focused.stats())
         self.assertEqual(cached.best_journey("GRN", "NOT").duration, 45)
+
+    def test_a_timetable_cache_survives_a_moment_s_locked_by_a_reader(self) -> None:
+        # The cache is written once and read by every later build, so a
+        # transient Windows sharing lock must not lose the page's timetable.
+        cache = Path(self._tmp.name) / "locked-timetable-cache.pickle"
+        with replace_fails({cache: 2}) as refused:
+            focused = TimetableDb().load_feed(
+                self.feed, focus_origin="GRN", cache_path=cache
+            )
+        self.assertEqual(refused[cache], 2)
+        self.assertTrue(cache.is_file())
+        self.assertEqual(
+            TimetableDb()
+            .load_feed(self.feed, focus_origin="GRN", cache_path=cache)
+            .stats(),
+            focused.stats(),
+        )
 
     def test_station_names_file_wins_over_a_tiploc_insert(self) -> None:
         self.assertEqual(self.timetable.cif_crs_by_tiploc["NOTT"], "XXX")
@@ -1124,6 +1143,17 @@ class SliceIndexTest(unittest.TestCase):
             restored.best_journey("GRN", "NOT", day=MONDAY),
             self.db.best_journey("GRN", "NOT", day=MONDAY),
         )
+
+    def test_a_locked_slice_and_manifest_are_replaced_after_the_lock_clears(self) -> None:
+        origin = "GRN"
+        slice_path = self.index.slice_path(origin)
+        manifest_path = self.index.manifest_path
+        with replace_fails({slice_path: 2, manifest_path: 2}) as refused:
+            self.index.save(origin, self.db.focused(origin))
+        self.assertEqual(refused, {slice_path: 2, manifest_path: 2})
+        restored = self.index.load(origin)
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.stats(), self.db.stats())
 
     def test_the_restored_slice_reports_the_feed_it_was_cut_from(self) -> None:
         self.index.save("GRN", self.db.focused("GRN"))

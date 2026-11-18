@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from trainbudget.atomic import replace_with_retry
 from trainbudget.fares.parse_report import ParseReport, count, decode_lines, peek, read_feed_files
 
 # Onward departures the one-change search will consider at each interchange.
@@ -596,7 +597,7 @@ class TimetableDb:
             temporary = cache.with_suffix(cache.suffix + ".tmp")
             with temporary.open("wb") as handle:
                 pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            temporary.replace(cache)
+            replace_with_retry(temporary, cache)
         return self
 
     def _tiploc_index(self) -> tuple[dict[str, list[int]], list[int]]:
@@ -1870,7 +1871,7 @@ class SliceIndex:
         temporary = path.with_suffix(path.suffix + ".tmp")
         with temporary.open("wb") as handle:
             pickle.dump(db, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        temporary.replace(path)
+        replace_with_retry(temporary, path)
         # The file itself, not `load`: that one consults the manifest, and this
         # is the step that decides whether the manifest entry is true yet.
         try:
@@ -1904,7 +1905,7 @@ class SliceIndex:
         temporary_manifest.write_text(
             json.dumps(manifest, indent=1, sort_keys=True), encoding="utf-8"
         )
-        temporary_manifest.replace(self.manifest_path)
+        replace_with_retry(temporary_manifest, self.manifest_path)
         # The write is this instance's own, so the memo is replaced rather than
         # left to be re-derived: a writer saving 3,400 slices should not read
         # back a manifest it just wrote 3,400 times to find out it is unchanged.

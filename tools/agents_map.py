@@ -1,9 +1,10 @@
 """Write the module rows of AGENTS.md from each module's own docstring.
 
 The map's Python rows and the files they name drifted apart by hand. This
-reads the first docstring line of every module under the six areas and writes
-those rows between the markers in AGENTS.md, so a new module is one run away
-from being on the map and a renamed one cannot leave a stale row behind.
+reads the first docstring line of every module under the areas ``AREAS``
+names, and writes those rows between the markers in AGENTS.md, so a new
+module is one run away from being on the map and a renamed one cannot leave
+a stale row behind.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ END = "<!-- module-map:end -->"
 #: The areas whose rows are generated. The page, tests, decisions and release
 #: rows name files that are not Python modules and stay in the map by hand.
 AREAS = (
+    ("Shared", ("trainbudget/*.py",)),
     ("Fares", ("trainbudget/fares/*.py",)),
     ("Timetable", ("trainbudget/timetable/*.py",)),
     ("The build", ("trainbudget/build/*.py",)),

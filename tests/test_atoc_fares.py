@@ -21,6 +21,7 @@ from trainbudget.fares import atoc_restrictions
 from datetime import date
 from pathlib import Path
 
+from tests.lock_fixture import replace_fails
 from trainbudget.fares.atoc_fares import (
     COASTAL_SITE_PROOFS,
     SEASIDE_SUPPLEMENT_CRS,
@@ -492,6 +493,19 @@ class FaresParserTest(unittest.TestCase):
         # back out of the same discarded data. The pass is what has to notice,
         # and the next test drives the pass.
 
+    def test_a_location_cache_survives_a_moment_s_locked_by_a_reader(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "location-types.json"
+            db = FaresDb()
+            db.location_types_by_crs = {"ANC": "village"}
+            with replace_fails({path: 2}) as refused:
+                db._write_location_cache(path)
+            self.assertEqual(refused[path], 2)
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8"))["records"],
+                {"ANC": "village"},
+            )
+
     def test_a_cache_this_build_writes_is_a_cache_the_next_build_keeps(self) -> None:
         # The round trip, because the writer once named its own schema as a
         # literal while the reader moved on: every build then wrote a cache
@@ -946,6 +960,20 @@ class FaresParserTest(unittest.TestCase):
         self.assertLess(focused.stats()["fares"], whole.stats()["fares"])
         self.assertNotIn("0000090", focused.fares_by_flow, "a fare no Grantham page can use is dropped")
         self.assertEqual(focused._focus_origin_nlcs, {"1000"})
+
+    def test_a_single_origin_cache_survives_a_moment_s_locked_by_a_reader(self) -> None:
+        # The page build runs beside an indexer or scanner, and Windows refuses
+        # the replace while it holds the destination open. The cache is written
+        # once and read by every later build, so the writer waits rather than
+        # losing the page to a lock that lasts milliseconds.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "GRN.pickle"
+            with replace_fails({cache: 2}) as refused:
+                FaresDb().load_feed(self.feed, focus_origin="GRN", cache_path=cache)
+            self.assertEqual(refused[cache], 2)
+            with cache.open("rb") as handle:
+                restored = pickle.load(handle)
+            self.assertEqual(restored._cache_origin, "GRN")
 
     def test_persisted_origin_indexes_are_isolated_and_reusable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

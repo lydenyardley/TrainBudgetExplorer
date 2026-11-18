@@ -30,7 +30,6 @@ from __future__ import annotations
 import http.client
 import json
 import math
-import os
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +37,8 @@ import urllib.request
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+from trainbudget.atomic import replace_with_retry
 
 # Built Up Areas (December 2022) Boundaries GB BGG: the generalised 25 m grid
 # version, the same 2022 areas the Census 2021 workbook's BUA22CD column names.
@@ -199,7 +200,7 @@ def load_boundaries(
         if cache is not None:
             temporary = cache.with_name(cache.name + ".tmp")
             temporary.write_text(json.dumps(raw, separators=(",", ":")), encoding="utf-8")
-            os.replace(temporary, cache)
+            replace_with_retry(temporary, cache)
     try:
         return _boundaries(raw)
     except (KeyError, TypeError, ValueError) as error:

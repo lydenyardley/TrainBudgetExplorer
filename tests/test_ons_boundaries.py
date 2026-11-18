@@ -25,6 +25,8 @@ from trainbudget.fares.ons_boundaries import (
     locate,
 )
 
+from tests.lock_fixture import replace_fails
+
 
 def _square(code: str, west: float, south: float, size: float, hole: float = 0.0) -> Area:
     outer = ((west, south), (west + size, south), (west + size, south + size), (west, south + size))
@@ -128,6 +130,17 @@ class LoadBoundariesTest(unittest.TestCase):
         self.assertEqual(len(seen), 3, "the second read came from the cache")
         self.assertEqual(again, first)
         self.assertIn("BUA22CD+NOT+LIKE+%27S%25%27", seen[0], "every ONS area, K codes too")
+
+    def test_a_locked_cache_is_replaced_after_the_lock_clears(self) -> None:
+        opener, seen = _services()
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / ons_boundaries.CACHE_FILE
+            with replace_fails({cache: 2}) as refused:
+                first = load_boundaries(cache, opener=opener, sleep=lambda _s: None)
+            self.assertEqual(refused[cache], 2)
+            again = load_boundaries(cache, opener=opener, sleep=lambda _s: None)
+        self.assertEqual(again, first)
+        self.assertEqual(len(seen), 3, "the lock cost a fetch, not the cache")
 
     def test_pages_are_followed(self) -> None:
         feature = lambda code: {"attributes": {"BUA22CD": code, "LONG": 0, "LAT": 0}, "geometry": {"rings": [_ring(0, 0)]}}
