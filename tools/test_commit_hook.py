@@ -133,6 +133,21 @@ class PushHookTest(unittest.TestCase):
         done = self.push("work:refs/heads/work")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
+    def test_a_clone_without_origin_main_skips_a_new_ref_and_says_so(self) -> None:
+        self.commit("docs: the base")
+        self.git("checkout", "-q", "-b", "work")
+        self.commit("Added the runbook.")
+        done = self.push("work:refs/heads/work")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("so this push was not checked", done.stdout + done.stderr)
+        landed = subprocess.run(
+            ["git", "rev-parse", "--verify", "refs/heads/work"],
+            cwd=self.remote,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(landed.stdout.strip(), self.git("rev-parse", "HEAD").strip())
+
 
 if __name__ == "__main__":
     unittest.main()
