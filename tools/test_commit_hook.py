@@ -118,6 +118,18 @@ class PushHookTest(unittest.TestCase):
         done = self.push("HEAD:refs/heads/main")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
+    def land(self, message: str) -> None:
+        """Put a commit on main through the hook, so a later push is measured against a base that is not the first commit."""
+        self.commit(message)
+        done = self.push("HEAD:refs/heads/main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def remote_ref(self, ref: str) -> str:
+        done = subprocess.run(
+            ["git", "rev-parse", "--verify", ref], cwd=self.remote, capture_output=True, text=True
+        )
+        return done.stdout.strip()
+
     def test_a_bad_message_on_a_new_branch_lands_nothing(self) -> None:
         self.start_remote()
         self.git("checkout", "-q", "-b", "work")
@@ -133,6 +145,29 @@ class PushHookTest(unittest.TestCase):
         done = self.push("work:refs/heads/work")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
+    def test_a_bad_message_on_an_existing_branch_is_refused(self) -> None:
+        self.start_remote()
+        self.land("docs: an accepted commit")
+        base = self.git("rev-parse", "HEAD").strip()
+        self.commit("Added the runbook.")
+        done = self.push("HEAD:refs/heads/main")
+        self.assertNotEqual(done.returncode, 0, "the push was accepted")
+        self.assertIn(
+            "1 of the 1 commit messages this push added do not follow CONTRIBUTING.md",
+            done.stdout + done.stderr,
+        )
+        self.assertIn("Added the runbook.", done.stdout + done.stderr)
+        self.assertEqual(self.remote_ref("refs/heads/main"), base)
+
+    def test_a_clean_commit_on_an_existing_branch_passes(self) -> None:
+        self.start_remote()
+        self.land("docs: an accepted commit")
+        self.commit("docs: add the runbook")
+        done = self.push("HEAD:refs/heads/main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("All 1 commit messages this push added follow CONTRIBUTING.md", done.stdout + done.stderr)
+        self.assertEqual(self.remote_ref("refs/heads/main"), self.git("rev-parse", "HEAD").strip())
+
     def test_a_clone_without_origin_main_skips_a_new_ref_and_says_so(self) -> None:
         self.commit("docs: the base")
         self.git("checkout", "-q", "-b", "work")
@@ -140,13 +175,7 @@ class PushHookTest(unittest.TestCase):
         done = self.push("work:refs/heads/work")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("so this push was not checked", done.stdout + done.stderr)
-        landed = subprocess.run(
-            ["git", "rev-parse", "--verify", "refs/heads/work"],
-            cwd=self.remote,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(landed.stdout.strip(), self.git("rev-parse", "HEAD").strip())
+        self.assertEqual(self.remote_ref("refs/heads/work"), self.git("rev-parse", "HEAD").strip())
 
 
 if __name__ == "__main__":
