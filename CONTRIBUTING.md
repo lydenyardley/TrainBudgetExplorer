@@ -91,8 +91,9 @@ git config core.hooksPath .githooks
 ```
 
 `.githooks/commit-msg` runs the checker below on the message and on both
-identities, and a refused message leaves no commit behind, so the fix is an
-edit rather than a rewrite. To check a message by hand:
+identities, and a refused message leaves no commit behind, so the fix is an edit rather than a rewrite. `.githooks/pre-push` holds the commits
+a push adds to the same check, so a refusal lands before they reach the remote.
+To check a message by hand:
 
 ```
 git log -1 --format=%B | python -m tools.check_commit_message

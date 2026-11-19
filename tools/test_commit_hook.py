@@ -69,5 +69,70 @@ class CommitHookTest(unittest.TestCase):
         self.assertEqual(self.commits(), 0)
 
 
+@unittest.skipUnless(shutil.which("git"), "git is not on PATH")
+class PushHookTest(unittest.TestCase):
+    """A push is refused before it lands, not reported after CI reads it."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self.remote = root / "remote.git"
+        self.repo = root / "repo"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
+        self.git("remote", "add", "origin", str(self.remote))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def git(self, *args: str) -> str:
+        done = subprocess.run(["git", *args], cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return done.stdout
+
+    def commit(self, message: str) -> None:
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "A Person",
+            "GIT_AUTHOR_EMAIL": "person@example.net",
+            "GIT_COMMITTER_NAME": "A Person",
+            "GIT_COMMITTER_EMAIL": "person@example.net",
+        }
+        subprocess.run(
+            ["git", "-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", message],
+            cwd=self.repo,
+            env=env,
+            check=True,
+        )
+
+    def push(self, refspec: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-c", f"core.hooksPath={HOOKS.as_posix()}", "push", "-q", "origin", refspec],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+        )
+
+    def start_remote(self) -> None:
+        self.commit("docs: the base")
+        done = self.push("HEAD:refs/heads/main")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_a_bad_message_on_a_new_branch_lands_nothing(self) -> None:
+        self.start_remote()
+        self.git("checkout", "-q", "-b", "work")
+        self.commit("Added the runbook.")
+        done = self.push("work:refs/heads/work")
+        self.assertNotEqual(done.returncode, 0, "the push was accepted")
+        self.assertIn("do not follow CONTRIBUTING.md", done.stdout + done.stderr)
+
+    def test_a_clean_new_branch_passes(self) -> None:
+        self.start_remote()
+        self.git("checkout", "-q", "-b", "work")
+        self.commit("docs: add the runbook")
+        done = self.push("work:refs/heads/work")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

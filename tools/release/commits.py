@@ -1,6 +1,6 @@
 """Check every commit a push added against CONTRIBUTING.md.
 
-    python -m tools.release.commits --before <sha>
+    python -m tools.release.commits --before <sha> [--head <sha>]
 
 The convention was documented and checked by a tool that rejected all 87
 commits in the repository, so it was enforced by nobody. The tool now agrees
@@ -38,6 +38,9 @@ def git(*args: str) -> subprocess.CompletedProcess[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--before", default="", help="github.event.before: the remote's head before the push")
+    parser.add_argument(
+        "--head", default="HEAD", help="the last commit to check; the hook passes the ref it pushes, which need not be checked out"
+    )
     args = parser.parse_args(argv)
     if args.before in NO_BASE:
         print("This run added no commits, so there is no message to check.")
@@ -45,12 +48,15 @@ def main(argv: list[str] | None = None) -> int:
     credits_only = git("rev-parse", "--verify", "--quiet", f"{args.before}^{{commit}}").returncode != 0
     if credits_only:
         print(
-            "This push replaced its base, so every commit HEAD carries is new to the remote: "
+            "This push replaced its base, so every commit it carries is new to the remote: "
             "checking all of them against the credit rule, and not against a grammar they predate."
         )
-    shas = git("rev-list", "HEAD" if credits_only else f"{args.before}..HEAD").stdout.split()
+    shas = git("rev-list", args.head if credits_only else f"{args.before}..{args.head}").stdout.split()
     if not shas:
-        error("commit message", f"{args.before}..HEAD contains no commit, so no message was checked.")
+        error(
+            "commit message",
+            f"{args.before}..{args.head} contains no commit, so no message was checked.",
+        )
         return 1
     failed = 0
     for sha in shas:
