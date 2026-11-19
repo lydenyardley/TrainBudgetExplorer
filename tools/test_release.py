@@ -73,11 +73,49 @@ class CommitsTest(InScratch):
         self.git("init", "-q")
         self.base = self.commit("docs: the base")
 
+    def origin_main(self, sha: str) -> None:
+        self.git("update-ref", "refs/remotes/origin/main", sha)
+
     def test_a_run_that_added_no_commits_checks_none(self) -> None:
-        for before in ("", "0" * 40):
-            code, printed = quietly(commits.main, ["--before", before])
-            self.assertEqual(code, 0)
-            self.assertIn("no message to check", printed)
+        code, printed = quietly(commits.main, ["--before", ""])
+        self.assertEqual(code, 0)
+        self.assertIn("no message to check", printed)
+
+    def test_a_ref_the_remote_lacks_is_measured_against_origin_main(self) -> None:
+        self.origin_main(self.base)
+        self.commit("docs: a good one")
+        self.commit("Added a bad one.")
+        code, printed = quietly(commits.main, ["--before", "0" * 40])
+        self.assertEqual(code, 1)
+        self.assertIn("::error title=commit message::Added a bad one.", printed)
+        self.assertIn("1 of the 2 commit messages", printed)
+
+    def test_a_clean_ref_against_origin_main_passes(self) -> None:
+        self.origin_main(self.base)
+        self.commit("docs: a good one")
+        code, printed = quietly(commits.main, ["--before", "0" * 40])
+        self.assertEqual(code, 0, printed)
+        self.assertIn("All 1 commit messages", printed)
+
+    def test_a_ref_with_no_origin_main_to_measure_against_is_not_passed_quietly(self) -> None:
+        self.commit("Added a bad one.")
+        code, printed = quietly(commits.main, ["--before", "0" * 40])
+        self.assertEqual(code, 2)
+        self.assertIn("no refs/remotes/origin/main", printed)
+        self.assertIn("no message was checked", printed)
+
+    def test_a_new_ref_at_main_adds_no_commit_to_measure(self) -> None:
+        self.origin_main(self.git("rev-parse", "HEAD"))
+        code, printed = quietly(commits.main, ["--before", "0" * 40])
+        self.assertEqual(code, 0, printed)
+        self.assertIn("added no commit to measure", printed)
+
+    def test_a_new_ref_at_an_older_main_commit_adds_no_commit_to_measure(self) -> None:
+        self.origin_main(self.commit("docs: main moved on"))
+        self.git("checkout", "-q", self.base)
+        code, printed = quietly(commits.main, ["--before", "0" * 40])
+        self.assertEqual(code, 0, printed)
+        self.assertIn("added no commit to measure", printed)
 
     def test_every_added_commit_is_checked(self) -> None:
         self.commit("docs: a good one")

@@ -1,0 +1,34 @@
+# The commit messages a push adds, checked on every branch rather than only on
+# main. deploy.yml triggers on a push to main, so a branch's push was read by
+# nothing, and a branch's first push is where github.event.before is all zeros:
+# `tools.release.commits` reads that value itself and measures the ref against
+# origin/main, so this file passes the event's before through unchanged.
+
+name: commit messages
+
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  messages:
+    runs-on: ubuntu-latest
+    # A deleted branch arrives as a push whose ref no longer exists, so there is
+    # nothing to check out and no commit to read.
+    if: ${{ !github.event.deleted }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so the commits the push added are in the clone and
+          # origin/main is there for a ref the remote had never seen.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the commit messages this push added
+        run: python -m tools.release.commits --before "${{ github.event.before }}"

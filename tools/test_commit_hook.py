@@ -168,6 +168,16 @@ class PushHookTest(unittest.TestCase):
         self.assertIn("All 1 commit messages this push added follow CONTRIBUTING.md", done.stdout + done.stderr)
         self.assertEqual(self.remote_ref("refs/heads/main"), self.git("rev-parse", "HEAD").strip())
 
+    def test_a_new_branch_at_an_older_main_commit_passes(self) -> None:
+        self.start_remote()
+        base = self.git("rev-parse", "HEAD").strip()
+        self.land("docs: main moved on")
+        self.git("checkout", "-q", "-b", "work", base)
+        done = self.push("work:refs/heads/work")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("adds no commit over origin/main", done.stdout + done.stderr)
+        self.assertEqual(self.remote_ref("refs/heads/work"), base)
+
     def test_a_clone_without_origin_main_skips_a_new_ref_and_says_so(self) -> None:
         self.commit("docs: the base")
         self.git("checkout", "-q", "-b", "work")

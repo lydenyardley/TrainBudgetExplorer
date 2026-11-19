@@ -379,6 +379,50 @@ class WorkflowShellTest(unittest.TestCase):
         )
 
 
+class CommitMessageCheckTest(unittest.TestCase):
+    """The message check is its own workflow, so a branch's push reaches it.
+
+    It lived in deploy.yml, which triggers on a push to main only, so a push to
+    any other branch ran no check at all. That is also the case the checker has
+    to read for itself: a branch's first push reports an all-zero before, and the
+    ref is measured against origin/main instead.
+    """
+
+    def workflow(self) -> str:
+        return (WORKFLOWS / "commit-messages.yml").read_text(encoding="utf-8")
+
+    def test_every_pushed_branch_runs_the_check(self) -> None:
+        text = self.workflow()
+        self.assertIn(
+            'branches: ["**"]',
+            text,
+            "the check does not run on every branch, so a branch's push is unchecked again",
+        )
+        self.assertIn(
+            'python -m tools.release.commits --before "${{ github.event.before }}"',
+            text,
+            "the step no longer passes the push's before, so the checker cannot tell a new ref from an update",
+        )
+
+    def test_the_clone_holds_the_base_and_the_added_commits(self) -> None:
+        # A shallow clone holds neither the commit the push started from nor
+        # refs/remotes/origin/main, and both are what a new branch is measured
+        # against.
+        self.assertIn(
+            "fetch-depth: 0",
+            self.workflow(),
+            "without full history the commits a push added, and origin/main, are not in the clone",
+        )
+
+    def test_the_release_workflow_no_longer_checks_messages(self) -> None:
+        deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+        self.assertNotIn(
+            "tools.release.commits",
+            deploy,
+            "the message check runs in two workflows, and only one of them reads a branch's push",
+        )
+
+
 class LocalActionTest(unittest.TestCase):
     def test_every_local_action_a_workflow_uses_is_tracked(self) -> None:
         # actionlint skips a local action it cannot find, and .gitignore's

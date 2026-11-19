@@ -22,6 +22,12 @@ while read -r LOCAL_REF LOCAL_SHA _ REMOTE_SHA; do
       echo "pre-push: so this push was not checked."
       continue
     fi
+    # A branch cut from a main commit main has since moved past adds no commit
+    # of its own, so the checker would find an empty range and fail it.
+    if git merge-base --is-ancestor "$LOCAL_SHA" "$REMOTE_SHA" 2>/dev/null; then
+      echo "pre-push: $LOCAL_REF adds no commit over $REMOTE/main, so there is no message to check."
+      continue
+    fi
   fi
   # stdin is this loop's, so the checker reads none of the refs still to come.
   PYTHONPATH="$ROOT" "$PY" -m tools.release.commits \

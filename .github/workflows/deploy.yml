@@ -71,17 +71,10 @@ jobs:
       service_date: ${{ steps.service_day.outputs.value }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history: the message check walks the commits this push added,
-          # which needs the base commit in the clone.
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Check the commit messages this push added
-        run: python -m tools.release.commits --before "${{ github.event.before }}"
 
       - name: Verify the sources
         # The cheap gate, before the feeds rather than after the build, and the

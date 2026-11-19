@@ -5,8 +5,17 @@
 The convention was documented and checked by a tool that rejected all 87
 commits in the repository, so it was enforced by nobody. The tool now agrees
 with the history, and this is what keeps them agreeing over a push. A scheduled
-or manual run adds no commits, so `--before` is empty or all zeros and this
-says there is nothing to check rather than passing silently.
+or manual run has no `github.event.before` at all, so `--before` is empty and
+this says there is nothing to check rather than passing silently.
+
+A push that creates its ref reports an all-zero before, so the ref has no base
+of its own and the range cannot be walked. The remote's main is what the ref was
+branched from, so that is what it is measured against, the same fallback
+`.githooks/pre-push` applies before it calls this. A ref cut from a main commit
+main has since moved past adds no commit of its own, so it passes with a notice
+rather than failing on an empty range. A clone without that base cannot measure
+the ref, and says so and exits 2 rather than passing quietly: the hook may let a
+push through that it cannot grade, but a workflow gate may not.
 
 A base commit that is not in the clone means the push replaced the history it
 was based on, so every commit HEAD carries is new to the remote and the range
@@ -16,8 +25,9 @@ commits that predate it, which the convention deliberately does not apply
 backwards. The credit rule has no such history -- it was applied backwards on
 21 October 2026 -- so that is the rule a rewritten history is held to.
 
-Exit codes: 0 every commit passes (or there was none to check), 1 one does not,
-or the range held no commit at all.
+Exit codes: 0 every commit passes, or there was none to check, 1 one does not,
+or the range held no commit at all, 2 the ref is new to the remote and the clone
+holds no main to measure it against.
 """
 
 from __future__ import annotations
@@ -28,7 +38,8 @@ import subprocess
 from tools.check_commit_message import check
 from tools.release import error
 
-NO_BASE = ("", "0" * 40)
+NEW_REF = "0" * 40
+REMOTE_MAIN = "refs/remotes/origin/main"
 
 
 def git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -42,9 +53,23 @@ def main(argv: list[str] | None = None) -> int:
         "--head", default="HEAD", help="the last commit to check; the hook passes the ref it pushes, which need not be checked out"
     )
     args = parser.parse_args(argv)
-    if args.before in NO_BASE:
+    if not args.before:
         print("This run added no commits, so there is no message to check.")
         return 0
+    if args.before == NEW_REF:
+        resolved = git("rev-parse", "--verify", "--quiet", f"{REMOTE_MAIN}^{{commit}}")
+        if resolved.returncode != 0:
+            error(
+                "commit message",
+                f"This push created its ref and this clone has no {REMOTE_MAIN}, so no message was checked.",
+            )
+            return 2
+        args.before = resolved.stdout.strip()
+        head = git("rev-parse", args.head).stdout.strip()
+        if git("merge-base", "--is-ancestor", head, args.before).returncode == 0:
+            print(f"This push created its ref at a commit {REMOTE_MAIN} already had, so it added no commit to measure.")
+            return 0
+        print(f"This push created its ref, so it is measured against {REMOTE_MAIN} as this clone last saw it.")
     credits_only = git("rev-parse", "--verify", "--quiet", f"{args.before}^{{commit}}").returncode != 0
     if credits_only:
         print(
