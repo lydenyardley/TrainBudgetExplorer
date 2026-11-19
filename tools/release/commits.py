@@ -9,13 +9,14 @@ or manual run has no `github.event.before` at all, so `--before` is empty and
 this says there is nothing to check rather than passing silently.
 
 A push that creates its ref reports an all-zero before, so the ref has no base
-of its own and the range cannot be walked. The remote's main is what the ref was
-branched from, so that is what it is measured against, the same fallback
-`.githooks/pre-push` applies before it calls this. A ref cut from a main commit
-main has since moved past adds no commit of its own, so it passes with a notice
+of its own and the range cannot be walked. origin/main is what the ref was
+branched from, so that is what it is measured against, and `.githooks/pre-push`
+leaves that resolution here rather than repeating it, so a local push and a
+workflow run measure a new ref the same way. A ref cut from a main commit main
+has since moved past adds no commit of its own, so it passes with a notice
 rather than failing on an empty range. A clone without that base cannot measure
-the ref, and says so and exits 2 rather than passing quietly: the hook may let a
-push through that it cannot grade, but a workflow gate may not.
+the ref, and says so and exits 2 rather than passing quietly: the hook turns 2
+into a push it lets through ungraded, but a workflow gate may not.
 
 A base commit that is not in the clone means the push replaced the history it
 was based on, so every commit HEAD carries is new to the remote and the range

@@ -175,7 +175,9 @@ class PushHookTest(unittest.TestCase):
         self.git("checkout", "-q", "-b", "work", base)
         done = self.push("work:refs/heads/work")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        self.assertIn("adds no commit over origin/main", done.stdout + done.stderr)
+        self.assertIn(
+            "refs/remotes/origin/main already had, so it added no commit to measure", done.stdout + done.stderr
+        )
         self.assertEqual(self.remote_ref("refs/heads/work"), base)
 
     def test_a_clone_without_origin_main_skips_a_new_ref_and_says_so(self) -> None:

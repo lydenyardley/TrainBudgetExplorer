@@ -2,35 +2,29 @@
 # Check the messages of the commits a push adds, before they leave the machine.
 # The deploy workflow runs the same checker as the backstop, but a rejection
 # there has already landed the commits, so fixing one costs a second push.
+# The checker also resolves the base a ref the remote has never seen is measured
+# against, so the hook does not work one out for itself.
 # Enable once per clone with
 #   git config core.hooksPath .githooks
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PY=$(command -v python || command -v python3)
 ZERO=0000000000000000000000000000000000000000
-REMOTE=${1:-origin}
 STATUS=0
 # One line per ref: <local ref> <local sha> <remote ref> <remote sha>.
 while read -r LOCAL_REF LOCAL_SHA _ REMOTE_SHA; do
   if [ "$LOCAL_SHA" = "$ZERO" ]; then
     continue
   fi
-  if [ "$REMOTE_SHA" = "$ZERO" ]; then
-    # A ref the remote does not have yet has no base of its own, so it is
-    # measured against the remote's main as this clone last saw it.
-    if ! REMOTE_SHA=$(git rev-parse --verify --quiet "refs/remotes/$REMOTE/main"); then
-      echo "pre-push: $LOCAL_REF is new to the remote and this clone has no $REMOTE/main,"
-      echo "pre-push: so this push was not checked."
-      continue
-    fi
-    # A branch cut from a main commit main has since moved past adds no commit
-    # of its own, so the checker would find an empty range and fail it.
-    if git merge-base --is-ancestor "$LOCAL_SHA" "$REMOTE_SHA" 2>/dev/null; then
-      echo "pre-push: $LOCAL_REF adds no commit over $REMOTE/main, so there is no message to check."
-      continue
-    fi
-  fi
   # stdin is this loop's, so the checker reads none of the refs still to come.
   PYTHONPATH="$ROOT" "$PY" -m tools.release.commits \
-    --before "$REMOTE_SHA" --head "$LOCAL_SHA" < /dev/null || STATUS=1
+    --before "$REMOTE_SHA" --head "$LOCAL_SHA" < /dev/null
+  CODE=$?
+  if [ "$CODE" -eq 2 ]; then
+    # 2 is a ref the remote has never seen and no main here to grade it
+    # against: a clone lets such a push leave, a workflow gate may not.
+    echo "pre-push: $LOCAL_REF has no base in this clone, so this push was not checked."
+  elif [ "$CODE" -ne 0 ]; then
+    STATUS=1
+  fi
 done
 exit $STATUS
