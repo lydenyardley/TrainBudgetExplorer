@@ -1,16 +1,15 @@
-  // The one thing this page does before it renders anything: say which palette
-  // it is, so there is no flash of the other one. Dark unless the reader has
-  // chosen otherwise, on this device, in this browser.
+  // The one thing this page does before it renders anything: name a stored
+  // palette, so a return visit does not flash the system one. Nothing stored
+  // leaves the meta at "light dark", which is follow-the-system, and the
+  // stylesheet already says the same, so there is no second guess to flash.
   (function () {
-    var dark = true;
     try {
       var stored = localStorage.getItem("tbe-theme");
-      if (stored) dark = stored === "dark";
-    } catch (e) { /* storage blocked: the default stands */ }
-    var theme = dark ? "dark" : "light";
-    document.documentElement.dataset.theme = theme;
-    var meta = document.querySelector('meta[name="color-scheme"]');
-    if (meta) meta.setAttribute("content", theme);
+      if (stored === "dark" || stored === "light") {
+        var meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) meta.setAttribute("content", stored);
+      }
+    } catch (e) { /* storage blocked: the meta stays "light dark" */ }
   })();
   // The control, wired once the body exists. It ships hidden and is revealed
   // here: a button that cannot do anything without this script is a control
@@ -30,15 +29,18 @@
       .getPropertyValue("--tbe-stylesheet").trim() !== "";
   }
   function wireTheme() {
-    var root = document.documentElement;
     var toggle = document.getElementById("themeToggle");
     if (!toggle) return;
     var glyph = toggle.querySelector(".glyph");
-    function paint(dark) {
-      var theme = dark ? "dark" : "light";
-      root.dataset.theme = theme;
+    function systemDark() {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    // "light dark" follows the system. "light" or "dark" pins one scheme, and
+    // the stylesheet reads this same meta, so the two cannot disagree.
+    function apply(content) {
       var meta = document.querySelector('meta[name="color-scheme"]');
-      if (meta) meta.setAttribute("content", theme);
+      if (meta) meta.setAttribute("content", content);
+      var dark = content === "dark" || (content !== "light" && systemDark());
       toggle.setAttribute("aria-checked", String(dark));
       if (glyph) glyph.textContent = dark ? "☾" : "☀";
     }
@@ -53,12 +55,41 @@
       }
       return;
     }
-    paint(root.dataset.theme === "dark");
+    var meta = document.querySelector('meta[name="color-scheme"]');
+    apply(meta ? meta.getAttribute("content") : "light dark");
     toggle.hidden = false;
+    // While nothing is stored the colours already follow the system. The
+    // switch does not, unless something tells it the system moved.
+    var media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", function () {
+      var current = document.querySelector('meta[name="color-scheme"]');
+      if (current && current.getAttribute("content") === "light dark") apply("light dark");
+    });
+    // Another tab can pin or drop the choice. This tab did not write it, so
+    // the storage event is the only way it hears.
+    window.addEventListener("storage", function (event) {
+      if (event.key !== "tbe-theme") return;
+      if (event.newValue === "dark" || event.newValue === "light") apply(event.newValue);
+      else apply("light dark");
+    });
     toggle.addEventListener("click", function () {
-      var dark = root.dataset.theme !== "dark";
-      paint(dark);
-      try { localStorage.setItem("tbe-theme", dark ? "dark" : "light"); } catch (e) { /* remembered for this page only */ }
+      var metaNow = document.querySelector('meta[name="color-scheme"]');
+      var content = metaNow ? metaNow.getAttribute("content") : "light dark";
+      var darkNow = content === "dark" || (content !== "light" && systemDark());
+      var wantDark = !darkNow;
+      var theme = wantDark ? "dark" : "light";
+      // Pressing the switch onto the scheme the system is already using puts
+      // the pin down. Storing that scheme would freeze it against the next
+      // system change, which is the opposite of what the press undoes. A
+      // stored value that the system later matches is left in place: dropping
+      // it then would make a night-time OS switch unpin a choice.
+      if (wantDark === systemDark()) {
+        try { localStorage.removeItem("tbe-theme"); } catch (e) { /* this page follows anyway */ }
+        apply("light dark");
+      } else {
+        try { localStorage.setItem("tbe-theme", theme); } catch (e) { /* remembered for this page only */ }
+        apply(theme);
+      }
     });
   }
   document.addEventListener("DOMContentLoaded", wireTheme);

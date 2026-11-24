@@ -8,12 +8,11 @@
      Each colour token is written twice: the plain light value first, so a
      browser without light-dark() paints the light page rather than resolving
      an invalid value to nothing, and light-dark() after it, so a browser that
-     has it takes both palettes from one declaration and the switcher's only
-     job is to say which one. :root asks for "light dark", so a page whose
-     script does not run can follow the system. The script pins a first visit
-     to dark, and the reader's own choice overrides it through the attribute
-     below. Dark is the first visit -- this is a page read at night, on a
-     phone, on a train. */
+     has it takes both palettes from one declaration. :root asks for "light
+     dark", so a page with nothing stored follows the system, including when
+     the system changes, and so does a page whose script does not run. A
+     stored choice is the meta naming one scheme. The rules below read that
+     meta, so the choice and the color-scheme cannot drift apart. */
   :root {
     color-scheme: light dark;
     --bg: #fff; --bg: light-dark(#fff, #14181d);
@@ -60,11 +59,12 @@
     --page-max: 78rem; --page-pad: clamp(1rem, 3vw, 2.25rem);
     --h1: clamp(2rem, min(7vw, 9vh), 6rem);
   }
-  /* The reader's choice, which beats the system preference: the tokens are
-     already resolved by light-dark(), so naming the scheme is the whole of it,
-     and it also moves the form controls, the scrollbars and the canvas. */
-  :root[data-theme="light"] { color-scheme: light; }
-  :root[data-theme="dark"] { color-scheme: dark; }
+  /* The reader's choice beats the system preference. "light dark" is not
+     matched here, so a page with nothing stored keeps following the system.
+     Naming one scheme also moves the form controls, the scrollbars and the
+     canvas, which a token override alone would not. */
+  :root:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+  :root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
 
   /* The theme control, at the top right of the page and in the flow rather
      than pinned to the corner. A fixed control in the corner sits on top of

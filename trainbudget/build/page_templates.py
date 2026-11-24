@@ -606,12 +606,13 @@ __ANALYTICS__
 """
 
 
-# The theme, before the first paint and on every route. The choice is read here
-# and written to the root element rather than left to CSS, because a page that
-# paints light and then repaints dark is a flash every reader sees on every
-# visit. localStorage can throw -- a private window, a file:// page with storage
-# blocked -- and then the reader simply gets the default, which is the point of
-# having a default.
+# The theme, before the first paint and on every route. A stored choice is
+# written into the color-scheme meta here, in the same parse as the stylesheet,
+# because a page that paints one scheme and then the other is a flash every
+# reader sees. Nothing stored leaves the meta at "light dark", so the first
+# paint follows the system and there is nothing to flash from. localStorage
+# can throw -- a private window, a file:// page with storage blocked -- and
+# then the page follows the system, which is what a missing choice means.
 # The one drawn mark the chrome uses: a chevron that says "there is more behind
 # this". It is an empty element the stylesheet draws with two borders, rotated,
 # rather than a character or an SVG path. A character has no stroke of its own
