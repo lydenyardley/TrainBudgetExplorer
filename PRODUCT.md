@@ -50,7 +50,9 @@ It exists as a demand experiment whose commercial shape, if it survives, is
 affiliate lead generation (ADR-0003). Success for v1 is therefore a **signal, not
 revenue**: clicks from the named community venues, comments, and repeat usage,
 weighed at the written review on **21 October 2026** — with the default outcome, if
-unsure, being to park the project rather than continue it (ADR-0004).
+unsure, being to park the project rather than continue it (ADR-0004). On
+24 November 2026 the owner kept it. The next review is after the community posts,
+which have not gone out (O20).
 
 ## Positioning
 
@@ -94,7 +96,9 @@ conversion would not make those moves.
   invents `GRN`.
 - **Venues and cadence:** community posts at launch (w/c 5 October), referrer
   measurement, an affiliate application only once the licence is read and there is
-  traffic, and the 21 October review tripwire.
+  traffic, and the 21 October review tripwire. That review was taken on
+  24 November 2026: the project stays, and the next one follows those posts,
+  which have not gone out (O20).
 - **Hosting is chosen but not switched on.** The deploy workflow targets GitHub
   Pages, builds the whole network from the licensed fares feed as a prices-only
   release, and is cleared to publish that shape by `licences/release-clearance.md`
@@ -198,8 +202,9 @@ station index inside every page so that choosing a station is navigation between
 files rather than a filter inside one. The reason is delivery, not data — the feed
 already answers every origin, but ~2,500 origins in a single file is roughly 890 MB.
 
-ADR-0004's dates and park-by-default tripwire are unchanged; only the scope of what
-gets built is.
+ADR-0004's dates and park-by-default tripwire were unchanged by that scope
+decision. The tripwire itself was answered on 24 November 2026: keep it, and
+review again after the community posts (O20).
 
 **Decided: the origin is a property of the file; choosing one is navigation.** The
 station index that drives the picker ships inside every page, a station page's
@@ -246,8 +251,9 @@ what a real-feed build, `dtd_audit.py` and the deploy workflow read. A figure
 quoted from the real feed is a figure from the feed named beside it.
 
 **There are no users yet.** No testimonials, no customers, no benchmark, no press,
-no traffic figures, and no user research of any kind. The 21 October review is the
-point at which the first real evidence will exist.
+no traffic figures, and no user research of any kind. The 21 October review was
+taken on 24 November 2026 without that evidence: the owner kept the project, and
+the next review waits on the community posts (O20).
 
 **What genuinely exists as evidence:**
 

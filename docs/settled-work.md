@@ -54,7 +54,7 @@ when its two asks landed. Each is held by the check that now fails without it.
 
 | Item | Closed by | Held by |
 |---|---|---|
-| 1, the `color-scheme` meta still said "follow the system" after the script pinned a palette, and the stylesheet comments said the same | `page/theme.js` writes the applied scheme into the meta in the early script and whenever the switch paints; `page/shared.css` says dark is the first visit | the browser suite's "and the color-scheme meta names the palette the page paints", "and the meta follows the reader's choice", and "and the meta is still in step after a reload" |
+| 1, the `color-scheme` meta still said "follow the system" after the script pinned a palette, and the stylesheet comments said the same | `page/theme.js` writes a pinned scheme into the meta before first paint and whenever the switch paints; with nothing stored the meta stays `light dark` (ADR-0037, amended 24 November 2026) | the browser suite's "and the color-scheme meta names the palette the page paints", "and the meta follows the reader's choice", and "and the meta is still in step after a reload" |
 | 2, the unpriced-origin link drew its underline with a border rather than the page's text-decoration | `page/station.css` gives `#unpriced a` the same underline as `.tag-open` and drops the border | the browser suite's "the unpriced link wears the page's text underline, not a border" |
 
 ### The 8 October 2026 agent-efficiency audit

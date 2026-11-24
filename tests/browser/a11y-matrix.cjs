@@ -224,11 +224,10 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   }
   // ------------------------------------------- contrast, targets, reflow, per scheme
   for (const scheme of ["light", "dark"]) {
-    // The page's own control decides the palette now, not the OS preference, so
-    // the scheme is set the way a reader sets it: by pressing the switch. The
-    // media query is still emulated, because a reader whose system says light
-    // and who has chosen dark must get dark, and the system default is only
-    // the default.
+    // Both palettes, reached the way a reader reaches them. The system scheme
+    // is emulated and the switch is pressed until the page paints that one. A
+    // page that is still following the system may already be there; a stored
+    // choice that disagrees is what the press overrides.
     await page.emulateMedia({ colorScheme: scheme });
     const theme = await setTheme(page, scheme);
     check(
@@ -715,81 +714,155 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   // The theme switch. A reader who cannot change the palette has a page built
   // for one person, so the control is read from the page: it is there, it is a
   // switch with a name, and the state it holds is the palette the page is
-  // actually painting. The default is checked on a first visit with the
-  // storage emptied, because "dark unless the reader says otherwise" is a claim
-  // about a reader who has never pressed anything.
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) { /* nothing stored */ } });
+  // actually painting. A first visit, with nothing stored, follows the system
+  // in both directions, and keeps following if the system changes during the
+  // visit. The meta stays "light dark" for that, because a concrete scheme
+  // would pin the page. A stored choice names that scheme in the meta and
+  // wins over the system.
+  async function readTheme() {
+    return page.evaluate(() => {
+      const toggle = document.getElementById("themeToggle");
+      const meta = document.querySelector('meta[name="color-scheme"]');
+      const content = meta ? meta.getAttribute("content") : "";
+      let stored = null;
+      try { stored = localStorage.getItem("tbe-theme"); } catch (e) { stored = "blocked"; }
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const painted = content === "dark" || (content !== "light" && systemDark) ? "dark" : "light";
+      const box = toggle ? toggle.getBoundingClientRect() : { width: 0, height: 0 };
+      return {
+        present: !!toggle,
+        role: toggle ? toggle.getAttribute("role") : "",
+        checked: toggle ? toggle.getAttribute("aria-checked") : "",
+        name: toggle ? (toggle.textContent || "").trim() : "",
+        hidden: toggle ? toggle.hidden : true,
+        box: { w: Math.round(box.width), h: Math.round(box.height) },
+        meta: content,
+        stored,
+        painted,
+        background: getComputedStyle(document.body).backgroundColor,
+      };
+    });
+  }
+  async function waitForChecked(value) {
+    await page.waitForFunction((expected) => {
+      const toggle = document.getElementById("themeToggle");
+      return !!toggle && toggle.getAttribute("aria-checked") === expected;
+    }, value);
+  }
+  await page.evaluate(() => { try { localStorage.removeItem("tbe-theme"); } catch (e) { /* nothing stored */ } });
+  await page.emulateMedia({ colorScheme: "light" });
   await page.reload();
-  const themeControl = await page.evaluate(() => {
-    const toggle = document.getElementById("themeToggle");
-    if (!toggle) return { present: false };
-    return {
-      present: true,
-      role: toggle.getAttribute("role"),
-      checked: toggle.getAttribute("aria-checked"),
-      theme: document.documentElement.dataset.theme,
-      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
-      name: (toggle.textContent || "").trim(),
-      hidden: toggle.hidden,
-      box: (() => {
-        const r = toggle.getBoundingClientRect();
-        return { w: Math.round(r.width), h: Math.round(r.height) };
-      })(),
-    };
-  });
+  const firstLight = await readTheme();
   check(
     "the page offers a theme switch",
-    themeControl.present && !themeControl.hidden,
-    themeControl.present ? (themeControl.hidden ? "rendered but hidden" : "shown") : "no #themeToggle"
+    firstLight.present && !firstLight.hidden,
+    firstLight.present ? (firstLight.hidden ? "rendered but hidden" : "shown") : "no #themeToggle"
   );
-  if (themeControl.present) {
+  if (firstLight.present) {
     check(
       "the theme switch is a named switch whose state is the page's palette",
-      themeControl.role === "switch" &&
-        Boolean(themeControl.name) &&
-        themeControl.checked === String(themeControl.theme === "dark"),
-      `role ${themeControl.role}, name "${themeControl.name}", checked ${themeControl.checked}, theme ${themeControl.theme}`
+      firstLight.role === "switch" &&
+        Boolean(firstLight.name) &&
+        firstLight.checked === String(firstLight.painted === "dark"),
+      `role ${firstLight.role}, name "${firstLight.name}", checked ${firstLight.checked}, painted ${firstLight.painted}`
     );
     check(
-      "and a reader with no stored choice gets the dark palette",
-      themeControl.theme === "dark" && themeControl.checked === "true",
-      `first visit painted ${themeControl.theme}`
-    );
-    check(
-      "and the color-scheme meta names the palette the page paints",
-      themeControl.meta === themeControl.theme,
-      `meta ${themeControl.meta}, page ${themeControl.theme}`
+      "and a first visit follows the system theme",
+      firstLight.painted === "light" &&
+        firstLight.meta === "light dark" &&
+        firstLight.stored === null &&
+        firstLight.checked === "false" &&
+        isLight(firstLight.background),
+      `meta ${firstLight.meta}, stored ${firstLight.stored}, painted ${firstLight.painted}, ${firstLight.background}`
     );
     check(
       "and the switch is a pointer target of at least 44px",
-      themeControl.box.w >= 44 && themeControl.box.h >= 44,
-      `${themeControl.box.w}x${themeControl.box.h}px`
+      firstLight.box.w >= 44 && firstLight.box.h >= 44,
+      `${firstLight.box.w}x${firstLight.box.h}px`
     );
-    // The choice has to outlive the visit, or it is not a choice.
+    // Nothing is stored, so a system change during the visit is the page's
+    // to follow. The meta stays "light dark": that is the following, not a pin.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await waitForChecked("true");
+    const followed = await readTheme();
+    check(
+      "and a first visit follows a system change",
+      followed.painted === "dark" &&
+        followed.meta === "light dark" &&
+        followed.stored === null &&
+        followed.checked === "true" &&
+        !isLight(followed.background),
+      `meta ${followed.meta}, stored ${followed.stored}, painted ${followed.painted}, ${followed.background}`
+    );
+    await page.emulateMedia({ colorScheme: "light" });
+    await waitForChecked("false");
+    // The system is light, so the opposite of the page is dark, and dark is
+    // stored. The meta then names that one palette.
     await page.locator("#themeToggle").click();
-    const chosen = await page.evaluate(() => ({
-      theme: document.documentElement.dataset.theme,
-      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
-    }));
+    const chosen = await readTheme();
     check(
       "and the meta follows the reader's choice",
-      chosen.meta === chosen.theme,
-      `pressed to ${chosen.theme}, meta ${chosen.meta}`
+      chosen.meta === "dark" && chosen.stored === "dark" && chosen.painted === "dark",
+      `stored ${chosen.stored}, meta ${chosen.meta}, painted ${chosen.painted}`
+    );
+    check(
+      "and the color-scheme meta names the palette the page paints",
+      chosen.meta === chosen.painted && !isLight(chosen.background),
+      `meta ${chosen.meta}, painted ${chosen.painted}, ${chosen.background}`
+    );
+    // The system moves to the scheme the reader already chose. The stored
+    // value stays: a night-time switch of the OS must not unpin it.
+    await page.emulateMedia({ colorScheme: "dark" });
+    const agreed = await readTheme();
+    check(
+      "and a stored choice wins when the system later agrees",
+      agreed.meta === "dark" && agreed.stored === "dark" && agreed.painted === "dark",
+      `stored ${agreed.stored}, meta ${agreed.meta}`
     );
     await page.reload();
-    const afterReload = await page.evaluate(() => ({
-      theme: document.documentElement.dataset.theme,
-      meta: (document.querySelector('meta[name="color-scheme"]') || {}).content,
-    }));
+    const afterReload = await readTheme();
     check(
       "and the reader's choice survives a reload",
-      chosen.theme === "light" && afterReload.theme === "light",
-      `pressed to ${chosen.theme}, reloaded as ${afterReload.theme}`
+      afterReload.meta === "dark" && afterReload.stored === "dark" && afterReload.painted === "dark",
+      `reloaded as ${afterReload.painted}, stored ${afterReload.stored}`
     );
     check(
       "and the meta is still in step after a reload",
-      afterReload.meta === afterReload.theme,
-      `reloaded as ${afterReload.theme}, meta ${afterReload.meta}`
+      afterReload.meta === afterReload.painted,
+      `reloaded as ${afterReload.painted}, meta ${afterReload.meta}`
+    );
+    // The system is now light and the stored choice is dark, so the page stays
+    // dark. Pressing the switch asks for light, which is the system scheme,
+    // and that puts the pin down: the page follows again.
+    await page.emulateMedia({ colorScheme: "light" });
+    const pinned = await readTheme();
+    check(
+      "and a stored choice wins over the system",
+      pinned.meta === "dark" && pinned.stored === "dark" && pinned.painted === "dark" && !isLight(pinned.background),
+      `system light, meta ${pinned.meta}, painted ${pinned.painted}, ${pinned.background}`
+    );
+    await page.locator("#themeToggle").click();
+    const released = await readTheme();
+    check(
+      "and choosing the system's own scheme follows it again",
+      released.meta === "light dark" &&
+        released.stored === null &&
+        released.painted === "light" &&
+        released.checked === "false" &&
+        isLight(released.background),
+      `meta ${released.meta}, stored ${released.stored}, painted ${released.painted}`
+    );
+    await page.emulateMedia({ colorScheme: "dark" });
+    await waitForChecked("true");
+    const followedAgain = await readTheme();
+    check(
+      "and following resumes when the system changes",
+      followedAgain.meta === "light dark" &&
+        followedAgain.stored === null &&
+        followedAgain.painted === "dark" &&
+        followedAgain.checked === "true" &&
+        !isLight(followedAgain.background),
+      `meta ${followedAgain.meta}, painted ${followedAgain.painted}, ${followedAgain.background}`
     );
   }
   // The unpriced-origin message's link. The scanner flagged the border-drawn
@@ -886,27 +959,32 @@ async function checkAccessibilityMatrix(page, url, check, routeKind) {
   await page.goto(url);
 }
 /**
- * Press the page's theme switch until it holds the asked-for scheme, and report
- * what it holds afterwards. Driving the real control rather than setting the
- * attribute is the point: a switch that reads right and does nothing is the
- * defect this suite exists to catch, and setting the attribute by hand would
- * never notice.
+ * The scheme the page is painting: a pinned meta value, or the system scheme
+ * while the meta still says to follow it.
+ */
+function paintedScheme(page) {
+  return page.evaluate(() => {
+    const meta = document.querySelector('meta[name="color-scheme"]');
+    const content = meta ? meta.getAttribute("content") : "";
+    if (content === "dark" || content === "light") return content;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+}
 /**
  * Press the page's theme switch until it holds the asked-for scheme, and report
  * what it holds afterwards. Driving the real control rather than setting the
- * attribute is the point: a switch that reads right and does nothing is the
- * defect this suite exists to catch, and setting the attribute by hand would
- * never notice.
+ * meta by hand is the point: a switch that reads right and does nothing is the
+ * defect this suite exists to catch.
  */
 async function setTheme(page, scheme) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const now = await page.evaluate(() => document.documentElement.dataset.theme);
+    const now = await paintedScheme(page);
     if (now === scheme) return now;
     const toggle = page.locator("#themeToggle");
     if (!(await toggle.count()) || (await toggle.isHidden())) return now || "no control";
     await toggle.click();
   }
-  return page.evaluate(() => document.documentElement.dataset.theme);
+  return paintedScheme(page);
 }
 /** Is a painted background the light one? Used only to prove the scheme landed. */
 function isLight(colour) {

@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 28 September 2026
+**Amended:** 24 November 2026 — a first visit follows the system theme
 **Relates to:** ADR-0027 (the browser suite covers the template), ADR-0033 (one
 self-contained file per route), ADR-0036 (the NRE mark's plate)
 
@@ -85,6 +86,23 @@ unless the reader says otherwise.**
    be an open question: `--nre-ink` is `#ffffff`, still one fixed chip in both
    palettes, and the legibility check now measures white against the plate.
 
+## Amended 24 November 2026
+
+The owner decided that a new visitor follows the system theme. Where this
+decision says the default is dark, and that a `data-theme` attribute names the
+scheme, this replaces it.
+
+Nothing stored leaves `<meta name="color-scheme">` at `light dark`. The
+stylesheet's `color-scheme: light dark` then follows `prefers-color-scheme`,
+including a change during the visit, and the same is true with JavaScript off.
+A stored `tbe-theme` of `dark` or `light` is copied into the meta before the
+first paint and wins over the system, including when the system later changes
+to the same scheme. The switch still offers two states. Pressing it onto the
+scheme the system is already using removes the stored value, so the page
+follows again. The stylesheet reads the meta
+(`:root:has(> head > meta[name="color-scheme"])`), so a pinned scheme and the
+meta stay the same value. The browser suite's first-visit checks hold this.
+
 ## Consequences
 
 - The palette is one list, so a token cannot be added to the light page and
@@ -94,7 +112,8 @@ unless the reader says otherwise.**
 - The suite drives the switch rather than the OS preference, so it tests the
   control a reader uses instead of a media query. Five new checks: the control
   exists and is shown, it is a named switch whose `aria-checked` is the palette
-  the page is painting, a first visit with empty storage is dark, the target is
+  the page is painting, a first visit with empty storage follows the system
+  (amended 24 November 2026), the target is
   44px, and the choice survives a reload. The mark's legibility is measured in
   each scheme — 3:1 for the mark on its plate, and the plate has to be findable.
   Measuring it properly took two attempts and found two defects: the check first
@@ -109,6 +128,6 @@ unless the reader says otherwise.**
   head, so "the page's script" stopped being the first `<script>` in the file.
   Fourteen call sites read that slice and were reading the theme block. They now
   go through `page_script()` and `page_markup()`, which say what they mean.
-- A reader with JavaScript off gets the dark page and no switch. That is the
-  right way round for this page: its entire function is a script, and a dead
-  button is worse than an absent one.
+- A reader with JavaScript off follows the system and gets no switch. The
+  meta stays `light dark`, which is the same first paint a script would leave
+  when nothing is stored. A dead button is worse than an absent one.

@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 21 September 2026
+**Amended:** 24 November 2026 — kept; the next review follows the community posts (O20)
 
 ## Context
 
@@ -36,3 +37,8 @@ Family Apothecary — explicitly pushing back the stated priorities.
   stop, 21 Oct review) bound the whole experiment at ~4 weeks part-time.
 - All numeric analysis (the Grantham ≤£20 count) happens in Stage 1, before
   any build decision.
+
+**Amended 24 November 2026.** The 21 October review was taken on this date. The
+owner kept the project. The next review waits on the community posts in stage 3;
+none has gone out, so it has no calendar date. The park-by-default rule stands
+for that review. Recorded as O20 in `docs/open-work.md`.

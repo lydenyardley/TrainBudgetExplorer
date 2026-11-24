@@ -512,9 +512,19 @@ class DemoPageTest(PageTestCase):
         # in NRE's blue on a dark plate at 1.4:1 without anything here failing.
         self.assertIn(".nre-logo svg * { fill: var(--nre-ink) !important; }", SHARED_CSS)
         self.assertEqual(SHARED_CSS.count(":root {"), 1, "one token block, both schemes in it")
-        self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', SHARED_CSS)
-        self.assertIn(':root[data-theme="light"] { color-scheme: light; }', SHARED_CSS)
-        self.assertNotIn("prefers-color-scheme: dark", SHARED_CSS, "the scheme is chosen, not inherited")
+        self.assertIn(
+            ':root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }',
+            SHARED_CSS,
+        )
+        self.assertIn(
+            ':root:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }',
+            SHARED_CSS,
+        )
+        self.assertNotIn(
+            "prefers-color-scheme: dark",
+            SHARED_CSS,
+            "both palettes stay in the one light-dark list",
+        )
         # The switch, on every route, hidden until the script that wires it has
         # run: a control that cannot work without JavaScript must not be on the
         # page for a reader who has none.
@@ -525,11 +535,10 @@ class DemoPageTest(PageTestCase):
                 self.assertIn("hidden>", template.split('id="themeToggle"')[1][:120])
                 self.assertIn("toggle", template)
                 # The switch ships carrying its state, so a reader meets a
-                # control that already says which palette is on. What it
-                # remembers between visits, and which palette a reader with no
-                # stored choice gets, are the browser suite's: it clears the
-                # store, reads the control's state against the palette the page
-                # paints, presses it, and reloads.
+                # control that already says which palette is on. What a first
+                # visit follows, and that a stored choice wins, are the browser
+                # suite's: it clears the store, reads the control against the
+                # palette the page paints, and presses it.
                 self.assertIn('aria-checked="true"', template)
         self.assertIn(":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px;", SHARED_CSS)
         chooser = build_demo_page.render_chooser([], budget_pounds=60)
@@ -549,7 +558,11 @@ class DemoPageTest(PageTestCase):
             self.assertIn(
                 "--accent: light-dark(#14509b, #7db4f5);", styled, f"{name} lost the dark palette"
             )
-            self.assertIn(':root[data-theme="dark"] { color-scheme: dark; }', styled, f"{name} cannot be told to paint dark")
+            self.assertIn(
+                ':root:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }',
+                styled,
+                f"{name} cannot be told to paint dark",
+            )
             # C25: the shared block holds the 44px minimum on the anchor, not
             # only on a container around it, so the privacy page's single
             # navigation link is a 44px target rather than a 24px one that
