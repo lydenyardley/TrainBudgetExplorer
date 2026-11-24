@@ -3,7 +3,8 @@
 The second half of the plan. `publish-checklist.md` decides whether the page *may*
 go up; this one decides where it goes, how the result is measured, and what gets
 read on 21 October. ADR-0003 committed to measuring clicks, comments, and repeat
-usage, and none of it can be measured afterwards if it is not set up now.
+usage, and none of it can be measured afterwards if it is not set up now. The
+owner's answer was given on 24 November 2026, before any of those posts.
 
 ## 1. Gates, before anything is posted
 
@@ -80,10 +81,15 @@ Things the post must do:
 
 ## 4. The review, 21 October 2026
 
+**24 November 2026.** The owner kept it. The readings below have not been taken,
+because no community post has gone out. The next review is that event, recorded
+as O20 in `docs/open-work.md`, and it has no new calendar date.
+
 - [ ] The three readings from section 2, written down with the numbers
-- [ ] The owner's answer to the actual question: is this worth keeping?
+- [x] The owner's answer to the actual question: is this worth keeping?
+      Kept, 24 November 2026.
 - [ ] **Default if unsure: park it.** Docs stay, no further time, and resuming takes
-      a new decision (ADR-0004)
+      a new decision (ADR-0004). It did not apply: the answer was to keep it.
 - [ ] If the affiliate application was rejected, record it: v1 revenue is £0 by
       design (ADR-0003), the tool continues as a demand experiment, and the second
       seller in ADR-0016 is the next question rather than an emergency

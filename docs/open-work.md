@@ -71,7 +71,8 @@ and renumbering would make every one of those citations point at a different ite
 
 Sixteen are code, and two of those have their decision already taken (O11, O12).
 Eighteen wait on the owner's answer (O3 to O8, O10, O13 to O16, O19, O23, O24,
-O30, O32, O34, O41), and one (O20) waits on a person. None is blocked on a tool.
+O30, O32, O34, O41). O20 was answered on 24 November 2026: keep it, and review
+again after the community posts. None is blocked on a tool.
 **Kind** says who acts: `code` is a fix waiting for its turn, `decision` is a
 question only the owner can answer, and `person` is one neither can settle.
 
@@ -385,6 +386,11 @@ data with a different approval question attached and a separate licence gate.
 
 The advice in one line is **do not spend the next week on polish before knowing
 whether anyone is using the thing**. It is not a request to build anything.
+
+**24 November 2026.** The owner decided to keep it for now, and to review this
+again after the community posts. No community post has gone out, so the next
+review is that event rather than a new date. The 21 October default, if unsure,
+was to park it; this answer is to keep it.
 
 ---
 
